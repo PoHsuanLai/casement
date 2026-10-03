@@ -8,6 +8,7 @@ use casement_core::Event;
 use casement_core::policy::GlobalKind;
 use smithay::reexports::wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_manager_v1::ZwlrDataControlManagerV1;
 use smithay::reexports::wayland_server::{DisplayHandle, GlobalDispatch};
+use std::collections::BTreeMap;
 use smithay::wayland::selection::wlr_data_control::{DataControlManagerGlobalData, DataControlState};
 
 /// `zwlr_data_control_manager_v1`.
@@ -15,6 +16,8 @@ use smithay::wayland::selection::wlr_data_control::{DataControlManagerGlobalData
 pub struct WlrDataControlPart {
     /// smithay's state.
     pub state: DataControlState,
+    /// How many changes of each selection the manager has been told of.
+    pub changes: BTreeMap<SelectionKind, u32>,
 }
 
 impl WlrDataControlPart {
@@ -34,12 +37,15 @@ impl WlrDataControlPart {
                 Some(&primary.state),
                 role_filter.for_global(GlobalKind::WlrDataControl),
             ),
+            changes: BTreeMap::new(),
         }
     }
 }
 
-/// A data-control client set a selection.
+/// A selection changed (whoever set it: a client, or a manager). smithay tells every bound
+/// manager itself, so the part only counts the change it told them of.
 pub fn on_control_selection(part: &mut WlrDataControlPart, kind: SelectionKind) -> Vec<Event> {
-    let _ = (part, kind);
-    todo!("P0-H5: wlr_data_control::on_control_selection")
+    let count = part.changes.entry(kind).or_insert(0);
+    *count = count.saturating_add(1);
+    Vec::new()
 }
