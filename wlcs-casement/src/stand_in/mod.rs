@@ -10,6 +10,7 @@ mod extras;
 mod handlers;
 mod input;
 mod layer;
+#[cfg(feature = "testing")]
 mod relax;
 
 use crate::adapter::{Flow, WlcsEvent};
@@ -139,7 +140,7 @@ pub fn run(events: Channel<WlcsEvent>) {
 
     let output = make_output(&dh, &mut state.space);
     let mut tracker = OutputDamageTracker::from_output(&output);
-    let mut renderer = DummyRenderer::default();
+    let mut renderer = DummyRenderer;
 
     while state.flow == Flow::Continue {
         let _ = render_output::<_, WaylandSurfaceRenderElement<DummyRenderer>, _, _>(

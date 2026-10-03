@@ -3,9 +3,10 @@
 //! smithay refuses a buffer attached before the first `ack_configure` (a protocol error,
 //! `xdg_surface.unconfigured_buffer`); wlcs' helpers at the pinned SHA attach first, which is
 //! about 260 failures that say nothing about the compositor (SP5). The relaxation is a commit
-//! hook added when the `wl_surface` is created, so it runs before smithay's own xdg hook (added
-//! at `get_toplevel` / `get_popup`): where a buffer is pending and nothing has been acked, it
-//! records the server's current state as acked, which is what the client would have sent.
+//! hook added when the `wl_surface` is created, so it runs before smithay's own hooks (added at
+//! `get_toplevel`, `get_popup` and `get_layer_surface`): where a buffer is pending and nothing
+//! has been acked, it records the server's current state as acked, which is what the client
+//! would have sent.
 //!
 //! Behind the `testing` feature only. The same hook goes into casement's compositor handler
 //! behind casement's `testing` feature (an interface ask: it is H1/H2's file).
@@ -17,6 +18,7 @@ use smithay::utils::Serial;
 use smithay::wayland::compositor::{
     BufferAssignment, SurfaceAttributes, add_pre_commit_hook, with_states,
 };
+use smithay::wayland::shell::wlr_layer::{LayerSurfaceConfigure, LayerSurfaceData};
 use smithay::wayland::shell::xdg::{
     PopupConfigure, ToplevelConfigure, XdgPopupSurfaceData, XdgToplevelSurfaceData,
 };
@@ -57,6 +59,16 @@ fn pre_commit(_state: &mut StandIn, _dh: &DisplayHandle, surface: &WlSurface) {
                 state,
                 serial,
                 reposition_token: None,
+            });
+        }
+        if let Some(role) = states.data_map.get::<LayerSurfaceData>()
+            && let Ok(mut role) = role.lock()
+            && role.last_acked.is_none()
+        {
+            let state = role.server_pending.clone().unwrap_or_default();
+            role.last_acked = Some(LayerSurfaceConfigure {
+                state,
+                serial: latest_serial(None),
             });
         }
     });
