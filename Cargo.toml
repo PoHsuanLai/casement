@@ -1,13 +1,23 @@
 [workspace]
 resolver = "3"
-# The pure crates (P0-Z1). The smithay-facing crates, the composition root, the test kit and the
-# binaries join at P0-Z2 (ARCHITECTURE.md section 1). `wlcs-casement` and `casement-scene-css`
-# are never members (boundary row B16).
+# The pure crates (P0-Z1), then the smithay-facing crates, the composition root, the binaries
+# and the test kit (P0-Z2; ARCHITECTURE.md section 1). `wlcs-casement` and `casement-scene-css`
+# are never members (boundary row B16): each carries its own `[workspace]` table.
 members = [
   "crates/casement-core",
   "crates/casement-layout",
   "crates/casement-motion",
+  "crates/casement-render",
+  "crates/casement-wayland",
+  "crates/casement-backend",
+  "crates/casement-agent",
+  "crates/casement-ipc",
+  "crates/casement",
+  "crates/casementctl",
+  "crates/casement-testclient",
+  "crates/casement-testkit",
 ]
+exclude = ["wlcs-casement", "casement-scene-css"]
 
 [workspace.package]
 version = "0.1.0"
@@ -22,6 +32,14 @@ publish = false
 casement-core   = { path = "crates/casement-core" }
 casement-layout = { path = "crates/casement-layout" }
 casement-motion = { path = "crates/casement-motion" }
+casement-render = { path = "crates/casement-render" }
+casement-wayland = { path = "crates/casement-wayland" }
+casement-backend = { path = "crates/casement-backend" }
+casement-agent = { path = "crates/casement-agent" }
+casement-ipc = { path = "crates/casement-ipc" }
+casement = { path = "crates/casement" }
+casement-testclient = { path = "crates/casement-testclient" }
+casement-testkit = { path = "crates/casement-testkit" }
 
 # Sibling repos, by path (each checkout sits beside this one; a lane worktree links them).
 casement-protocols = { path = "../casement-protocols" }
@@ -31,19 +49,55 @@ ds-core   = { path = "../quire/crates/ds-core", default-features = false }
 ds-style  = { path = "../quire/crates/ds-style", default-features = false }
 ds-motion = { path = "../quire/crates/ds-motion", default-features = false }
 ds-behaviour = { path = "../quire/crates/ds-behaviour" }
+# The stored settings document (C45, B13): casement and casement-ipc only.
+ds-settings = { path = "../quire/crates/ds-settings", default-features = false }
 
-# ---- From quire's pinned block (`docs/workspace-deps.toml`), copied verbatim: only the lines the
-# pure crates name. P0-Z2 adds the smithay-facing lines (21-FREEZE-AMENDMENTS A14).
+# ---- From quire's pinned block (`docs/workspace-deps.toml`), copied verbatim: only the lines this
+# workspace names.
 thiserror  = "2"
 serde      = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml       = "1"
 proptest   = "1"
+tempfile   = "3"
+image = { version = "0.25.6", default-features = false, features = ["png", "jpeg"] }
+wayland-client = "0.31"
+wayland-backend = { version = "0.3", features = ["client_system"] }
+wayland-protocols = { version = "0.32.13", features = ["client", "staging", "unstable"] }
+calloop = "0.14"
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros", "net", "io-util", "process"] }
+rustix = { version = "1.1", default-features = false, features = ["std", "event", "fs", "net", "time", "process"] }
+zbus = { version = "5.19", default-features = false, features = ["tokio"] }
+# Pinned for later phases (A14): casement-agent's EIS (P4), the capture source (P2), the tty
+# session (P1). No crate names them at P0; smithay's own `reis` and `libseat` lines resolve to
+# the same majors.
+reis = "0.7"
+pipewire = "0.10"
 
 # ---- Not in quire's pinned block (FINDINGS: dependencies added here). taffy is the rev quire's
 # Cargo.lock resolves through Blitz (SP1, A14), named directly because casement-layout takes
 # taffy alone; only `casement-layout/src/taffy_bridge/` names it (boundary row B2).
 taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "4863877b9cab21645b160d7f247901f90214fe27", default-features = false, features = ["std", "taffy_tree", "flexbox", "grid", "block_layout"] }
+
+# smithay (C2, A14): rev 118e34ff (master 2026-09-30, SP1). The plan pins our fork
+# `PoHsuanLai/smithay` branch `casement`; the fork does not exist yet and carries no patch, so
+# the pin names upstream at the same rev (FINDINGS). No features here: each crate names the
+# ones it uses, so the boundary rows see each crate's own graph. The union (the `casement`
+# binary) is A14's list: wayland_frontend desktop renderer_gl renderer_pixman renderer_multi
+# backend_winit backend_egl backend_drm backend_gbm backend_libinput backend_udev
+# backend_session_libseat backend_libei backend_vulkan use_system_lib; renderer_test only
+# under the `testing` feature; xwayland off until the Q-C5 gate.
+smithay = { git = "https://github.com/Smithay/smithay", rev = "118e34ffc9b99854a2230c4805e1f37dc9029edb", default-features = false }
+# The client side of the test kit: the protocol extensions smithay serves from these crates.
+wayland-protocols-wlr = { version = "0.3.12", features = ["client"] }
+wayland-protocols-misc = { version = "0.3.12", features = ["client"] }
+# smithay requires 0.9; quire's block says 0.8 through sctk 0.20. The two never meet in one
+# graph (casement links no sctk); recorded in FINDINGS (A14).
+xkbcommon = { version = "0.9", features = ["wayland"] }
+libseat = { version = "0.2", default-features = false }
+# Logging: smithay logs through tracing; the binary installs the subscriber (`casement/src/log.rs`).
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std", "env-filter"] }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

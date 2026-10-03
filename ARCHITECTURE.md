@@ -11,34 +11,53 @@ trait), section 4 (copy the recipe).
 
 ## 1. Crates and allowed edges
 
-The workspace holds the pure crates today (P0-Z1). The smithay-facing crates, the composition
-root, the test kit and the binaries join at P0-Z2 (casement-render, casement-wayland,
-casement-backend, casement-agent, casement-ipc, casement, casementctl, casement-testclient,
-casement-testkit; casement-intents at P4-Z, casement-chrome at P3-Z). wlcs-casement and
-casement-scene-css are never members.
+The workspace holds the pure crates (P0-Z1), the smithay-facing crates, the composition root,
+the binaries and the test kit (P0-Z2). casement-intents joins at P4-Z, casement-chrome at P3-Z.
+`wlcs-casement` (the wlcs shim, MIT, its own one unsafe module `src/ffi.rs`) and
+`casement-scene-css` (the CSS layout oracle, P3) are never members: each has its own
+`[workspace]` table and the root lists them under `exclude` (B16).
 
 | Crate | Purpose | I/O |
 | --- | --- | --- |
 | `casement-core` | the pure model: ids, geometry, time data (`Mono`, `VblankClock`, `TimerBook`, `VirtualClock`), apps, windows, Spaces, layers, the lock, focus and press routing, input origins, reach and bindings, output facts and policy, connection policy (I7), settings, `Event`, `Effect`, `Model::step`, invariants | none |
 | `casement-layout` | the `SceneLayout` seam: `SceneSpec`, `Arrangement`, `RustScene`, `spec_of(&Model)`; taffy only in `crates/casement-layout/src/taffy_bridge/` | none |
 | `casement-motion` | `MotionBook` of ds-motion spring legs, `retarget`, `sample` into an `Eq` `FrameScene` in 1/120 px | none |
+| `casement-render` | the `Compositor` renderer trait, `CasementElement`, `output_elements` (FrameScene to elements), `render_output` (damage-tracked), blur v0, the lock cover, `golden` (feature `testing`); the workspace's one unsafe module `src/gl_raw.rs` (A17) | the GPU through smithay |
+| `casement-wayland` | one module per protocol: a `<Protocol>Part` (smithay's state plus our BTreeMap tables), `Part::new` behind the I7 filter, `on_*` (request to `Event`s), `apply_*` (effect to wire); `WaylandStates`, `GlobalFilter`, `ClientState`, `convert` | the wire |
+| `casement-backend` | the headless backend (virtual outputs, vblank source, render-cost model, `VirtualInput: InputBackend`), winit, the session seam, the soft-GPU pieces (`SoftPixman`, `FixedUdmabuf`, A4); the tty seams and their thin adapters from P1-Z | devices (P1), none headless |
+| `casement-agent` | the privileged-connection hand-out (P2), agent seat, EIS, masked capture, trusted surface, kill (P4); a skeleton at P0 | sockets |
+| `casement-ipc` | the inject and wait grammars; `org.quire.Casement.Debug1` (feature `debug-inject`), `org.quire.Compositor1` (P2-Z); `IpcHandles` | D-Bus |
+| `casement` | lib + bin: `State` (frozen), `delegates.rs` (frozen), `handlers/<protocol>.rs`, `core_loop`, `exec`, `clients`, `display`, `time/` (the only clock), `config/` (ds-settings), `cli`, `jail_check` (features `testing`, `debug-inject`), `log` | everything, through the crates above |
+| `casementctl` | lib + bin: `debug` (Debug1), `shot` (P1), `report` (P5) | D-Bus, the wire |
+| `casement-testclient` | typed wayland-client helpers per protocol, `Transcript`, `Pattern`, shm buffers; bin `casement-probe`; no smithay (B9) | the wire |
+| `casement-testkit` | `Fixture` over the real `State`, `FixtureSpec`, `TestOrigin`, `FixtureInput`, fakes (session, udev, logind, palmrest), the soft GPU topology and the jail's fabricated nodes, `Env` (goldens), typed fuzz ops; bin `fake-logind` | the jail's scratch only |
 
-Layers, bottom up: `casement-core` ← `casement-layout` ← `casement-motion` (C24: layout needs
-core's ids and motion consumes layout's `Arrangement`, so motion cannot live in core).
+Layers, bottom up: `casement-core` ← `casement-layout` ← `casement-motion` (C24) ←
+`casement-render`; `casement-core` ← `casement-wayland`; `casement-core` + `casement-render` ←
+`casement-backend`; all of them ← `casement` (the composition root, C28: handlers live there
+because smithay's traits and `State` meet only there) ← `casement-testkit`. `casement-testclient`
+sits beside the stack on the client side.
 
-Allowed edges (checked by `scripts/check-boundary.sh`, rows B1 to B20 of the plan's §2.4):
+Allowed edges (checked by `scripts/check-boundary.sh`, rows B1 to B20 of the plan's §2.4, plus
+A1 and A4):
 
 | Crate | May reach |
 | --- | --- |
 | `casement-core` | ours: casement-protocols (default features: `vocab` only), ds-core, ds-style and ds-motion (default features off: no dioxus), ds-behaviour, keycap-core, palmrest-protocol, porter-core, prov; nothing of smithay, wayland, calloop, zbus, tokio, drm, gbm, input, udev, libseat, taffy, dioxus, Blitz, Stylo, ds, ds-shell, ds-blitz, ds-settings, parley, vello (B1) |
 | `casement-layout` | core's list plus taffy, named only in `taffy_bridge/` (B2) |
 | `casement-motion` | core's list plus casement-layout; its source never names taffy (B3) |
+| `casement-render` | smithay's renderers; names no `smithay::backend::{drm, udev, session, libinput}`; reaches no wgpu, vello, anyrender, Blitz, Stylo, parley, fontique (B4) |
+| `casement-wayland` | smithay's wayland frontend and desktop; names no device backend, reaches neither drm nor gbm (B6) |
+| `casement-backend` | smithay's renderers, EGL, session and winit; names no `casement_wayland` and no `smithay::wayland` module but dmabuf (B5); only its thin adapters name the device crates (B7) |
+| `casement-testclient` | wayland-client and the protocol crates; no smithay (B9) |
+| `casement-ipc`, `casement` | ds-settings (B13; the test kit reaches it only through `casement` and names none of it) |
 
-Every crate: no agent-tier or shell crate (B12), no ds-settings outside casement-ipc and
-casement (B13), no text stack outside casement-chrome (B15), no `HashMap`/`HashSet` in layout
-and motion (B17), no `unsafe` (B18), no clock outside the composition root's time module (B8).
-The script carries the P0-Z2 rows already; each passes while its crate is absent and bites when
-it lands.
+Every crate: no agent-tier or shell crate (B12), no text stack outside casement-chrome (B15), no
+`HashMap`/`HashSet` in wayland, render, layout and motion (B17), no `unsafe` outside
+`crates/casement-render/src/gl_raw.rs` (B18), no clock outside `crates/casement/src/time/` (B8,
+A1: `Instant::now`, `SystemTime::now`, smithay's `Clock::now` and calloop's `Timer`), no
+`UdmabufAllocator::create_buffer` (A4), and the release binary enables neither `testing` nor
+`debug-inject` (B10). Comment lines are not code to these rows; B20 checks comments too.
 
 ## 2. One home per concept
 
@@ -58,13 +77,36 @@ it lands.
 | key bindings and their resolution | `casement-core::input::{Bindings, resolve}`; defaults in `settings` (C30) |
 | first-sight scale, mode choice, output placement | `casement-core::output` |
 | which connection sees which global (I7) | `casement-core::policy::advertised` |
-| typed settings | `casement-core::settings::CasementSettings` (the stored document: casement's config module, P0-Z2) |
+| typed settings | `casement-core::settings::CasementSettings` (the stored document: `casement::config`) |
 | the closed sets of inputs and outputs of the model | `casement-core::{Event, Effect}` |
 | where windows go | `casement-layout` (`SceneLayout`, `RustScene`) |
 | how they travel there; the drawn frame | `casement-motion` (`retarget`, `sample`, `FrameScene`) |
 | the one float-to-unit step of motion | `casement_motion::quantise` |
 | wire enums and codes | casement-protocols `vocab` (never redefined here) |
 | springs, velocity, motion level | ds-motion and ds-style |
+| a renderer and what it can do | `casement-render::Compositor`, `EffectSupport` |
+| colours handed to a renderer (whole steps of 1/255, A18) | `casement-render::Rgba8` |
+| the one `unsafe` (EGL display, GLES renderer: A17) | `casement-render/src/gl_raw.rs` |
+| golden comparison and its tiers | `casement-render::golden` (feature `testing`); `CASEMENT_BLESS` read only by `casement-testkit::Env` |
+| a protocol's state and its request and effect functions | `casement-wayland::<protocol>` |
+| which globals a client sees (the filter that wraps I7) | `casement-wayland::GlobalFilter` |
+| a client's key, role and identity | `casement-wayland::ClientState` (inserted by `casement::clients::insert_client`) |
+| smithay's types becoming ours | `casement-wayland::convert` and the handlers, never deeper |
+| which serials answer a press | `casement-wayland::serial::SerialBook` |
+| a virtual output's spec and its text grammar (C27) | `casement-backend::VirtualOutputSpec` |
+| a connector appearing, changing or going | `casement-backend::ConnectorEvent` (headless and KMS alike) |
+| virtual input devices and their events | `casement-backend::VirtualInput` |
+| the soft GPU pieces (A4) | `casement-backend::gpu::{SoftPixman, FixedUdmabuf}` |
+| the session clock and the virtual clock's event source (A1) | `casement::time::{ClockSource, SharedClock, VirtualTimerSource}` |
+| carrying out an effect | `casement::exec::exec` (the one place) |
+| the stored settings document and its schema | `casement::config` |
+| the command line | `casement::cli` (`StartConfig`) |
+| the jail check in Rust | `casement::jail_check` (features `testing`, `debug-inject`) |
+| the inject and wait grammars | `casement-ipc::{parse_inject, parse_wait}` |
+| a test's compositor, clients and clock | `casement-testkit::Fixture` |
+| the origins a test may mint | `casement-testkit::TestOrigin` |
+| a test client's received events on virtual time | `casement-testclient::Transcript` |
+| the jail's fabricated GPU nodes (A3) | `casement-testkit::gpu::fabricated_nodes` |
 
 ## 3. Canonical traits
 
@@ -83,8 +125,27 @@ pub trait WireCode: Sized + Copy + 'static {
 }
 ```
 
-P0-Z2 adds `Compositor` (the renderer seam) and `VirtualInput: InputBackend`; P1-Z adds `Kms`,
-`ScanoutSurface`, `InputDevices`, `RenderNodes`.
+```rust
+// casement-render: GlesRenderer (llvmpipe in the jail, hardware from P1), PixmanRenderer, and
+// smithay's DummyRenderer under `testing`. ExportMem is asked for where pixels are read back.
+pub trait Compositor: Renderer + ImportAll + ImportMem + Sized {
+    fn effects(&mut self) -> EffectSupport;   // Shaders | Plain (effects draw solid stand-ins)
+}
+
+// casement-backend: smithay's input backend over queued virtual devices, the path libinput
+// takes. Devices are plugged and events pushed only under `testing` or `debug-inject`.
+impl smithay::backend::input::InputBackend for VirtualInput { /* one event type per family */ }
+
+// casement-wayland (smithay has no module for our protocols): the composition root's side of
+// quire_window_v1, reached through our own GlobalDispatch2/Dispatch2 impls.
+pub trait QuireWindowHandler: 'static {
+    fn quire_window_part(&mut self) -> &mut QuireWindowPart;
+    fn window_of_toplevel(&self, toplevel: &XdgToplevel) -> Option<WindowId>;
+    fn quire_window_events(&mut self, events: Vec<Event>);
+}
+```
+
+P1-Z adds `Kms`, `ScanoutSurface`, `InputDevices`, `RenderNodes`.
 
 ## 4. Recipes
 
@@ -120,6 +181,41 @@ P0-Z2 adds `Compositor` (the renderer seam) and `VirtualInput: InputBackend`; P1
    `quantise`.
 3. A golden in `FrameScene::text` form, blessed once with a reason.
 
+**Add a protocol.**
+1. A module `crates/casement-wayland/src/<p>.rs`: `<P>Part { pub state, ... BTreeMaps }`,
+   `Part::new::<D>(display, role_filter)` with smithay's constructor bounds copied (filtered
+   constructors take `role_filter.for_global(GlobalKind::<P>)`), `on_*` and `apply_*`.
+2. Its field in `WaylandStates` (`states.rs`) and its `Part::new` in `casement/src/state.rs`
+   (both frozen: a freeze or an interface ask).
+3. `crates/casement/src/handlers/<p>.rs`: `impl <Smithay>Handler for State`, accessors returning
+   `&mut self.wl.<p>.state`, callbacks converting and calling `on_*`, then `core_loop::feed`.
+   `delegates.rs` needs nothing more: `delegate_dispatch2!` routes every global.
+4. A `GlobalKind` variant and its I7 row (casement-core), a `tests/golden/globals.txt` row
+   (`<interface> <version> <module>`), `crates/casement-testkit/tests/protocol/<p>.rs` with its
+   `mod` line in `tests/protocol/main.rs` (`scripts/check-protocol-coverage.sh`), a testclient
+   helper module, and for a private request a fuzz op.
+
+**Add a debug verb.**
+1. A `DebugRequest` variant and its `#[zbus::interface]` method in
+   `crates/casement-ipc/src/dbus/debug1.rs`; the event loop answers it with a `DebugReply`.
+2. Its `casementctl debug` subcommand (`crates/casementctl/src/command.rs`) and its `dev/lib`
+   shell function if scripts use it.
+
+**Add a fake fixture.**
+1. Recorded bytes under `crates/casement-testkit/fixtures/<kind>/<name>` (from the user's
+   optional `dev/hw/smoke.sh` run only, never this machine by an agent).
+2. Served by the fake that owns the kind (`fakes/session.rs` for device files; FakeKms at P1).
+3. A QUIRKS row when the fixture records a behaviour fact.
+
+**Add a golden.**
+1. A scene built through the `Fixture` (or a renderer-only element test in casement-render),
+   compared with `casement_render::golden::compare` under the right tier: `Exact` for pixman
+   and aligned elements, `Soft { channel: 2, parts_per_million: 1000 }` for llvmpipe effects.
+2. Colours as `Rgba8`, chrome rasterised at the output's native scale, never
+   `TextureFilter::Nearest` (A18).
+3. Bless once with `CASEMENT_BLESS=1` and a reason in the commit; `tests/golden/MANIFEST.toml`
+   names the pixman, Mesa and LLVM versions it was blessed on.
+
 **Freeze a new item.** Signature and doc, a `todo!()` body naming the lane, a FINDINGS row, and
 its behaviour test written and ignored with that lane's id.
 
@@ -128,22 +224,48 @@ its behaviour test written and ignored with that lane's id.
 The pure crates test their functions directly: table tests per function, proptest for
 properties (T0), integration tests under each crate's `tests/` with shared builders in
 `tests/support/`. `FixedScene` (`crates/casement-layout/tests/support/fixed_scene.rs`) stands
-in for any layout. Everything runs inside the jail (`~/desktop/harness/jail.sh`): built
-outside, archived with nextest, run inside. From P0-Z2, protocol and scene tests drive the real
-`State` through the test kit's `Fixture`, with the virtual clock as a calloop event source
-(21-FREEZE-AMENDMENTS A1).
+in for any layout.
+
+Everything else drives the real `State` through `casement_testkit::Fixture` (CONVENTIONS
+addendum 10): the headless backend, a `Display` whose poll fd sits in calloop as a duplicate
+(no `unsafe`, SP3), clients on non-blocking socket pairs (`casement_testclient::TestClient`),
+the virtual clock as a calloop event source (A1). `pump` runs until a round moves nothing;
+`advance` stops at every timer and vblank on the way, so how an advance is chopped never shows;
+transcripts carry virtual time only; no test sleeps. Protocol tests live in
+`crates/casement-testkit/tests/protocol/<p>.rs`, one per module; scene goldens in
+`crates/casement-testkit/tests/scene.rs` with PNGs under `tests/golden/scenes/`; the globals
+golden is `tests/golden/globals.txt`.
+
+Everything runs inside the jail (`~/desktop/harness/jail.sh`): built outside, archived with
+nextest, run inside. Binaries built with `testing` or `debug-inject` refuse to start outside it
+(`casement::jail_check`) and refuse every backend but headless. The jail can fabricate soft GPU
+nodes (`--fabricate-gpus N`: `/sys/dev/char/226:(128+n)`, A3) for the multi-GPU topology (P1).
 
 ## 6. Repo rules
 
-- The gate (until P0-Z2 brings its dev gate script): `~/rs-wt/gate-lane-jailed.sh <checkout>`, which
-  runs `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --all-features -- -D
-  warnings`, the nextest archive inside the jail, doc tests, `./scripts/check-boundary.sh` and
-  `cargo deny check licenses`. Every exit code is checked.
-- `unsafe_code = "deny"` at the workspace. The one unsafe module is reserved for the renderer
-  (a gl_raw module in casement-render, row B18) and does not exist until a reviewed interface
-  ask shows a GL pass smithay's safe API cannot express; `EGLDisplay::new` and
-  `GlesRenderer::new` will live there (A17).
+- The gate: `dev/gate.sh fast -p <crate>...` for a lane, `dev/gate.sh merge` for a merge,
+  `dev/gate.sh phase` at a phase exit (20-FREEZE-PLAN §6.2). Steps: preflight, `cargo fmt --all
+  --check`, `./scripts/check-boundary.sh`, `./scripts/check-protocol-coverage.sh`, clippy with
+  `-D warnings`, the nextest archive built outside and run inside the jail (profiles `fast`,
+  `merge`, `phase` in `.config/nextest.toml`); merge and phase add `cargo deny check licenses`,
+  doc tests and `dev/accept.sh`; phase adds wlcs and the KMS fixtures. Each step is timed against
+  `dev/gate/budgets.toml` (over twice its budget fails with exit 4); exit 2 (a SKIP) fails unless
+  `dev/gate/expected-skips.toml` lists it; exit 5 (a jail breach) stops the gate. It prints
+  `GATE GREEN (<tier>) <run>`; `dev/out/<run>/summary.json` records every step. Every exit code
+  is checked, nothing is piped or tailed. `~/rs-wt/gate-lane-jailed.sh <checkout>` is the
+  cross-repo form.
+- `unsafe_code = "deny"` at the workspace. The one unsafe module is
+  `crates/casement-render/src/gl_raw.rs`: exactly `EGLDisplay::new` and `GlesRenderer::new`
+  (A17). Another `unsafe` block there needs a reviewed interface ask showing a GL pass smithay's
+  safe API cannot express.
 - `missing_docs` warns at the workspace, so every public item says what it means.
 - Sibling repos are path dependencies (`../quire`, `../porter`, `../casement-protocols`); a lane
   worktree links them beside itself.
-- Nothing goes upstream to smithay (DECISIONS); patches live in our fork, pinned by rev (P0-Z2).
+- smithay is pinned by rev (`118e34ff`, A14) with no default features; each crate names the
+  features it uses and the `casement` binary carries A14's union. Nothing goes upstream to
+  smithay (DECISIONS, A13); patches would live in the fork `PoHsuanLai/smithay` branch
+  `casement` (not created yet: FINDINGS).
+- Frozen files lanes never edit: `crates/casement/src/state.rs`, `crates/casement/src/delegates.rs`,
+  every `lib.rs`/`mod.rs`, `crates/casement-wayland/src/states.rs`, every `Cargo.toml`,
+  `tests/golden/globals.txt`, `dev/gate/budgets.toml`, `dev/gate/expected-skips.toml`,
+  `.config/nextest.toml`, and the docs; a change there is an interface ask.

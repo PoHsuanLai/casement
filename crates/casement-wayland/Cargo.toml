@@ -1,0 +1,21 @@
+[package]
+name = "casement-wayland"
+description = "casement's protocol edge: one module per Wayland protocol, each a sub-state (Part) plus on_* functions turning requests into core events and apply_* functions carrying effects onto the wire; smithay's bools and loose integers become our types here."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+casement-core = { workspace = true }
+casement-protocols = { workspace = true, features = ["server"] }
+porter-core = { workspace = true }
+ds-core = { workspace = true }
+smithay = { workspace = true, features = ["wayland_frontend", "desktop"] }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[lints]
+workspace = true

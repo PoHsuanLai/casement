@@ -1,0 +1,1 @@
+//! `virtual_keyboard` (P0-H7): no smithay handler trait; smithay forwards virtual keys to the focused client by itself, so P0-H7 routes them through the model (`casement_wayland::virtual_keyboard::on_vk_key`, FINDINGS).

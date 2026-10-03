@@ -1,0 +1,25 @@
+[package]
+name = "casementctl"
+description = "casementctl: drive a jailed casement over its private bus (debug inject, wait, clock, output, windows, scene, fault), take screenshots (P1) and print hardware reports (P5)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "casementctl"
+path = "src/main.rs"
+
+[dependencies]
+casement-testclient = { workspace = true }
+zbus = { workspace = true }
+tokio = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

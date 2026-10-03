@@ -1,0 +1,28 @@
+[package]
+name = "casement-render"
+description = "casement's renderer seam: the Compositor trait over smithay's renderers, the CasementElement set, FrameScene to elements, damage-tracked output rendering and (feature testing) golden comparison."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+casement-core = { workspace = true }
+casement-motion = { workspace = true }
+ds-core = { workspace = true }
+smithay = { workspace = true, features = ["wayland_frontend", "renderer_gl", "renderer_pixman", "backend_egl"] }
+thiserror = { workspace = true }
+image = { workspace = true, optional = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+proptest = { workspace = true }
+
+[features]
+# Headless tests only (B10): smithay's DummyRenderer and the golden helper.
+testing = ["smithay/renderer_test", "dep:image"]
+
+[lints]
+workspace = true

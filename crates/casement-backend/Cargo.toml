@@ -1,0 +1,27 @@
+[package]
+name = "casement-backend"
+description = "casement's backends: the headless backend (virtual outputs, vblank source, render-cost model, VirtualInput), winit, and the device seams with their thin real adapters (tty at P1)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+casement-core = { workspace = true }
+casement-render = { workspace = true }
+ds-core = { workspace = true }
+smithay = { workspace = true, features = ["renderer_gl", "renderer_pixman", "backend_egl", "backend_session", "backend_winit"] }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+rustix = { workspace = true }
+
+[features]
+# Headless tests only (B10): the dummy renderer, minting Physical/Virtual/Test origins.
+testing = ["casement-render/testing"]
+# casementctl's injection path (B10): minting Physical/Remote/Test origins from Debug1.
+debug-inject = []
+
+[lints]
+workspace = true

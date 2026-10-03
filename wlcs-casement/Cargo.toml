@@ -1,0 +1,29 @@
+# EXCLUDED from the casement workspace (boundary row B16): a cdylib that the wlcs test program
+# (GPL-3.0, a separate process, never shipped; 21-FREEZE-AMENDMENTS A6) dlopens. This crate is MIT
+# and links only the MIT `wlcs` crate, never wlcs' headers or sources. Built by dev/wlcs (lane
+# P0-T-wlcs), outside the jail; run inside it.
+[package]
+name = "wlcs-casement"
+description = "wlcs integration shim: wlcs_server_integration over casement's in-process headless fixture with the DummyRenderer."
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+# Its own workspace, so cargo never takes it into casement's.
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wlcs = "0.1"
+# The libwayland-client handles wlcs passes (ffi.rs only); the version the wlcs crate uses.
+wayland-sys = { version = "0.31.1", features = ["client", "server"] }
+smithay = { git = "https://github.com/Smithay/smithay", rev = "118e34ffc9b99854a2230c4805e1f37dc9029edb", default-features = false, features = ["wayland_frontend", "desktop", "renderer_test"] }
+casement-testkit = { path = "../crates/casement-testkit" }
+casement-core = { path = "../crates/casement-core" }
+
+[lints.rust]
+missing_docs = "warn"
+missing_debug_implementations = "warn"

@@ -1,0 +1,28 @@
+[package]
+name = "casement-ipc"
+description = "casement's D-Bus servers: org.quire.Compositor1 (P2) and, under feature debug-inject, org.quire.Casement.Debug1 with its inject and wait grammars."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+casement-core = { workspace = true }
+casement-backend = { workspace = true }
+ds-settings = { workspace = true }
+calloop = { workspace = true }
+zbus = { workspace = true }
+tokio = { workspace = true }
+thiserror = { workspace = true }
+serde_json = { workspace = true }
+# Keysym names in the inject grammar (`key Return down`).
+xkbcommon = { workspace = true }
+
+[features]
+# org.quire.Casement.Debug1 on the private bus (B10): never in a release build.
+debug-inject = ["casement-backend/debug-inject"]
+
+[lints]
+workspace = true

@@ -35,12 +35,14 @@ reaches_none() {
 }
 
 # names_only <label> <extended regex> <allowed path regex> [search roots...]: the pattern
-# appears in Rust source only under paths matching the allowed regex.
+# appears in Rust code only under paths matching the allowed regex. Comment lines (`//`, `///`,
+# `//!`) are not code: a doc may name what a row forbids (B20 checks comments on its own).
 names_only() {
   local label="$1" pattern="$2" allowed="$3"; shift 3
   local roots=("$@") hits
   [ ${#roots[@]} -eq 0 ] && roots=(crates)
-  hits=$(grep -rnE --include='*.rs' "$pattern" "${roots[@]}" 2>/dev/null | grep -vE "^($allowed)" || true)
+  hits=$(grep -rnE --include='*.rs' "$pattern" "${roots[@]}" 2>/dev/null \
+    | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' | grep -vE "^($allowed)" || true)
   if [ -n "$hits" ]; then bad "$label"; printf '%s\n' "$hits" | head -20; else ok "$label"; fi
 }
 
@@ -73,7 +75,8 @@ reaches_none casement-render "B4 casement-render reaches no second graphics stac
 
 # B5 casement-backend names no casement_wayland and no smithay::wayland module but dmabuf.
 names_only "B5 casement-backend names no casement_wayland" '\bcasement_wayland\b' '$^' crates/casement-backend
-hits=$(grep -rnoE --include='*.rs' 'smithay::wayland::[a-z_]+' crates/casement-backend 2>/dev/null | grep -v 'smithay::wayland::dmabuf' || true)
+hits=$(grep -rnE --include='*.rs' 'smithay::wayland::[a-z_]+' crates/casement-backend 2>/dev/null \
+  | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' | grep -oE 'smithay::wayland::[a-z_]+' | grep -v 'smithay::wayland::dmabuf' || true)
 if [ -n "$hits" ]; then bad "B5 casement-backend names a smithay::wayland module"; printf '%s\n' "$hits"; else ok "B5 casement-backend names only smithay::wayland::dmabuf"; fi
 
 # B6 casement-wayland: no device backends.
@@ -82,8 +85,10 @@ reaches_none casement-wayland "B6 casement-wayland reaches neither drm nor gbm" 
 
 # B7 the thin-adapter allow-list (11 §5.3).
 ADAPTERS='crates/casement-backend/src/tty/(kms_real|surface_real|session_real|udev_real)\.rs|crates/casement-backend/src/gpu/render_nodes_real\.rs|crates/casement-backend/src/input/libinput_real\.rs'
+# The libinput crate is named `input`, as are casement's own `input` modules: its uses are
+# caught by the crate's own items (`input::Libinput`, `input::event::`, ...), not the bare name.
 names_only "B7 only the thin adapters name the device crates" \
-  'smithay::backend::(drm|libinput|session::libseat|udev|egl::EGLDevice)|(^|[^:[:alnum:]_])(drm|gbm|input|libseat)::' "$ADAPTERS"
+  'smithay::backend::(drm|libinput|session::libseat|udev|egl::EGLDevice)|(^|[^:[:alnum:]_])(drm|gbm|libseat)::|(^|[^:[:alnum:]_])input::(Libinput|LibinputInterface|event|Device|DeviceCapability|AccelProfile)\b' "$ADAPTERS"
 adapter_lines=$(find crates/casement-backend/src -type f 2>/dev/null | grep -E "^($ADAPTERS)$" | xargs -r cat | wc -l)
 echo "B7 thin adapters: $adapter_lines lines (target <= 1500)"
 
@@ -116,11 +121,14 @@ for crate in $members; do
   reaches_none "$crate" "B12 $crate reaches no agent tier or shell crate" "$TIERS"
 done
 
-# B13 ds-settings only in casement-ipc and casement.
+# B13 ds-settings only in casement-ipc and casement (the test kit reaches it only through the
+# `casement` crate it drives; it names no ds-settings item itself, checked below).
 for crate in $members; do
-  case "$crate" in casement-ipc|casement) continue ;; esac
+  case "$crate" in casement-ipc|casement|casement-testkit) continue ;; esac
   reaches_none "$crate" "B13 $crate reaches no ds-settings" 'ds-settings'
 done
+
+names_only "B13 the test kit names no ds-settings" '\bds_settings::' '$^' crates/casement-testkit
 
 # B14 only casement-agent names reis, the role hand-out or EIS fds.
 names_only "B14 only casement-agent names reis or the privileged hand-out" \

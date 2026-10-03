@@ -1,0 +1,5 @@
+# The anvil-parity list (21-FREEZE-AMENDMENTS A6): every wlcs test smithay's anvil passes at the
+# pinned smithay and wlcs SHAs, one gtest name per line. dev/wlcs/run.sh --merge runs these on
+# top of smithay's four CI filters. Lane P0-T-wlcs regenerates it from SP5's
+# ~/rs-wt/spikes/casement-sp5/out/anvil-full.log (with a longer cap than SP5's 1200 s).
+# Empty at P0-Z2.

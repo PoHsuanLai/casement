@@ -36,7 +36,7 @@ What casement adds, each with its reason (the first twelve are the freeze plan's
 10. **One harness:** tests drive the real `casement::State` through `casement_testkit::Fixture`;
     no test assembles its own `State`. (The pure crates test their functions directly.)
 11. **New global, new test file** (`tests/protocol/<global>.rs`), enforced by
-    the protocol-coverage check (P0-Z2); a new private request also gets a fuzz op.
+    `scripts/check-protocol-coverage.sh` (a gate step); a new private request also gets a fuzz op.
 12. **Goldens change only with a reason** in the commit; `CASEMENT_BLESS=1` is deliberate.
 
 And the repo's own:

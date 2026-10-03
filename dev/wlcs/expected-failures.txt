@@ -1,0 +1,3 @@
+# wlcs tests casement is expected to fail in the phase tier, one gtest name per line
+# (`Suite.test` or `Suite/Param.test`), each followed by `# <FINDINGS id>, closes <phase>`.
+# dev/wlcs/run.sh --phase excludes them with --gtest_filter=-... (A6). Empty at P0-Z2.

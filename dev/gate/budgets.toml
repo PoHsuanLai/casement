@@ -1,0 +1,46 @@
+# Step budgets in seconds per gate tier (20-FREEZE-PLAN §6.4), read by dev/lib/step.sh: a step
+# that passes but takes more than twice its budget fails with exit 4. Warm builds; a cold smithay
+# build (3-5 min) is excluded, so `archive` is generous. SP6 recalibrates these once on casement.
+#
+# Not casement's steps, recorded for the desktop gate (21-FREEZE-AMENDMENTS A9): consumer smoke
+# 240 s only with at least two parallel jails (else 360 s); full consumer suites 15 min; the wlcs
+# CI subset takes about 7 s.
+
+[fast]
+preflight = 5
+fmt = 10
+boundary = 10
+coverage = 10
+doc-paths = 10
+# `-p` varies per lane, so fast's clippy has more room than the workspace-wide 90 s.
+clippy = 180
+archive = 300
+test = 120
+
+[merge]
+preflight = 5
+fmt = 10
+boundary = 10
+coverage = 10
+doc-paths = 10
+clippy = 90
+deny = 15
+doc = 60
+archive = 300
+test = 180
+accept = 180
+
+[phase]
+preflight = 5
+fmt = 10
+boundary = 10
+coverage = 10
+doc-paths = 10
+clippy = 90
+deny = 15
+doc = 60
+archive = 300
+test = 600
+accept = 180
+wlcs = 300
+hw-fixtures = 10

@@ -1,0 +1,26 @@
+//! The stored settings: `casement/settings.toml` through ds-settings (lenient read, atomic
+//! write, a debounced watch), its schema for detent (`casement --write-schema`), and the one
+//! conversion into the model's `CasementSettings` (ARCHITECTURE.md, "Add a settings key").
+
+mod convert;
+mod doc;
+mod schema;
+mod sections;
+
+pub use convert::to_core;
+pub use doc::{CasementDoc, load};
+pub use schema::write_schema;
+pub use sections::{
+    BindingsSection, KeyboardSection, OutputsSection, SpacesSection, WindowsSection,
+};
+
+/// Why the settings could not be read or the schema written.
+#[derive(Debug, thiserror::Error)]
+pub enum ConfigError {
+    /// ds-settings refused.
+    #[error("settings: {0}")]
+    Settings(String),
+    /// The schema could not be written.
+    #[error("schema: {0}")]
+    Schema(#[from] std::io::Error),
+}

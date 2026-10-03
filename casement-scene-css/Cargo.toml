@@ -1,0 +1,24 @@
+# EXCLUDED from the casement workspace (boundary row B16): the CSS implementation of the layout
+# seam, a parity oracle against RustScene (S-L6, 21-FREEZE-AMENDMENTS A2). Never linked by the
+# compositor. Filled by lane P3-CSS.
+[package]
+name = "casement-scene-css"
+description = "CssScene: casement's SceneLayout seam over a blitz-dom document and scene.css, the parity oracle for RustScene."
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+# Its own workspace, so cargo never takes it into casement's.
+[workspace]
+
+[dependencies]
+casement-core = { path = "../crates/casement-core" }
+casement-layout = { path = "../crates/casement-layout" }
+# From quire's pinned block (docs/workspace-deps.toml), verbatim:
+blitz-dom = { git = "https://github.com/PoHsuanLai/blitz", rev = "1b23fbd9d6465b7ee8acfe8e7deb36a2d5be6fad", default-features = false, features = ["svg", "system-fonts", "custom-widget", "accessibility"] }
+
+[lints.rust]
+unsafe_code = "deny"
+missing_docs = "warn"
+missing_debug_implementations = "warn"

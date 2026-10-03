@@ -1,5 +1,6 @@
 # Profiles named by dev/gate.sh (P0-Z2): fast for a lane's crates, merge and phase for the whole
 # workspace. Ignored tests (frozen behaviour waiting for its fill lane) are skipped by default.
+# Every test gets 10 s (20-FREEZE-PLAN §4.3): slow at 10 s, terminated at the first period.
 [profile.default]
 failure-output = "immediate-final"
 fail-fast = false
@@ -7,11 +8,14 @@ fail-fast = false
 [profile.fast]
 failure-output = "immediate-final"
 fail-fast = false
+slow-timeout = { period = "10s", terminate-after = 1 }
 
 [profile.merge]
 failure-output = "immediate-final"
 fail-fast = false
+slow-timeout = { period = "10s", terminate-after = 1 }
 
 [profile.phase]
 failure-output = "immediate-final"
 fail-fast = false
+slow-timeout = { period = "10s", terminate-after = 1 }

@@ -1,0 +1,16 @@
+[package]
+name = "casement-agent"
+description = "casement's agent edge: the privileged-connection hand-out (P2), the agent seat, EIS, masked capture, the trusted surface and the kill chord (P4). A skeleton at P0."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+casement-core = { workspace = true }
+smithay = { workspace = true, features = ["wayland_frontend"] }
+
+[lints]
+workspace = true

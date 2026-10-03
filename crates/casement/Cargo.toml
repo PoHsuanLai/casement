@@ -1,0 +1,67 @@
+[package]
+name = "casement"
+description = "casement, the desktop's Wayland compositor: the composition root (State, the smithay delegates, the protocol handlers, exec, the clock, the settings document) and the binary."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "casement"
+path = "src/main.rs"
+
+[dependencies]
+casement-core = { workspace = true }
+casement-layout = { workspace = true }
+casement-motion = { workspace = true }
+casement-render = { workspace = true }
+casement-wayland = { workspace = true }
+casement-backend = { workspace = true }
+casement-agent = { workspace = true }
+casement-ipc = { workspace = true }
+casement-protocols = { workspace = true, features = ["server"] }
+porter-core = { workspace = true }
+ds-core = { workspace = true }
+ds-settings = { workspace = true }
+# A14's feature list, the union the binary links (xwayland off until the Q-C5 gate).
+smithay = { workspace = true, features = [
+  "wayland_frontend",
+  "desktop",
+  "renderer_gl",
+  "renderer_pixman",
+  "renderer_multi",
+  "backend_winit",
+  "backend_egl",
+  "backend_drm",
+  "backend_gbm",
+  "backend_libinput",
+  "backend_udev",
+  "backend_session_libseat",
+  "backend_libei",
+  "backend_vulkan",
+  "use_system_lib",
+] }
+calloop = { workspace = true }
+rustix = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[features]
+# Headless tests only (B10): the test kit builds casement with it. A binary with it refuses
+# every backend but headless and refuses to start outside the jail (jail_check.rs).
+testing = ["casement-render/testing", "casement-backend/testing"]
+# casementctl's Debug1 on the private bus (B10); the same refusals as `testing`.
+debug-inject = ["casement-ipc/debug-inject", "casement-backend/debug-inject"]
+
+[lints]
+workspace = true

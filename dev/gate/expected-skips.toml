@@ -1,0 +1,9 @@
+# Gate steps allowed to exit 2 (could not run safely) without failing the gate (20-FREEZE-PLAN
+# §6.1). One entry per step, naming the FINDINGS id that explains it and the phase that closes it:
+#
+#   [[skip]]
+#   step = "accept"
+#   finding = "F-..."
+#   closes = "P1"
+#
+# The list is empty at each phase's exit.
