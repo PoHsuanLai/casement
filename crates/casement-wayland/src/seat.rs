@@ -5,16 +5,24 @@
 //! smithay's input handles take the whole compositor state (`&mut D`), so the `apply_*`
 //! functions take the seat (a cheap handle) and the state instead of the part.
 
-use crate::serial::SerialBook;
+mod edge;
+mod pointer;
+mod touch;
+mod under;
+
+pub use pointer::{apply_axis, apply_gesture, apply_pointer, apply_refocus};
+pub use touch::apply_touch;
+pub use under::{Candidate, surface_under};
+
+use crate::convert::serial_to;
+use crate::serial::{PressRecord, SerialBook};
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::geometry::{LogicalPoint, SubPoint};
-use casement_core::input::{
-    AxisFrame, ButtonCode, Edge, GestureStep, KeyCode, PinchDelta, TouchStep,
-};
+use casement_core::input::{ButtonCode, Edge, GestureStep, KeyCode, PinchDelta};
 use casement_core::settings::KeyboardSettings;
 use casement_core::time::Mono;
 use casement_core::{Event, InputSerial};
-use smithay::input::keyboard::{KeyboardHandle, XkbConfig};
+use smithay::input::keyboard::{FilterResult, KeyboardHandle, XkbConfig};
 use smithay::input::pointer::{CursorImageStatus, PointerHandle};
 use smithay::input::touch::TouchHandle;
 use smithay::input::{Seat, SeatHandler, SeatState};
@@ -70,8 +78,7 @@ impl<D: SeatHandler + 'static> SeatPart<D> {
             variant: &names.variant,
             options: Some(names.options.clone()).filter(|options| !options.is_empty()),
         };
-        let delay = i32::try_from(keyboard.repeat_delay.as_millis()).unwrap_or(i32::MAX);
-        let rate = i32::try_from(keyboard.repeat_rate.0).unwrap_or(i32::MAX);
+        let (rate, delay) = repeat_wire(keyboard);
         let keyboard = seat
             .add_keyboard(xkb, delay, rate)
             .map_err(|error| WaylandFault::Keymap(error.to_string()))?;
@@ -149,13 +156,22 @@ pub enum GestureDelivery {
     Hold(GestureStep<()>),
 }
 
+/// The serial a press was delivered with is remembered, so a later move, resize, popup grab or
+/// activation request can prove it answers a real press (03 section 1.2, A7).
+impl<D: SeatHandler + 'static> SeatPart<D> {
+    /// Remembers `press` under `serial`.
+    pub fn record_press(&mut self, serial: InputSerial, press: PressRecord) {
+        self.serials = std::mem::take(&mut self.serials).record(serial, press);
+    }
+}
+
 /// The focused client asked for a cursor (stored in the part; the renderer's chrome reads it).
 pub fn on_cursor_image(
     part: &mut SeatPart<impl SeatHandler>,
     image: CursorImageStatus,
 ) -> Vec<Event> {
-    let _ = (part, image);
-    todo!("P0-H4: seat::on_cursor_image")
+    part.cursor = image;
+    Vec::new()
 }
 
 /// Moves keyboard focus to `focus` (nothing when `None`), sending the current modifiers with
@@ -169,24 +185,14 @@ pub fn apply_keyboard_focus<D>(
 where
     D: SeatHandler + 'static,
 {
-    let _ = (seat, state, focus, serial);
-    todo!("P0-H4: seat::apply_keyboard_focus")
+    let keyboard = seat.get_keyboard().ok_or(WaylandFault::SurfaceGone)?;
+    keyboard.set_focus(state, focus, serial_to(serial));
+    Ok(())
 }
 
-/// Delivers a pointer motion or button.
-pub fn apply_pointer<D>(
-    seat: &Seat<D>,
-    state: &mut D,
-    delivery: PointerDelivery,
-) -> Result<(), WaylandFault>
-where
-    D: SeatHandler + 'static,
-{
-    let _ = (seat, state, delivery);
-    todo!("P0-H4: seat::apply_pointer")
-}
-
-/// Delivers a key to the focused client.
+/// Delivers a key to the focused client. Bindings were taken out before this, so the key is
+/// always forwarded; smithay sends the modifiers first when the key changed them, so the order
+/// on the wire is `enter`, `modifiers`, `key`.
 pub fn apply_key<D>(
     seat: &Seat<D>,
     state: &mut D,
@@ -195,51 +201,35 @@ pub fn apply_key<D>(
 where
     D: SeatHandler + 'static,
 {
-    let _ = (seat, state, delivery);
-    todo!("P0-H4: seat::apply_key")
+    let keyboard = seat.get_keyboard().ok_or(WaylandFault::SurfaceGone)?;
+    keyboard.input::<(), _>(
+        state,
+        edge::keycode_of(delivery.code),
+        edge::key_state_of(delivery.edge),
+        serial_to(delivery.serial),
+        edge::time_of(delivery.time),
+        |_, _, _| FilterResult::Forward,
+    );
+    Ok(())
 }
 
-/// Delivers one scroll frame (`axis_source` and `axis_value120` always sent: SP1 B1).
-pub fn apply_axis<D>(
-    seat: &Seat<D>,
-    state: &mut D,
-    frame: AxisFrame,
-    time: Mono,
-) -> Result<(), WaylandFault>
+/// Changes the repeat rate and delay every keyboard of the seat advertises (a settings
+/// change reaches clients that are already bound).
+pub fn apply_repeat_info<D>(seat: &Seat<D>, keyboard: &KeyboardSettings) -> Result<(), WaylandFault>
 where
     D: SeatHandler + 'static,
 {
-    let _ = (seat, state, frame, time);
-    todo!("P0-H4: seat::apply_axis")
+    let handle = seat.get_keyboard().ok_or(WaylandFault::SurfaceGone)?;
+    let (rate, delay) = repeat_wire(keyboard);
+    handle.change_repeat_info(rate, delay);
+    Ok(())
 }
 
-/// Delivers a gesture step to the client under the pointer.
-pub fn apply_gesture<D>(
-    seat: &Seat<D>,
-    state: &mut D,
-    gesture: GestureDelivery,
-    serial: InputSerial,
-    time: Mono,
-) -> Result<(), WaylandFault>
-where
-    D: SeatHandler + 'static,
-{
-    let _ = (seat, state, gesture, serial, time);
-    todo!("P0-H4: seat::apply_gesture")
-}
-
-/// Delivers a touch step over `focus`.
-pub fn apply_touch<D>(
-    seat: &Seat<D>,
-    state: &mut D,
-    step: TouchStep,
-    focus: Option<SurfaceAt>,
-    serial: InputSerial,
-    time: Mono,
-) -> Result<(), WaylandFault>
-where
-    D: SeatHandler + 'static,
-{
-    let _ = (seat, state, step, focus, serial, time);
-    todo!("P0-H4: seat::apply_touch")
+/// The `repeat_info` arguments the settings say: keys per second, then milliseconds before
+/// the first repeat.
+pub fn repeat_wire(keyboard: &KeyboardSettings) -> (i32, i32) {
+    (
+        i32::try_from(keyboard.repeat_rate.0).unwrap_or(i32::MAX),
+        i32::try_from(keyboard.repeat_delay.as_millis()).unwrap_or(i32::MAX),
+    )
 }

@@ -11,7 +11,10 @@ use smithay::reexports::wayland_protocols::wp::pointer_constraints::zv1::server:
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Dispatch, DisplayHandle, GlobalDispatch};
 use smithay::wayland::GlobalData;
-use smithay::wayland::pointer_constraints::{PointerConstraintUserData, PointerConstraintsState};
+use smithay::wayland::pointer_constraints::{
+    PointerConstraintUserData, PointerConstraintsHandler, PointerConstraintsState,
+    with_pointer_constraint,
+};
 
 /// `zwp_pointer_constraints_v1`.
 #[derive(Debug)]
@@ -39,12 +42,25 @@ impl PointerConstraintsPart {
 }
 
 /// `surface` asked to lock or confine `pointer`; it activates when the surface has pointer
-/// focus.
-pub fn on_constraint<D: SeatHandler + 'static>(
+/// focus (otherwise it waits: `seat::apply_pointer` activates it when the pointer enters).
+/// Nothing is reported to the model.
+pub fn on_constraint<D>(
     part: &mut PointerConstraintsPart,
     surface: &WlSurface,
     pointer: &PointerHandle<D>,
-) -> Vec<Event> {
-    let _ = (part, surface, pointer);
-    todo!("P0-H4: pointer_constraints::on_constraint")
+) -> Vec<Event>
+where
+    D: PointerConstraintsHandler + 'static,
+    D::PointerFocus: Into<Option<WlSurface>>,
+{
+    let _ = part;
+    let focus: Option<WlSurface> = pointer.current_focus().and_then(Into::into);
+    if focus.as_ref() == Some(surface) {
+        with_pointer_constraint::<D, _, _>(surface, pointer, |constraint| {
+            if let Some(constraint) = constraint {
+                constraint.activate();
+            }
+        });
+    }
+    Vec::new()
 }

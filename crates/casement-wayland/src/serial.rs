@@ -46,13 +46,66 @@ impl SerialBook {
 
     /// The book with `serial` recorded as `press` (forgetting the oldest beyond the bound).
     pub fn record(self, serial: InputSerial, press: PressRecord) -> SerialBook {
-        let _ = (serial, press);
-        todo!("P0-H4: SerialBook::record")
+        let mut presses = self.presses;
+        presses.insert(serial, press);
+        while presses.len() > REMEMBERED {
+            if presses.pop_first().is_none() {
+                break;
+            }
+        }
+        SerialBook { presses }
     }
 
     /// The press `serial` answers, if it is recent and was delivered to `client`.
     pub fn answers(&self, serial: InputSerial, client: ClientKey) -> Option<&PressRecord> {
-        let _ = (serial, client);
-        todo!("P0-H4: SerialBook::answers")
+        self.presses
+            .get(&serial)
+            .filter(|press| press.client == client)
+    }
+}
+
+/// How many presses the book keeps: a client answers its latest press, and a few more are
+/// forgiven for clients that lag a frame or two behind a fast typist.
+const REMEMBERED: usize = 64;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use casement_core::input::Origin;
+
+    fn press(client: u64) -> PressRecord {
+        PressRecord {
+            client: ClientKey(client),
+            at: Mono(std::time::Duration::from_millis(5)),
+            kind: PressKind::Button,
+            origin: Origin::Test,
+        }
+    }
+
+    #[test]
+    fn a_serial_answers_only_the_client_it_was_delivered_to() {
+        let book = SerialBook::empty().record(InputSerial(10), press(1));
+        assert_eq!(book.answers(InputSerial(10), ClientKey(1)), Some(&press(1)));
+        assert_eq!(book.answers(InputSerial(10), ClientKey(2)), None);
+        assert_eq!(book.answers(InputSerial(11), ClientKey(1)), None);
+    }
+
+    #[test]
+    fn the_oldest_serials_are_forgotten_beyond_the_bound() {
+        let book = (1..=70u32).fold(SerialBook::empty(), |book, n| {
+            book.record(InputSerial(n), press(1))
+        });
+        assert_eq!(book.answers(InputSerial(6), ClientKey(1)), None);
+        assert!(book.answers(InputSerial(7), ClientKey(1)).is_some());
+        assert!(book.answers(InputSerial(70), ClientKey(1)).is_some());
+    }
+
+    #[test]
+    fn recording_the_same_serial_again_replaces_it() {
+        let book = SerialBook::empty()
+            .record(InputSerial(3), press(1))
+            .record(InputSerial(3), press(2));
+        assert_eq!(book.answers(InputSerial(3), ClientKey(1)), None);
+        assert!(book.answers(InputSerial(3), ClientKey(2)).is_some());
     }
 }
