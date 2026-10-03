@@ -11,7 +11,7 @@ fn name(text: &str) -> OutputName {
 }
 
 #[test]
-#[ignore = "P0-B-headless: runs once P0-B-loop, P0-F1-output (config::load), P0-H1 (output, presentation) and P0-R-scene (render_output) are merged"]
+#[ignore = "P0-B-headless: runs once P0-F1-output (config::load), P0-H1 (output, presentation) and P0-R-scene (render_output) are merged"]
 fn a_started_fixture_is_quiet_and_has_its_output() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     assert_eq!(fixture.pump(), Pumped::Quiet);
@@ -19,7 +19,7 @@ fn a_started_fixture_is_quiet_and_has_its_output() {
 }
 
 #[test]
-#[ignore = "P0-B-headless: runs once P0-B-loop, P0-F1-output (config::load), P0-H1 (output, presentation) and P0-R-scene (render_output) are merged"]
+#[ignore = "P0-B-headless: runs once P0-F1-output (config::load), P0-H1 (output, presentation) and P0-R-scene (render_output) are merged"]
 fn three_outputs_at_one_one_and_a_half_and_two() {
     let spec = FixtureSpec::desktop().with_outputs(&[
         "HEADLESS-1:1920x1080@60000:120:0,0",
@@ -38,7 +38,7 @@ fn three_outputs_at_one_one_and_a_half_and_two() {
 }
 
 #[test]
-#[ignore = "P0-B-headless: runs once P0-B-loop, P0-F1-output (config::load), P0-H1 (output, presentation) and P0-R-scene (render_output) are merged"]
+#[ignore = "P0-B-headless: runs once P0-F1-output (config::load), P0-H1 (output, presentation) and P0-R-scene (render_output) are merged"]
 fn a_hundred_plug_unplug_cycles_leak_nothing() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     let before = fixture.scene();
@@ -54,7 +54,7 @@ fn a_hundred_plug_unplug_cycles_leak_nothing() {
 }
 
 #[test]
-#[ignore = "P0-B-headless: runs once P0-B-loop, P0-F1-output (config::load), P0-H1 (output, presentation) and P0-R-scene (render_output) are merged"]
+#[ignore = "P0-B-headless: runs once P0-F1-output (config::load), P0-H1 (output, presentation) and P0-R-scene (render_output) are merged"]
 fn frames_come_only_with_virtual_time() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     assert_eq!(fixture.advance(Duration::ZERO).frames, 0);
@@ -63,7 +63,7 @@ fn frames_come_only_with_virtual_time() {
 }
 
 #[test]
-#[ignore = "P0-B-headless: runs once P0-B-loop, P0-F1-output (config::load), P0-H1 (output, presentation) and P0-R-scene (render_output) are merged"]
+#[ignore = "P0-B-headless: runs once P0-F1-output (config::load), P0-H1 (output, presentation) and P0-R-scene (render_output) are merged"]
 fn chopping_an_advance_differently_changes_nothing() {
     // SP3: one 6 s advance, 6000 one-millisecond advances and an irregular split agree.
     let run = |chunks: &[u64]| {
@@ -80,7 +80,7 @@ fn chopping_an_advance_differently_changes_nothing() {
 }
 
 #[test]
-#[ignore = "P0-B-headless: runs once P0-B-loop, P0-F1-output (config::load), P0-H1 (output, presentation) and P0-R-scene (render_output) are merged"]
+#[ignore = "P0-B-headless: runs once P0-F1-output (config::load), P0-H1 (output, presentation) and P0-R-scene (render_output) are merged"]
 fn two_fixtures_on_one_thread_keep_their_own_clocks() {
     // SP3: a thread-installed clock gave the first fixture 1 vblank in 1 s while a second was
     // alive; casement's clocks are values.
@@ -91,7 +91,7 @@ fn two_fixtures_on_one_thread_keep_their_own_clocks() {
 }
 
 #[test]
-#[ignore = "P0-B-headless: runs once P0-B-loop, P0-F1-output (config::load), P0-H1 (output, presentation) and P0-R-scene (render_output) are merged"]
+#[ignore = "P0-B-headless: runs once P0-F1-output (config::load), P0-H1 (output, presentation) and P0-R-scene (render_output) are merged"]
 fn a_shot_of_an_output_is_its_mode_size() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     fixture.frames(&name("HEADLESS-1"), FrameCount(1));

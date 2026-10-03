@@ -2,7 +2,8 @@
 //! the source that dispatches its clients, and the loop's data is the `State` itself.
 
 use crate::state::{StartError, State};
-use smithay::reexports::calloop::LoopHandle;
+use smithay::reexports::calloop::generic::Generic;
+use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 use smithay::reexports::wayland_server::Display;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -24,15 +25,34 @@ impl SharedDisplay {
 /// client requests into the `State`; returns the shared display (its owner flushes clients
 /// after each loop turn).
 pub fn attach_display(
-    display: Display<State>,
+    mut display: Display<State>,
     event_loop: &LoopHandle<'static, State>,
 ) -> Result<SharedDisplay, StartError> {
-    let _ = (display, event_loop);
-    todo!("P0-B-loop: attach_display")
+    let fd = display
+        .backend()
+        .poll_fd()
+        .try_clone_to_owned()
+        .map_err(|error| StartError::Loop(format!("the display's poll fd: {error}")))?;
+    let shared = SharedDisplay(Rc::new(RefCell::new(display)), Rc::new(Cell::new(0)));
+    let (display, dispatched) = (shared.0.clone(), shared.1.clone());
+    event_loop
+        .insert_source(
+            Generic::new(fd, Interest::READ, Mode::Level),
+            move |_, _, state: &mut State| {
+                match display.borrow_mut().dispatch_clients(state) {
+                    Ok(n) => dispatched.set(dispatched.get().saturating_add(n as u64)),
+                    Err(error) => tracing::warn!(%error, "dispatching clients failed"),
+                }
+                Ok(PostAction::Continue)
+            },
+        )
+        .map_err(|error| StartError::Loop(error.to_string()))?;
+    Ok(shared)
 }
 
 /// Sends every client its queued events.
 pub fn flush(display: &SharedDisplay) {
-    let _ = display;
-    todo!("P0-B-loop: display::flush")
+    if let Err(error) = display.0.borrow_mut().flush_clients() {
+        tracing::warn!(%error, "flushing clients failed");
+    }
 }
