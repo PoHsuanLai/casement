@@ -23,8 +23,8 @@ pub mod seat;
 pub mod selection;
 pub mod surface;
 
-pub use conn::{ClientError, TestClient};
-pub use globals::GlobalList;
+pub use conn::{BaseData, ClientError, ClientProtocolError, ClientState, SyncDone, TestClient};
+pub use globals::{Global, GlobalList, GlobalListContents};
 pub use pattern::Pattern;
 pub use pump::Pumped;
 pub use shm::{ShmBuffer, shm_buffer};
