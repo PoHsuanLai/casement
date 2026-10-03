@@ -1,7 +1,10 @@
-//! `zwp_linux_dmabuf_v1` (P0-H6).
+//! `zwp_linux_dmabuf_v1` (P0-H6): accept or refuse a client's import, tagging an accepted
+//! buffer with the node it came from (A5).
 
 use crate::state::State;
+use casement_wayland::dmabuf::{self, Import, MainDevice};
 use smithay::backend::allocator::dmabuf::Dmabuf;
+use smithay::reexports::drm::node::DrmNode;
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier};
 
 impl DmabufHandler for State {
@@ -10,7 +13,32 @@ impl DmabufHandler for State {
     }
 
     fn dmabuf_imported(&mut self, global: &DmabufGlobal, dmabuf: Dmabuf, notifier: ImportNotifier) {
-        let _ = (global, dmabuf, notifier);
-        todo!("P0-H6: DmabufHandler::dmabuf_imported")
+        let mut dmabuf = dmabuf;
+        let ours = self.wl.dmabuf.global == Some(*global);
+        match (ours, dmabuf::on_import(&mut self.wl.dmabuf, &mut dmabuf)) {
+            (true, Import::Accepted) => {
+                tag_with_node(&dmabuf, self.wl.dmabuf.main_device());
+                if notifier.successful::<State>().is_err() {
+                    tracing::debug!("a client left before its dma-buf import was answered");
+                }
+            }
+            (true, Import::Refused) | (false, _) => notifier.failed(),
+        }
     }
+}
+
+/// Tags `dmabuf` with the render node of `device` (A5): smithay's multi-GPU renderer copies a
+/// buffer only when it knows which GPU holds it, and silently skips the copy otherwise.
+/// `DrmNode::from_dev_id` reads no file, so the jail's fabricated minors (A3) type as render
+/// nodes. The type arrives through smithay's re-export: this one conversion lives here because
+/// the protocol crate may not reach drm (B6); P1-D4 moves it into the render-node adapter.
+fn tag_with_node(dmabuf: &Dmabuf, device: Option<MainDevice>) {
+    let node = device.and_then(|device| match DrmNode::from_dev_id(device.0) {
+        Ok(node) => Some(node),
+        Err(error) => {
+            tracing::warn!(%error, device = device.0, "main device is not a drm node; dma-buf left untagged");
+            None
+        }
+    });
+    dmabuf.set_node(node);
 }
