@@ -1,7 +1,9 @@
 //! The stand-in compositor behind the [`Compositor`](crate::Compositor) seam: compositor,
 //! subcompositor, shm, xdg-shell, a seat with pointer, keyboard and touch, output with
 //! xdg-output, relative pointer and data device. Floating windows at (0, 0), `DummyRenderer`,
-//! a 16 ms frame tick. State shape after smithay's `smallvil` (MIT; THIRD-PARTY.md).
+//! a 16 ms frame tick. State shape after smithay's `smallvil` and handler bodies after its `anvil`
+//! (MIT, Copyright (c) 2017 Victor Berger and Victoria Brekenfeld; THIRD-PARTY.md); it covers
+//! every file of this module.
 //!
 //! Not casement: it exists so the wlcs build, the shim and the subsets are proven while the
 //! fixture's `start` is still being written. It never claims a casement behaviour.
