@@ -29,15 +29,6 @@ P3-CSS, three in `src/` and its ignored parity test, never built at P0-Z2).
 
 | File | Items | Lane | Proven by |
 | --- | --- | --- | --- |
-| `crates/casement-render/src/damage.rs` | render_output (1) | P0-R-scene | `crates/casement-testkit/tests/scene.rs` (ten base scenes, blur v0); `crates/casement-render/tests/render.rs` (lock cover, damage oracle) |
-| `crates/casement-render/src/element/blur_v0.rs` | Element::id, Element::current_commit, Element::src, Element::geometry, Element::damage_since, Element::opaque_regions, Element::is_framebuffer_effect, RenderElement::draw, RenderElement::capture_framebuffer (9) | P0-R-scene | `crates/casement-testkit/tests/scene.rs` (ten base scenes, blur v0); `crates/casement-render/tests/render.rs` (lock cover, damage oracle) |
-| `crates/casement-render/src/element/cursor.rs` | cursor_elements (1) | P0-R-scene | `crates/casement-testkit/tests/scene.rs` (ten base scenes, blur v0); `crates/casement-render/tests/render.rs` (lock cover, damage oracle) |
-| `crates/casement-render/src/element/layer.rs` | layer_elements (1) | P0-R-scene | `crates/casement-testkit/tests/scene.rs` (ten base scenes, blur v0); `crates/casement-render/tests/render.rs` (lock cover, damage oracle) |
-| `crates/casement-render/src/element/lock_cover.rs` | Element::id, Element::current_commit, Element::src, Element::geometry, Element::damage_since, Element::opaque_regions, RenderElement::draw (7) | P0-R-scene | `crates/casement-testkit/tests/scene.rs` (ten base scenes, blur v0); `crates/casement-render/tests/render.rs` (lock cover, damage oracle) |
-| `crates/casement-render/src/element/popup.rs` | popup_elements (1) | P0-R-scene | `crates/casement-testkit/tests/scene.rs` (ten base scenes, blur v0); `crates/casement-render/tests/render.rs` (lock cover, damage oracle) |
-| `crates/casement-render/src/element/solid.rs` | solid_rect (1) | P0-R-scene | `crates/casement-testkit/tests/scene.rs` (ten base scenes, blur v0); `crates/casement-render/tests/render.rs` (lock cover, damage oracle) |
-| `crates/casement-render/src/element/window.rs` | window_elements (1) | P0-R-scene | `crates/casement-testkit/tests/scene.rs` (ten base scenes, blur v0); `crates/casement-render/tests/render.rs` (lock cover, damage oracle) |
-| `crates/casement-render/src/scene.rs` | output_elements (1) | P0-R-scene | `crates/casement-testkit/tests/scene.rs` (ten base scenes, blur v0); `crates/casement-render/tests/render.rs` (lock cover, damage oracle) |
 | `crates/casement-wayland/src/commit_timing.rs` | on_barrier, apply_presented (2) | P0-H1 | `crates/casement-testkit/tests/protocol/commit_timing.rs` |
 | `crates/casement-wayland/src/compositor.rs` | on_commit, on_destroyed (2) | P0-H1 | `crates/casement-testkit/tests/protocol/compositor.rs` |
 | `crates/casement-wayland/src/content_type.rs` | on_content_type (1) | P0-H1 | `crates/casement-testkit/tests/protocol/content_type.rs` |
@@ -123,7 +114,7 @@ P3-CSS, three in `src/` and its ignored parity test, never built at P0-Z2).
 | `crates/casement-testkit/src/fixture.rs` | Fixture::palmrest (1) | P3-Z | P3-Z's palmrest tests |
 
 Ignored tests by lane (P0-Z2): P0-H1 17, P0-H2 16, P0-H3 7, P0-H4 10, P0-H5 7, P0-H6 3,
-P0-H7 5, P0-H8 7, P0-B-headless 7, P0-B-loop 4, P0-R-scene 4, P0-T-client 5, P0-T-dev 6,
+P0-H7 5, P0-H8 7, P0-B-headless 7, P0-B-loop 4, P0-R-scene 2, P0-T-client 5, P0-T-dev 6,
 P0-F1-output 2, P2-Q2 1.
 
 Implemented at the freeze (with their tests): every `Part::new`, `WaylandStates`,
@@ -256,6 +247,44 @@ module); `Rgba8`; `TextureBook`; `Transcript`, `Pattern`; `FixtureSpec`, `TestOr
   rows (B20 still reads comments), matches the libinput crate by its items (casement has its own
   `input` modules), and lets the test kit reach ds-settings through `casement` while naming none
   of it.
+
+## Departures in the P0-R-scene fill
+
+P0-R-scene filled its 23 stubs with no `todo!()` left in `crates/casement-render`. The two
+ignored scene tests in `crates/casement-testkit/tests/scene.rs` (the ten fixture scenes and the
+blur v0 fixture scene) wait on P0-B-headless, P0-T-client and P0-H1..H4 for `Fixture` and the
+surface helpers; a follow-up lane writes their `shoot()`. Meanwhile renderer-only goldens in
+`crates/casement-render/tests/golden/` (ten tier P, `blur-v0-1x` tier L) and a tier X check
+cover what draws without a client surface.
+
+1. **`Compositor` grows, additively.** Its textures are bounded `Clone + Send + 'static`
+   (`RendererSuper<TextureId: …>`; smithay's surface and memory elements need it), and it
+   gains two default hooks, `capture_blur_v0` and `draw_blur_v0` (stand-in by default, GLES
+   overrides). `render_output` wraps each element in a private `Routed` so the `Blur` variant
+   reaches them: a generic `render_elements!` enum cannot name a renderer per variant. P1-D4's
+   `SoftPixman` needs a `Compositor` impl (one method).
+2. **Blur v0 on GLES** is a quarter-size linear `blit_to` of the framebuffer under the element
+   into a cached `GlesTexture`, drawn back through a 5×5 binomial texture shader. It reads raw
+   framebuffer coordinates, so it assumes a `Transform::Normal` output (true headless; P1 for
+   rotated outputs).
+3. **Windows draw at their committed size.** The closed element set has no rescaling wrapper,
+   so a sampled size that differs from the committed one shows once the client commits it;
+   P3-Z adds the wrapper with its effect elements.
+4. **`OutputFrame.strip` is not applied.** A `PlacedWindow` does not say which Space it is on,
+   so the renderer cannot shift windows per Space; P3-Z.
+5. **Layer placement has two homes.** `crates/casement-render/src/scene/place.rs` places layer
+   surfaces from their committed layer-shell state (anchors, margins and exclusive zones:
+   exclusive surfaces first, overlay level down, then the rest inside what they leave), because
+   `output_elements` receives no layer geometry. P0-H3's
+   `casement_wayland::layer_shell::layer_area` uses the same axis rules but places in the whole
+   output and applies no zones, so the two differ for a zone-respecting surface beside a bar.
+   Closes when one `casement_core::layer` function places layers for both (P1 ask).
+6. **Named cursors are casement's own rasters** (signed-distance shapes, 16 samples a pixel,
+   at the output's native scale, cached per shape and scale); no Xcursor theme is read yet.
+   A locked output draws only the cursor, its lock surface and an opaque cover under it. The
+   cover's id is thread-local and the cover's and blur's commits are content fingerprints, so a
+   still frame has empty damage. The renderer tests read `CASEMENT_BLESS` with `Env`'s rule in
+   `tests/support/mod.rs`, since casement-render cannot depend on the test kit.
 
 ## Standing facts
 
