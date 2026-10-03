@@ -1,18 +1,21 @@
 //! `zwp_idle_inhibit_manager_v1`: a visible surface (a video) keeps the session awake.
 
 use crate::states::GlobalFilter;
-use casement_core::Event;
+use crate::idle_notify::Inhibited;
 use smithay::reexports::wayland_protocols::wp::idle_inhibit::zv1::server::zwp_idle_inhibit_manager_v1::ZwpIdleInhibitManagerV1;
+use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{DisplayHandle, GlobalDispatch};
 use smithay::wayland::GlobalData;
 use smithay::wayland::idle_inhibit::{IdleInhibitHandler, IdleInhibitManagerState};
 
-/// `zwp_idle_inhibit_manager_v1`.
+/// `zwp_idle_inhibit_manager_v1` and the surfaces that hold idleness off (one entry per live
+/// inhibitor, so a surface with two counts twice).
 #[derive(Debug)]
 pub struct IdleInhibitPart {
     /// smithay's state.
     pub state: IdleInhibitManagerState,
+    inhibitors: Vec<WlSurface>,
 }
 
 impl IdleInhibitPart {
@@ -24,18 +27,48 @@ impl IdleInhibitPart {
         let _ = role_filter;
         IdleInhibitPart {
             state: IdleInhibitManagerState::new::<D>(display),
+            inhibitors: Vec::new(),
+        }
+    }
+
+    /// Whether any inhibitor's surface still exists. smithay never reports an inhibitor whose
+    /// client left, so a dead surface stops counting here.
+    ///
+    /// Limit: a protocol says an inhibitor counts only while its surface is visible, which
+    /// needs the surface's window and the shown Spaces; neither lookup exists yet (xdg_shell
+    /// keeps the window of each toplevel), so a live surface counts whether shown or not.
+    /// [`IdleInhibitPart::inhibited_where`] takes the visibility test once there is one.
+    pub fn inhibited(&self) -> Inhibited {
+        self.inhibited_where(|_| true)
+    }
+
+    /// Whether any inhibitor's live surface satisfies `visible`.
+    pub fn inhibited_where(&self, visible: impl Fn(&WlSurface) -> bool) -> Inhibited {
+        if self
+            .inhibitors
+            .iter()
+            .any(|surface| surface.is_alive() && visible(surface))
+        {
+            Inhibited::Yes
+        } else {
+            Inhibited::No
         }
     }
 }
 
-/// `surface` started inhibiting idleness (it counts while visible).
-pub fn on_inhibit(part: &mut IdleInhibitPart, surface: &WlSurface) -> Vec<Event> {
-    let _ = (part, surface);
-    todo!("P0-H8: idle_inhibit::on_inhibit")
+/// `surface` started inhibiting idleness (it counts while visible); says whether idleness is
+/// now held off. The model has no idle event, so the answer goes to
+/// `idle_notify::on_inhibit` instead of the core loop.
+pub fn on_inhibit(part: &mut IdleInhibitPart, surface: &WlSurface) -> Inhibited {
+    part.inhibitors.push(surface.clone());
+    part.inhibited()
 }
 
-/// `surface` stopped inhibiting.
-pub fn on_uninhibit(part: &mut IdleInhibitPart, surface: &WlSurface) -> Vec<Event> {
-    let _ = (part, surface);
-    todo!("P0-H8: idle_inhibit::on_uninhibit")
+/// `surface` stopped inhibiting (one inhibitor of it); says whether idleness is still held off.
+pub fn on_uninhibit(part: &mut IdleInhibitPart, surface: &WlSurface) -> Inhibited {
+    if let Some(at) = part.inhibitors.iter().position(|held| held == surface) {
+        part.inhibitors.remove(at);
+    }
+    part.inhibitors.retain(|held| held.is_alive());
+    part.inhibited()
 }

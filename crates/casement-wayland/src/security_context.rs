@@ -45,11 +45,21 @@ impl SecurityContextPart {
 
 /// The sandbox facts a security context carries (engine, app id, instance), as porter reads
 /// them; clients of its listener connect as `Sandboxed(facts)`. The handler inserts the
-/// listener into the event loop.
+/// listener into the event loop. A field the sandbox engine did not set is the empty text,
+/// which porter's `identity_of` never takes for a name, so the clients stay unproven.
+///
+/// No event: a listener is not a client, and the model first hears of a sandboxed client when
+/// it connects (`Event::ClientConnected` carries the role).
 pub fn on_create_listener(
     part: &mut SecurityContextPart,
     context: &SecurityContext,
 ) -> (SandboxFacts, Vec<Event>) {
-    let _ = (part, context);
-    todo!("P0-H8: security_context::on_create_listener")
+    let _ = part;
+    let text = |field: &Option<String>| field.clone().unwrap_or_default();
+    let facts = SandboxFacts::Engine {
+        engine: text(&context.sandbox_engine),
+        app: text(&context.app_id),
+        instance: text(&context.instance_id),
+    };
+    (facts, Vec::new())
 }
