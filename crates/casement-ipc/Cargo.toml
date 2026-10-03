@@ -11,6 +11,8 @@ publish.workspace = true
 [dependencies]
 casement-core = { workspace = true }
 casement-backend = { workspace = true }
+# `Fraction`, the pinch scale in the inject grammar.
+ds-core = { workspace = true }
 ds-settings = { workspace = true }
 calloop = { workspace = true }
 zbus = { workspace = true }

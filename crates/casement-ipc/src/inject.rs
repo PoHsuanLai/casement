@@ -396,7 +396,7 @@ mod tests {
             InjectLine::Pinch(GestureStep::Update(delta)) => {
                 assert_eq!(delta.rotation_millideg, -3000);
                 assert_eq!(delta.delta, sub(12, -6));
-                assert_eq!(format!("{:?}", delta.scale), "Fraction(1250)");
+                assert_eq!(delta.scale, ds_core::vocab::Fraction(1250));
             }
             other => panic!("{other:?}"),
         }

@@ -8,6 +8,7 @@ use casement_core::input::{
     AxisFrame, AxisSource, AxisStop, ButtonCode, DeviceClass, Edge, GestureEnd, GestureStep,
     Keysym, PinchDelta, TouchStep,
 };
+use ds_core::vocab::Fraction;
 use std::time::Duration;
 
 /// One detent is `value120` 120; fake-input.sh's `axis vertical 15` is one detent of 15 px, so a
@@ -220,9 +221,7 @@ fn pinch(words: &[&str]) -> Option<PinchDelta> {
         return None;
     };
     Some(PinchDelta {
-        // `Fraction(u16)` is ds-core's; casement-ipc does not name ds-core, so the field's own
-        // type is read from the number (interface ask in the P0-T-dev report: a ds-core dependency).
-        scale: serde_json::from_value(serde_json::Value::from(int::<u16>(scale)?)).ok()?,
+        scale: Fraction(int(scale)?),
         rotation_millideg: int(rotation)?,
         delta: sub_point(&[x, y])?,
     })
