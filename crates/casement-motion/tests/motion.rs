@@ -1,89 +1,22 @@
 //! Retargeting and sampling (the behaviour P0-F1-motion makes pass): motion ends exactly at
 //! its targets, a retarget keeps position and velocity, frames are deterministic.
 
-use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize, SubPx};
-use casement_core::output::{EdidFacts, EdidSerial};
-use casement_core::time::Mono;
-use casement_core::window::FrameHint;
-use casement_core::{Cause, OutputKey, OutputName, WindowId};
-use casement_layout::{Arrangement, ConfigureNeed, WindowTarget};
-use casement_motion::{
-    CommittedSizes, FrameScene, MotionBook, PlacedWindow, Settled, WindowLook, WindowLooks,
-    retarget, sample,
-};
-use casement_protocols::vocab::{Emphasis, FrameMode};
+mod support;
+
+use casement_core::geometry::{LogicalSize, SubPx};
+use casement_core::{Cause, WindowId};
+use casement_motion::{FrameScene, MotionBook, Settled, retarget, sample};
 use ds_style::appearance::motion::MotionLevel;
 use std::time::Duration;
-
-fn at(ms: u64) -> Mono {
-    Mono(Duration::from_millis(ms))
-}
-
-fn output(name: &str) -> OutputKey {
-    let edid = EdidFacts {
-        make: String::new(),
-        model: String::new(),
-        serial: EdidSerial::Unknown,
-    };
-    OutputKey::of(&edid, &OutputName::parse(name).expect("name"))
-}
-
-fn rect(x: i32, y: i32, w: u32, h: u32) -> LogicalRect {
-    LogicalRect::new(LogicalPoint { x, y }, LogicalSize { w, h })
-}
-
-fn arranged(windows: &[(u64, &str, LogicalRect)]) -> Arrangement {
-    Arrangement {
-        windows: windows
-            .iter()
-            .map(|(n, on, rect)| WindowTarget {
-                window: WindowId(*n),
-                output: output(on),
-                rect: *rect,
-                size: ConfigureNeed::Keep,
-            })
-            .collect(),
-        ..Arrangement::default()
-    }
-}
-
-fn committed(windows: &[(u64, u32, u32)]) -> CommittedSizes {
-    CommittedSizes(
-        windows
-            .iter()
-            .map(|(n, w, h)| (WindowId(*n), LogicalSize { w: *w, h: *h }))
-            .collect(),
-    )
-}
-
-fn looks(windows: &[u64]) -> WindowLooks {
-    let look = WindowLook {
-        emphasis: Emphasis::Inactive,
-        frame: FrameHint {
-            mode: FrameMode::CompositorShadow,
-            corner_radius: 10,
-        },
-    };
-    WindowLooks(windows.iter().map(|n| (WindowId(*n), look)).collect())
-}
-
-fn placed(frame: &FrameScene, n: u64) -> Option<PlacedWindow> {
-    frame
-        .outputs
-        .iter()
-        .flat_map(|o| o.windows.iter())
-        .find(|w| w.window == WindowId(n))
-        .copied()
-}
+use support::{arranged, at, committed, looks, output, placed, rect};
 
 /// Where window `n` is drawn at `t`, in sub-pixels.
-fn x_at(book: &MotionBook, n: u64, t: Mono) -> i64 {
+fn x_at(book: &MotionBook, n: u64, t: casement_core::time::Mono) -> i64 {
     let (frame, _) = sample(book, &committed(&[(n, 400, 300)]), &looks(&[n]), t);
     i64::from(placed(&frame, n).expect("window drawn").at.x.0)
 }
 
 #[test]
-#[ignore = "P0-F1-motion"]
 fn an_unchanged_arrangement_does_not_move() {
     let a = arranged(&[(1, "HEADLESS-1", rect(100, 100, 400, 300))]);
     let book = retarget(
@@ -105,7 +38,6 @@ fn an_unchanged_arrangement_does_not_move() {
 }
 
 #[test]
-#[ignore = "P0-F1-motion"]
 fn a_move_starts_where_it_was_and_ends_exactly_at_its_target() {
     let a = arranged(&[(1, "HEADLESS-1", rect(100, 100, 400, 300))]);
     let b = arranged(&[(1, "HEADLESS-1", rect(900, 500, 400, 300))]);
@@ -135,7 +67,6 @@ fn a_move_starts_where_it_was_and_ends_exactly_at_its_target() {
 }
 
 #[test]
-#[ignore = "P0-F1-motion"]
 fn a_retarget_keeps_position_and_velocity() {
     let a = arranged(&[(1, "HEADLESS-1", rect(0, 0, 400, 300))]);
     let b = arranged(&[(1, "HEADLESS-1", rect(4_000, 0, 400, 300))]);
@@ -185,7 +116,6 @@ fn a_retarget_keeps_position_and_velocity() {
 }
 
 #[test]
-#[ignore = "P0-F1-motion"]
 fn reduced_motion_still_arrives() {
     let a = arranged(&[(1, "HEADLESS-1", rect(100, 100, 400, 300))]);
     let b = arranged(&[(1, "HEADLESS-1", rect(600, 100, 500, 300))]);
@@ -208,7 +138,6 @@ fn reduced_motion_still_arrives() {
 }
 
 #[test]
-#[ignore = "P0-F1-motion"]
 fn windows_open_and_close_and_group_by_output() {
     let empty = arranged(&[]);
     let two = arranged(&[
@@ -261,7 +190,6 @@ fn windows_open_and_close_and_group_by_output() {
 }
 
 #[test]
-#[ignore = "P0-F1-motion"]
 fn sampling_is_deterministic() {
     let a = arranged(&[(1, "HEADLESS-1", rect(0, 0, 400, 300))]);
     let b = arranged(&[(1, "HEADLESS-1", rect(700, 300, 600, 400))]);

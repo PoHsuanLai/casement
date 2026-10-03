@@ -6,7 +6,10 @@
 //! back to integer units, so a frame is `Eq` data and a motion golden is text.
 
 mod book;
+mod cause_travel;
 mod frame_scene;
+mod goals;
+mod pose;
 mod quantise;
 mod retarget;
 mod sample;
