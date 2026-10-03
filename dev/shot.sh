@@ -1,14 +1,31 @@
 #!/usr/bin/env bash
-# Takes a screenshot of a running jailed casement: dev/shot.sh [--output NAME | --window ID |
-# --region X,Y,W,H] OUT.png, through casementctl shot (ext-image-copy-capture). Calls require_jail first.
+# Takes a screenshot of a running jailed casement, through `casementctl shot`
+# (ext-image-copy-capture):
 #
-# Owner: P0-T-dev. Frozen at P0-Z2 as a stub: the name and the command line are fixed, the body is not
-# written yet. Exit 2 (could not run) until it is.
+#   dev/shot.sh [--output NAME | --window ID | --region X,Y,W,H] [--masked] OUT.png
+#
+# A bare file name goes to the run's shots/ directory ($JAIL_SCRATCH/casement/<run>/shots/), where
+# the review gates look; a path with a directory is used as given. Calls require_jail first.
+# Exit 2 until the compositor serves the capture protocols (P1-C1).
+#
+# Owner: P0-T-dev.
 set -euo pipefail
-root=$(cd "$(dirname "$0")" && pwd)
-while [ ! -f "$root/dev/lib/jail.sh" ]; do root=$(dirname "$root"); [ "$root" != / ] || { echo "no dev/lib/jail.sh above $0" >&2; exit 3; }; done
-# shellcheck source=dev/lib/jail.sh
-source "$root/dev/lib/jail.sh"
+root=$(cd "$(dirname "$0")/.." && pwd)
+# shellcheck source=dev/lib/shot.sh
+source "$root/dev/lib/shot.sh"
 require_jail
-echo "shot.sh: not written yet (P0-T-dev)" >&2
-exit 2
+target=output out="" masked=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --output) target="output:${2:?--output needs a value}"; shift 2 ;;
+    --window) target="window:${2:?--window needs a value}"; shift 2 ;;
+    --region) target="region:${2:?--region needs a value}"; shift 2 ;;
+    --masked) masked="masked:"; shift ;;
+    -*) echo "shot.sh: unknown flag $1" >&2; exit 64 ;;
+    *) out=$1; shift ;;
+  esac
+done
+[ -n "$out" ] || { echo "usage: dev/shot.sh [--output NAME | --window ID | --region X,Y,W,H] [--masked] OUT.png" >&2; exit 64; }
+case "$out" in */*) ;; *) out="$(casement_state_dir)/shots/$out" ;; esac
+shot "$masked$target" "$out"
+echo "shot: $out"

@@ -1,0 +1,32 @@
+# The perf benches (A30). They read a clock, which boundary row B8 keeps out of crates/, so they
+# live here as their own workspace: `dev/perf/run.sh` builds and runs them (outside the jail, on
+# the release profile) and compares each p95 with the last green run. Never a member of the
+# casement workspace.
+[package]
+name = "casement-perf"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+casement-core = { path = "../../crates/casement-core" }
+casement-layout = { path = "../../crates/casement-layout" }
+casement-motion = { path = "../../crates/casement-motion" }
+casement-protocols = { path = "../../../casement-protocols" }
+porter-core = { path = "../../../porter/crates/porter-core" }
+ds-core = { path = "../../../quire/crates/ds-core", default-features = false }
+ds-motion = { path = "../../../quire/crates/ds-motion", default-features = false }
+ds-style = { path = "../../../quire/crates/ds-style", default-features = false }
+
+[[bin]]
+name = "layout"
+path = "src/bin/layout.rs"
+
+[[bin]]
+name = "motion"
+path = "src/bin/motion.rs"
+
+[profile.release]
+debug = 1

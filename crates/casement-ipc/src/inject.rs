@@ -2,24 +2,26 @@
 //! reached the compositor. A superset of shell-host's `fake-input.sh`:
 //!
 //! ```text
-//! move X Y                          absolute pointer position (global logical px)
-//! press left|right|middle|BUTTON    release left|right|middle|BUTTON
-//! key KEYSYM down|up                xkb keysym name: Return, a, Shift_L, Super_L, F5
-//! type "text"                       each character, with Shift where the keymap needs it
-//! axis vertical|horizontal VALUE    one wheel step in 120ths... and the source (SP1 B1):
-//! axis wheel|finger|continuous V120X V120Y [PXX PXY]
-//! scroll-finger DX DY               a touchpad scroll in sub-pixels
+//! move X Y                          absolute pointer position (global logical px; decimals round)
+//! press BUTTON    release BUTTON    left|right|middle|side|extra|forward|back|task, or an evdev code
+//! key KEYSYM down|up                xkb keysym name: Return, a, Shift_L, Super_L, F5, 0xff09, U20AC
+//! type TEXT | type "TEXT"           each character, with Shift where the keymap needs it; the text is
+//!                                   the rest of the line as written (no escapes: a newline is
+//!                                   `key Return down` / `key Return up`)
+//! axis vertical|horizontal VALUE    one wheel event of VALUE logical px; 15 is one detent (value120 120)
+//! axis wheel|finger|continuous|tilt V120X V120Y [PXX PXY]   a frame with its source named; the
+//!                                   pixel distance (sub-pixels, 1/120 px) is 0 when left out
+//! scroll-finger DX DY               a touchpad scroll in sub-pixels (`scroll finger DX DY` too)
 //! axis-stop                         the fingers lifted
-//! swipe begin N | swipe DX DY | swipe end|cancel
-//! pinch begin N | pinch SCALE ROT DX DY | pinch end|cancel
+//! swipe begin N | swipe [update] DX DY | swipe end|cancel          (DX DY in sub-pixels)
+//! pinch begin N | pinch [update] SCALE ROT DX DY | pinch end|cancel (thousandths, millidegrees, sub-px)
 //! hold begin N | hold end|cancel
-//! touch down SLOT X Y | touch move SLOT X Y | touch up SLOT | touch frame | touch cancel
+//! touch down SLOT X Y | touch move|motion SLOT X Y | touch up SLOT | touch frame | touch cancel
 //! device plug|unplug keyboard|pointer|touchpad|touch|tablet|switch
 //! origin physical|remote|test       the origin of the lines that follow (debug-inject only)
 //! sleep MS                          session time (the stepped clock advances; never a wall sleep)
 //! ```
 
-use crate::error::IpcError;
 use casement_core::geometry::{LogicalPoint, SubPoint};
 use casement_core::input::{
     AxisFrame, ButtonCode, DeviceClass, Edge, GestureStep, Keysym, PinchDelta, TouchStep,
@@ -82,20 +84,18 @@ pub enum DeviceVerb {
     Unplug(DeviceClass),
 }
 
-/// The line `line` says.
-pub fn parse_inject(line: &str) -> Result<InjectLine, IpcError> {
-    let _ = line;
-    todo!("P0-T-dev: parse_inject")
-}
+mod parse;
+
+pub use parse::parse_inject;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::IpcError;
     use casement_core::geometry::SubPx;
     use casement_core::input::{AxisSource, AxisStop, GestureEnd};
 
     #[test]
-    #[ignore = "P0-T-dev"]
     fn every_fake_input_line_parses() {
         // shell-host's `fake-input.sh` grammar, line for line (the superset's floor).
         let rows: [(&str, InjectLine); 7] = [
@@ -119,7 +119,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "P0-T-dev"]
     fn a_wheel_detent_carries_its_source_and_value120() {
         // fake-input.sh's `axis vertical 15` is one detent (SP1 B1: the nested path lost it).
         let detent = AxisFrame {
@@ -148,7 +147,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "P0-T-dev"]
     fn gestures_touch_devices_and_origins_parse() {
         assert_eq!(
             parse_inject("swipe begin 3").expect("swipe"),
@@ -185,7 +183,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "P0-T-dev"]
     fn malformed_lines_are_refused() {
         for line in [
             "",
@@ -194,12 +191,273 @@ mod tests {
             "key NotAKeysym down",
             "origin agent",
             "sleep -1",
-            "type unquoted",
+            "type",
         ] {
             assert!(
                 matches!(parse_inject(line), Err(IpcError::BadLine(_))),
                 "{line}"
             );
+        }
+    }
+
+    fn sub(x: i32, y: i32) -> SubPoint {
+        SubPoint {
+            x: SubPx(x),
+            y: SubPx(y),
+        }
+    }
+
+    /// Every command shell-host's eight acceptance scripts send through `fake-input.sh`, with the
+    /// shell variables filled in, and the cases of fake-input's own parser test: the grammar's floor.
+    #[test]
+    fn shell_hosts_fake_input_script_replays() {
+        let lines = [
+            "move 100 60",
+            "sleep 100",
+            "press left",
+            "sleep 60",
+            "move 140 60",
+            "release left",
+            "move 900 500",
+            "move 901 500",
+            "move 160 1020",
+            "move 161 1020",
+            "move 640 400",
+            "key Return down",
+            "key Return up",
+            "key Super_L down",
+            "key Super_L up",
+            "key Caps_Lock down",
+            "key Caps_Lock up",
+            "key s down",
+            "key u up",
+            "key 3 down",
+            "key c up",
+            "key l down",
+            "key BackSpace down",
+            "key BackSpace up",
+            "type abc",
+            "type letmein",
+            "type \"Hi there\"",
+            "axis vertical 15",
+            "axis horizontal -7.5",
+            "move 10 20.5",
+            "release right",
+            "sleep 50",
+            "  move 1 2  ",
+        ];
+        for line in lines {
+            assert!(parse_inject(line).is_ok(), "{line}");
+        }
+        // fake-input refuses these too.
+        for line in ["press thumb", "key a sideways", "jump", "axis diagonal 1"] {
+            assert!(parse_inject(line).is_err(), "{line}");
+        }
+    }
+
+    #[test]
+    fn buttons_are_named_or_evdev_codes() {
+        for (text, code) in [
+            ("left", 0x110),
+            ("middle", 0x112),
+            ("side", 0x113),
+            ("back", 0x116),
+            ("272", 0x110),
+            ("0x111", 0x111),
+        ] {
+            assert_eq!(
+                parse_inject(&format!("press {text}")).expect(text),
+                InjectLine::Press(ButtonCode(code)),
+                "{text}"
+            );
+        }
+        for text in ["0", "0x10", "0x300", "left right", "Left"] {
+            assert!(parse_inject(&format!("release {text}")).is_err(), "{text}");
+        }
+    }
+
+    #[test]
+    fn keys_take_xkb_names_and_codes() {
+        for (name, keysym) in [
+            ("Shift_L", 0xffe1),
+            ("Super_L", 0xffeb),
+            ("F5", 0xffc2),
+            ("space", 0x20),
+            ("0xff09", 0xff09),
+            ("U20AC", 0x0100_20ac),
+        ] {
+            assert_eq!(
+                parse_inject(&format!("key {name} down")).expect(name),
+                InjectLine::Key(Keysym(keysym), Edge::Press),
+                "{name}"
+            );
+        }
+        assert!(parse_inject("key a sideways").is_err());
+        assert!(parse_inject("key a").is_err());
+    }
+
+    #[test]
+    fn typed_text_is_the_rest_of_the_line_with_or_without_quotes() {
+        for (line, text) in [
+            ("type abc", "abc"),
+            ("type letmein", "letmein"),
+            (r#"type "abc""#, "abc"),
+            (r#"type "two  spaces""#, "two  spaces"),
+            ("type two words", "two words"),
+            (r#"type "open"#, r#""open"#),
+            (r#"type a\nb"#, r#"a\nb"#),
+            ("type \"\"", ""),
+        ] {
+            assert_eq!(
+                parse_inject(line).expect(line),
+                InjectLine::Type(text.to_owned()),
+                "{line}"
+            );
+        }
+        assert!(parse_inject("type").is_err());
+        assert!(parse_inject("type   ").is_err());
+    }
+
+    #[test]
+    fn positions_and_wheel_values_may_be_decimals_like_fake_input_read_them() {
+        assert_eq!(
+            parse_inject("move 100.5 -20.4").expect("move"),
+            InjectLine::Move(LogicalPoint { x: 101, y: -20 })
+        );
+        match parse_inject("axis vertical 7.5").expect("axis") {
+            InjectLine::Axis(frame) => {
+                assert_eq!(frame.v120, (0, 60));
+                assert_eq!(frame.px, sub(0, 900));
+            }
+            other => panic!("{other:?}"),
+        }
+        for line in [
+            "move nan 1",
+            "move 1e12 1",
+            "axis vertical inf",
+            "axis sideways 3",
+        ] {
+            assert!(parse_inject(line).is_err(), "{line}");
+        }
+    }
+
+    #[test]
+    fn scroll_frames_name_their_source_and_distance() {
+        let frame = |source, v120, px| {
+            InjectLine::Axis(AxisFrame {
+                source,
+                v120,
+                px,
+                stop: AxisStop::Running,
+            })
+        };
+        assert_eq!(
+            parse_inject("axis horizontal -15").expect("axis"),
+            frame(AxisSource::Wheel, (-120, 0), sub(-1800, 0))
+        );
+        assert_eq!(
+            parse_inject("axis finger 0 0 30 -240").expect("axis"),
+            frame(AxisSource::Finger, (0, 0), sub(30, -240))
+        );
+        assert_eq!(
+            parse_inject("axis tilt 120 0").expect("axis"),
+            frame(AxisSource::WheelTilt, (120, 0), sub(0, 0))
+        );
+        assert_eq!(
+            parse_inject("scroll-finger 4 -8").expect("scroll"),
+            InjectLine::ScrollFinger(sub(4, -8))
+        );
+        assert_eq!(
+            parse_inject("scroll finger 4 -8").expect("scroll"),
+            InjectLine::ScrollFinger(sub(4, -8))
+        );
+        assert!(parse_inject("axis wheel 1").is_err());
+        assert!(parse_inject("axis spinner 0 120").is_err());
+    }
+
+    #[test]
+    fn gesture_updates_parse_with_and_without_the_word() {
+        for line in ["swipe 120 -240", "swipe update 120 -240"] {
+            assert_eq!(
+                parse_inject(line).expect(line),
+                InjectLine::Swipe(GestureStep::Update(sub(120, -240))),
+                "{line}"
+            );
+        }
+        assert_eq!(
+            parse_inject("swipe cancel").expect("swipe"),
+            InjectLine::Swipe(GestureStep::End(GestureEnd::Cancelled))
+        );
+        assert_eq!(
+            parse_inject("hold begin 2").expect("hold"),
+            InjectLine::Hold(GestureStep::Begin { fingers: 2 })
+        );
+        match parse_inject("pinch update 1250 -3000 12 -6").expect("pinch") {
+            InjectLine::Pinch(GestureStep::Update(delta)) => {
+                assert_eq!(delta.rotation_millideg, -3000);
+                assert_eq!(delta.delta, sub(12, -6));
+                assert_eq!(format!("{:?}", delta.scale), "Fraction(1250)");
+            }
+            other => panic!("{other:?}"),
+        }
+        for line in [
+            "swipe begin 0",
+            "swipe begin",
+            "hold 1 2",
+            "pinch 1 2 3",
+            "swipe end now",
+        ] {
+            assert!(parse_inject(line).is_err(), "{line}");
+        }
+    }
+
+    #[test]
+    fn touch_steps_take_slot_and_position() {
+        assert_eq!(
+            parse_inject("touch down 1 30 40").expect("touch"),
+            InjectLine::Touch(TouchStep::Down {
+                slot: 1,
+                at: LogicalPoint { x: 30, y: 40 }
+            })
+        );
+        for line in ["touch move 0 -5 6", "touch motion 0 -5 6"] {
+            assert_eq!(
+                parse_inject(line).expect(line),
+                InjectLine::Touch(TouchStep::Motion {
+                    slot: 0,
+                    at: LogicalPoint { x: -5, y: 6 }
+                }),
+                "{line}"
+            );
+        }
+        assert_eq!(
+            parse_inject("touch cancel").expect("touch"),
+            InjectLine::Touch(TouchStep::Cancel)
+        );
+        assert!(parse_inject("touch down 1 30").is_err());
+        assert!(parse_inject("touch up").is_err());
+    }
+
+    #[test]
+    fn sleep_is_bounded_and_whitespace_is_trimmed() {
+        assert_eq!(
+            parse_inject("  sleep   3600000 ").expect("sleep"),
+            InjectLine::Sleep(Duration::from_secs(3600))
+        );
+        assert!(parse_inject("sleep 3600001").is_err());
+        assert!(parse_inject("sleep 1.5").is_err());
+        assert_eq!(
+            parse_inject("device unplug switch").expect("device"),
+            InjectLine::Device(DeviceVerb::Unplug(DeviceClass::Switch))
+        );
+        assert!(parse_inject("device plug mouse").is_err());
+    }
+
+    #[test]
+    fn a_refusal_names_the_whole_line() {
+        match parse_inject("  move 1  ") {
+            Err(IpcError::BadLine(line)) => assert_eq!(line, "  move 1  "),
+            other => panic!("{other:?}"),
         }
     }
 }

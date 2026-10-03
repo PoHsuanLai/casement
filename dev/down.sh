@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
-# Stops what dev/up.sh started, by the pids in dev/out/<run>/env (never by pattern),
-# and removes the run's sockets under $JAIL_SCRATCH. Calls require_jail first.
+# Stops what dev/up.sh started, by the pids in the run's env file (never by pattern), and removes
+# the run's sockets. With no argument it stops the newest run in this jail; with ENV_FILE, that
+# run. Calls require_jail first.
 #
-# Owner: P0-T-dev. Frozen at P0-Z2 as a stub: the name and the command line are fixed, the body is not
-# written yet. Exit 2 (could not run) until it is.
+#   dev/down.sh [ENV_FILE]
+#
+# Owner: P0-T-dev. Exit codes: 0 stopped (or nothing running), 2 outside the jail.
 set -euo pipefail
-root=$(cd "$(dirname "$0")" && pwd)
-while [ ! -f "$root/dev/lib/jail.sh" ]; do root=$(dirname "$root"); [ "$root" != / ] || { echo "no dev/lib/jail.sh above $0" >&2; exit 3; }; done
-# shellcheck source=dev/lib/jail.sh
-source "$root/dev/lib/jail.sh"
+root=$(cd "$(dirname "$0")/.." && pwd)
+# shellcheck source=dev/lib/compositor.sh
+source "$root/dev/lib/compositor.sh"
 require_jail
-echo "down.sh: not written yet (P0-T-dev)" >&2
-exit 2
+if [ $# -ge 1 ]; then CASEMENT_STATE=$(dirname "$1"); export CASEMENT_STATE; fi
+stop_compositor
+echo "casement is down"

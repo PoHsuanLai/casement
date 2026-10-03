@@ -2,16 +2,18 @@
 # Starts one headless casement session inside the jail: a private dbus-daemon on
 # dev/private-bus.conf (session and system bus), fake-logind on it, then
 # `casement --backend headless --clock stepped` with --outputs from the arguments; waits for the
-# socket and writes dev/out/<run>/env (WAYLAND_DISPLAY, DBUS_SESSION_BUS_ADDRESS, pids). All state
-# lives under $JAIL_SCRATCH (A8), so jails run in parallel. Calls require_jail first.
+# socket and writes the run's env file (WAYLAND_DISPLAY, DBUS_SESSION_BUS_ADDRESS, pids) under
+# $JAIL_SCRATCH/casement/<run>/ (A8: no state in the checkout, so jails run in parallel). Calls
+# require_jail first. Prints the env file's path on stdout; source it to talk to the session.
 #
-# Owner: P0-T-dev. Frozen at P0-Z2 as a stub: the name and the command line are fixed, the body is not
-# written yet. Exit 2 (could not run) until it is.
+#   dev/up.sh [--outputs SPEC[;SPEC...]] [--clock wall|stepped] [--dmabuf none|soft] [--renderer R]
+#
+# Owner: P0-T-dev. Exit codes: 0 up, 1 casement did not come up, 2 outside the jail, 3 a tool is
+# missing (run dev/bootstrap.sh outside the jail).
 set -euo pipefail
-root=$(cd "$(dirname "$0")" && pwd)
-while [ ! -f "$root/dev/lib/jail.sh" ]; do root=$(dirname "$root"); [ "$root" != / ] || { echo "no dev/lib/jail.sh above $0" >&2; exit 3; }; done
-# shellcheck source=dev/lib/jail.sh
-source "$root/dev/lib/jail.sh"
+root=$(cd "$(dirname "$0")/.." && pwd)
+# shellcheck source=dev/lib/compositor.sh
+source "$root/dev/lib/compositor.sh"
 require_jail
-echo "up.sh: not written yet (P0-T-dev)" >&2
-exit 2
+start_compositor "$@"
+echo "$(casement_state_dir)/env"

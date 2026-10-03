@@ -1,7 +1,16 @@
 //! casementctl's subcommands.
 
+mod bus;
+mod debug;
+mod jail;
+mod plan;
+mod shot;
+
 use std::path::PathBuf;
 use std::process::ExitCode;
+
+/// The exit code of a command that could not run safely or is not built yet (the plan's 2).
+const COULD_NOT_RUN: u8 = 2;
 
 /// A subcommand.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,6 +52,24 @@ pub enum DebugVerb {
     Scene,
     /// `fault`.
     Fault,
+}
+
+impl DebugVerb {
+    /// The verb `word` names.
+    fn named(word: &str) -> Result<DebugVerb, CommandError> {
+        [
+            ("inject", DebugVerb::Inject),
+            ("wait", DebugVerb::Wait),
+            ("clock", DebugVerb::Clock),
+            ("output", DebugVerb::Output),
+            ("windows", DebugVerb::Windows),
+            ("scene", DebugVerb::Scene),
+            ("fault", DebugVerb::Fault),
+        ]
+        .into_iter()
+        .find_map(|(name, verb)| (name == word).then_some(verb))
+        .ok_or_else(|| CommandError::Unknown(format!("debug {word}")))
+    }
 }
 
 /// What `shot` captures.
@@ -87,17 +114,79 @@ pub enum CommandError {
     BadArgument(String),
 }
 
-/// What `args` (without the program name) ask for.
+/// What `args` (without the program name) ask for. A `debug` command's arguments are checked
+/// here, so a typo never reaches the bus.
 pub fn parse(args: &[String]) -> Result<Command, CommandError> {
-    let _ = args;
-    todo!("P0-T-dev: casementctl parse")
+    let (name, rest) = args
+        .split_first()
+        .ok_or_else(|| CommandError::BadArgument("no command (debug, shot, report)".to_owned()))?;
+    match name.as_str() {
+        "debug" => {
+            let (verb, rest) = rest
+                .split_first()
+                .ok_or_else(|| CommandError::BadArgument("debug needs a verb".to_owned()))?;
+            let verb = DebugVerb::named(verb)?;
+            plan::plan(verb, rest)?;
+            Ok(Command::Debug {
+                verb,
+                args: rest.to_vec(),
+            })
+        }
+        "shot" => {
+            let (target, masked, out) = shot::parse_shot(rest)?;
+            Ok(Command::Shot {
+                target,
+                masked,
+                out,
+            })
+        }
+        "report" => match rest
+            .iter()
+            .find(|flag| !matches!(flag.as_str(), "--kms" | "--input" | "--gpu"))
+        {
+            None => Ok(Command::Report),
+            Some(flag) => Err(CommandError::BadArgument(format!(
+                "report: unknown flag {flag}"
+            ))),
+        },
+        other => Err(CommandError::Unknown(other.to_owned())),
+    }
 }
 
 /// Runs `command` against the compositor on `$DBUS_SESSION_BUS_ADDRESS` (the jail's private
 /// bus) and `$WAYLAND_DISPLAY`: exit 0 on success, 1 on a failed wait, 2 outside the jail.
 pub fn run(command: Command) -> ExitCode {
-    let _ = command;
-    todo!("P0-T-dev: casementctl run")
+    ExitCode::from(exit_code(command))
+}
+
+fn exit_code(command: Command) -> u8 {
+    if let Command::Report = command {
+        return not_built("report is the user's hardware report, built in P5");
+    }
+    if let Some(breach) = jail::breach_here() {
+        eprintln!(
+            "casementctl: refusing to run outside the jail ({breach}); see ~/desktop/harness/jail.sh"
+        );
+        return COULD_NOT_RUN;
+    }
+    match command {
+        Command::Debug { verb, args } => match plan::plan(verb, &args) {
+            Ok(call) => debug::run_call(call),
+            Err(error) => {
+                eprintln!("casementctl: {error}");
+                64
+            }
+        },
+        Command::Shot { .. } => not_built(
+            "shot needs casement's ext-image-copy-capture (P1-C1), which is not built yet",
+        ),
+        Command::Report => not_built("report is the user's hardware report, built in P5"),
+    }
+}
+
+fn not_built(why: &str) -> u8 {
+    eprintln!("casementctl: {why}");
+    COULD_NOT_RUN
 }
 
 #[cfg(test)]
@@ -109,7 +198,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "P0-T-dev"]
     fn the_subcommand_table() {
         assert_eq!(
             parse(&args("debug clock step 3")).expect("clock"),
@@ -146,5 +234,56 @@ mod tests {
             parse(&args("shot --window x out.png")),
             Err(CommandError::BadArgument(_))
         ));
+    }
+
+    #[test]
+    fn report_takes_its_three_flags_and_nothing_else() {
+        assert_eq!(
+            parse(&args("report --kms --input --gpu")).expect("report"),
+            Command::Report
+        );
+        assert_eq!(parse(&args("report")).expect("report"), Command::Report);
+        assert!(matches!(
+            parse(&args("report --net")),
+            Err(CommandError::BadArgument(_))
+        ));
+    }
+
+    #[test]
+    fn a_debug_command_is_checked_before_it_is_run() {
+        assert!(matches!(
+            parse(&args("debug")),
+            Err(CommandError::BadArgument(_))
+        ));
+        assert!(matches!(
+            parse(&args("debug clock step")),
+            Err(CommandError::BadArgument(_))
+        ));
+        assert!(matches!(
+            parse(&args("debug wait")),
+            Err(CommandError::BadArgument(_))
+        ));
+        assert!(matches!(
+            parse(&args("")),
+            Err(CommandError::BadArgument(_))
+        ));
+        assert!(matches!(
+            parse(&args("launch")),
+            Err(CommandError::Unknown(_))
+        ));
+        assert_eq!(
+            parse(&args("debug wait mapped foot --timeout 500")).expect("wait"),
+            Command::Debug {
+                verb: DebugVerb::Wait,
+                args: args("mapped foot --timeout 500")
+            }
+        );
+    }
+
+    #[test]
+    fn shot_and_report_are_not_built_at_p0() {
+        let shot = parse(&args("shot out.png")).expect("shot");
+        assert_eq!(exit_code(shot), COULD_NOT_RUN);
+        assert_eq!(exit_code(Command::Report), COULD_NOT_RUN);
     }
 }
