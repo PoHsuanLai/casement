@@ -48,8 +48,38 @@ pub enum PressRoute {
     SwallowWithBell,
 }
 
-/// How `press` is routed, given who is focused and the windows in `view`.
+/// How `press` is routed, given who is focused and the windows in `view`: 03 §1.2's table,
+/// top row first.
+///
+/// | The window | Modifiers | Part | Route |
+/// | --- | --- | --- | --- |
+/// | has an open modal sheet | any | any | [`PressRoute::SwallowWithBell`] |
+/// | is the key window | any | any | [`PressRoute::Deliver`] |
+/// | is not key | Command | titlebar | [`PressRoute::MoveWithoutActivation`] |
+/// | is not key | Command | anything else | [`PressRoute::DeliverWithoutActivation`] |
+/// | is not key | none of Command | content | [`PressRoute::ActivateRaiseSwallow`] |
+/// | is not key | none of Command | first-mouse region, titlebar, edge | [`PressRoute::ActivateRaiseDeliver`] |
+///
+/// The titlebar and the resize edges are the compositor's own chrome, so a first click on
+/// them is a first-mouse region (03 §1.2). A press on a window the view does not hold is
+/// delivered untouched. A press on a layer surface never reaches this function (it names a
+/// window): layer surfaces always deliver and never take the keyboard.
 pub fn route_press(press: &Press, focus: &Focus, view: &FocusView) -> PressRoute {
-    let _ = (press, focus, view);
-    todo!("P0-F1-focus: 03 §1.2 press routing")
+    if view.window(press.window).is_none() {
+        return PressRoute::Deliver;
+    }
+    if view.sheet_of(press.window).is_some() {
+        return PressRoute::SwallowWithBell;
+    }
+    if focus.key == Some(press.window) {
+        return PressRoute::Deliver;
+    }
+    match (press.mods.holds(MacMods::COMMAND), press.part) {
+        (true, HitPart::Titlebar) => PressRoute::MoveWithoutActivation,
+        (true, _) => PressRoute::DeliverWithoutActivation,
+        (false, HitPart::Content) => PressRoute::ActivateRaiseSwallow,
+        (false, HitPart::FirstMouse | HitPart::Titlebar | HitPart::Edge) => {
+            PressRoute::ActivateRaiseDeliver
+        }
+    }
 }

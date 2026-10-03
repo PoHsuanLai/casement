@@ -5,100 +5,20 @@
 //! window is in it, an unmapped one is gone). Rows check the focus exactly and that the effects
 //! 03 names are among the outputs; "unchanged" rows check the outputs exactly.
 
+#[path = "focus/fixture.rs"]
+mod fixture;
 mod support;
 
 use casement_core::WindowId;
-use casement_core::app::AppKey;
 use casement_core::focus::{
     Focus, FocusIn, FocusOut, FocusView, HitPart, Press, PressRoute, TokenCheck, route_press, step,
 };
 use casement_core::input::{DeviceClass, Origin};
-use casement_core::space::SpaceBook;
-use casement_core::window::{Parent, Window};
-use casement_protocols::vocab::{ActorKind, Attention, MacMods, Modality, WindowRole};
+use casement_core::window::Window;
+use casement_protocols::vocab::{ActorKind, Attention, MacMods};
+use fixture::{Outs, a, apps, b, b_active, focus, ids, press, sheet, spaces, start, windows};
 use std::collections::BTreeMap;
-use support::{desktop, headless, proven, space_id, window};
-
-fn a() -> AppKey {
-    proven("org.example.A")
-}
-
-fn b() -> AppKey {
-    proven("org.example.B")
-}
-
-fn sheet(n: u64, parent: u64) -> Window {
-    Window {
-        role: WindowRole::Dialog,
-        modality: Modality::WindowModal,
-        parent: Parent::Window(WindowId(parent)),
-        ..window(n, &a(), "s-1")
-    }
-}
-
-/// The fixture's windows, minus `gone`, plus `extra`.
-fn windows(gone: &[u64], extra: Vec<Window>) -> BTreeMap<WindowId, Window> {
-    [
-        window(1, &a(), "s-1"),
-        window(2, &a(), "s-1"),
-        window(3, &b(), "s-1"),
-    ]
-    .into_iter()
-    .chain(extra)
-    .filter(|w| !gone.contains(&w.id.0))
-    .map(|w| (w.id, w))
-    .collect()
-}
-
-fn spaces() -> SpaceBook {
-    let output = headless("HEADLESS-1").key;
-    SpaceBook::empty()
-        .with_space(desktop("s-1", &output, 0))
-        .with_shown(output, space_id("s-1"))
-}
-
-fn ids(ns: &[u64]) -> Vec<WindowId> {
-    ns.iter().map(|n| WindowId(*n)).collect()
-}
-
-fn focus(
-    active: Option<AppKey>,
-    key: Option<u64>,
-    main: Option<u64>,
-    apps: Vec<AppKey>,
-    mru: &[u64],
-) -> Focus {
-    Focus {
-        active,
-        key: key.map(WindowId),
-        main: main.map(WindowId),
-        app_mru: apps,
-        window_mru: ids(mru),
-    }
-}
-
-fn start() -> Focus {
-    focus(Some(a()), Some(1), Some(1), vec![a(), b()], &[1, 2, 3])
-}
-
-fn press(n: u64, part: HitPart, mods: MacMods) -> FocusIn {
-    FocusIn::Press(Press {
-        window: WindowId(n),
-        part,
-        mods,
-        origin: Origin::Physical(DeviceClass::Pointer),
-    })
-}
-
-/// After activating B through window 3.
-fn b_active() -> Focus {
-    focus(Some(b()), Some(3), Some(3), vec![b(), a()], &[3, 1, 2])
-}
-
-enum Outs {
-    Exactly(Vec<FocusOut>),
-    Including(Vec<FocusOut>),
-}
+use support::window;
 
 /// A name, the input, the window table after it, the focus wanted, the outputs wanted.
 type FocusCase = (
@@ -110,7 +30,6 @@ type FocusCase = (
 );
 
 #[test]
-#[ignore = "P0-F1-focus"]
 fn the_focus_table() {
     let none = MacMods::NONE;
     let cmd = MacMods::COMMAND;
@@ -242,9 +161,11 @@ fn the_focus_table() {
     ];
     let spaces = spaces();
     for (name, input, windows, want, outs) in cases {
+        let apps = apps(&windows);
         let view = FocusView {
             windows: &windows,
             spaces: &spaces,
+            apps: &apps,
         };
         let (got, out) = step(start(), input, &view);
         assert_eq!(got, want, "{name}: focus");
@@ -260,13 +181,14 @@ fn the_focus_table() {
 }
 
 #[test]
-#[ignore = "P0-F1-focus"]
 fn press_routing() {
     let windows = windows(&[], vec![sheet(7, 2)]);
     let spaces = spaces();
+    let apps = apps(&windows);
     let view = FocusView {
         windows: &windows,
         spaces: &spaces,
+        apps: &apps,
     };
     let pointer = Origin::Physical(DeviceClass::Pointer);
     let cases = [
