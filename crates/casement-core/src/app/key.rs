@@ -17,10 +17,14 @@ pub enum AppKey {
 }
 
 impl AppKey {
-    /// The key for a peer known as `peer` that declared `claimed`.
+    /// The key for a peer known as `peer` that declared `claimed`: the proven app when the
+    /// peer's process proves one (`porter_core::identity_of`), else the declared id, however
+    /// well it matches a real app's name.
     pub fn of(peer: &PeerIdentity, claimed: &ClaimedId) -> AppKey {
-        let _ = (peer, claimed);
-        todo!("P0-F1-window: Proven when the peer is proven, else Claimed")
+        match peer {
+            PeerIdentity::Proven(app) => AppKey::Proven(app.clone()),
+            PeerIdentity::Unproven => AppKey::Claimed(claimed.clone()),
+        }
     }
 
     /// The key as `quire_desktop_app_v1.identity` sends it: the app name, or
@@ -42,5 +46,126 @@ impl AppKey {
             AppKey::Proven(_) => ProofKind::Scope,
             AppKey::Claimed(_) => ProofKind::Claimed,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use porter_core::{CgroupPath, PeerFacts, SandboxFacts, identity_of};
+
+    fn facts(cgroup: &str, sandbox: SandboxFacts) -> PeerFacts {
+        PeerFacts {
+            pid: 4242,
+            cgroup: CgroupPath::parse(cgroup).expect("cgroup path"),
+            sandbox,
+        }
+    }
+
+    fn flatpak(app: &str) -> SandboxFacts {
+        SandboxFacts::Flatpak {
+            app: app.to_owned(),
+            instance: "1".to_owned(),
+        }
+    }
+
+    /// A name, the facts a client's peer gave, what it declared, and the key, its wire text
+    /// and its proof.
+    type Row = (
+        &'static str,
+        PeerFacts,
+        &'static str,
+        &'static str,
+        &'static str,
+        ProofKind,
+    );
+
+    /// `AppKey::of` over `identity_of`'s answers: the key is proven exactly when the peer's
+    /// scope or sandbox proves it, whatever the client declares.
+    #[test]
+    fn a_key_is_proven_only_by_what_identity_of_proves() {
+        let scope = "/user.slice/user-1000.slice/user@1000.service/app.slice/";
+        let rows: Vec<Row> = vec![
+            (
+                "a launcher's scope proves the app",
+                facts(
+                    &format!("{scope}app-org.quire.Mail-1234.scope"),
+                    SandboxFacts::Native,
+                ),
+                "org.quire.Mail",
+                "org.quire.Mail",
+                "scope",
+                ProofKind::Scope,
+            ),
+            (
+                "a proven peer's own declaration is ignored",
+                facts(
+                    &format!("{scope}app-org.quire.Mail-1234.scope"),
+                    SandboxFacts::Native,
+                ),
+                "evil",
+                "org.quire.Mail",
+                "scope",
+                ProofKind::Scope,
+            ),
+            (
+                "a flatpak sandbox proves through its metadata",
+                facts("/user.slice/session-3.scope", flatpak("org.gnome.Calc")),
+                "calc",
+                "org.gnome.Calc",
+                "flatpak",
+                ProofKind::SecurityContext,
+            ),
+            (
+                "a terminal's scope is not a proof",
+                facts(&format!("{scope}app-foot-99.scope"), SandboxFacts::Native),
+                "foot",
+                "claimed:foot",
+                "claimed",
+                ProofKind::Claimed,
+            ),
+            (
+                "a session scope is not a proof",
+                facts("/user.slice/session-3.scope", SandboxFacts::Native),
+                "org.quire.Mail",
+                "claimed:org.quire.Mail",
+                "claimed",
+                ProofKind::Claimed,
+            ),
+            (
+                "another sandbox engine proves nothing",
+                facts(
+                    "/user.slice/session-3.scope",
+                    SandboxFacts::Engine {
+                        engine: "org.snap".to_owned(),
+                        app: "org.snap.Thing".to_owned(),
+                        instance: "1".to_owned(),
+                    },
+                ),
+                "thing",
+                "claimed:thing",
+                "claimed",
+                ProofKind::Claimed,
+            ),
+        ];
+        for (name, peer, declared, wire, kind, proof) in rows {
+            let claimed = ClaimedId::parse(declared).expect("claimed id");
+            let key = AppKey::of(&identity_of(&peer), &claimed);
+            assert_eq!(key.wire(), wire, "{name}: wire");
+            assert_eq!(key.proof(), proof, "{name}: proof ({kind})");
+            assert_eq!(
+                matches!(key, AppKey::Proven(_)),
+                proof != ProofKind::Claimed,
+                "{name}: proven"
+            );
+        }
+    }
+
+    #[test]
+    fn a_key_stores_with_its_kind() {
+        let claimed = AppKey::Claimed(ClaimedId::parse("foot").expect("id"));
+        let json = serde_json::to_string(&claimed).expect("json");
+        assert_eq!(json, r#"{"kind":"claimed","v":"foot"}"#);
+        assert_eq!(serde_json::from_str::<AppKey>(&json).expect("key"), claimed);
     }
 }

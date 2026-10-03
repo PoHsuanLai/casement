@@ -9,7 +9,6 @@ use std::collections::BTreeSet;
 use support::claimed;
 
 #[test]
-#[ignore = "P0-F1-window"]
 fn an_app_key_is_proven_only_by_its_peer() {
     let mail = AppId {
         name: AppName::parse("org.quire.Mail").expect("name"),
@@ -41,7 +40,6 @@ fn an_app_key_is_proven_only_by_its_peer() {
 }
 
 #[test]
-#[ignore = "P0-F1-window"]
 fn minted_space_ids_are_porter_ids() {
     let cases: [([u8; 16], &str); 3] = [
         ([0; 16], "s-00000000000000000000000000000000"),
@@ -62,7 +60,6 @@ fn minted_space_ids_are_porter_ids() {
 }
 
 #[test]
-#[ignore = "P0-F1-window"]
 fn a_seed_mints_a_fixed_sequence_of_distinct_ids() {
     let mint = |seed: SpaceSeed| -> Vec<SpaceId> {
         (0..64)

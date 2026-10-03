@@ -37,20 +37,24 @@ impl SpaceBook {
 
     /// The Space `output` shows.
     pub fn shown_on(&self, output: &OutputKey) -> Option<&Space> {
-        let _ = (output, &self.spaces, &self.shown);
-        todo!("P0-F1-window: the shown id, looked up")
+        self.shown.get(output).and_then(|id| self.get(id))
     }
 
-    /// `output`'s Spaces in row order.
+    /// `output`'s Spaces in row order (by position; equal positions by id, so the order is
+    /// total).
     pub fn row(&self, output: &OutputKey) -> Vec<&Space> {
-        let _ = output;
-        todo!("P0-F1-window: the output's Spaces sorted by position")
+        let mut row: Vec<&Space> = self
+            .spaces
+            .values()
+            .filter(|space| space.output == *output)
+            .collect();
+        row.sort_by(|a, b| (a.position, &a.id).cmp(&(b.position, &b.id)));
+        row
     }
 
     /// The Space with this id.
     pub fn get(&self, id: &SpaceId) -> Option<&Space> {
-        let _ = id;
-        todo!("P0-F1-window: lookup")
+        self.spaces.get(id)
     }
 }
 
@@ -88,7 +92,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "P0-F1-window"]
     fn queries_answer_from_the_book() {
         let book = book();
         let shown = book.shown_on(&output("HEADLESS-1")).map(|s| s.id.as_str());
@@ -104,5 +107,36 @@ mod tests {
         let c = SpaceId::parse("s-c").expect("id");
         assert_eq!(book.get(&c), Some(&space("s-c", "HEADLESS-2", 0)));
         assert_eq!(book.get(&SpaceId::parse("s-z").expect("id")), None);
+    }
+
+    #[test]
+    fn rows_break_ties_by_id_and_replacing_a_space_keeps_one_copy() {
+        let book = SpaceBook::empty()
+            .with_space(space("s-z", "DP-1", 0))
+            .with_space(space("s-m", "DP-1", 0))
+            .with_space(space("s-a", "DP-1", 0))
+            .with_space(space("s-q", "DP-1", 2));
+        let ids = |book: &SpaceBook| -> Vec<String> {
+            book.row(&output("DP-1"))
+                .iter()
+                .map(|s| s.id.as_str().to_owned())
+                .collect()
+        };
+        assert_eq!(ids(&book), ["s-a", "s-m", "s-z", "s-q"]);
+        let moved = book.with_space(space("s-a", "DP-1", 3));
+        assert_eq!(ids(&moved), ["s-m", "s-z", "s-q", "s-a"]);
+    }
+
+    #[test]
+    fn a_shown_id_with_no_space_shows_nothing() {
+        let book = SpaceBook::empty()
+            .with_shown(output("DP-1"), SpaceId::parse("s-gone").expect("id"))
+            .with_space(space("s-a", "DP-2", 0));
+        assert_eq!(book.shown_on(&output("DP-1")), None);
+        assert_eq!(
+            book.shown_on(&output("DP-2")),
+            None,
+            "a Space exists but nothing says the output shows it"
+        );
     }
 }
