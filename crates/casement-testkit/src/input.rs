@@ -3,18 +3,18 @@
 
 use crate::fixture::Fixture;
 use crate::origin::TestOrigin;
+use casement_backend::{DeviceName, DeviceSpec};
 use casement_core::DeviceId;
 use casement_core::geometry::LogicalPoint;
 use casement_core::geometry::SubPoint;
 use casement_core::input::{
-    AxisFrame, ButtonCode, DeviceClass, Edge, GestureStep, KeyCode, PinchDelta, SwitchStep,
-    TouchStep,
+    AxisFrame, ButtonCode, DeviceClass, Edge, GestureStep, InputKind, KeyCode, PinchDelta,
+    SwitchStep, TouchStep,
 };
 
 /// The fixture's input, borrowed.
 #[derive(Debug)]
 pub struct FixtureInput<'a> {
-    #[expect(dead_code, reason = "P0-B-headless: the fixture the input goes to")]
     fixture: &'a mut Fixture,
 }
 
@@ -24,63 +24,69 @@ impl<'a> FixtureInput<'a> {
         FixtureInput { fixture }
     }
 
-    /// Plugs a device of `class` with `origin`.
+    /// Plugs a device of `class` with `origin`, then pumps.
     pub fn plug(&mut self, class: DeviceClass, origin: TestOrigin) -> DeviceId {
-        let _ = (class, origin);
-        todo!("P0-B-headless: FixtureInput::plug")
+        let layout = self.fixture.model().settings().keyboard.layout.clone();
+        let spec = DeviceSpec {
+            class,
+            origin: origin.origin(),
+            layout,
+            name: DeviceName(format!("fixture {class:?}")),
+        };
+        let id = self.fixture.headless_mut().input().plug(spec);
+        self.fixture.pump();
+        id
+    }
+
+    /// `kind` from `device` at the fixture's now, then a pump.
+    fn push(&mut self, device: DeviceId, kind: InputKind) {
+        let at = self.fixture.now();
+        self.fixture.headless_mut().input().push(device, kind, at);
+        self.fixture.pump();
     }
 
     /// A key on `device`, then a pump.
     pub fn key(&mut self, device: DeviceId, code: KeyCode, edge: Edge) {
-        let _ = (device, code, edge);
-        todo!("P0-B-headless: FixtureInput::key")
+        self.push(device, InputKind::Key { code, edge });
     }
 
     /// Moves the pointer of `device` to `at`, then pumps.
     pub fn pointer_to(&mut self, device: DeviceId, at: LogicalPoint) {
-        let _ = (device, at);
-        todo!("P0-B-headless: FixtureInput::pointer_to")
+        self.push(device, InputKind::MotionTo { at });
     }
 
     /// A button on `device`, then a pump.
     pub fn button(&mut self, device: DeviceId, button: ButtonCode, edge: Edge) {
-        let _ = (device, button, edge);
-        todo!("P0-B-headless: FixtureInput::button")
+        self.push(device, InputKind::Button { button, edge });
     }
 
     /// One scroll frame on `device`, then a pump.
     pub fn axis(&mut self, device: DeviceId, frame: AxisFrame) {
-        let _ = (device, frame);
-        todo!("P0-B-headless: FixtureInput::axis")
+        self.push(device, InputKind::Axis(frame));
     }
 
-    /// A swipe step on `device`.
+    /// A swipe step on `device`, then a pump.
     pub fn swipe(&mut self, device: DeviceId, step: GestureStep<SubPoint>) {
-        let _ = (device, step);
-        todo!("P0-B-headless: FixtureInput::swipe")
+        self.push(device, InputKind::Swipe(step));
     }
 
-    /// A pinch step on `device`.
+    /// A pinch step on `device`, then a pump.
     pub fn pinch(&mut self, device: DeviceId, step: GestureStep<PinchDelta>) {
-        let _ = (device, step);
-        todo!("P0-B-headless: FixtureInput::pinch")
+        self.push(device, InputKind::Pinch(step));
     }
 
-    /// A hold step on `device`.
+    /// A hold step on `device`, then a pump.
     pub fn hold(&mut self, device: DeviceId, step: GestureStep<()>) {
-        let _ = (device, step);
-        todo!("P0-B-headless: FixtureInput::hold")
+        self.push(device, InputKind::Hold(step));
     }
 
-    /// A touch step on `device`.
+    /// A touch step on `device`, then a pump.
     pub fn touch(&mut self, device: DeviceId, step: TouchStep) {
-        let _ = (device, step);
-        todo!("P0-B-headless: FixtureInput::touch")
+        self.push(device, InputKind::Touch(step));
     }
 
-    /// A switch change on `device`.
+    /// A switch change on `device`, then a pump.
     pub fn switch(&mut self, device: DeviceId, step: SwitchStep) {
-        let _ = (device, step);
-        todo!("P0-B-headless: FixtureInput::switch")
+        self.push(device, InputKind::Switch(step));
     }
 }

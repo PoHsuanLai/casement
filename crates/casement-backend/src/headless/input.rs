@@ -10,7 +10,6 @@ pub struct HeadlessInput;
 impl HeadlessInput {
     /// Every event queued on `input` since the last drain, oldest first.
     pub fn drain(input: &mut VirtualInput) -> Vec<VirtualInputEvent> {
-        let _ = input;
-        todo!("P0-B-headless: HeadlessInput::drain")
+        input.drain()
     }
 }

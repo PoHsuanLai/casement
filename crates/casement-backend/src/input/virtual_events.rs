@@ -2,9 +2,10 @@
 //! clock and its data in our units, and answers smithay's event traits from them.
 
 use super::virtual_input::{VirtualDevice, VirtualInput};
-use casement_core::geometry::{LogicalPoint, SubPoint};
+use casement_core::geometry::{LogicalPoint, SubPoint, SubPx};
 use casement_core::input::{
-    AxisFrame, ButtonCode, Edge, GestureEnd, KeyCode, PinchDelta, SwitchStep, TouchStep,
+    AxisFrame, AxisSource as CoreSource, AxisStop, ButtonCode, Edge, GestureEnd, KeyCode, LidState,
+    PinchDelta, SwitchStep, TabletState, TouchStep,
 };
 use casement_core::time::Mono;
 use smithay::backend::input::{
@@ -26,15 +27,33 @@ pub struct EventStamp {
     pub at: Mono,
 }
 
+impl EventStamp {
+    /// The instant as smithay's input time (microseconds on the session clock).
+    fn input_time(&self) -> InputTime {
+        InputTime::from_micros(u64::try_from(self.at.0.as_micros()).unwrap_or(u64::MAX))
+    }
+}
+
+/// A length in sub-pixels as logical pixels.
+fn px(sub: SubPx) -> f64 {
+    f64::from(sub.0) / SUB_PER_LOGICAL
+}
+
+/// Sub-pixels per logical pixel (`casement_core::geometry::SubPx`).
+const SUB_PER_LOGICAL: f64 = 120.0;
+
+/// The XKB keycode of an evdev code (the offset libinput's backend adds).
+const XKB_OFFSET: u32 = 8;
+
 macro_rules! event_impl {
     ($ty:ident) => {
         impl Event<VirtualInput> for $ty {
             fn time(&self) -> InputTime {
-                todo!(concat!("P0-B-headless: ", stringify!($ty), "::time"))
+                self.stamp.input_time()
             }
 
             fn device(&self) -> VirtualDevice {
-                todo!(concat!("P0-B-headless: ", stringify!($ty), "::device"))
+                self.stamp.device.clone()
             }
         }
     };
@@ -49,20 +68,25 @@ pub struct VirtualKey {
     pub code: KeyCode,
     /// Down or up.
     pub edge: Edge,
+    /// How many keys are down on every device after this event (smithay's `count`).
+    pub count: u32,
 }
 event_impl!(VirtualKey);
 
 impl KeyboardKeyEvent<VirtualInput> for VirtualKey {
     fn key_code(&self) -> Keycode {
-        todo!("P0-B-headless: VirtualKey::key_code")
+        Keycode::new(self.code.0.saturating_add(XKB_OFFSET))
     }
 
     fn state(&self) -> KeyState {
-        todo!("P0-B-headless: VirtualKey::state")
+        match self.edge {
+            Edge::Press => KeyState::Pressed,
+            Edge::Release => KeyState::Released,
+        }
     }
 
     fn count(&self) -> u32 {
-        todo!("P0-B-headless: VirtualKey::count")
+        self.count
     }
 }
 
@@ -78,19 +102,19 @@ event_impl!(VirtualMotion);
 
 impl PointerMotionEvent<VirtualInput> for VirtualMotion {
     fn delta_x(&self) -> f64 {
-        todo!("P0-B-headless: VirtualMotion::delta_x")
+        px(self.delta.x)
     }
 
     fn delta_y(&self) -> f64 {
-        todo!("P0-B-headless: VirtualMotion::delta_y")
+        px(self.delta.y)
     }
 
     fn delta_x_unaccel(&self) -> f64 {
-        todo!("P0-B-headless: VirtualMotion::delta_x_unaccel")
+        px(self.delta.x)
     }
 
     fn delta_y_unaccel(&self) -> f64 {
-        todo!("P0-B-headless: VirtualMotion::delta_y_unaccel")
+        px(self.delta.y)
     }
 }
 
@@ -106,21 +130,21 @@ event_impl!(VirtualMotionTo);
 
 impl AbsolutePositionEvent<VirtualInput> for VirtualMotionTo {
     fn x(&self) -> f64 {
-        todo!("P0-B-headless: VirtualMotionTo::x")
+        f64::from(self.at.x)
     }
 
     fn y(&self) -> f64 {
-        todo!("P0-B-headless: VirtualMotionTo::y")
+        f64::from(self.at.y)
     }
 
     fn x_transformed(&self, width: i32) -> f64 {
         let _ = width;
-        todo!("P0-B-headless: VirtualMotionTo::x_transformed")
+        f64::from(self.at.x)
     }
 
     fn y_transformed(&self, height: i32) -> f64 {
         let _ = height;
-        todo!("P0-B-headless: VirtualMotionTo::y_transformed")
+        f64::from(self.at.y)
     }
 }
 
@@ -140,11 +164,14 @@ event_impl!(VirtualButton);
 
 impl PointerButtonEvent<VirtualInput> for VirtualButton {
     fn button_code(&self) -> u32 {
-        todo!("P0-B-headless: VirtualButton::button_code")
+        self.button.0
     }
 
     fn state(&self) -> ButtonState {
-        todo!("P0-B-headless: VirtualButton::state")
+        match self.edge {
+            Edge::Press => ButtonState::Pressed,
+            Edge::Release => ButtonState::Released,
+        }
     }
 }
 
@@ -160,22 +187,42 @@ event_impl!(VirtualAxis);
 
 impl PointerAxisEvent<VirtualInput> for VirtualAxis {
     fn amount(&self, axis: Axis) -> Option<f64> {
-        let _ = axis;
-        todo!("P0-B-headless: VirtualAxis::amount")
+        let sub = match axis {
+            Axis::Horizontal => self.frame.px.x,
+            Axis::Vertical => self.frame.px.y,
+        };
+        let continuous = matches!(
+            self.frame.source,
+            CoreSource::Finger | CoreSource::Continuous
+        );
+        match (continuous, self.frame.stop) {
+            (true, AxisStop::Stopped) => Some(0.0),
+            (true, AxisStop::Running) => Some(px(sub)),
+            (false, _) => (sub.0 != 0).then(|| px(sub)),
+        }
     }
 
     fn amount_v120(&self, axis: Axis) -> Option<f64> {
-        let _ = axis;
-        todo!("P0-B-headless: VirtualAxis::amount_v120")
+        let detents = match axis {
+            Axis::Horizontal => self.frame.v120.0,
+            Axis::Vertical => self.frame.v120.1,
+        };
+        let discrete = matches!(self.frame.source, CoreSource::Wheel | CoreSource::WheelTilt);
+        (discrete || detents != 0).then(|| f64::from(detents))
     }
 
     fn source(&self) -> AxisSource {
-        todo!("P0-B-headless: VirtualAxis::source")
+        match self.frame.source {
+            CoreSource::Wheel => AxisSource::Wheel,
+            CoreSource::Finger => AxisSource::Finger,
+            CoreSource::Continuous => AxisSource::Continuous,
+            CoreSource::WheelTilt => AxisSource::WheelTilt,
+        }
     }
 
     fn relative_direction(&self, axis: Axis) -> AxisRelativeDirection {
         let _ = axis;
-        todo!("P0-B-headless: VirtualAxis::relative_direction")
+        AxisRelativeDirection::Identical
     }
 }
 
@@ -191,7 +238,7 @@ event_impl!(VirtualGestureBegin);
 
 impl GestureBeginEvent<VirtualInput> for VirtualGestureBegin {
     fn fingers(&self) -> u32 {
-        todo!("P0-B-headless: VirtualGestureBegin::fingers")
+        u32::from(self.fingers)
     }
 }
 
@@ -211,7 +258,7 @@ event_impl!(VirtualGestureEnd);
 
 impl GestureEndEvent<VirtualInput> for VirtualGestureEnd {
     fn cancelled(&self) -> bool {
-        todo!("P0-B-headless: VirtualGestureEnd::cancelled")
+        self.end == GestureEnd::Cancelled
     }
 }
 
@@ -231,11 +278,11 @@ event_impl!(VirtualSwipeUpdate);
 
 impl GestureSwipeUpdateEvent<VirtualInput> for VirtualSwipeUpdate {
     fn delta_x(&self) -> f64 {
-        todo!("P0-B-headless: VirtualSwipeUpdate::delta_x")
+        px(self.delta.x)
     }
 
     fn delta_y(&self) -> f64 {
-        todo!("P0-B-headless: VirtualSwipeUpdate::delta_y")
+        px(self.delta.y)
     }
 }
 
@@ -251,19 +298,19 @@ event_impl!(VirtualPinchUpdate);
 
 impl GesturePinchUpdateEvent<VirtualInput> for VirtualPinchUpdate {
     fn delta_x(&self) -> f64 {
-        todo!("P0-B-headless: VirtualPinchUpdate::delta_x")
+        px(self.delta.delta.x)
     }
 
     fn delta_y(&self) -> f64 {
-        todo!("P0-B-headless: VirtualPinchUpdate::delta_y")
+        px(self.delta.delta.y)
     }
 
     fn scale(&self) -> f64 {
-        todo!("P0-B-headless: VirtualPinchUpdate::scale")
+        f64::from(self.delta.scale.0) / 1000.0
     }
 
     fn rotation(&self) -> f64 {
-        todo!("P0-B-headless: VirtualPinchUpdate::rotation")
+        f64::from(self.delta.rotation_millideg) / 1000.0
     }
 }
 
@@ -277,29 +324,44 @@ pub struct VirtualTouch {
 }
 event_impl!(VirtualTouch);
 
+impl VirtualTouch {
+    /// Where the finger is, for the steps that have a place.
+    fn point(&self) -> Option<LogicalPoint> {
+        match self.step {
+            TouchStep::Down { at, .. } | TouchStep::Motion { at, .. } => Some(at),
+            TouchStep::Up { .. } | TouchStep::Frame | TouchStep::Cancel => None,
+        }
+    }
+}
+
 impl TouchEvent<VirtualInput> for VirtualTouch {
     fn slot(&self) -> TouchSlot {
-        todo!("P0-B-headless: VirtualTouch::slot")
+        match self.step {
+            TouchStep::Down { slot, .. }
+            | TouchStep::Motion { slot, .. }
+            | TouchStep::Up { slot } => TouchSlot::from(Some(slot)),
+            TouchStep::Frame | TouchStep::Cancel => TouchSlot::from(None),
+        }
     }
 }
 
 impl AbsolutePositionEvent<VirtualInput> for VirtualTouch {
     fn x(&self) -> f64 {
-        todo!("P0-B-headless: VirtualTouch::x")
+        self.point().map_or(0.0, |at| f64::from(at.x))
     }
 
     fn y(&self) -> f64 {
-        todo!("P0-B-headless: VirtualTouch::y")
+        self.point().map_or(0.0, |at| f64::from(at.y))
     }
 
     fn x_transformed(&self, width: i32) -> f64 {
         let _ = width;
-        todo!("P0-B-headless: VirtualTouch::x_transformed")
+        self.x()
     }
 
     fn y_transformed(&self, height: i32) -> f64 {
         let _ = height;
-        todo!("P0-B-headless: VirtualTouch::y_transformed")
+        self.y()
     }
 }
 
@@ -321,10 +383,20 @@ event_impl!(VirtualSwitch);
 
 impl SwitchToggleEvent<VirtualInput> for VirtualSwitch {
     fn switch(&self) -> Option<Switch> {
-        todo!("P0-B-headless: VirtualSwitch::switch")
+        Some(match self.step {
+            SwitchStep::Lid(_) => Switch::Lid,
+            SwitchStep::TabletMode(_) => Switch::TabletMode,
+        })
     }
 
     fn state(&self) -> SwitchState {
-        todo!("P0-B-headless: VirtualSwitch::state")
+        match self.step {
+            SwitchStep::Lid(LidState::Closed) | SwitchStep::TabletMode(TabletState::On) => {
+                SwitchState::On
+            }
+            SwitchStep::Lid(LidState::Open) | SwitchStep::TabletMode(TabletState::Off) => {
+                SwitchState::Off
+            }
+        }
     }
 }

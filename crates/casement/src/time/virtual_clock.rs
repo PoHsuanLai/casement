@@ -41,6 +41,43 @@ impl SharedClock {
         let _ = t;
         todo!("P0-B-loop: SharedClock::advance_to")
     }
+
+    /// Asks the source to walk the clock to `t`, one stop at a time. Never backwards.
+    pub fn run_to(&self, t: Mono) {
+        let _ = t;
+        todo!("P0-B-loop: SharedClock::run_to")
+    }
+
+    /// The vblanks of `output` follow `clock` from now on.
+    pub fn plug_output(
+        &self,
+        output: casement_core::OutputKey,
+        clock: casement_core::time::VblankClock,
+    ) {
+        let _ = (output, clock);
+        todo!("P0-B-loop: SharedClock::plug_output")
+    }
+
+    /// The vblanks of `output` stop.
+    pub fn unplug_output(&self, output: &casement_core::OutputKey) {
+        let _ = output;
+        todo!("P0-B-loop: SharedClock::unplug_output")
+    }
+
+    /// How many outputs' vblanks the clock follows.
+    pub fn output_count(&self) -> usize {
+        todo!("P0-B-loop: SharedClock::output_count")
+    }
+
+    /// How many stops the source has handed out (a fixture reads it to know a round moved).
+    pub fn delivered(&self) -> u64 {
+        todo!("P0-B-loop: SharedClock::delivered")
+    }
+
+    /// The timers handed out since the last call, in firing order.
+    pub fn take_fired(&self) -> Vec<casement_core::time::TimerKey> {
+        todo!("P0-B-loop: SharedClock::take_fired")
+    }
 }
 
 /// The calloop source handing out the virtual clock's due stops.

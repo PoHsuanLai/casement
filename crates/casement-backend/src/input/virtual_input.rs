@@ -2,12 +2,16 @@
 
 use super::device_spec::DeviceSpec;
 use super::virtual_events::{
-    VirtualAxis, VirtualButton, VirtualGestureBegin, VirtualGestureEnd, VirtualKey, VirtualMotion,
-    VirtualMotionTo, VirtualPinchUpdate, VirtualSwipeUpdate, VirtualSwitch, VirtualTouch,
+    EventStamp, VirtualAxis, VirtualButton, VirtualGestureBegin, VirtualGestureEnd, VirtualKey,
+    VirtualMotion, VirtualMotionTo, VirtualPinchUpdate, VirtualSwipeUpdate, VirtualSwitch,
+    VirtualTouch,
 };
 use casement_core::DeviceId;
+use casement_core::input::DeviceClass;
+#[cfg(any(feature = "testing", feature = "debug-inject"))]
+use casement_core::input::{Edge, GestureStep, InputKind, KeyCode, TouchStep};
 use smithay::backend::input::{Device, DeviceCapability, InputBackend, InputEvent, UnusedEvent};
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
@@ -17,10 +21,14 @@ pub type VirtualInputEvent = InputEvent<VirtualInput>;
 /// Virtual input devices and the events queued on them, oldest first.
 #[derive(Debug, Default)]
 pub struct VirtualInput {
-    #[expect(dead_code, reason = "P0-B-headless: the plugged devices")]
     devices: BTreeMap<DeviceId, VirtualDevice>,
-    #[expect(dead_code, reason = "P0-B-headless: the queued events")]
     queue: VecDeque<VirtualInputEvent>,
+    /// The next device number (never reused in a run).
+    #[cfg(any(feature = "testing", feature = "debug-inject"))]
+    next: u32,
+    /// Keys held down, over every device (smithay's `count`).
+    #[cfg(any(feature = "testing", feature = "debug-inject"))]
+    held: BTreeSet<(DeviceId, KeyCode)>,
 }
 
 impl VirtualInput {
@@ -29,18 +37,34 @@ impl VirtualInput {
         VirtualInput::default()
     }
 
+    /// The plugged devices.
+    pub fn devices(&self) -> &BTreeMap<DeviceId, VirtualDevice> {
+        &self.devices
+    }
+
+    /// Every event queued since the last drain, oldest first (the loop's turn).
+    pub fn drain(&mut self) -> Vec<VirtualInputEvent> {
+        self.queue.drain(..).collect()
+    }
+
     /// Plugs a device (queues `DeviceAdded`) and returns its id.
     #[cfg(any(feature = "testing", feature = "debug-inject"))]
     pub fn plug(&mut self, spec: DeviceSpec) -> DeviceId {
-        let _ = spec;
-        todo!("P0-B-headless: VirtualInput::plug")
+        self.next = self.next.saturating_add(1);
+        let id = DeviceId(self.next);
+        let device = VirtualDevice { id, spec };
+        self.devices.insert(id, device.clone());
+        self.queue.push_back(InputEvent::DeviceAdded { device });
+        id
     }
 
-    /// Unplugs `device` (queues `DeviceRemoved`).
+    /// Unplugs `device` (queues `DeviceRemoved`); keys it held are released silently.
     #[cfg(any(feature = "testing", feature = "debug-inject"))]
     pub fn unplug(&mut self, device: DeviceId) {
-        let _ = device;
-        todo!("P0-B-headless: VirtualInput::unplug")
+        self.held.retain(|(held_on, _)| *held_on != device);
+        if let Some(device) = self.devices.remove(&device) {
+            self.queue.push_back(InputEvent::DeviceRemoved { device });
+        }
     }
 
     /// Queues `kind` from `device` at `at` (refused silently for an unplugged device).
@@ -51,8 +75,103 @@ impl VirtualInput {
         kind: casement_core::input::InputKind,
         at: casement_core::time::Mono,
     ) {
-        let _ = (device, kind, at);
-        todo!("P0-B-headless: VirtualInput::push")
+        let Some(device) = self.devices.get(&device).cloned() else {
+            return;
+        };
+        let stamp = EventStamp { device, at };
+        let event = self.event_of(stamp, kind);
+        self.queue.push_back(event);
+    }
+
+    /// `kind` as smithay's event, stamped.
+    #[cfg(any(feature = "testing", feature = "debug-inject"))]
+    fn event_of(&mut self, stamp: EventStamp, kind: InputKind) -> VirtualInputEvent {
+        match kind {
+            InputKind::Key { code, edge } => {
+                let key = (stamp.device.id, code);
+                match edge {
+                    Edge::Press => self.held.insert(key),
+                    Edge::Release => self.held.remove(&key),
+                };
+                let count = u32::try_from(self.held.len()).unwrap_or(u32::MAX);
+                InputEvent::Keyboard {
+                    event: VirtualKey {
+                        stamp,
+                        code,
+                        edge,
+                        count,
+                    },
+                }
+            }
+            InputKind::Motion { delta } => InputEvent::PointerMotion {
+                event: VirtualMotion { stamp, delta },
+            },
+            InputKind::MotionTo { at } => InputEvent::PointerMotionAbsolute {
+                event: VirtualMotionTo { stamp, at },
+            },
+            InputKind::Button { button, edge } => InputEvent::PointerButton {
+                event: VirtualButton {
+                    stamp,
+                    button,
+                    edge,
+                },
+            },
+            InputKind::Axis(frame) => InputEvent::PointerAxis {
+                event: VirtualAxis { stamp, frame },
+            },
+            InputKind::Swipe(step) => match step {
+                GestureStep::Begin { fingers } => InputEvent::GestureSwipeBegin {
+                    event: VirtualGestureBegin { stamp, fingers },
+                },
+                GestureStep::Update(delta) => InputEvent::GestureSwipeUpdate {
+                    event: VirtualSwipeUpdate { stamp, delta },
+                },
+                GestureStep::End(end) => InputEvent::GestureSwipeEnd {
+                    event: VirtualGestureEnd { stamp, end },
+                },
+            },
+            InputKind::Pinch(step) => match step {
+                GestureStep::Begin { fingers } => InputEvent::GesturePinchBegin {
+                    event: VirtualGestureBegin { stamp, fingers },
+                },
+                GestureStep::Update(delta) => InputEvent::GesturePinchUpdate {
+                    event: VirtualPinchUpdate { stamp, delta },
+                },
+                GestureStep::End(end) => InputEvent::GesturePinchEnd {
+                    event: VirtualGestureEnd { stamp, end },
+                },
+            },
+            InputKind::Hold(step) => match step {
+                GestureStep::Begin { fingers } => InputEvent::GestureHoldBegin {
+                    event: VirtualGestureBegin { stamp, fingers },
+                },
+                // A hold has no update step on the wire: it ends or it does not.
+                GestureStep::Update(()) => InputEvent::Special(()),
+                GestureStep::End(end) => InputEvent::GestureHoldEnd {
+                    event: VirtualGestureEnd { stamp, end },
+                },
+            },
+            InputKind::Touch(step) => match step {
+                TouchStep::Down { .. } => InputEvent::TouchDown {
+                    event: VirtualTouch { stamp, step },
+                },
+                TouchStep::Motion { .. } => InputEvent::TouchMotion {
+                    event: VirtualTouch { stamp, step },
+                },
+                TouchStep::Up { .. } => InputEvent::TouchUp {
+                    event: VirtualTouch { stamp, step },
+                },
+                TouchStep::Frame => InputEvent::TouchFrame {
+                    event: VirtualTouch { stamp, step },
+                },
+                TouchStep::Cancel => InputEvent::TouchCancel {
+                    event: VirtualTouch { stamp, step },
+                },
+            },
+            InputKind::Switch(step) => InputEvent::SwitchToggle {
+                event: VirtualSwitch { stamp, step },
+            },
+        }
     }
 }
 
@@ -73,24 +192,31 @@ impl Hash for VirtualDevice {
 
 impl Device for VirtualDevice {
     fn id(&self) -> String {
-        todo!("P0-B-headless: VirtualDevice::id")
+        format!("virtual-{}", self.id.0)
     }
 
     fn name(&self) -> String {
-        todo!("P0-B-headless: VirtualDevice::name")
+        self.spec.name.0.clone()
     }
 
     fn has_capability(&self, capability: DeviceCapability) -> bool {
-        let _ = capability;
-        todo!("P0-B-headless: VirtualDevice::has_capability")
+        use DeviceCapability as Cap;
+        match self.spec.class {
+            DeviceClass::Keyboard => capability == Cap::Keyboard,
+            DeviceClass::Pointer => capability == Cap::Pointer,
+            DeviceClass::Touchpad => matches!(capability, Cap::Pointer | Cap::Gesture),
+            DeviceClass::Tablet => matches!(capability, Cap::TabletTool | Cap::TabletPad),
+            DeviceClass::Touch => capability == Cap::Touch,
+            DeviceClass::Switch => capability == Cap::Switch,
+        }
     }
 
     fn usb_id(&self) -> Option<(u32, u32)> {
-        todo!("P0-B-headless: VirtualDevice::usb_id")
+        None
     }
 
     fn syspath(&self) -> Option<PathBuf> {
-        todo!("P0-B-headless: VirtualDevice::syspath")
+        None
     }
 }
 

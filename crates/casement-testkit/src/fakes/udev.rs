@@ -17,7 +17,6 @@ pub enum UdevEvent {
 /// A scripted udev.
 #[derive(Debug, Default)]
 pub struct FakeUdev {
-    #[expect(dead_code, reason = "P0-B-headless: the scripted events")]
     script: VecDeque<UdevEvent>,
 }
 
@@ -31,6 +30,25 @@ impl FakeUdev {
 
     /// The next scripted event, if any.
     pub fn next_event(&mut self) -> Option<UdevEvent> {
-        todo!("P0-B-headless: FakeUdev::next_event")
+        self.script.pop_front()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_script_comes_out_in_order_then_ends() {
+        let card = PathBuf::from("/dev/dri/card0");
+        let mut udev = FakeUdev::scripted(vec![
+            UdevEvent::Added(card.clone()),
+            UdevEvent::Changed(card.clone()),
+            UdevEvent::Removed(card.clone()),
+        ]);
+        assert_eq!(udev.next_event(), Some(UdevEvent::Added(card.clone())));
+        assert_eq!(udev.next_event(), Some(UdevEvent::Changed(card.clone())));
+        assert_eq!(udev.next_event(), Some(UdevEvent::Removed(card)));
+        assert_eq!(udev.next_event(), None);
     }
 }
