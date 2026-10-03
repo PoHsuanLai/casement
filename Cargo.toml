@@ -6,6 +6,7 @@ resolver = "3"
 members = [
   "crates/casement-core",
   "crates/casement-layout",
+  "crates/casement-motion",
 ]
 
 [workspace.package]

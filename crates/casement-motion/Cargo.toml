@@ -1,0 +1,23 @@
+[package]
+name = "casement-motion"
+description = "casement's pure motion: the MotionBook of ds-motion spring legs, retargeting with velocity kept, and sampling into an Eq FrameScene in 1/120 px."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+casement-core = { workspace = true }
+casement-layout = { workspace = true }
+casement-protocols = { workspace = true }
+ds-core = { workspace = true }
+ds-style = { workspace = true }
+ds-motion = { workspace = true }
+
+[dev-dependencies]
+porter-core = { workspace = true }
+
+[lints]
+workspace = true

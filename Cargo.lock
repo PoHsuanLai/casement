@@ -79,6 +79,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "casement-motion"
+version = "0.1.0"
+dependencies = [
+ "casement-core",
+ "casement-layout",
+ "casement-protocols",
+ "ds-core",
+ "ds-motion",
+ "ds-style",
+ "porter-core",
+]
+
+[[package]]
 name = "casement-protocols"
 version = "0.1.0"
 dependencies = [
