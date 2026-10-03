@@ -17,7 +17,6 @@ const PREFERRED: ModePreference = ModePreference::Preferred;
 const OTHER: ModePreference = ModePreference::Other;
 
 #[test]
-#[ignore = "P0-F1-output"]
 fn first_sight_scales() {
     let one = |w, h, mm| display("DP-1", vec![mode(w, h, 60_000, PREFERRED)], mm);
     let cases = [
@@ -76,7 +75,6 @@ fn first_sight_scales() {
 }
 
 #[test]
-#[ignore = "P0-F1-output"]
 fn picking_modes() {
     let facts = display(
         "DP-1",
@@ -135,7 +133,6 @@ fn picking_modes() {
 }
 
 #[test]
-#[ignore = "P0-F1-output"]
 fn placing_outputs() {
     let small = headless("HEADLESS-1");
     let big = display(

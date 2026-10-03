@@ -12,3 +12,6 @@ pub use layer::{
     Anchor, Anchors, ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerSpec, Margins,
     ShellRoleTag,
 };
+
+#[cfg(test)]
+mod usable_area_tests;

@@ -1,7 +1,7 @@
 //! Every layer surface, and the usable area their exclusive zones leave on an output.
 
-use super::LayerSpec;
-use crate::geometry::LogicalRect;
+use super::{Anchor, Anchors, ExclusiveZone, LayerSpec};
+use crate::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use crate::ids::{LayerKey, OutputKey};
 use std::collections::BTreeMap;
 
@@ -35,11 +35,130 @@ impl LayerBook {
 
     /// What `full` (an output's whole logical rectangle) leaves for windows once every layer
     /// surface on `output` that reserves an exclusive zone has taken it, beside the edge it is
-    /// anchored to (its margin on that edge included).
+    /// anchored to (its margin on that edge included). Maximised windows take this rectangle
+    /// too (A16), so a bar and a dock are never covered.
+    ///
+    /// Each surface's edge is the one it is held to with the opposite edge free and the two
+    /// perpendicular edges both held or both free; any other anchoring (two adjacent edges,
+    /// opposite edges, all four, none) is ambiguous and reserves nothing, as does a zone that
+    /// is not [`ExclusiveZone::Reserve`]. Reservations on one edge add up, in `LayerKey`
+    /// order; a reservation larger than what is left takes what is left.
     pub fn usable_area(&self, output: &OutputKey, full: LogicalRect) -> LogicalRect {
-        let _ = (output, full, &self.layers);
-        todo!("P0-F1-output: subtract each Reserve zone from its anchored edge")
+        self.layers
+            .values()
+            .filter(|spec| spec.output == *output)
+            .filter_map(reservation)
+            .fold(full, shrink)
     }
+}
+
+/// One reservation: this edge loses this many logical pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Reservation {
+    edge: Edge,
+    depth: u32,
+}
+
+/// A side of an output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Edge {
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+
+/// What `spec` takes from which edge, if anything.
+fn reservation(spec: &LayerSpec) -> Option<Reservation> {
+    let ExclusiveZone::Reserve(zone) = spec.exclusive else {
+        return None;
+    };
+    let edge = exclusive_edge(&spec.anchor)?;
+    let margin = match edge {
+        Edge::Top => spec.margin.top,
+        Edge::Bottom => spec.margin.bottom,
+        Edge::Left => spec.margin.left,
+        Edge::Right => spec.margin.right,
+    };
+    let depth = u32::try_from(i64::from(zone) + i64::from(margin).max(0)).unwrap_or(u32::MAX);
+    (depth > 0).then_some(Reservation { edge, depth })
+}
+
+/// The one edge an anchoring reserves beside, if it names one.
+fn exclusive_edge(anchor: &Anchors) -> Option<Edge> {
+    let held = |a: Anchor| a == Anchor::Held;
+    let (top, bottom, left, right) = (
+        held(anchor.top),
+        held(anchor.bottom),
+        held(anchor.left),
+        held(anchor.right),
+    );
+    let vertical_sides_agree = left == right;
+    let horizontal_sides_agree = top == bottom;
+    match (top, bottom, left, right) {
+        (true, false, _, _) if vertical_sides_agree => Some(Edge::Top),
+        (false, true, _, _) if vertical_sides_agree => Some(Edge::Bottom),
+        (_, _, true, false) if horizontal_sides_agree => Some(Edge::Left),
+        (_, _, false, true) if horizontal_sides_agree => Some(Edge::Right),
+        _ => None,
+    }
+}
+
+/// `area` without the strip `reservation` takes beside its edge.
+fn shrink(area: LogicalRect, reservation: Reservation) -> LogicalRect {
+    let LogicalRect { origin, size } = area;
+    match reservation.edge {
+        Edge::Top => {
+            let taken = reservation.depth.min(size.h);
+            LogicalRect::new(
+                LogicalPoint {
+                    x: origin.x,
+                    y: shift(origin.y, taken),
+                },
+                LogicalSize {
+                    w: size.w,
+                    h: size.h - taken,
+                },
+            )
+        }
+        Edge::Bottom => {
+            let taken = reservation.depth.min(size.h);
+            LogicalRect::new(
+                origin,
+                LogicalSize {
+                    w: size.w,
+                    h: size.h - taken,
+                },
+            )
+        }
+        Edge::Left => {
+            let taken = reservation.depth.min(size.w);
+            LogicalRect::new(
+                LogicalPoint {
+                    x: shift(origin.x, taken),
+                    y: origin.y,
+                },
+                LogicalSize {
+                    w: size.w - taken,
+                    h: size.h,
+                },
+            )
+        }
+        Edge::Right => {
+            let taken = reservation.depth.min(size.w);
+            LogicalRect::new(
+                origin,
+                LogicalSize {
+                    w: size.w - taken,
+                    h: size.h,
+                },
+            )
+        }
+    }
+}
+
+fn shift(from: i32, by: u32) -> i32 {
+    from.saturating_add_unsigned(by)
 }
 
 #[cfg(test)]
@@ -99,7 +218,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "P0-F1-output"]
     fn exclusive_zones_shrink_the_usable_area() {
         let full = rect(0, 0, 1920, 1080);
         let top_margin = Margins {

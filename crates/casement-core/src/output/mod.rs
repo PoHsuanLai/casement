@@ -3,6 +3,7 @@
 
 mod arrangement;
 mod config;
+mod density;
 mod facts;
 mod mode_pick;
 mod scale_policy;
@@ -14,3 +15,6 @@ pub use facts::{
 };
 pub use mode_pick::{ModeWish, pick_mode};
 pub use scale_policy::{ScalePolicy, first_sight_scale};
+
+#[cfg(test)]
+mod tests;
