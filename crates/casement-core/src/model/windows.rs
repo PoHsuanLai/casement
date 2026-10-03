@@ -163,10 +163,8 @@ impl Model {
         moved
             .then(|model| model.feed(FocusIn::Unmapped(id)))
             .then(|model| match closed_sheet {
-                Some(parent) if model.sees_window(parent) => {
-                    model.feed(FocusIn::SheetClosed { parent })
-                }
-                _ => Moved::of(model),
+                Some(parent) => model.feed(FocusIn::SheetClosed { parent }),
+                None => Moved::of(model),
             })
             .then(|model| model.redrawn(Cause::Close, outputs))
     }

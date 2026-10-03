@@ -11,11 +11,13 @@ use casement_core::WindowId;
 use casement_core::focus::{
     Focus, FocusIn, FocusOut, FocusView, HitPart, Press, PressRoute, route_press,
 };
+use casement_core::geometry::LogicalSize;
 use casement_core::input::{DeviceClass, Origin};
-use casement_core::window::Window;
+use casement_core::window::{Restore, Window, WindowState};
 use casement_protocols::vocab::{ActorKind, Emphasis, MacMods};
 use fixture::{a, apps, b, focus, ids, sheet, start, windows};
 use rows::{Row, attention, c, nothing, on, over_sheet, row, run, three_spaces};
+use std::collections::BTreeMap;
 use support::{headless, space_id};
 
 #[test]
@@ -279,6 +281,103 @@ fn spaces_and_sheets() {
             ],
         ),
         row(
+            "a sheet closed over a visible parent with a sibling hands the key to the parent",
+            over_sheet(),
+            FocusIn::SheetClosed {
+                parent: WindowId(1),
+            },
+            windows(&[], vec![sheet(6, 1)]),
+            focus(Some(a()), Some(1), Some(1), vec![a(), b()], &[1, 6, 2, 3]),
+            vec![
+                FocusOut::Keyboard(Some(WindowId(1))),
+                FocusOut::Emphasis(vec![
+                    (WindowId(1), Emphasis::Key),
+                    (WindowId(6), Emphasis::Inactive),
+                ]),
+            ],
+        ),
+        row(
+            "a sheet closed over a minimised parent re-keys to the app's next visible window",
+            over_sheet(),
+            FocusIn::SheetClosed {
+                parent: WindowId(1),
+            },
+            windows_with(1, minimised, vec![sheet(6, 1)]),
+            focus(Some(a()), Some(2), Some(2), vec![a(), b()], &[2, 6, 1, 3]),
+            vec![
+                FocusOut::Keyboard(Some(WindowId(2))),
+                FocusOut::Emphasis(vec![
+                    (WindowId(1), Emphasis::Inactive),
+                    (WindowId(2), Emphasis::Key),
+                    (WindowId(6), Emphasis::Inactive),
+                ]),
+            ],
+        ),
+        row(
+            "a sheet closed over a parent on a hidden Space re-keys to the app's next visible window",
+            over_sheet(),
+            FocusIn::SheetClosed {
+                parent: WindowId(1),
+            },
+            windows_with(
+                1,
+                |w| Window {
+                    place: on(1, &a(), "s-2").place,
+                    ..w
+                },
+                vec![sheet(6, 1)],
+            ),
+            focus(Some(a()), Some(2), Some(2), vec![a(), b()], &[2, 6, 1, 3]),
+            vec![
+                FocusOut::Keyboard(Some(WindowId(2))),
+                FocusOut::Emphasis(vec![
+                    (WindowId(1), Emphasis::Inactive),
+                    (WindowId(2), Emphasis::Key),
+                    (WindowId(6), Emphasis::Inactive),
+                ]),
+            ],
+        ),
+        row(
+            "a sheet closed over a minimised parent with no other window leaves A windowless",
+            over_sheet(),
+            FocusIn::SheetClosed {
+                parent: WindowId(1),
+            },
+            windows_without(2, 1, minimised, vec![sheet(6, 1)]),
+            focus(Some(a()), None, None, vec![a(), b()], &[6, 1, 2, 3]),
+            vec![
+                FocusOut::Keyboard(None),
+                FocusOut::Emphasis(vec![
+                    (WindowId(1), Emphasis::Inactive),
+                    (WindowId(6), Emphasis::Inactive),
+                ]),
+            ],
+        ),
+        row(
+            "a sheet closed over a parent on a hidden Space with no other window leaves A windowless",
+            over_sheet(),
+            FocusIn::SheetClosed {
+                parent: WindowId(1),
+            },
+            windows_without(
+                2,
+                1,
+                |w| Window {
+                    place: on(1, &a(), "s-2").place,
+                    ..w
+                },
+                vec![sheet(6, 1)],
+            ),
+            focus(Some(a()), None, None, vec![a(), b()], &[6, 1, 2, 3]),
+            vec![
+                FocusOut::Keyboard(None),
+                FocusOut::Emphasis(vec![
+                    (WindowId(1), Emphasis::Inactive),
+                    (WindowId(6), Emphasis::Inactive),
+                ]),
+            ],
+        ),
+        row(
             "a sheet closed after it unmapped finds the key already back",
             start(),
             FocusIn::SheetClosed {
@@ -290,6 +389,38 @@ fn spaces_and_sheets() {
         ),
     ];
     rows.into_iter().for_each(run);
+}
+
+/// `w` minimised into the dock.
+fn minimised(w: Window) -> Window {
+    Window {
+        state: WindowState::Minimised {
+            restore: Restore::New(LogicalSize { w: 800, h: 600 }),
+        },
+        ..w
+    }
+}
+
+/// The fixture's windows with window `n` changed by `change`, plus `extra`.
+fn windows_with(
+    n: u64,
+    change: impl Fn(Window) -> Window,
+    extra: Vec<Window>,
+) -> BTreeMap<WindowId, Window> {
+    windows_without(0, n, change, extra)
+}
+
+/// The same without window `gone`.
+fn windows_without(
+    gone: u64,
+    n: u64,
+    change: impl Fn(Window) -> Window,
+    extra: Vec<Window>,
+) -> BTreeMap<WindowId, Window> {
+    windows(&[gone], extra)
+        .into_iter()
+        .map(|(id, w)| (id, if id.0 == n { change(w) } else { w }))
+        .collect()
 }
 
 /// B active, nothing key: where rule S5 leaves focus until the Space switch lands.

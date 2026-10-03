@@ -84,22 +84,7 @@ pub(super) fn unmapped(focus: Focus, window: WindowId, view: &FocusView) -> Outc
         ..focus
     };
     if was_key {
-        let next = focus.active.as_ref().and_then(|app| {
-            let visible: Vec<&Window> = view
-                .windows_of(app)
-                .into_iter()
-                .filter(|w| view.is_visible(w))
-                .collect();
-            focus.latest(&visible)
-        });
-        return Outcome::of(match next {
-            Some(next) => focus.keyed(next, view),
-            None => Focus {
-                key: None,
-                main: None,
-                ..focus
-            },
-        });
+        return Outcome::of(rekeyed(focus, window, view));
     }
     if was_main {
         let main = focus
@@ -109,6 +94,27 @@ pub(super) fn unmapped(focus: Focus, window: WindowId, view: &FocusView) -> Outc
         return Outcome::of(Focus { main, ..focus });
     }
     Outcome::of(focus)
+}
+
+/// The key `lost` window's app is active and its next window by MRU that the person can see takes
+/// the key; with none the app stays active and windowless (A9). `lost` is never the next key.
+fn rekeyed(focus: Focus, lost: WindowId, view: &FocusView) -> Focus {
+    let next = focus.active.as_ref().and_then(|app| {
+        let visible: Vec<&Window> = view
+            .windows_of(app)
+            .into_iter()
+            .filter(|w| w.id != lost && view.is_visible(w))
+            .collect();
+        focus.latest(&visible)
+    });
+    match next {
+        Some(next) => focus.keyed(next, view),
+        None => Focus {
+            key: None,
+            main: None,
+            ..focus
+        },
+    }
 }
 
 /// The switcher, the dock, the launcher or an intent activated an app: the app's windows on
@@ -209,20 +215,23 @@ pub(super) fn sheet_opened(
     }
 }
 
-/// A sheet closed: the key goes back to its window, unless it already has (the sheet unmapped
-/// first) or the person has moved on to another window.
+/// A sheet closed: the key goes back to its window when the person can see it, unless it
+/// already has (the sheet unmapped first) or the person has moved on to another window. A
+/// window that is minimised, on a Space no output shows or of a hidden app cannot take the key:
+/// when the closing sheet held it, the key is re-chosen as for any key lost (A39).
 pub(super) fn sheet_closed(focus: Focus, parent: WindowId, view: &FocusView) -> Outcome {
     let Some(parent) = view.window(parent) else {
         return Outcome::of(focus);
     };
-    let key_is_its_sheet = focus
-        .key
-        .and_then(|key| view.window(key))
-        .is_some_and(|key| key.parent == crate::window::Parent::Window(parent.id));
+    let sheet_key = focus.key.filter(|key| {
+        view.window(*key)
+            .is_some_and(|key| key.parent == crate::window::Parent::Window(parent.id))
+    });
     let key_gone_to_nothing = focus.key.is_none() && focus.active.as_ref() == Some(&parent.app);
-    if key_is_its_sheet || key_gone_to_nothing {
-        Outcome::of(focus.keyed(parent, view))
-    } else {
-        Outcome::of(focus)
+    match (view.is_visible(parent), sheet_key) {
+        (true, Some(_)) => Outcome::of(focus.keyed(parent, view)),
+        (true, None) if key_gone_to_nothing => Outcome::of(focus.keyed(parent, view)),
+        (false, Some(sheet)) => Outcome::of(rekeyed(focus, sheet, view)),
+        _ => Outcome::of(focus),
     }
 }
