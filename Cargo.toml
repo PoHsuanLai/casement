@@ -1,0 +1,49 @@
+[workspace]
+resolver = "3"
+# The pure crates (P0-Z1). The smithay-facing crates, the composition root, the test kit and the
+# binaries join at P0-Z2 (ARCHITECTURE.md section 1). `wlcs-casement` and `casement-scene-css`
+# are never members (boundary row B16).
+members = [
+  "crates/casement-core",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+# What quire declares; the toolchain itself is pinned in rust-toolchain.toml (1.98.1).
+rust-version = "1.92"
+repository = "https://github.com/PoHsuanLai/casement"
+publish = false
+
+[workspace.dependencies]
+casement-core   = { path = "crates/casement-core" }
+casement-layout = { path = "crates/casement-layout" }
+casement-motion = { path = "crates/casement-motion" }
+
+# Sibling repos, by path (each checkout sits beside this one; a lane worktree links them).
+casement-protocols = { path = "../casement-protocols" }
+porter-core        = { path = "../porter/crates/porter-core" }
+# quire's pure crates without dioxus (S0-QM1): the compositor never links a UI framework.
+ds-core   = { path = "../quire/crates/ds-core", default-features = false }
+ds-style  = { path = "../quire/crates/ds-style", default-features = false }
+ds-motion = { path = "../quire/crates/ds-motion", default-features = false }
+ds-behaviour = { path = "../quire/crates/ds-behaviour" }
+
+# ---- From quire's pinned block (`docs/workspace-deps.toml`), copied verbatim: only the lines the
+# pure crates name. P0-Z2 adds the smithay-facing lines (21-FREEZE-AMENDMENTS A14).
+thiserror  = "2"
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml       = "1"
+proptest   = "1"
+
+# ---- Not in quire's pinned block (FINDINGS: dependencies added here). taffy is the rev quire's
+# Cargo.lock resolves through Blitz (SP1, A14), named directly because casement-layout takes
+# taffy alone; only `casement-layout/src/taffy_bridge/` names it (boundary row B2).
+taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "4863877b9cab21645b160d7f247901f90214fe27", default-features = false, features = ["std", "taffy_tree", "flexbox", "grid", "block_layout"] }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_docs = "warn"
+missing_debug_implementations = "warn"

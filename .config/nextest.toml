@@ -1,0 +1,17 @@
+# Profiles named by dev/gate.sh (P0-Z2): fast for a lane's crates, merge and phase for the whole
+# workspace. Ignored tests (frozen behaviour waiting for its fill lane) are skipped by default.
+[profile.default]
+failure-output = "immediate-final"
+fail-fast = false
+
+[profile.fast]
+failure-output = "immediate-final"
+fail-fast = false
+
+[profile.merge]
+failure-output = "immediate-final"
+fail-fast = false
+
+[profile.phase]
+failure-output = "immediate-final"
+fail-fast = false
