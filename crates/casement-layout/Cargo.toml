@@ -13,6 +13,7 @@ casement-core = { workspace = true }
 casement-protocols = { workspace = true }
 porter-core = { workspace = true }
 ds-core = { workspace = true }
+ds-style = { workspace = true }
 taffy = { workspace = true }
 
 [dev-dependencies]

@@ -37,7 +37,6 @@ fn target(arrangement: &Arrangement, n: u64) -> &WindowTarget {
 }
 
 #[test]
-#[ignore = "P0-F1-layout"]
 fn new_windows_centre_then_cascade() {
     let usable = rect(0, 24, 1920, 1056);
     let cases: Vec<CascadeCase> = vec![
@@ -91,7 +90,6 @@ fn new_windows_centre_then_cascade() {
 }
 
 #[test]
-#[ignore = "P0-F1-layout"]
 fn floating_windows_stay_or_come_back_inside() {
     let usable = rect(0, 24, 1920, 1056);
     let min = |w, h| SizeLimits {
@@ -158,7 +156,6 @@ fn floating_windows_stay_or_come_back_inside() {
 }
 
 #[test]
-#[ignore = "P0-F1-layout"]
 fn the_shown_space_sits_at_the_usable_origin() {
     let usable = rect(0, 24, 1920, 1056);
     let got = RustScene.arrange(&one_desktop(usable, Vec::new()), &knobs());
@@ -176,6 +173,69 @@ fn the_shown_space_sits_at_the_usable_origin() {
     );
 }
 
+/// Three Spaces on one output, the second shown, a window in each: the strip is one usable
+/// width apart, every window arranged as if its Space were shown.
+#[test]
+fn spaces_sit_one_usable_width_apart_around_the_shown_one() {
+    use casement_layout::{SceneMode, SpaceArrangement, SpaceSpec};
+    let usable = rect(40, 24, 1000, 700);
+    let mut spec = one_desktop(usable, Vec::new());
+    let output = &mut spec.outputs[0];
+    output.spaces = ["s-1", "s-2", "s-3"]
+        .iter()
+        .zip(1u64..)
+        .map(|(id, n)| SpaceSpec {
+            space: space_id(id),
+            kind: SpaceArrangement::Desktop,
+            windows: vec![window(
+                n,
+                WindowPlacement::Floating(rect(100, 100, 300, 200)),
+                ANY_SIZE,
+            )],
+        })
+        .collect();
+    output.mode = SceneMode::Desktop {
+        shown: space_id("s-2"),
+    };
+    let got = RustScene.arrange(&spec, &knobs());
+    let origins: Vec<_> = got
+        .spaces
+        .iter()
+        .map(|s| (s.space.as_str(), s.origin))
+        .collect();
+    let at = |x, y| LogicalPoint { x, y };
+    assert_eq!(
+        origins,
+        vec![
+            ("s-1", at(-960, 24)),
+            ("s-2", at(40, 24)),
+            ("s-3", at(1040, 24))
+        ]
+    );
+    let rects: Vec<_> = got.windows.iter().map(|t| t.rect).collect();
+    assert_eq!(rects, vec![rect(100, 100, 300, 200); 3]);
+}
+
+/// Windows with no target at P0: minimised ones, and anything P3-Z arranges.
+#[test]
+fn minimised_windows_have_no_target() {
+    let usable = rect(0, 24, 800, 600);
+    let spec = one_desktop(
+        usable,
+        vec![
+            window(1, WindowPlacement::Minimised, ANY_SIZE),
+            window(
+                2,
+                WindowPlacement::Floating(rect(10, 40, 100, 100)),
+                ANY_SIZE,
+            ),
+        ],
+    );
+    let got = RustScene.arrange(&spec, &knobs());
+    let ids: Vec<_> = got.windows.iter().map(|t| t.window).collect();
+    assert_eq!(ids, vec![WindowId(2)]);
+}
+
 fn placement() -> impl Strategy<Value = WindowPlacement> {
     prop_oneof![
         (-500i32..2500, -500i32..1500, 1u32..2500, 1u32..1500)
@@ -186,7 +246,6 @@ fn placement() -> impl Strategy<Value = WindowPlacement> {
 
 proptest! {
     #[test]
-    #[ignore = "P0-F1-layout"]
     fn every_window_fits_and_layout_is_deterministic(
         placements in proptest::collection::vec(placement(), 0..24),
         w in 640u32..3840,
