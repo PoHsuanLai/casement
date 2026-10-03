@@ -21,6 +21,24 @@ pub enum Origin {
     Test,
 }
 
+impl Origin {
+    /// Whether this origin counts as a person at the hardware (I8): a physical device, or the
+    /// headless tests standing in for one. A virtual device never does.
+    pub fn is_physical(&self) -> bool {
+        matches!(self, Origin::Physical(_) | Origin::Test)
+    }
+
+    /// Whether a key chord from this origin may fire a binding: the keyboard the person
+    /// types on, a virtual keyboard (an on-screen one, keycap's output) and the tests. Never
+    /// the agent seat, a remote session or a feed.
+    pub fn fires_bindings(&self) -> bool {
+        matches!(
+            self,
+            Origin::Physical(_) | Origin::Virtual(_) | Origin::Test
+        )
+    }
+}
+
 /// What kind of device an event came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

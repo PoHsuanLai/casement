@@ -16,19 +16,62 @@ pub struct Chord {
     pub key: Keysym,
 }
 
+/// The modifier words, in the Mac's order: how a chord prints them.
+const MODIFIER_WORDS: [(&str, MacMods); 5] = [
+    ("ctrl", MacMods::CONTROL),
+    ("option", MacMods::OPTION),
+    ("shift", MacMods::SHIFT),
+    ("cmd", MacMods::COMMAND),
+    ("fn", MacMods::FUNCTION),
+];
+
 impl Chord {
     /// The chord written as `text`: modifier words (`ctrl`, `option`, `shift`, `cmd`, `fn`)
     /// and an XKB keysym name, joined by `+`, in any order (`"cmd+shift+4"`, `"cmd+Tab"`).
+    /// The key is the last word; a modifier named twice, an unknown word or a missing key is
+    /// an error.
     pub fn parse(text: &str) -> Result<Chord, CoreError> {
-        let _ = text;
-        todo!("P0-F1-input: modifier words and a keysym name")
+        let malformed = || CoreError::Malformed {
+            what: "chord",
+            text: text.to_owned(),
+        };
+        let (head, key) = match text.rsplit_once('+') {
+            Some((head, key)) => (Some(head), key),
+            None => (None, text),
+        };
+        let key = Keysym::named(key).ok_or_else(malformed)?;
+        let mods = head.into_iter().flat_map(|head| head.split('+')).try_fold(
+            MacMods::NONE,
+            |held, word| {
+                let one = modifier(word).filter(|one| !held.holds(*one))?;
+                Some(held.with(one))
+            },
+        );
+        Ok(Chord {
+            mods: mods.ok_or_else(malformed)?,
+            key,
+        })
     }
 
     /// The chord's text: modifiers in the Mac's order (ctrl, option, shift, cmd, fn), then the
-    /// keysym's XKB name. `Chord::parse(&chord.text()) == Ok(chord)`.
+    /// keysym's XKB name. `Chord::parse(&chord.text()) == Ok(chord)` for every chord without
+    /// Caps Lock, which is a lock and not part of a chord (it is left out).
     pub fn text(&self) -> String {
-        todo!("P0-F1-input: the inverse of parse")
+        MODIFIER_WORDS
+            .iter()
+            .filter(|(_, one)| self.mods.holds(*one))
+            .map(|(word, _)| (*word).to_owned())
+            .chain(std::iter::once(self.key.name()))
+            .collect::<Vec<_>>()
+            .join("+")
     }
+}
+
+fn modifier(word: &str) -> Option<MacMods> {
+    MODIFIER_WORDS
+        .iter()
+        .find(|(known, _)| known.eq_ignore_ascii_case(word))
+        .map(|(_, one)| *one)
 }
 
 impl TryFrom<String> for Chord {

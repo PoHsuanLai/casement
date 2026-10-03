@@ -150,7 +150,6 @@ fn outputs() {
 }
 
 #[test]
-#[ignore = "P0-F1-input"]
 fn chords_and_bindings_store_as_text() {
     let chord = Chord {
         mods: MacMods::COMMAND,

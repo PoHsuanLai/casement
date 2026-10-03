@@ -5,6 +5,7 @@ mod binding;
 mod chord;
 mod event;
 mod key;
+mod keysym_names;
 mod origin;
 mod reach;
 
@@ -19,3 +20,6 @@ pub use event::{
 pub use key::{ButtonCode, KeyCode, Keysym};
 pub use origin::{DeviceClass, FeedSource, Origin, PortalSessionId};
 pub use reach::{InputTarget, InputUse, Reach, ReachFacts, Refusal, reach};
+
+#[cfg(test)]
+mod tests;

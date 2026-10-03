@@ -20,7 +20,6 @@ const FEED: Origin = Origin::Feed(FeedSource::Palmrest);
 const WINDOW: InputTarget = InputTarget::Window(WindowId(1));
 
 #[test]
-#[ignore = "P0-F1-input"]
 fn the_reach_table() {
     let unlocked = LockState::Unlocked;
     let locked = LockState::Locked {
@@ -177,7 +176,6 @@ fn the_reach_table() {
 type ChordCase = (&'static str, Option<(MacMods, u32)>, &'static str);
 
 #[test]
-#[ignore = "P0-F1-input"]
 fn chords_parse_in_any_order_and_print_in_the_macs() {
     let cases: [ChordCase; 7] = [
         ("cmd+space", Some((MacMods::COMMAND, 0x20)), "cmd+space"),
@@ -212,7 +210,6 @@ fn chords_parse_in_any_order_and_print_in_the_macs() {
 }
 
 #[test]
-#[ignore = "P0-F1-input"]
 fn agent_remote_and_feed_never_fire_a_binding() {
     let hide = Chord {
         mods: MacMods::COMMAND,
@@ -270,7 +267,6 @@ const HIDDEN_FROM_SANDBOXES: &[GlobalKind] = &[
 ];
 
 #[test]
-#[ignore = "P0-F1-input"]
 fn the_i7_table() {
     let sandbox = ConnectionRole::Sandboxed(SandboxFacts::Flatpak {
         app: "org.example.App".to_owned(),

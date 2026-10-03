@@ -121,7 +121,60 @@ pub enum Advertise {
 /// clipboard managers, the toplevel list, the input-method and virtual-keyboard managers, the
 /// security-context manager, layer shell and the session lock; every other P0 global is seen by
 /// every connection. (P2-Z adds the shell- and agent-only globals.)
+///
+/// The match on `global` is exhaustive on purpose: a new global fails to compile until someone
+/// decides whether a sandbox sees it (I7).
 pub fn advertised(global: GlobalKind, role: &ConnectionRole) -> Advertise {
-    let _ = (global, role);
-    todo!("P0-F1-input: the I7 table")
+    match role {
+        ConnectionRole::Public | ConnectionRole::Shell | ConnectionRole::Agent => Advertise::Yes,
+        ConnectionRole::Sandboxed(_) => sandbox_sees(global),
+    }
+}
+
+fn sandbox_sees(global: GlobalKind) -> Advertise {
+    match global {
+        GlobalKind::Compositor
+        | GlobalKind::Subcompositor
+        | GlobalKind::Shm
+        | GlobalKind::Output
+        | GlobalKind::Viewporter
+        | GlobalKind::SinglePixel
+        | GlobalKind::AlphaModifier
+        | GlobalKind::Presentation
+        | GlobalKind::FractionalScale
+        | GlobalKind::Fifo
+        | GlobalKind::CommitTiming
+        | GlobalKind::ContentType
+        | GlobalKind::XdgShell
+        | GlobalKind::XdgDecoration
+        | GlobalKind::XdgActivation
+        | GlobalKind::XdgDialog
+        | GlobalKind::XdgToplevelIcon
+        | GlobalKind::XdgToplevelTag
+        | GlobalKind::XdgForeign
+        | GlobalKind::SystemBell
+        | GlobalKind::QuireWindow
+        | GlobalKind::Seat
+        | GlobalKind::CursorShape
+        | GlobalKind::PointerConstraints
+        | GlobalKind::RelativePointer
+        | GlobalKind::PointerGestures
+        | GlobalKind::ShortcutsInhibit
+        | GlobalKind::Tablet
+        | GlobalKind::DataDevice
+        | GlobalKind::PrimarySelection
+        | GlobalKind::Dmabuf
+        | GlobalKind::TextInput
+        | GlobalKind::IdleNotify
+        | GlobalKind::IdleInhibit
+        | GlobalKind::BackgroundEffect => Advertise::Yes,
+        GlobalKind::LayerShell
+        | GlobalKind::SessionLock
+        | GlobalKind::ExtDataControl
+        | GlobalKind::WlrDataControl
+        | GlobalKind::InputMethod
+        | GlobalKind::VirtualKeyboard
+        | GlobalKind::ForeignToplevelList
+        | GlobalKind::SecurityContext => Advertise::No,
+    }
 }

@@ -94,8 +94,17 @@ pub enum Resolved {
 }
 
 /// What `chord` from `origin` resolves to. Agent and remote origins never fire a binding, and
-/// neither does a feed.
+/// neither does a feed (I1, I8: only the person's hands, a virtual keyboard they use, or the
+/// tests, drive the desktop's own shortcuts).
 pub fn resolve(bindings: &Bindings, chord: &Chord, origin: &Origin) -> Resolved {
-    let _ = (bindings, chord, origin);
-    todo!("P0-F1-input: first matching binding for origins that may fire one")
+    if !origin.fires_bindings() {
+        return Resolved::PassThrough;
+    }
+    bindings
+        .0
+        .iter()
+        .find(|binding| binding.chord == *chord)
+        .map_or(Resolved::PassThrough, |binding| {
+            Resolved::Action(binding.action.clone())
+        })
 }

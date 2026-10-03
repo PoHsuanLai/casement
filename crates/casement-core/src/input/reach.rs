@@ -73,11 +73,51 @@ pub enum Refusal {
 
 /// Whether an event from `origin` may reach `target` for `use_`.
 ///
-/// Rules: a feed scrolls and gestures only; while locked (or locking) only physical (and test)
-/// input reaches only the lock surface; only physical (and test) input reaches a trusted
-/// surface; virtual devices are never physical (I8); the agent reaches nothing until leases
-/// arrive (P4-Z extends [`ReachFacts`]).
+/// The checks run in this order, the first that refuses wins:
+///
+/// 1. **The lock.** While the session is locked (or locking), only physical (and test) input
+///    reaches only the lock surface; everything else is [`Refusal::Locked`], whoever sends it.
+/// 2. **The agent.** The agent reaches nothing until leases arrive (P4-Z extends
+///    [`ReachFacts`]): [`Refusal::OutsideLease`].
+/// 3. **The feed.** A feed scrolls and gestures only: [`Refusal::FeedKind`].
+/// 4. **Trusted surfaces.** Only physical (and test) input reaches one (I3), and virtual
+///    devices are never physical (I8): [`Refusal::NotPhysical`].
+///
+/// Everything else is allowed: a remote session or a virtual keyboard types into windows like
+/// the person would.
 pub fn reach(origin: &Origin, target: &InputTarget, use_: InputUse, facts: &ReachFacts) -> Reach {
-    let _ = (origin, target, use_, facts);
-    todo!("P0-F1-input: the reach table")
+    [
+        refuse_by_lock(origin, target, facts),
+        refuse_agent(origin),
+        refuse_feed(origin, use_),
+        refuse_untrusted(origin, target),
+    ]
+    .into_iter()
+    .flatten()
+    .next()
+    .map_or(Reach::Allowed, Reach::Refused)
+}
+
+fn refuse_by_lock(origin: &Origin, target: &InputTarget, facts: &ReachFacts) -> Option<Refusal> {
+    match facts.lock {
+        LockState::Unlocked => None,
+        LockState::Locking { .. } | LockState::Locked { .. } | LockState::LockedWithoutSurface => {
+            let reaches_lock = origin.is_physical() && matches!(target, InputTarget::LockSurface);
+            (!reaches_lock).then_some(Refusal::Locked)
+        }
+    }
+}
+
+fn refuse_agent(origin: &Origin) -> Option<Refusal> {
+    matches!(origin, Origin::Agent(_)).then_some(Refusal::OutsideLease)
+}
+
+fn refuse_feed(origin: &Origin, use_: InputUse) -> Option<Refusal> {
+    let allowed = matches!(use_, InputUse::Scroll | InputUse::SystemGesture);
+    (matches!(origin, Origin::Feed(_)) && !allowed).then_some(Refusal::FeedKind)
+}
+
+fn refuse_untrusted(origin: &Origin, target: &InputTarget) -> Option<Refusal> {
+    (matches!(target, InputTarget::Trusted) && !origin.is_physical())
+        .then_some(Refusal::NotPhysical)
 }
