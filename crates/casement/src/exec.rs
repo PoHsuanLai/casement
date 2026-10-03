@@ -14,7 +14,7 @@ use casement_core::{Cause, CoreNote, Effect, KeyboardTarget, LayerKey, OutputKey
 use casement_core::{InputSerial, geometry::LogicalSize, lock::LockReply};
 use casement_wayland::output::OutputWire;
 use casement_wayland::{
-    WaylandFault, layer_shell, output, quire_window, seat, session_lock, xdg_shell,
+    WaylandFault, layer_shell, output, presentation, quire_window, seat, session_lock, xdg_shell,
 };
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::SERIAL_COUNTER;
@@ -187,10 +187,14 @@ fn apply_output(state: &mut State, output: &OutputKey, config: &OutputConfig) {
         false => output::apply_plug::<State>(&mut state.wl.output, &state.display, &wire),
     };
     log(result);
+    if let Some(global) = state.wl.output.outputs.get(output) {
+        presentation::learn_output(&mut state.wl.presentation, output.clone(), global.clone());
+    }
 }
 
 /// Withdraws an unplugged output's `wl_output`.
 pub(crate) fn withdraw_output(state: &mut State, output: &OutputKey) {
+    presentation::forget_output(&mut state.wl.presentation, output);
     if state.wl.output.outputs.contains_key(output) {
         log(output::apply_unplug(
             &mut state.wl.output,

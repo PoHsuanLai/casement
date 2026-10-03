@@ -212,6 +212,7 @@ fn presented(
     for fault in faults.into_iter().filter_map(Result::err) {
         tracing::warn!(%fault, "presentation feedback failed");
     }
+    state.release_blockers();
 }
 
 /// The root surfaces a frame of `output` drew: its windows, its layers, its lock surface and
@@ -396,13 +397,16 @@ fn spec_config(state: &State, name: &OutputName) -> Option<OutputConfig> {
     })
 }
 
-/// What happens once per loop turn: the input the backend queued is delivered, and a locker
-/// that died is noticed (smithay has no callback for it). How many things moved.
+/// What happens once per loop turn: the input the backend queued is delivered, a locker that
+/// died is noticed (smithay has no callback for it), and clients that left are told to the model. How many things moved.
 pub fn turn(state: &mut State) -> usize {
     let events = session_lock::poll_locker(&mut state.wl.session_lock);
     let polled = events.len();
     feed(state, events);
-    drain_input(state) + polled
+    let gone = crate::clients::take_gone(state);
+    let departed = gone.len();
+    feed(state, gone);
+    drain_input(state) + polled + departed
 }
 
 /// Delivers the input the backend queued, in the order it came: each event is told to the
