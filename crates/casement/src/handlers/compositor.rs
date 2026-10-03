@@ -9,7 +9,6 @@ use casement_wayland::{
     subcompositor, xdg_shell,
 };
 use smithay::backend::renderer::utils::on_commit_buffer_handler;
-use smithay::desktop::PopupKind;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Client, Resource};
 use smithay::wayland::compositor::{
@@ -90,16 +89,7 @@ impl State {
                     None => Vec::new(),
                 }
             }
-            CommitRoute::Popup => {
-                self.wl.xdg_shell.popups.commit(surface);
-                if let Some(PopupKind::Xdg(popup)) = self.wl.xdg_shell.popups.find_popup(surface)
-                    && !popup.is_initial_configure_sent()
-                    && popup.send_configure().is_err()
-                {
-                    tracing::warn!("a popup's initial configure was refused");
-                }
-                Vec::new()
-            }
+            CommitRoute::Popup => xdg_shell::on_popup_commit(&mut self.wl.xdg_shell, surface),
             CommitRoute::Layer => layer_shell::on_layer_commit(&mut self.wl.layer_shell, surface),
             CommitRoute::LockSurface
             | CommitRoute::Subsurface
