@@ -12,7 +12,7 @@ publish.workspace = true
 casement-core = { workspace = true }
 casement-motion = { workspace = true }
 ds-core = { workspace = true }
-smithay = { workspace = true, features = ["wayland_frontend", "renderer_gl", "renderer_pixman", "backend_egl"] }
+smithay = { workspace = true, features = ["wayland_frontend", "desktop", "renderer_gl", "renderer_pixman", "backend_egl"] }
 thiserror = { workspace = true }
 image = { workspace = true, optional = true }
 
