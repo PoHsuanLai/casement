@@ -1,0 +1,22 @@
+[package]
+name = "casement-layout"
+description = "casement's pure layout seam: SceneLayout, the scene spec, the Arrangement it yields and RustScene, the production layout; taffy only behind taffy_bridge."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+casement-core = { workspace = true }
+casement-protocols = { workspace = true }
+porter-core = { workspace = true }
+ds-core = { workspace = true }
+taffy = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[lints]
+workspace = true

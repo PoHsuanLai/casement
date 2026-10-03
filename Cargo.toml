@@ -5,6 +5,7 @@ resolver = "3"
 # are never members (boundary row B16).
 members = [
   "crates/casement-core",
+  "crates/casement-layout",
 ]
 
 [workspace.package]
