@@ -1,0 +1,12 @@
+# What the goldens were blessed against (11 §2.8, SP2). A golden that differs after one of
+# these changes is re-blessed with the new versions written here, in the same commit, with a
+# reason (CONVENTIONS addendum 12). Tier P (pixman) held across every SIMD path pixman has
+# (SP2 §2.3); tier L (llvmpipe) is independent of LP_NUM_THREADS (SP2 §2.1).
+[renderers]
+pixman = "0.46.2"
+mesa = "26.2.3"
+llvm = "22.1.8"
+
+[stack]
+smithay = "118e34ffc9b99854a2230c4805e1f37dc9029edb"
+toolchain = "1.98.1"

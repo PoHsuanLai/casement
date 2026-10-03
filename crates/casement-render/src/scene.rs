@@ -1,12 +1,22 @@
 //! One output's frame as render elements.
 
+pub(crate) mod convert;
+mod place;
+
 use crate::compositor::Compositor;
-use crate::element::CasementElement;
+use crate::element::{
+    CasementElement, LockCoverElement, Rgba8, cursor_elements, layer_elements, popup_elements,
+    window_elements,
+};
 use crate::texture_book::TextureBook;
-use casement_core::geometry::{LogicalPoint, LogicalRect, PhysicalSize};
+use casement_core::geometry::{LogicalPoint, LogicalRect, PhysicalRect, PhysicalSize, SubPoint};
 use casement_core::{LayerKey, OutputKey};
 use casement_motion::OutputFrame;
+use convert::{on_output, sub_of};
 use ds_core::geometry::scale::Scale;
+use smithay::backend::renderer::element::surface::render_elements_from_surface_tree;
+use smithay::backend::renderer::element::{Id, Kind};
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 
 /// Where an output sits and how dense it is: what turns the frame's global sub-pixels into this
 /// output's physical pixels. (The plan's sketch had no source for it; FINDINGS.)
@@ -61,7 +71,7 @@ pub enum CursorDraw {
 }
 
 /// A named cursor (`wp_cursor_shape_v1` and the compositor's own grabs).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum CursorShape {
     /// The arrow.
     Default,
@@ -90,6 +100,10 @@ pub enum CursorShape {
 /// The elements of one output's frame, front first (smithay's order): chrome (cursor, lock
 /// covers), overlay and top layers, the frame's windows top of the stack first with their
 /// popups, bottom and background layers. Windows and layers missing from `book` are skipped.
+///
+/// A locked output (one with a lock surface in `book`, or listed in `chrome.covers`) shows the
+/// cursor, its lock surface if any, and under it an opaque cover over the whole output; nothing
+/// of the session is drawn, so a translucent, small or dead locker reveals nothing.
 pub fn output_elements<R: Compositor>(
     frame: &OutputFrame,
     view: &OutputView,
@@ -98,6 +112,81 @@ pub fn output_elements<R: Compositor>(
     chrome: &ChromeLayer,
     renderer: &mut R,
 ) -> Vec<CasementElement<R>> {
-    let _ = (frame, view, layers, book, chrome, renderer);
-    todo!("P0-R-scene: output_elements")
+    let mut elements = cursor_elements(chrome, view, book, renderer);
+    let lock = book.lock(&frame.output);
+    if lock.is_some() || chrome.covers.contains(&frame.output) {
+        if let Some(entry) = lock {
+            elements.extend(tree(&entry.root, sub_of(view.area.origin), view, renderer));
+        }
+        elements.push(CasementElement::Cover(cover(view)));
+        return elements;
+    }
+    let places = place::place_layers(layers, book, view.area);
+    let draw_level =
+        |keys: &[LayerKey], elements: &mut Vec<CasementElement<R>>, renderer: &mut R| {
+            for key in keys.iter().rev() {
+                let (Some(area), Some(entry)) = (places.get(key), book.layer(key)) else {
+                    continue;
+                };
+                elements.extend(popup_elements(&entry.root, area.origin, view, renderer));
+                elements.extend(layer_elements(key, *area, view, book, renderer));
+            }
+        };
+    draw_level(&layers.overlay, &mut elements, renderer);
+    draw_level(&layers.top, &mut elements, renderer);
+    for placed in frame.windows.iter().rev() {
+        if let Some(entry) = book.window(&placed.window) {
+            let origin = LogicalPoint {
+                x: placed.at.x.round_logical(),
+                y: placed.at.y.round_logical(),
+            };
+            elements.extend(popup_elements(&entry.root, origin, view, renderer));
+            elements.extend(window_elements(placed, view, book, renderer));
+        }
+    }
+    draw_level(&layers.bottom, &mut elements, renderer);
+    draw_level(&layers.background, &mut elements, renderer);
+    elements
+}
+
+/// The cover's colour: opaque black.
+const COVER: Rgba8 = Rgba8 {
+    r: 0,
+    g: 0,
+    b: 0,
+    a: 255,
+};
+
+thread_local! {
+    /// The cover's id: one for every output (each output has its own damage tracker), kept
+    /// for the life of the thread so a standing cover damages nothing.
+    static COVER_ID: Id = Id::new();
+}
+
+/// The lock cover over all of `view`.
+fn cover(view: &OutputView) -> LockCoverElement {
+    let area = PhysicalRect {
+        x: 0,
+        y: 0,
+        w: view.mode.w,
+        h: view.mode.h,
+    };
+    LockCoverElement::new(COVER_ID.with(Id::clone), area, COVER)
+}
+
+/// A surface tree with its top-left at `origin` (global sub-pixels), opaque, front first.
+fn tree<R: Compositor>(
+    root: &WlSurface,
+    origin: SubPoint,
+    view: &OutputView,
+    renderer: &mut R,
+) -> Vec<CasementElement<R>> {
+    render_elements_from_surface_tree(
+        renderer,
+        root,
+        on_output(origin, view),
+        view.scale.as_f64(),
+        1.0,
+        Kind::Unspecified,
+    )
 }

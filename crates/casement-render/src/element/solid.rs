@@ -1,9 +1,10 @@
 //! Solid rectangles, with colours that reach the renderer already quantised (A18).
 
+use crate::scene::convert::physical;
 use casement_core::geometry::PhysicalRect;
 use smithay::backend::renderer::Color32F;
-use smithay::backend::renderer::element::Id;
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
+use smithay::backend::renderer::element::{Id, Kind};
 use smithay::backend::renderer::utils::CommitCounter;
 
 /// A colour in whole steps of 1/255, premultiplied: what every colour token becomes before it
@@ -36,13 +37,69 @@ pub fn solid_rect(
     colour: Rgba8,
     commit: CommitCounter,
 ) -> SolidColorRenderElement {
-    let _ = (id, rect, colour, commit);
-    todo!("P0-R-scene: solid_rect")
+    SolidColorRenderElement::new(
+        id,
+        physical(rect),
+        commit,
+        colour.color32f(),
+        Kind::Unspecified,
+    )
+}
+
+impl Rgba8 {
+    /// The same colour with full alpha: what an opaque-by-rule cover draws.
+    pub(crate) fn opaque(self) -> Rgba8 {
+        Rgba8 { a: 255, ..self }
+    }
+
+    /// Whether nothing shows through.
+    pub(crate) fn is_opaque(self) -> bool {
+        self.a == 255
+    }
+}
+
+/// A commit counter that names content rather than counting changes: FNV-1a over `bytes`.
+/// Elements whose content is a pure function of a few values (a colour, a region) use it, so
+/// equal content gives an equal counter and the damage tracker redraws nothing.
+pub(crate) fn fingerprint(bytes: impl IntoIterator<Item = u8>) -> CommitCounter {
+    let hash = bytes
+        .into_iter()
+        .fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
+            (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3)
+        });
+    // Folding to the platform's width keeps the fingerprint deterministic on 32-bit targets.
+    let folded = (hash ^ (hash >> 32)) as usize;
+    CommitCounter::from(folded)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_solid_rect_covers_its_rectangle_in_its_colour() {
+        use smithay::backend::renderer::element::Element;
+        use smithay::utils::Scale;
+        let rect = PhysicalRect {
+            x: -4,
+            y: 7,
+            w: 30,
+            h: 20,
+        };
+        let colour = Rgba8 {
+            r: 10,
+            g: 20,
+            b: 30,
+            a: 255,
+        };
+        let element = solid_rect(Id::new(), rect, colour, CommitCounter::from(3));
+        assert_eq!(element.geometry(Scale::from(1.5)), physical(rect));
+        assert_eq!(element.current_commit(), CommitCounter::from(3));
+        assert_eq!(
+            crate::scene::convert::ours(element.geometry(Scale::from(1.0))),
+            rect
+        );
+    }
 
     #[test]
     fn quantised_colours_are_exact_steps_of_one_255th() {

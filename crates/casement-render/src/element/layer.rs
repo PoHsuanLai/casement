@@ -1,14 +1,18 @@
 //! A layer-shell surface as elements.
 
 use super::CasementElement;
+use super::blur_v0;
 use crate::compositor::Compositor;
 use crate::scene::OutputView;
+use crate::scene::convert::{on_output, sub_of};
 use crate::texture_book::TextureBook;
 use casement_core::LayerKey;
 use casement_core::geometry::LogicalRect;
+use smithay::backend::renderer::element::Kind;
+use smithay::backend::renderer::element::surface::render_elements_from_surface_tree;
 
-/// `layer`'s surface tree at `area` (global logical) on `view`, front first. Empty when the
-/// book has no surface for it.
+/// `layer`'s surface tree at `area` (global logical) on `view`, front first, with its blur v0
+/// behind it when it asked for one. Empty when the book has no surface for it.
 pub fn layer_elements<R: Compositor>(
     layer: &LayerKey,
     area: LogicalRect,
@@ -16,6 +20,18 @@ pub fn layer_elements<R: Compositor>(
     book: &TextureBook,
     renderer: &mut R,
 ) -> Vec<CasementElement<R>> {
-    let _ = (layer, area, view, book, renderer);
-    todo!("P0-R-scene: layer_elements")
+    let Some(entry) = book.layer(layer) else {
+        return Vec::new();
+    };
+    let origin = sub_of(area.origin);
+    let mut elements: Vec<CasementElement<R>> = render_elements_from_surface_tree(
+        renderer,
+        &entry.root,
+        on_output(origin, view),
+        view.scale.as_f64(),
+        1.0,
+        Kind::Unspecified,
+    );
+    elements.extend(blur_v0::behind(&entry.root, origin, view).map(CasementElement::Blur));
+    elements
 }
