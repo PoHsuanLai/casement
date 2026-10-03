@@ -6,8 +6,11 @@ use smithay::desktop::{PopupKind, Window};
 use smithay::input::dnd::DndGrabHandler;
 use smithay::input::pointer::CursorImageStatus;
 use smithay::input::{Seat, SeatHandler, SeatState};
+use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::backend::{ClientData, ClientId, DisconnectReason};
-use smithay::reexports::wayland_server::protocol::{wl_buffer, wl_seat, wl_surface::WlSurface};
+use smithay::reexports::wayland_server::protocol::{
+    wl_buffer, wl_output::WlOutput, wl_seat, wl_surface::WlSurface,
+};
 use smithay::reexports::wayland_server::{Client, Resource};
 use smithay::utils::Serial;
 use smithay::wayland::buffer::BufferHandler;
@@ -16,7 +19,6 @@ use smithay::wayland::compositor::{
     with_states,
 };
 use smithay::wayland::output::OutputHandler;
-use smithay::wayland::pointer_constraints::PointerConstraintsHandler;
 use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::selection::SelectionHandler;
 use smithay::wayland::selection::data_device::{
@@ -87,6 +89,7 @@ impl CompositorHandler for StandIn {
                 toplevel.send_configure();
             }
         }
+        self.commit_layer(surface);
         self.popups.commit(surface);
         if let Some(PopupKind::Xdg(popup)) = self.popups.find_popup(surface)
             && !popup.is_initial_configure_sent()
@@ -96,7 +99,43 @@ impl CompositorHandler for StandIn {
     }
 }
 
+/// Whether a state is being set or unset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Apply {
+    Set,
+    Unset,
+}
+
 impl StandIn {
+    /// Sets or unsets `state` and sizes the toplevel to the output (or to its own choice); the
+    /// protocol demands a configure either way once the initial one is out.
+    fn resize_to_output(
+        &mut self,
+        surface: &ToplevelSurface,
+        state: xdg_toplevel::State,
+        apply: Apply,
+    ) {
+        let size = self
+            .space
+            .outputs()
+            .next()
+            .and_then(|o| self.space.output_geometry(o))
+            .map(|g| g.size);
+        surface.with_pending_state(|pending| match apply {
+            Apply::Set => {
+                pending.states.set(state);
+                pending.size = size;
+            }
+            Apply::Unset => {
+                pending.states.unset(state);
+                pending.size = None;
+            }
+        });
+        if surface.is_initial_configure_sent() {
+            surface.send_configure();
+        }
+    }
+
     fn window_for(&self, surface: &WlSurface) -> Option<Window> {
         self.space
             .elements()
@@ -143,6 +182,22 @@ impl XdgShellHandler for StandIn {
         surface.send_repositioned(token);
     }
 
+    fn fullscreen_request(&mut self, surface: ToplevelSurface, _output: Option<WlOutput>) {
+        self.resize_to_output(&surface, xdg_toplevel::State::Fullscreen, Apply::Set);
+    }
+
+    fn unfullscreen_request(&mut self, surface: ToplevelSurface) {
+        self.resize_to_output(&surface, xdg_toplevel::State::Fullscreen, Apply::Unset);
+    }
+
+    fn maximize_request(&mut self, surface: ToplevelSurface) {
+        self.resize_to_output(&surface, xdg_toplevel::State::Maximized, Apply::Set);
+    }
+
+    fn unmaximize_request(&mut self, surface: ToplevelSurface) {
+        self.resize_to_output(&surface, xdg_toplevel::State::Maximized, Apply::Unset);
+    }
+
     fn grab(&mut self, _surface: PopupSurface, _seat: wl_seat::WlSeat, _serial: Serial) {}
 }
 
@@ -176,6 +231,5 @@ impl DataDeviceHandler for StandIn {
 impl DndGrabHandler for StandIn {}
 impl WaylandDndGrabHandler for StandIn {}
 impl OutputHandler for StandIn {}
-impl PointerConstraintsHandler for StandIn {}
 
 smithay::delegate_dispatch2!(StandIn);

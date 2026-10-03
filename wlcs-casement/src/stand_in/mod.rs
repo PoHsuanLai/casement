@@ -6,8 +6,10 @@
 //! Not casement: it exists so the wlcs build, the shim and the subsets are proven while the
 //! fixture's `start` is still being written. It never claims a casement behaviour.
 
+mod extras;
 mod handlers;
 mod input;
+mod layer;
 mod relax;
 
 use crate::adapter::{Flow, WlcsEvent};
@@ -25,6 +27,7 @@ use smithay::wayland::compositor::CompositorState;
 use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::relative_pointer::RelativePointerManagerState;
 use smithay::wayland::selection::data_device::DataDeviceState;
+use smithay::wayland::shell::wlr_layer::WlrLayerShellState;
 use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shm::ShmState;
 use std::collections::HashMap;
@@ -43,6 +46,8 @@ pub struct StandIn {
     clients: HashMap<i32, Client>,
     compositor: CompositorState,
     xdg: XdgShellState,
+    layer_shell: WlrLayerShellState,
+    extras: extras::Extras,
     shm: ShmState,
     _outputs: OutputManagerState,
     _relative: RelativePointerManagerState,
@@ -73,6 +78,8 @@ impl StandIn {
             clients: HashMap::new(),
             compositor: CompositorState::new::<StandIn>(dh),
             xdg: XdgShellState::new::<StandIn>(dh),
+            layer_shell: WlrLayerShellState::new::<StandIn>(dh),
+            extras: extras::Extras::new(dh),
             shm: ShmState::new::<StandIn>(dh, vec![]),
             _outputs: OutputManagerState::new_with_xdg_output::<StandIn>(dh),
             _relative: RelativePointerManagerState::new::<StandIn>(dh),
