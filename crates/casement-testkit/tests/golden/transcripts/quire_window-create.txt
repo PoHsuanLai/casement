@@ -1,0 +1,2 @@
+quire_window_v1#9.emphasis(2)
+quire_window_v1#9.placement(0)

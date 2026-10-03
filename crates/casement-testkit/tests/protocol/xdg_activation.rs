@@ -1,16 +1,129 @@
-//! `xdg_activation` (P0-H2).
+//! `xdg_activation` (P0-H2): A7. A token earned by a recent press of the asking client, used
+//! while it is recent, activates; a stale or unearned one only marks attention. Token age is
+//! judged on the session clock, so these tests move the virtual clock and never sleep (A36).
+//! Ignored until the fixture and the core loop are filled.
 
+use crate::xdg_shell::{boot, click, map_toplevel, pointer, windows};
+use casement_core::geometry::PhysicalSize;
 use casement_core::policy::ConnectionRole;
-use casement_testkit::{Fixture, FixtureSpec};
+use casement_testclient::misc::activation::{Activation, TokenError};
+use casement_testclient::surface::toplevel::{WmBase, bind_pointer};
+use casement_testclient::{Pattern, shm_buffer};
+use std::time::Duration;
 
 /// A token from a recent press of the focused app activates; a stale or foreign one only marks attention.
 #[test]
-#[ignore = "P0-H2"]
+#[ignore = "P0-B-headless: Fixture::start; P0-B-loop: core_loop, exec"]
 fn activation_follows_the_a7_rule() {
-    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
-    let client = fixture.connect(ConnectionRole::Public);
-    let _ = fixture.client(client);
-    todo!(
-        "P0-H2: a token from a recent press of the focused app activates; a stale or foreign one only marks attention"
-    )
+    let (mut fixture, launcher) = boot();
+    let app = fixture.connect(ConnectionRole::Public);
+    fixture.pump();
+    let launcher_base = WmBase::bind(fixture.client(launcher), 7);
+    let launcher_pointer = bind_pointer(fixture.client(launcher));
+    let activation = Activation::bind(fixture.client(launcher));
+    fixture.pump();
+    map_toplevel(&mut fixture, launcher, &launcher_base, (400, 300));
+    let device = pointer(&mut fixture);
+    let launcher_window = windows(&fixture)[0];
+    // Two clicks: the first activates the launcher (swallowed), the second reaches it with a serial.
+    click(&mut fixture, device, launcher_window);
+    click(&mut fixture, device, launcher_window);
+    let serial = launcher_pointer
+        .last_press()
+        .expect("the launcher was pressed");
+    assert_eq!(fixture.model().focus().key, Some(launcher_window));
+
+    // 1. A token earned by that press, used at once before the new app maps: the app takes focus.
+    let earned = activation.token(
+        fixture.client(launcher),
+        Some((&launcher_pointer.seat, serial)),
+        Some("org.example.App"),
+    );
+    fixture.pump();
+    let token = earned.with(|seen| seen.clone()).expect("a token arrives");
+    let app_base = WmBase::bind(fixture.client(app), 7);
+    let app_activation = Activation::bind(fixture.client(app));
+    let first = app_base.toplevel(fixture.client(app));
+    app_activation.activate(&token, &first);
+    first.commit_bare();
+    fixture.pump();
+    first.ack_latest();
+    let buffer = shm_buffer(
+        fixture.client(app),
+        PhysicalSize { w: 300, h: 200 },
+        Pattern::Gradient,
+    );
+    first.show(&buffer);
+    fixture.pump();
+    let first_window = windows(&fixture)[1];
+    assert_eq!(
+        fixture.model().focus().key,
+        Some(first_window),
+        "a valid token activates"
+    );
+
+    // 2. A token with no press behind it: the next window maps without focus (attention only).
+    let bare = app_activation.token(fixture.client(app), None, None);
+    fixture.pump();
+    let bare_token = bare.with(|seen| seen.clone()).expect("a token arrives");
+    let second = app_base.toplevel(fixture.client(app));
+    app_activation.activate(&bare_token, &second);
+    second.commit_bare();
+    fixture.pump();
+    second.ack_latest();
+    second.show(&buffer);
+    fixture.pump();
+    assert_eq!(
+        fixture.model().focus().key,
+        Some(first_window),
+        "an unearned token does not move focus"
+    );
+
+    // 3. A token earned by a press but used after its lifetime: stale, attention only.
+    click(&mut fixture, device, launcher_window);
+    let serial = launcher_pointer.last_press().expect("a fresh press");
+    let old = activation.token(
+        fixture.client(launcher),
+        Some((&launcher_pointer.seat, serial)),
+        None,
+    );
+    fixture.pump();
+    let old_token = old.with(|seen| seen.clone()).expect("a token arrives");
+    fixture.advance(Duration::from_secs(6));
+    let third = app_base.toplevel(fixture.client(app));
+    app_activation.activate(&old_token, &third);
+    third.commit_bare();
+    fixture.pump();
+    third.ack_latest();
+    third.show(&buffer);
+    fixture.pump();
+    let focused = fixture.model().focus().key;
+    assert_ne!(
+        focused,
+        Some(windows(&fixture)[3]),
+        "a stale token does not activate"
+    );
+}
+
+/// A token request committed twice is `already_used`; the global binds at version 1.
+#[test]
+#[ignore = "P0-B-headless: Fixture::start; P0-B-loop: core_loop, exec"]
+fn a_token_commits_once() {
+    let (mut fixture, id) = boot();
+    let activation = Activation::bind(fixture.client(id));
+    let (request, text) = activation.request(fixture.client(id));
+    request.commit();
+    fixture.pump();
+    assert!(
+        text.with(|seen| seen.is_some()),
+        "the first commit is answered with a token"
+    );
+    assert!(fixture.client(id).protocol_error().is_none());
+    request.commit();
+    fixture.pump();
+    let error = fixture
+        .client(id)
+        .protocol_error()
+        .expect("a protocol error");
+    assert_eq!(error.code, TokenError::AlreadyUsed as u32);
 }

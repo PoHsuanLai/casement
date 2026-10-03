@@ -1,0 +1,7 @@
+xdg_toplevel#7.configure(0, 0, [])
+xdg_surface#6.configure(<serial>)
+xdg_toplevel#7.configure_bounds(1920, 1080)
+xdg_toplevel#7.configure(0, 0, [])
+xdg_surface#6.configure(<serial>)
+xdg_toplevel#7.configure(0, 0, [4])
+xdg_surface#6.configure(<serial>)

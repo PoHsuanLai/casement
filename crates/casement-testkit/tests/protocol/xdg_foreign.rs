@@ -1,16 +1,65 @@
-//! `xdg_foreign` (P0-H2).
+//! `xdg_foreign` (P0-H2): an imported parent reaches the model through `xdg_shell::on_parent`
+//! (the model only parents windows of one app, so the two clients declare one app id). Ignored
+//! until the fixture and the core loop are filled.
 
+use crate::xdg_shell::{boot, map_named, windows};
 use casement_core::policy::ConnectionRole;
-use casement_testkit::{Fixture, FixtureSpec};
+use casement_core::window::Parent;
+use casement_testclient::surface::toplevel::WmBase;
+use casement_testclient::surface::toplevel::extras::Foreign;
 
-/// A dialog of client B parented to client A's exported toplevel gets that parent in the model.
+const APP: &str = "org.example.Shared";
+
+/// A dialog of client B parented to client A's exported toplevel gets that parent in the model;
+/// when the export goes away the dialog is an orphan again.
 #[test]
-#[ignore = "P0-H2"]
+#[ignore = "P0-B-headless: Fixture::start; P0-B-loop: core_loop, exec"]
 fn an_imported_parent_becomes_the_parent() {
-    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
-    let client = fixture.connect(ConnectionRole::Public);
-    let _ = fixture.client(client);
-    todo!(
-        "P0-H2: a dialog of client B parented to client A's exported toplevel gets that parent in the model"
-    )
+    let (mut fixture, owner) = boot();
+    let guest = fixture.connect(ConnectionRole::Public);
+    fixture.pump();
+    let owner_base = WmBase::bind(fixture.client(owner), 7);
+    let guest_base = WmBase::bind(fixture.client(guest), 7);
+    let owner_foreign = Foreign::bind(fixture.client(owner));
+    let guest_foreign = Foreign::bind(fixture.client(guest));
+
+    let parent = map_named(&mut fixture, owner, &owner_base, (500, 400), Some(APP));
+    let (exported, handle) = owner_foreign.export(fixture.client(owner), &parent);
+    fixture.pump();
+    let handle = handle
+        .with(|seen| seen.clone())
+        .expect("the export's handle arrives");
+
+    let dialog = guest_base.toplevel(fixture.client(guest));
+    dialog.set_app_id(APP);
+    let (_imported, imported_log) =
+        guest_foreign.import_parent_of(fixture.client(guest), &handle, &dialog);
+    dialog.commit_bare();
+    fixture.pump();
+    dialog.ack_latest();
+    let buffer = casement_testclient::shm_buffer(
+        fixture.client(guest),
+        casement_core::geometry::PhysicalSize { w: 300, h: 200 },
+        casement_testclient::Pattern::Gradient,
+    );
+    dialog.show(&buffer);
+    fixture.pump();
+
+    let ids = windows(&fixture);
+    assert_eq!(ids.len(), 2);
+    assert_eq!(
+        fixture.model().windows()[&ids[1]].parent,
+        Parent::Window(ids[0])
+    );
+
+    exported.destroy();
+    fixture.pump();
+    assert_eq!(
+        imported_log.with(|seen| seen.destroyed),
+        1,
+        "the import is told its export is gone"
+    );
+    assert_eq!(fixture.model().windows()[&ids[1]].parent, Parent::None);
+    assert!(fixture.client(owner).protocol_error().is_none());
+    assert!(fixture.client(guest).protocol_error().is_none());
 }
