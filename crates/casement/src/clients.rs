@@ -24,7 +24,10 @@ pub fn insert_client(
     state.wl.clients = clients;
     let client = state.display.insert_client(
         stream,
-        Arc::new(ClientState::new(key, role.clone(), peer.clone())),
+        Arc::new(
+            ClientState::new(key, role.clone(), peer.clone())
+                .with_gone(state.wl.clients.gone_queue()),
+        ),
     )?;
     core_loop::feed(
         state,
@@ -35,4 +38,18 @@ pub fn insert_client(
         }],
     );
     Ok(client)
+}
+
+/// The disconnects since the last call, as the events the model takes: the loop feeds them each
+/// turn (smithay announces a disconnect from a callback with no access to the state, so
+/// `ClientState` queues it: `casement_wayland::client::GoneQueue`).
+pub fn take_gone(state: &State) -> Vec<Event> {
+    state
+        .wl
+        .clients
+        .gone_queue()
+        .take()
+        .into_iter()
+        .map(|client| Event::ClientGone { client })
+        .collect()
 }

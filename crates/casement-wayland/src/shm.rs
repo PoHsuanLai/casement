@@ -36,8 +36,10 @@ impl ShmPart {
     }
 }
 
-/// A client buffer was destroyed (`BufferHandler`): textures made from it are dropped.
+/// A client buffer was destroyed (`BufferHandler`). The textures made from it live in each
+/// surface's renderer state, which smithay resets when the surface commits another buffer or
+/// is destroyed, so nothing here holds one and nothing reaches the model.
 pub fn on_buffer_destroyed(part: &mut ShmPart, buffer: &WlBuffer) -> Vec<Event> {
     let _ = (part, buffer);
-    todo!("P0-H1: shm::on_buffer_destroyed")
+    Vec::new()
 }
