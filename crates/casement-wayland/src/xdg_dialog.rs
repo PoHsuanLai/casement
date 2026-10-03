@@ -32,11 +32,16 @@ impl XdgDialogPart {
 }
 
 /// `toplevel` became (or stopped being) a dialog or a modal one.
+///
+/// smithay keeps the hint on the toplevel's role, and the model reads it when the window maps
+/// (`xdg_shell::modality_of`, in `MappedToplevel.modality`), so a hint set before the first
+/// buffer needs no event. The model has no event for a change after the map (an interface ask:
+/// `Event::ToplevelModality`), so this reports nothing today.
 pub fn on_modal(
     part: &mut XdgDialogPart,
     toplevel: &ToplevelSurface,
     modality: Modality,
 ) -> Vec<Event> {
     let _ = (part, toplevel, modality);
-    todo!("P0-H2: xdg_dialog::on_modal")
+    Vec::new()
 }

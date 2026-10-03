@@ -1,30 +1,177 @@
-//! `xdg_wm_base` (P0-H2).
+//! `xdg_wm_base` (P0-H2): each smithay callback converts its arguments, asks
+//! `casement_wayland::xdg_shell` for events and feeds them to the model. The model decides
+//! (where a window goes, whether a press focuses it, what a configure says); a move or resize
+//! only goes on after the seat says its serial answers a real press.
 
+mod popups;
+
+use crate::core_loop;
 use crate::state::State;
-use smithay::reexports::wayland_server::protocol::wl_seat::WlSeat;
-use smithay::utils::Serial;
-use smithay::wayland::shell::xdg::{
-    PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
+use casement_core::{ClientKey, InputSerial, OutputKey, WindowId};
+use casement_protocols::vocab::Toggle;
+use casement_wayland::convert::{point_of, serial_of};
+use casement_wayland::serial::PressRecord;
+use casement_wayland::xdg_shell::{
+    self, GrabUse, edges_of, grab_proven, on_app_id, on_full_screen, on_maximise, on_minimise,
+    on_move, on_new_toplevel, on_parent, on_pong, on_resize, on_title, on_toplevel_destroyed,
+    on_window_menu,
 };
+use casement_wayland::{ClientState, xdg_toplevel_tag};
+use smithay::output::Output;
+use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::ResizeEdge;
+use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
+use smithay::reexports::wayland_server::protocol::wl_seat::WlSeat;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::reexports::wayland_server::{Client, Resource};
+use smithay::utils::{Logical, Point, Serial};
+use smithay::wayland::shell::xdg::{
+    PopupSurface, PositionerState, ShellClient, ToplevelSurface, XdgShellHandler, XdgShellState,
+};
+
+impl State {
+    /// The next window id (minted here, where the toplevel is first seen).
+    fn mint_window(&mut self) -> WindowId {
+        let mint = std::mem::replace(&mut self.core.mint, casement_core::IdMint::start());
+        let (mint, window) = mint.window();
+        self.core.mint = mint;
+        window
+    }
+
+    /// The press the seat recorded for `serial`, if it was delivered to `client`.
+    pub(crate) fn press_of(&self, client: &Client, serial: InputSerial) -> Option<PressRecord> {
+        let key = ClientState::of(client)?.key;
+        self.wl.seat.serials.answers(serial, key).copied()
+    }
+
+    /// Whether `serial`, sent by the owner of `surface`, answers a press that `use_` accepts.
+    fn serial_proves(&self, surface: &WlSurface, serial: InputSerial, use_: GrabUse) -> bool {
+        surface
+            .client()
+            .is_some_and(|client| grab_proven(self.press_of(&client, serial).as_ref(), use_))
+    }
+
+    /// The output a client's `wl_output` is, as the model keys it.
+    fn output_key_of(&self, output: &WlOutput) -> Option<OutputKey> {
+        let name = Output::from_resource(output)?.name();
+        self.core
+            .model
+            .outputs()
+            .0
+            .iter()
+            .find(|(_, state)| state.facts.name.as_str() == name)
+            .map(|(key, _)| key.clone())
+    }
+}
 
 impl XdgShellHandler for State {
     fn xdg_shell_state(&mut self) -> &mut XdgShellState {
         &mut self.wl.xdg_shell.state
     }
 
+    fn client_pong(&mut self, client: ShellClient) {
+        let keys: Vec<ClientKey> = self
+            .wl
+            .xdg_shell
+            .clients
+            .iter()
+            .filter(|(_, held)| **held == client)
+            .map(|(key, _)| *key)
+            .collect();
+        let events = keys
+            .into_iter()
+            .flat_map(|key| on_pong(&mut self.wl.xdg_shell, key))
+            .collect();
+        core_loop::feed(self, events);
+    }
+
+    fn client_destroyed(&mut self, client: ShellClient) {
+        self.wl.xdg_shell.clients.retain(|_, held| *held != client);
+    }
+
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
-        let _ = surface;
-        todo!("P0-H2: XdgShellHandler::new_toplevel")
+        // No configure here: the initial configure goes out with the first commit.
+        let window = self.mint_window();
+        let events = on_new_toplevel(&mut self.wl.xdg_shell, &surface, window);
+        core_loop::feed(self, events);
     }
 
     fn new_popup(&mut self, surface: PopupSurface, positioner: PositionerState) {
-        let _ = (surface, positioner);
-        todo!("P0-H2: XdgShellHandler::new_popup")
+        popups::new_popup(self, surface, positioner);
+    }
+
+    fn move_request(&mut self, surface: ToplevelSurface, _seat: WlSeat, serial: Serial) {
+        let serial = serial_of(serial);
+        if !self.serial_proves(surface.wl_surface(), serial, GrabUse::Drag) {
+            tracing::debug!(?serial, "a move that answers no press is ignored");
+            return;
+        }
+        let events = on_move(&mut self.wl.xdg_shell, &surface, serial);
+        core_loop::feed(self, events);
+    }
+
+    fn resize_request(
+        &mut self,
+        surface: ToplevelSurface,
+        _seat: WlSeat,
+        serial: Serial,
+        edges: ResizeEdge,
+    ) {
+        let serial = serial_of(serial);
+        let Some(edges) = edges_of(edges) else {
+            return;
+        };
+        if !self.serial_proves(surface.wl_surface(), serial, GrabUse::Drag) {
+            tracing::debug!(?serial, "a resize that answers no press is ignored");
+            return;
+        }
+        let events = on_resize(&mut self.wl.xdg_shell, &surface, serial, edges);
+        core_loop::feed(self, events);
     }
 
     fn grab(&mut self, surface: PopupSurface, seat: WlSeat, serial: Serial) {
-        let _ = (surface, seat, serial);
-        todo!("P0-H2: XdgShellHandler::grab")
+        popups::grab(self, surface, seat, serial);
+    }
+
+    fn maximize_request(&mut self, surface: ToplevelSurface) {
+        let events = on_maximise(&mut self.wl.xdg_shell, &surface, Toggle::On);
+        core_loop::feed(self, events);
+    }
+
+    fn unmaximize_request(&mut self, surface: ToplevelSurface) {
+        let events = on_maximise(&mut self.wl.xdg_shell, &surface, Toggle::Off);
+        core_loop::feed(self, events);
+    }
+
+    fn fullscreen_request(&mut self, surface: ToplevelSurface, output: Option<WlOutput>) {
+        let output = output
+            .as_ref()
+            .and_then(|output| self.output_key_of(output));
+        let events = on_full_screen(&mut self.wl.xdg_shell, &surface, Toggle::On, output);
+        core_loop::feed(self, events);
+    }
+
+    fn unfullscreen_request(&mut self, surface: ToplevelSurface) {
+        let events = on_full_screen(&mut self.wl.xdg_shell, &surface, Toggle::Off, None);
+        core_loop::feed(self, events);
+    }
+
+    fn minimize_request(&mut self, surface: ToplevelSurface) {
+        let events = on_minimise(&mut self.wl.xdg_shell, &surface);
+        core_loop::feed(self, events);
+    }
+
+    fn show_window_menu(
+        &mut self,
+        surface: ToplevelSurface,
+        _seat: WlSeat,
+        serial: Serial,
+        location: Point<i32, Logical>,
+    ) {
+        if !self.serial_proves(surface.wl_surface(), serial_of(serial), GrabUse::Drag) {
+            return;
+        }
+        let events = on_window_menu(&mut self.wl.xdg_shell, &surface, point_of(location));
+        core_loop::feed(self, events);
     }
 
     fn reposition_request(
@@ -33,7 +180,35 @@ impl XdgShellHandler for State {
         positioner: PositionerState,
         token: u32,
     ) {
-        let _ = (surface, positioner, token);
-        todo!("P0-H2: XdgShellHandler::reposition_request")
+        popups::reposition(self, surface, positioner, token);
+    }
+
+    fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
+        if let Some(window) = self.wl.xdg_shell.window_of_surface(surface.wl_surface()) {
+            xdg_toplevel_tag::on_forgotten(&mut self.wl.xdg_toplevel_tag, window);
+            self.wl.quire_window.windows.remove(&window);
+        }
+        let events = on_toplevel_destroyed(&mut self.wl.xdg_shell, &surface);
+        core_loop::feed(self, events);
+    }
+
+    fn popup_destroyed(&mut self, surface: PopupSurface) {
+        let events = xdg_shell::on_popup_destroyed(&mut self.wl.xdg_shell, &surface);
+        core_loop::feed(self, events);
+    }
+
+    fn app_id_changed(&mut self, surface: ToplevelSurface) {
+        let events = on_app_id(&mut self.wl.xdg_shell, &surface);
+        core_loop::feed(self, events);
+    }
+
+    fn title_changed(&mut self, surface: ToplevelSurface) {
+        let events = on_title(&mut self.wl.xdg_shell, &surface);
+        core_loop::feed(self, events);
+    }
+
+    fn parent_changed(&mut self, surface: ToplevelSurface) {
+        let events = on_parent(&mut self.wl.xdg_shell, &surface);
+        core_loop::feed(self, events);
     }
 }

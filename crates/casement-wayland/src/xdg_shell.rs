@@ -1,22 +1,50 @@
 //! `xdg_wm_base`: toplevels and popups. A toplevel's id is minted when it is created; it
 //! enters the model when it maps (its first commit with a buffer after the initial
-//! configure). P0 places floating windows only (centre, then cascade).
+//! configure). P0 places floating windows only (centre, then cascade, in the model and
+//! layout); this module reports what the client did and carries the model's configures out.
+//!
+//! The module is a directory of small files behind one name:
+//! - [`commit`]: what a commit means (initial configure, map, resize, unmap) and the pure
+//!   step table behind it;
+//! - [`declared`]: what a client declared (title, app id, role, limits) as our types;
+//! - [`meta`]: the metadata requests (title, app id, parent, limits);
+//! - [`requests`]: move, resize, zoom, minimise, full screen, window menu and the press
+//!   proof a grab needs;
+//! - [`popup`]: popups, grabs and repositioning;
+//! - [`apply`]: configure, close, ping and popup-done onto the wire.
 
-use crate::client::ClientState;
-use crate::states::{GlobalFilter, WaylandFault};
-use casement_core::geometry::LogicalPoint;
-use casement_core::{
-    ClientKey, ConfigureSpec, Event, InputSerial, OutputKey, PopupKey, ResizeEdges, WindowId,
+mod apply;
+mod commit;
+mod declared;
+mod meta;
+mod popup;
+mod requests;
+
+pub use apply::{apply_close, apply_configure, apply_ping, apply_popup_done};
+pub use commit::{
+    Buffer, CommitStep, Configured, Phase, ToplevelRecord, commit_step, on_new_toplevel,
+    on_toplevel_commit, on_toplevel_destroyed,
 };
-use casement_protocols::vocab::Toggle;
+pub use declared::{claimed_of, limits_of, modality_of, role_of};
+pub use meta::{base_role, on_app_id, on_limits, on_parent, on_title};
+pub use popup::{
+    PopupBounds, on_new_popup, on_popup_commit, on_popup_destroyed, on_popup_grab, on_reposition,
+};
+pub use requests::{
+    GrabUse, edges_of, grab_proven, on_full_screen, on_maximise, on_minimise, on_move, on_pong,
+    on_resize, on_window_menu,
+};
+
+use crate::states::GlobalFilter;
+use casement_core::focus::TokenCheck;
+use casement_core::{ClientKey, PopupKey, WindowId};
 use smithay::desktop::PopupManager;
+use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::XdgToplevel;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_wm_base::XdgWmBase;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{DisplayHandle, GlobalDispatch};
 use smithay::wayland::GlobalData;
-use smithay::wayland::shell::xdg::{
-    PopupSurface, PositionerState, ShellClient, ToplevelSurface, XdgShellState,
-};
+use smithay::wayland::shell::xdg::{PopupSurface, ShellClient, ToplevelSurface, XdgShellState};
 use std::collections::BTreeMap;
 
 /// `xdg_wm_base` and the toplevels and popups it created.
@@ -30,8 +58,12 @@ pub struct XdgShellPart {
     pub toplevels: BTreeMap<WindowId, ToplevelSurface>,
     /// Every live popup.
     pub popup_surfaces: BTreeMap<PopupKey, PopupSurface>,
-    /// Shell clients by key, for pings.
+    /// Shell clients by key, for pings (a client is recorded when it creates a surface:
+    /// smithay's `ShellClient` does not say whose it is).
     pub clients: BTreeMap<ClientKey, ShellClient>,
+    /// What the edge remembers of each toplevel between its commits.
+    pub records: BTreeMap<WindowId, ToplevelRecord>,
+    next_popup: u64,
 }
 
 impl XdgShellPart {
@@ -48,181 +80,46 @@ impl XdgShellPart {
             toplevels: BTreeMap::new(),
             popup_surfaces: BTreeMap::new(),
             clients: BTreeMap::new(),
+            records: BTreeMap::new(),
+            next_popup: 1,
         }
     }
-}
 
-/// A toplevel was created and given the id `window` (no model event until it maps).
-pub fn on_new_toplevel(
-    part: &mut XdgShellPart,
-    surface: &ToplevelSurface,
-    window: WindowId,
-) -> Vec<Event> {
-    let _ = (part, surface, window);
-    todo!("P0-H2: xdg_shell::on_new_toplevel")
-}
+    /// The next popup key (a key is never reused in a session).
+    pub fn mint_popup(&mut self) -> PopupKey {
+        let key = PopupKey(self.next_popup);
+        self.next_popup = self.next_popup.saturating_add(1);
+        key
+    }
 
-/// A toplevel's surface committed: its initial configure, its mapping
-/// (`Event::ToplevelMapped`, with the app `client` proves), or a new size.
-pub fn on_toplevel_commit(
-    part: &mut XdgShellPart,
-    surface: &WlSurface,
-    client: &ClientState,
-) -> Vec<Event> {
-    let _ = (part, surface, client);
-    todo!("P0-H2: xdg_shell::on_toplevel_commit")
-}
+    /// The window whose root surface is `surface`.
+    pub fn window_of_surface(&self, surface: &WlSurface) -> Option<WindowId> {
+        self.toplevels
+            .iter()
+            .find(|(_, toplevel)| toplevel.wl_surface() == surface)
+            .map(|(id, _)| *id)
+    }
 
-/// An interactive move answering the press `serial`.
-pub fn on_move(
-    part: &mut XdgShellPart,
-    surface: &ToplevelSurface,
-    serial: InputSerial,
-) -> Vec<Event> {
-    let _ = (part, surface, serial);
-    todo!("P0-H2: xdg_shell::on_move")
-}
+    /// The window an `xdg_toplevel` resource is.
+    pub fn window_of_toplevel(&self, toplevel: &XdgToplevel) -> Option<WindowId> {
+        self.toplevels
+            .iter()
+            .find(|(_, held)| held.xdg_toplevel() == toplevel)
+            .map(|(id, _)| *id)
+    }
 
-/// An interactive resize from `edges` answering the press `serial`.
-pub fn on_resize(
-    part: &mut XdgShellPart,
-    surface: &ToplevelSurface,
-    serial: InputSerial,
-    edges: ResizeEdges,
-) -> Vec<Event> {
-    let _ = (part, surface, serial, edges);
-    todo!("P0-H2: xdg_shell::on_resize")
-}
+    /// Whether `window` has mapped (and not unmapped since).
+    pub fn is_mapped(&self, window: WindowId) -> bool {
+        self.records
+            .get(&window)
+            .is_some_and(|record| matches!(record.phase, Phase::Mapped(_)))
+    }
 
-/// Maximise (zoom) on or off.
-pub fn on_maximise(
-    part: &mut XdgShellPart,
-    surface: &ToplevelSurface,
-    toggle: Toggle,
-) -> Vec<Event> {
-    let _ = (part, surface, toggle);
-    todo!("P0-H2: xdg_shell::on_maximise")
-}
-
-/// Minimise.
-pub fn on_minimise(part: &mut XdgShellPart, surface: &ToplevelSurface) -> Vec<Event> {
-    let _ = (part, surface);
-    todo!("P0-H2: xdg_shell::on_minimise")
-}
-
-/// Full screen on or off, optionally on `output`.
-pub fn on_full_screen(
-    part: &mut XdgShellPart,
-    surface: &ToplevelSurface,
-    toggle: Toggle,
-    output: Option<OutputKey>,
-) -> Vec<Event> {
-    let _ = (part, surface, toggle, output);
-    todo!("P0-H2: xdg_shell::on_full_screen")
-}
-
-/// Show the window menu at `at` (global logical).
-pub fn on_window_menu(
-    part: &mut XdgShellPart,
-    surface: &ToplevelSurface,
-    at: LogicalPoint,
-) -> Vec<Event> {
-    let _ = (part, surface, at);
-    todo!("P0-H2: xdg_shell::on_window_menu")
-}
-
-/// The title changed.
-pub fn on_title(part: &mut XdgShellPart, surface: &ToplevelSurface) -> Vec<Event> {
-    let _ = (part, surface);
-    todo!("P0-H2: xdg_shell::on_title")
-}
-
-/// The app id changed.
-pub fn on_app_id(part: &mut XdgShellPart, surface: &ToplevelSurface) -> Vec<Event> {
-    let _ = (part, surface);
-    todo!("P0-H2: xdg_shell::on_app_id")
-}
-
-/// The parent changed (an `xdg_foreign` import counts).
-pub fn on_parent(part: &mut XdgShellPart, surface: &ToplevelSurface) -> Vec<Event> {
-    let _ = (part, surface);
-    todo!("P0-H2: xdg_shell::on_parent")
-}
-
-/// The size limits changed (read on commit).
-pub fn on_limits(part: &mut XdgShellPart, surface: &ToplevelSurface) -> Vec<Event> {
-    let _ = (part, surface);
-    todo!("P0-H2: xdg_shell::on_limits")
-}
-
-/// The toplevel was destroyed.
-pub fn on_toplevel_destroyed(part: &mut XdgShellPart, surface: &ToplevelSurface) -> Vec<Event> {
-    let _ = (part, surface);
-    todo!("P0-H2: xdg_shell::on_toplevel_destroyed")
-}
-
-/// A popup was created and given the key `popup`.
-pub fn on_new_popup(
-    part: &mut XdgShellPart,
-    surface: &PopupSurface,
-    positioner: &PositionerState,
-    popup: PopupKey,
-) -> Vec<Event> {
-    let _ = (part, surface, positioner, popup);
-    todo!("P0-H2: xdg_shell::on_new_popup")
-}
-
-/// A popup asked for an explicit grab answering the press `serial`.
-pub fn on_popup_grab(
-    part: &mut XdgShellPart,
-    surface: &PopupSurface,
-    serial: InputSerial,
-) -> Vec<Event> {
-    let _ = (part, surface, serial);
-    todo!("P0-H2: xdg_shell::on_popup_grab")
-}
-
-/// A popup asked to be repositioned (`token` goes back with the configure).
-pub fn on_reposition(
-    part: &mut XdgShellPart,
-    surface: &PopupSurface,
-    positioner: &PositionerState,
-    token: u32,
-) -> Vec<Event> {
-    let _ = (part, surface, positioner, token);
-    todo!("P0-H2: xdg_shell::on_reposition")
-}
-
-/// A client answered a ping.
-pub fn on_pong(part: &mut XdgShellPart, client: ClientKey) -> Vec<Event> {
-    let _ = (part, client);
-    todo!("P0-H2: xdg_shell::on_pong")
-}
-
-/// Sends `window` a configure.
-pub fn apply_configure(
-    part: &mut XdgShellPart,
-    window: WindowId,
-    spec: &ConfigureSpec,
-) -> Result<(), WaylandFault> {
-    let _ = (part, window, spec);
-    todo!("P0-H2: xdg_shell::apply_configure")
-}
-
-/// Asks `window` to close.
-pub fn apply_close(part: &mut XdgShellPart, window: WindowId) -> Result<(), WaylandFault> {
-    let _ = (part, window);
-    todo!("P0-H2: xdg_shell::apply_close")
-}
-
-/// Pings `client`.
-pub fn apply_ping(part: &mut XdgShellPart, client: ClientKey) -> Result<(), WaylandFault> {
-    let _ = (part, client);
-    todo!("P0-H2: xdg_shell::apply_ping")
-}
-
-/// Dismisses `popup` (and the popups above it).
-pub fn apply_popup_done(part: &mut XdgShellPart, popup: PopupKey) -> Result<(), WaylandFault> {
-    let _ = (part, popup);
-    todo!("P0-H2: xdg_shell::apply_popup_done")
+    /// Keeps the activation verdict a window asked with before it mapped; the model learns
+    /// it in `ToplevelMapped` (A7).
+    pub fn stage_activation(&mut self, window: WindowId, check: TokenCheck) {
+        if let Some(record) = self.records.get_mut(&window) {
+            record.staged = check;
+        }
+    }
 }

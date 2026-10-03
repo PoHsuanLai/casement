@@ -31,11 +31,15 @@ impl XdgToplevelIconPart {
 }
 
 /// `toplevel` set (or cleared) its icon; `surface` is its root surface.
+///
+/// smithay keeps the icon (its name and shm buffers) in the surface's cached state, double
+/// buffered with the surface's commit, which is where the Dock and the switcher read it from
+/// (P3); the model holds no icon, so nothing is reported.
 pub fn on_icon(
     part: &mut XdgToplevelIconPart,
     toplevel: &XdgToplevel,
     surface: &WlSurface,
 ) -> Vec<Event> {
     let _ = (part, toplevel, surface);
-    todo!("P0-H2: xdg_toplevel_icon::on_icon")
+    Vec::new()
 }
