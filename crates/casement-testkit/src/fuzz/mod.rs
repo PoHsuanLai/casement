@@ -1,8 +1,18 @@
 //! Typed fuzzing (11 §3.5): sequences of requests from clients of every role on valid,
-//! destroyed, foreign and null objects, interleaved with clock advances, checked by five
-//! oracles (no panic, invariants hold after every step, I7 holds, a protocol error disconnects
-//! only its client, the transcript stays well-formed). Bodies: P0-T-client.
+//! destroyed, foreign and null objects, interleaved with clock advances, checked after every
+//! op by the five oracles (`oracles.rs`): the compositor is alive; a protocol error to the
+//! offender is a documented one; a healthy bystander still roundtrips and looks the same; the
+//! model's invariants hold; privileged globals stay off connections that may not see them.
 
+mod host;
 mod ops;
+mod oracles;
+mod prime;
+mod run;
+#[cfg(test)]
+mod scripted;
+pub mod strategy;
 
-pub use ops::{FuzzOp, FuzzRequest, ObjectRef, run_ops};
+pub use host::FuzzHost;
+pub use ops::{FuzzOp, FuzzRequest, MAX_REPEAT, ObjectRef};
+pub use run::{run_on, run_ops};

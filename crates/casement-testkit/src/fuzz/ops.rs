@@ -1,6 +1,5 @@
 //! The fuzz ops.
 
-use crate::fixture::Fixture;
 use casement_core::policy::ConnectionRole;
 
 /// One step of a fuzz run.
@@ -45,11 +44,14 @@ pub enum FuzzRequest {
         /// Integer arguments.
         args: Vec<i32>,
     },
+    /// The same request again and again (a region of 10k rectangles, a storm of commits).
+    Repeated {
+        /// How many times, at most 10 000.
+        times: u16,
+        /// What is sent each time.
+        request: Box<FuzzRequest>,
+    },
 }
 
-/// Runs `ops` against `fixture`, checking the five oracles after each; the first failure's
-/// description.
-pub fn run_ops(fixture: &mut Fixture, ops: &[FuzzOp]) -> Result<(), String> {
-    let _ = (fixture, ops);
-    todo!("P0-T-client: run_ops")
-}
+/// The most a `Repeated` request sends.
+pub const MAX_REPEAT: u16 = 10_000;
