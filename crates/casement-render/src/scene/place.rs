@@ -155,7 +155,8 @@ fn shrink(area: LogicalRect, edge: Edge, depth: i64) -> LogicalRect {
 }
 
 /// `ask` placed inside `bounds`: held to its anchored edges by its margins, centred on an
-/// axis held at both ends or at neither.
+/// axis held at both ends (an oversized surface starts at its near margin, as
+/// `casement_wayland::layer_shell::layer_area` places it) or at neither.
 fn place(ask: &LayerAsk, bounds: LogicalRect) -> LogicalRect {
     let size = (i64::from(ask.size.w), i64::from(ask.size.h));
     let x = axis(
@@ -181,7 +182,7 @@ fn axis(bounds: (i64, i64), anchors: (Anchor, Anchor), margins: (i64, i64), exte
         (Anchor::Held, Anchor::Free) => start + margins.0,
         (Anchor::Free, Anchor::Held) => start + room - margins.1 - extent,
         (Anchor::Held, Anchor::Held) => {
-            start + margins.0 + (room - margins.0 - margins.1 - extent) / 2
+            start + margins.0 + (room - margins.0 - margins.1 - extent).max(0) / 2
         }
         (Anchor::Free, Anchor::Free) => start + (room - extent) / 2,
     }
@@ -344,5 +345,13 @@ mod tests {
         ];
         let placed = place_asks(&asks, full());
         assert_eq!(placed[&key(3)].origin, LogicalPoint { x: 100, y: 0 });
+    }
+
+    #[test]
+    fn an_oversized_surface_held_at_both_ends_starts_at_its_margin() {
+        let mut tall = ask((H, H, H, F), ExclusiveZone::Respect, 40, 900);
+        tall.margin.top = 6;
+        let placed = place_asks(&[(key(1), tall)], full());
+        assert_eq!(placed[&key(1)].origin, LogicalPoint { x: 100, y: 6 });
     }
 }
