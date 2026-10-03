@@ -1,6 +1,8 @@
 //! Builders shared by casement-core's tests (not API). Each test binary uses a different part.
 #![allow(dead_code, reason = "each test binary uses a different part")]
 
+pub mod driver;
+
 use casement_core::app::AppKey;
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize, PhysicalSize};
 use casement_core::output::{
@@ -9,7 +11,8 @@ use casement_core::output::{
 use casement_core::space::{Space, SpaceContent, SpaceIndex};
 use casement_core::time::{Millihertz, Mono};
 use casement_core::window::{
-    MaxSize, Parent, SizeLimits, SpacePlace, Window, WindowHints, WindowState, WindowTitle,
+    MaxSize, Parent, SizeLimits, SpacePlace, StackRank, Window, WindowHints, WindowState,
+    WindowTitle,
 };
 use casement_core::{ClientKey, OutputKey, OutputName, WindowId};
 use casement_protocols::vocab::{Emphasis, Modality, SensitivityLevel, WindowRole};
@@ -92,6 +95,8 @@ pub fn window(n: u64, app: &AppKey, space: &str) -> Window {
         role: WindowRole::Document,
         modality: Modality::None,
         place: SpacePlace::On(space_id(space)),
+        home: None,
+        stack: StackRank(n),
         state: WindowState::Floating(rect(100, 100, 800, 600)),
         parent: Parent::None,
         emphasis: Emphasis::Inactive,

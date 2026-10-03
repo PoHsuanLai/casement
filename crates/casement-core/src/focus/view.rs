@@ -51,7 +51,7 @@ impl FocusView<'_> {
     }
 
     /// Whether the person can see the window: shown, and its app not hidden.
-    pub(super) fn is_visible(&self, window: &Window) -> bool {
+    pub fn is_visible(&self, window: &Window) -> bool {
         self.is_shown(window) && !self.app_hidden(&window.app)
     }
 

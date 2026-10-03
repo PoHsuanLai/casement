@@ -14,4 +14,4 @@ pub use hints::{A11yRoot, FirstMouse, FrameHint, WindowHints};
 pub use limits::{MaxSize, SizeLimits};
 pub use state::{Restore, WindowState};
 pub use title::WindowTitle;
-pub use window::{Parent, SpacePlace, Window};
+pub use window::{Parent, SpacePlace, StackRank, Window};

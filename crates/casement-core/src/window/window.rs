@@ -2,7 +2,7 @@
 
 use super::{SizeLimits, WindowHints, WindowState, WindowTitle};
 use crate::app::AppKey;
-use crate::ids::{ClientKey, WindowId};
+use crate::ids::{ClientKey, OutputKey, WindowId};
 use casement_protocols::vocab::{Emphasis, Modality, SensitivityLevel, WindowRole};
 use porter_core::{ClaimedId, SpaceId};
 
@@ -21,6 +21,11 @@ pub struct Window {
     pub modality: Modality,
     /// Which Space it is on.
     pub place: SpacePlace,
+    /// The output a window on every Space sits on (A28): none for a window on one Space (its
+    /// Space says), and none while no output is plugged.
+    pub home: Option<OutputKey>,
+    /// Its place in the stacking order, across the whole model.
+    pub stack: StackRank,
     /// Floating, tiled, filled, full screen or minimised.
     pub state: WindowState,
     /// The window it belongs to, if any (a sheet's document, a dialog's owner).
@@ -56,3 +61,8 @@ pub enum SpacePlace {
     /// Every Space of its output.
     AllSpaces,
 }
+
+/// A window's place in the stacking order: the larger, the nearer the top. Distinct for every
+/// window in the model, so the order within any Space is total (A28).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct StackRank(pub u64);

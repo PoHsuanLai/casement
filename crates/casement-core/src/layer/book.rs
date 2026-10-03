@@ -33,6 +33,16 @@ impl LayerBook {
         LayerBook { layers }
     }
 
+    /// What the surface `layer` asked for.
+    pub fn get(&self, layer: &LayerKey) -> Option<&LayerSpec> {
+        self.layers.get(layer)
+    }
+
+    /// Every mapped surface, by key.
+    pub fn iter(&self) -> impl Iterator<Item = (&LayerKey, &LayerSpec)> {
+        self.layers.iter()
+    }
+
     /// What `full` (an output's whole logical rectangle) leaves for windows once every layer
     /// surface on `output` that reserves an exclusive zone has taken it, beside the edge it is
     /// anchored to (its margin on that edge included). Maximised windows take this rectangle

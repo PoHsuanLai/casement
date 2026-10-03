@@ -35,6 +35,31 @@ impl SpaceBook {
         SpaceBook { spaces, shown }
     }
 
+    /// The book without the Space `id`, and without any output showing it.
+    pub fn without_space(self, id: &SpaceId) -> SpaceBook {
+        let SpaceBook { mut spaces, shown } = self;
+        spaces.remove(id);
+        let shown = shown.into_iter().filter(|(_, shown)| shown != id).collect();
+        SpaceBook { spaces, shown }
+    }
+
+    /// The book with `output` showing nothing.
+    pub fn without_shown(self, output: &OutputKey) -> SpaceBook {
+        let SpaceBook { spaces, mut shown } = self;
+        shown.remove(output);
+        SpaceBook { spaces, shown }
+    }
+
+    /// Every Space, by id.
+    pub fn iter(&self) -> impl Iterator<Item = &Space> {
+        self.spaces.values()
+    }
+
+    /// The Space id each output shows, by output.
+    pub fn shown(&self) -> impl Iterator<Item = (&OutputKey, &SpaceId)> {
+        self.shown.iter()
+    }
+
     /// The Space `output` shows.
     pub fn shown_on(&self, output: &OutputKey) -> Option<&Space> {
         self.shown.get(output).and_then(|id| self.get(id))
@@ -125,6 +150,18 @@ mod tests {
         assert_eq!(ids(&book), ["s-a", "s-m", "s-z", "s-q"]);
         let moved = book.with_space(space("s-a", "DP-1", 3));
         assert_eq!(ids(&moved), ["s-m", "s-z", "s-q", "s-a"]);
+    }
+
+    #[test]
+    fn removing_a_space_stops_it_being_shown() {
+        let book = book().without_space(&SpaceId::parse("s-b").expect("id"));
+        assert_eq!(book.shown_on(&output("HEADLESS-1")), None);
+        assert_eq!(book.shown().count(), 0);
+        let ids: Vec<&str> = book.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(ids, ["s-a", "s-c"]);
+        let book = self::book().without_shown(&output("HEADLESS-1"));
+        assert_eq!(book.shown_on(&output("HEADLESS-1")), None);
+        assert_eq!(book.iter().count(), 3);
     }
 
     #[test]

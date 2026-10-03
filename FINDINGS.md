@@ -4,43 +4,17 @@ Open items and standing facts. An entry names the condition that closes it.
 
 ## Stubs behind frozen interfaces
 
-Every `todo!()` in the workspace's sources (27 from P0-Z1 in the pure crates, 270 from P0-Z2
-below: 297), its fill lane and the ignored test that proves it. Un-ignoring the test is part
-of the fill.
+Every `todo!()` in the workspace's sources (270, all from P0-Z2 below), its fill lane and the
+ignored test that proves it. Un-ignoring the test is part of the fill. The 27 the P0-Z1
+freeze left in casement-core, casement-layout and casement-motion are filled (the P0-F1 lanes
+and P0-F1b-model).
 
 ### P0-Z1: the pure crates
 
-| File | Item | Lane | Proven by |
-| --- | --- | --- | --- |
-| `crates/casement-core/src/app/key.rs` | `AppKey::of` | P0-F1-window | `tests/window.rs` `an_app_key_is_proven_only_by_its_peer` |
-| `crates/casement-core/src/space/mint.rs` | `mint_space_id` | P0-F1-window | `tests/window.rs` `minted_space_ids_are_porter_ids` |
-| `crates/casement-core/src/space/mint.rs` | `SpaceSeed::next` | P0-F1-window | `tests/window.rs` `a_seed_mints_a_fixed_sequence_of_distinct_ids` |
-| `crates/casement-core/src/space/book.rs` | `SpaceBook::shown_on`, `row`, `get` | P0-F1-window | `space::book::tests::queries_answer_from_the_book` |
-| `crates/casement-core/src/layer/book.rs` | `LayerBook::usable_area` | P0-F1-output | `layer::book::tests::exclusive_zones_shrink_the_usable_area` |
-| `crates/casement-core/src/output/scale_policy.rs` | `first_sight_scale` | P0-F1-output | `tests/output.rs` `first_sight_scales` |
-| `crates/casement-core/src/output/mode_pick.rs` | `pick_mode` | P0-F1-output | `tests/output.rs` `picking_modes` |
-| `crates/casement-core/src/output/arrangement.rs` | `place_outputs` | P0-F1-output | `tests/output.rs` `placing_outputs` |
-| `crates/casement-core/src/input/reach.rs` | `reach` | P0-F1-input | `tests/input.rs` `the_reach_table` |
-| `crates/casement-core/src/input/chord.rs` | `Chord::parse`, `Chord::text` | P0-F1-input | `tests/input.rs` `chords_parse_in_any_order_and_print_in_the_macs`; `tests/round_trip.rs` `chords_and_bindings_store_as_text` |
-| `crates/casement-core/src/input/binding.rs` | `resolve` | P0-F1-input | `tests/input.rs` `agent_remote_and_feed_never_fire_a_binding` |
-| `crates/casement-core/src/policy/globals.rs` | `advertised` | P0-F1-input | `tests/input.rs` `the_i7_table` |
-| `crates/casement-core/src/focus/step.rs` | `focus::step` | P0-F1-focus | `tests/focus.rs` `the_focus_table` |
-| `crates/casement-core/src/focus/press.rs` | `route_press` | P0-F1-focus | `tests/focus.rs` `press_routing` |
-| `crates/casement-core/src/model.rs` | `Model::step`, `Model::check_invariants` | P0-F1b-model | `tests/model.rs` (six rows and the T0 proptest `random_sequences_keep_every_invariant`) |
-| `crates/casement-layout/src/knobs.rs` | `LayoutKnobs::of` | P0-F1-layout | `tests/knobs.rs` `tile_margins_follow_their_setting` |
-| `crates/casement-layout/src/of_model.rs` | `spec_of` | P0-F1-layout (proven after P0-F1b-model) | `tests/of_model.rs` `one_output_one_space_one_window` (ignored as P0-F1b-model: it needs `Model::step`) |
-| `crates/casement-layout/src/rust_scene/mod.rs` | `RustScene::arrange` | P0-F1-layout | `tests/rust_scene.rs` (cascade, floating and Space-origin tables; the proptest `every_window_fits_and_layout_is_deterministic`) |
-| `crates/casement-layout/src/rust_scene/floating.rs` | `floating_target` | P0-F1-layout | as `RustScene::arrange` |
-| `crates/casement-layout/src/rust_scene/cascade.rs` | `cascade_rect` | P0-F1-layout | as `RustScene::arrange` |
-| `crates/casement-motion/src/book.rs` | `MotionBook::is_moving` | P0-F1-motion | `tests/motion.rs` |
-| `crates/casement-motion/src/retarget.rs` | `retarget` | P0-F1-motion | `tests/motion.rs` (`a_retarget_keeps_position_and_velocity` and five more) |
-| `crates/casement-motion/src/sample.rs` | `sample` | P0-F1-motion | `tests/motion.rs` |
+No stub is left. Ignored tests by lane: P3-Z 1 (`crates/casement-layout/tests/spread.rs`, the
+Mission Control spread's properties from SP8, for the P3 freeze to inherit).
 
-Ignored tests by lane: P0-F1-window 4, P0-F1-output 4, P0-F1-input 5, P0-F1-focus 2,
-P0-F1b-model 8, P0-F1-layout 5, P0-F1-motion 6, P3-Z 1 (`crates/casement-layout/tests/spread.rs`,
-the Mission Control spread's properties from SP8, for the P3 freeze to inherit).
-
-P0-F1-ids has no stub: ids, geometry and time are implemented at the freeze, with their
+P0-F1-ids had no stub: ids, geometry and time are implemented at the freeze, with their
 tables (the clock's ds-core conformance cases, stop order, chunk invariance, ten minutes
 without drift, `buffer_size` at 1, 1.25, 1.5 and 2).
 
@@ -167,7 +141,7 @@ module); `Rgba8`; `TextureBook`; `Transcript`, `Pattern`; `FixtureSpec`, `TestOr
 | ds-core's `Scale` has no serde, so stored types write it through `geometry::scale_serde` | ds-core derives `Serialize, Deserialize` (transparent) on `Scale` (interface ask to quire); the helper module is deleted |
 | ds-style without dioxus still pulls `image` (png, jpeg, moxcms) into casement-core's graph (A22, SP8) | quire makes `image` an optional ds-style feature |
 | ds-behaviour is a dependency of casement-core with no caller yet | the switcher, hot-corner and Space-swipe machines run in casement (C41, P3-Z), fed through `Mono::stamp`, with their `*Params` in `CasementSettings` |
-| `CasementSettings::defaults` carries no bindings (C30 says the settings document holds the defaults) | P0-F1-input or P1-Z writes the default table (Space steps, placement chords, hide and quit) into `settings/bindings.rs` |
+| `CasementSettings::defaults` carries no bindings (C30 says the settings document holds the defaults) | P1-I1 writes the default table (Space steps, placement chords, hide and quit) into `settings/bindings.rs` (A26) |
 | The smithay fork `PoHsuanLai/smithay` (branch `casement`, C2) does not exist; the pin names upstream Smithay at the same rev `118e34ff` | the first casement patch to smithay creates the fork and moves the pin to it |
 | Workspace pins outside quire's pinned block: smithay, wayland-protocols-wlr, wayland-protocols-misc, xkbcommon 0.9 (quire's block says 0.8 through sctk 0.20, A14), libseat, tracing, tracing-subscriber | quire's `docs/workspace-deps.toml` carries them (with the xkbcommon note) and this workspace copies the block verbatim |
 | `reis` and `pipewire` are pinned (A14) and named by no crate | P2-Z (capture source) and P4-Z (EIS) name them |
@@ -180,10 +154,13 @@ module); `Rgba8`; `TextureBook`; `Transcript`, `Pattern`; `FixtureSpec`, `TestOr
 | `casement-scene-css` was written, never built (Blitz is heavy and the oracle is P3's) | P3-CSS builds and fills it |
 | Protocol tests carry `todo!()` client steps: the fixture setup and the scenario are written, the testclient helpers are not | each H lane writes its helper module and the steps in the same change |
 | `taffy_bridge` (`new_tree`, `solve`, `rect_of`, `fixed_size`) has no caller outside its test | P3-Z's Split View and Exposé call it; the `expect(dead_code, unused_imports)` on the module then fails and is removed |
-| `MotionBook`'s `Motion` enum is never built | P0-F1-motion's `retarget` builds it; its `expect(dead_code)` is removed then |
-| `rust_scene/floating.rs` and `cascade.rs` helpers are not called | P0-F1-layout's `RustScene::arrange` calls them; their `expect(dead_code)` is removed |
-| Motion goldens (S-L8) are not written: their values come from the fill | P0-F1-motion writes and blesses them in `FrameScene::text` form (SP8's `mc_entry` scene is the model) |
 | Mission Control spread quality: scale about 0.30 at 20 windows, 0.19 to 0.22 at 30 to 50 (A21) | the user decides at P3 whether to enable refinement trials or a better packer |
+| `Event` has no variant for a window press, an app activation or a desktop command, so `Model::press`, `Model::activate_app` and `Model::command` are called directly | the edge's handler lanes (P0-H2, P0-B-loop) say whether `Event::Press`, `Event::Activate` and `Event::Command` join the enum, each routed to those methods in `Model::step` |
+| The model never arms a timer: `Ping`, `QuitGrace` and the other model-owned `TimerKey`s have handlers (`Model::step` on `TimerFired` and `Pong`) but nothing asks for them | P3-Z's quit machine and the not-responding policy arm them through `Effect::ArmTimer` |
+| `QuitActive` closes the active app's windows and stops there; `ForceQuitPanel` does nothing | P3-Z's `quit.rs` |
+| A minimised window travels to the bottom centre of its output (`Cause::Minimise` needs a target and the model does not know the dock) | the dock's tile arrives as an event or a layer fact (P3-Z) |
+| `focus::step` on `SheetClosed` keys the parent even when the parent is in the dock or on a Space nobody sees (found by the T0 proptest); `Model::step` skips the feed for a parent it cannot see | the focus machine checks `is_visible` in `sheet_closed`; the model's guard goes |
+| A window moved by a grab has no event to report its place, so a placed window stays `WindowState::New` until a placement request moves it | P0-H2's grabs report geometry (an `Event`) or P3-Z's `Drag` cause does |
 | ds-motion's `Contact::pressed` is public without dioxus although its doc says crate-private (A23) | decided in quire (S0-QM1 follow-up): intended for compositor swipe releases, or closed |
 
 ## Departures from 20-FREEZE-PLAN §4.2
@@ -209,6 +186,22 @@ module); `Rgba8`; `TextureBook`; `Transcript`, `Pattern`; `FixtureSpec`, `TestOr
   (`SlotKind`), `WindowPlacement::Minimised` without a target (motion takes the tile from
   `Cause::Minimise`). `WindowTarget` and `SpaceTarget` carry their `output`, which motion and
   the renderer group by.
+- P0-F1b-model (A28): `WindowState::New(LogicalSize)` and `Restore::New` (a window mapped and
+  not yet placed; `spec_of` emits `WindowPlacement::New`), `Window.stack: StackRank` (a rank
+  distinct across the model; `spec_of` numbers each Space's windows from it) and
+  `Window.home: Option<OutputKey>` (the output a window on every Space sits on).
+  `WindowState::restore` and `Restore::into_state` convert between them.
+- P0-F1b-model: `InvariantBreak` grows from 6 to 19 variants (main window, key outside the
+  active app, key not visible, emphasis, parent, home output, stack rank, app window order,
+  output shows nothing, full-screen and Split View Spaces, layer output, lock coverage).
+- P0-F1b-model: `Model` is stepped through `step` and three more public entry points for what
+  `Event` has no variant for (`press`, `activate_app`, `command`), and answers `reach`,
+  `states_of` and `keyboard_target`. Keyboard focus is an effect derived once per step from the
+  lock, an exclusive layer and the key window, never moved by a handler.
+- P0-F1b-model: read and write accessors added beside frozen books: `SpaceBook::{without_space,
+  without_shown, iter, shown}`, `LayerBook::{get, iter}`, `OutputConfig::logical_rect` (the one
+  logical rectangle of an output, replacing layout's private copy), `FocusView::is_visible`
+  public.
 - casement-motion's `sample` takes `WindowLooks` (emphasis and frame per window): emphasis,
   corner radius and shadow had no source in the sketch's inputs. `FrameScene::text` is the
   golden form.
@@ -295,3 +288,35 @@ module); `Rgba8`; `TextureBook`; `Transcript`, `Pattern`; `FixtureSpec`, `TestOr
   synthesised touch and tablet events (FINDINGS open items above).
 - **The jail's PID 1 is `bwrap`** (`--unshare-pid` with `--proc /proc`), which both
   `require_jail` checks (shell and `casement::jail_check`) rely on.
+- **Layout reads the usable area, not the output** (A26): `spec_of` fills `OutputSpec.usable`
+  from `LayerBook::usable_area`, so maximised and filled windows respect exclusive zones.
+  `pick_mode` returns a 0x0 mode for a display with no modes; the model leaves such an output
+  dark (`OutputPower::Off`) and still gives it a desktop.
+- **A new window is unplaced** (A28): it maps as `WindowState::New(first_size)` on the shown
+  desktop of the output the key window is on (else the leftmost lit output), and layout
+  places it (centre, then cascade). A window on every Space (shell role) is arranged on the
+  shown Space of its home output only. With no output plugged every window waits on every Space
+  with no home, and the next output takes them in.
+- **Spec stacking is the model's** (A28): a Space's windows are ordered by `Window.stack`, which
+  a raise (activation, a press, an unhide) moves to the top; a hidden app's windows are
+  arranged as minimised.
+- **P3-Z owes two fields** (A29): `OverviewSlot` gains `output: OutputKey` and `FrameScene` an
+  overview progress field (`MotionKey::Overview` is unbuilt).
+- **Benches live outside `crates/`** (A30): B8 bans `Instant::now` there; P0-Z2 hosts a perf
+  project under dev, and until then the layout and motion benches sit in their lane worktrees,
+  beside the checkout.
+- **Layout reads a chrome token** (A31): the cascade step is ds-style's
+  `ChromeToken::TitlebarHeight` (28).
+- **A timer and vblanks that share an instant arrive together** (A32): `VirtualClock::arrive(t)`
+  reports timers in arming order, then vblanks by output key; the calloop source steps with
+  `next_stop` then `arrive`, never `advance_to` alone.
+- **The focus machine's view carries apps, and rule S5 is split** (A33): `FocusView` has
+  `apps` (the hide row, and an app's windows bottom first); when the activated app has no
+  window on a shown Space `step` leaves it active with no key, and the model switches Space
+  then feeds `SpaceShown` (unless `spaces.switch_on_activate` is off); the model unhides an app
+  on activation; a layer-surface press never reaches `route_press`; an xdg-activation
+  `Missing` token is handled as `Stale`.
+- **Space ids** (A34): `mint_space_id` is `s-` and 32 lowercase hex digits (34 bytes), from a
+  splitmix64 sequence over the seed's counter.
+- **A parent is its own app's window**: a sheet or a dialog names a mapped window of the same
+  app; any other parent is dropped to none, so a sheet cannot pull focus into another app.

@@ -189,3 +189,54 @@ fn placing_outputs() {
         "a saved display keeps its place; a new one goes right of it"
     );
 }
+
+#[test]
+fn an_output_in_logical_pixels() {
+    let config = |w, h, scale, transform, at: (i32, i32)| OutputConfig {
+        mode: mode(w, h, 60_000, PREFERRED),
+        scale: Scale(scale),
+        transform,
+        position: LogicalPoint { x: at.0, y: at.1 },
+        power: OutputPower::On,
+    };
+    let cases = [
+        (
+            "1x",
+            config(1920, 1080, 120, Transform::Normal, (0, 0)),
+            support::rect(0, 0, 1920, 1080),
+        ),
+        (
+            "1.5x",
+            config(3840, 2160, 180, Transform::Normal, (1920, 0)),
+            support::rect(1920, 0, 2560, 1440),
+        ),
+        (
+            "2x",
+            config(3840, 2160, 240, Transform::Normal, (0, 0)),
+            support::rect(0, 0, 1920, 1080),
+        ),
+        (
+            "1.25x rounds to the nearest pixel",
+            config(1920, 1080, 150, Transform::Normal, (0, 0)),
+            support::rect(0, 0, 1536, 864),
+        ),
+        (
+            "a quarter turn swaps the sides",
+            config(1920, 1080, 120, Transform::R90, (0, 0)),
+            support::rect(0, 0, 1080, 1920),
+        ),
+        (
+            "a half turn does not",
+            config(1920, 1080, 120, Transform::R180, (-5, 7)),
+            support::rect(-5, 7, 1920, 1080),
+        ),
+        (
+            "flipped and turned swaps",
+            config(1920, 1080, 120, Transform::Flipped270, (0, 0)),
+            support::rect(0, 0, 1080, 1920),
+        ),
+    ];
+    for (name, config, want) in cases {
+        assert_eq!(config.logical_rect(), want, "{name}");
+    }
+}
