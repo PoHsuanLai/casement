@@ -36,6 +36,18 @@ impl VblankClock {
         (self.at(k), VblankSeq(k))
     }
 
+    /// The number of the vblank that falls exactly at `t`, if one does.
+    pub fn seq_at(&self, t: Mono) -> Option<VblankSeq> {
+        if t < self.phase {
+            return None;
+        }
+        let elapsed = t.since(self.phase).as_nanos();
+        let guess = self.refresh.frames_in(elapsed);
+        (guess..=guess.saturating_add(1))
+            .find(|k| u128::from(self.refresh.nanos_for(*k)) == elapsed)
+            .map(VblankSeq)
+    }
+
     /// Vblank `k`'s instant.
     fn at(&self, k: u64) -> Mono {
         self.phase

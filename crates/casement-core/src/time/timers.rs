@@ -56,12 +56,21 @@ struct Armed {
     issue: u64,
 }
 
-/// Every armed timer.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Every armed timer. Two books are equal when they would fire the same timers in the same
+/// order, whatever history armed them.
+#[derive(Debug, Clone)]
 pub struct TimerBook {
     armed: BTreeMap<TimerKey, Armed>,
     issued: u64,
 }
+
+impl PartialEq for TimerBook {
+    fn eq(&self, other: &TimerBook) -> bool {
+        self.in_order() == other.in_order()
+    }
+}
+
+impl Eq for TimerBook {}
 
 impl TimerBook {
     /// No timers.

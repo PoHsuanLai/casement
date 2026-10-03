@@ -15,7 +15,9 @@ pub use millihertz::Millihertz;
 pub use mono::Mono;
 pub use timers::{Due, IdleNotifierId, TimerBook, TimerKey, TrustedKey};
 pub use vblank_clock::{VblankClock, VblankSeq};
-pub use virtual_clock::{Stop, VirtualClock};
+pub use virtual_clock::{Arrival, Stop, VirtualClock};
 
+#[cfg(test)]
+mod stop_order_tests;
 #[cfg(test)]
 mod tests;

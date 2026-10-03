@@ -13,3 +13,6 @@ pub use logical::{LogicalPoint, LogicalRect, LogicalSize};
 pub use physical::{PhysicalRect, PhysicalSize};
 pub use sub::{SubPoint, SubPx, SubSize};
 pub use transform::Transform;
+
+#[cfg(test)]
+mod tests;

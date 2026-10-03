@@ -19,6 +19,18 @@ pub enum Stop {
     End,
 }
 
+/// Everything that happens on arriving at one instant, in the order it is handled: every due
+/// timer in firing order, then every output's vblank by output key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Arrival {
+    /// The instant reached.
+    pub at: Mono,
+    /// The timers that fired, earliest first, ties in arming order.
+    pub timers: Vec<TimerKey>,
+    /// The vblanks that fell exactly at `at`, by output key.
+    pub vblanks: Vec<(OutputKey, VblankSeq)>,
+}
+
 /// A clock that stands still until advanced, stopping at every due instant in order: timers
 /// before vblanks at the same instant, timers by arming order, vblanks by output key.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -124,6 +136,42 @@ impl VirtualClock {
             now: self.now.max(t),
             ..self
         }
+    }
+
+    /// The clock moved to `t`, with everything that happens there: the timers due by `t` are
+    /// taken (as [`VirtualClock::fire_due`]) and every vblank that falls exactly at `t` is
+    /// reported. This is the whole of one stop: [`VirtualClock::next_stop`] names only the
+    /// first thing at an instant, and a timer and a vblank (or two outputs' vblanks) may share
+    /// it, so a driver steps with `next_stop` then `arrive`, never `advance_to` alone.
+    ///
+    /// Vblanks are reported only when the clock moves: one that falls at the instant an output
+    /// is added, or at an instant already arrived at, is not.
+    pub fn arrive(self, t: Mono) -> (VirtualClock, Arrival) {
+        let moved = t > self.now;
+        let clock = self.advance_to(t);
+        let at = clock.now;
+        let vblanks = if moved {
+            clock.vblanks_at_now()
+        } else {
+            Vec::new()
+        };
+        let (clock, timers) = clock.fire_due();
+        (
+            clock,
+            Arrival {
+                at,
+                timers,
+                vblanks,
+            },
+        )
+    }
+
+    /// Every output whose vblank falls exactly now, by output key.
+    fn vblanks_at_now(&self) -> Vec<(OutputKey, VblankSeq)> {
+        self.outputs
+            .iter()
+            .filter_map(|(key, clock)| Some((key.clone(), clock.seq_at(self.now)?)))
+            .collect()
     }
 
     /// The clock without every timer due by now, and their keys in firing order.

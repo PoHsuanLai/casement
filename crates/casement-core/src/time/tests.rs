@@ -107,19 +107,23 @@ fn arming_a_key_again_moves_it() {
     assert_eq!(book.fire_until(ms(10)).1, Vec::<TimerKey>::new());
 }
 
-/// Every stop from now to `limit`, advancing and firing as a driver would, with each advance
+/// Every stop from now to `limit`, arriving at each as a driver would, with each advance
 /// limited to `chunk`.
 fn stops(clock: VirtualClock, limit: Mono, chunk: Duration) -> Vec<(Mono, Stop)> {
     let mut clock = clock;
     let mut seen = Vec::new();
     while clock.now() < limit {
         let step_limit = clock.now().after(chunk).min(limit);
-        let (at, stop) = clock.next_stop(step_limit);
-        let (next, _) = clock.advance_to(at).fire_due();
+        let (at, _) = clock.next_stop(step_limit);
+        let (next, arrival) = clock.arrive(at);
         clock = next;
-        if stop != Stop::End {
-            seen.push((at, stop));
-        }
+        seen.extend(arrival.timers.into_iter().map(|key| (at, Stop::Timer(key))));
+        seen.extend(
+            arrival
+                .vblanks
+                .into_iter()
+                .map(|(key, seq)| (at, Stop::Vblank(key, seq))),
+        );
     }
     seen
 }
