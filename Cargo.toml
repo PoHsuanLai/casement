@@ -103,3 +103,9 @@ tracing-subscriber = { version = "0.3", default-features = false, features = ["f
 unsafe_code = "deny"
 missing_docs = "warn"
 missing_debug_implementations = "warn"
+
+# smithay's `debug_assert!`s abort the compositor on a client's mistake that release builds
+# survive (a negative `wl_region` size, an icon request after `immutable`); the fuzz box found
+# them. Our own assertions stay on.
+[profile.dev.package.smithay]
+debug-assertions = false
