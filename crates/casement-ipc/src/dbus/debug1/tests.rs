@@ -216,30 +216,34 @@ async fn malformed_calls_are_refused_before_the_loop_sees_them() {
     assert_eq!(seen.join().expect("loop").len(), 2);
 }
 
-/// A dbus-daemon on the repo's private-bus.conf, killed by pid when dropped.
-struct PrivateBus {
+/// A dbus-daemon on the repo's private-bus.conf with a cleared environment, killed and reaped
+/// when dropped, so a failing test leaves nothing behind.
+pub(crate) struct PrivateBus {
     daemon: Child,
-    address: String,
+    pub(crate) address: String,
 }
 
 impl PrivateBus {
-    fn start() -> PrivateBus {
+    pub(crate) fn start() -> PrivateBus {
         let config = concat!(env!("CARGO_MANIFEST_DIR"), "/../../dev/private-bus.conf");
-        let mut daemon = Command::new("dbus-daemon")
+        let daemon = Command::new("dbus-daemon")
             .env_clear()
             .args(["--config-file", config, "--nofork", "--print-address=1"])
             .stdout(Stdio::piped())
             .spawn()
             .expect("dbus-daemon");
-        let mut address = String::new();
-        let stdout = daemon.stdout.take().expect("stdout");
-        BufReader::new(stdout)
-            .read_line(&mut address)
-            .expect("address");
-        PrivateBus {
+        // The guard exists before anything can fail, so its Drop covers the reads below.
+        let mut bus = PrivateBus {
             daemon,
-            address: address.trim().to_owned(),
-        }
+            address: String::new(),
+        };
+        let stdout = bus.daemon.stdout.take().expect("stdout");
+        BufReader::new(stdout)
+            .read_line(&mut bus.address)
+            .expect("address");
+        bus.address = bus.address.trim().to_owned();
+        assert!(!bus.address.is_empty(), "dbus-daemon printed no address");
+        bus
     }
 }
 

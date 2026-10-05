@@ -84,19 +84,26 @@ enum RunError {
     Loop(String),
 }
 
-/// The calls `casementctl debug` makes, when Debug1 is served. The D-Bus object that feeds this
-/// channel starts in `casement-ipc` (`serve_debug`, an interface ask: casement itself reaches
-/// neither zbus nor tokio); until it does, nothing sends and Debug1 is not on the bus.
+/// Starts serving Debug1 on the private bus (`$DBUS_SESSION_BUS_ADDRESS`, which the jail's
+/// scripts set) and returns the calls `casementctl debug` makes. The connection stays in
+/// `state.ipc.handles.debug`, so the name is held for as long as the compositor runs.
 #[cfg(feature = "debug-inject")]
-fn debug_calls()
--> Option<smithay::reexports::calloop::channel::Channel<casement_ipc::dbus::DebugCall>> {
-    None
+fn debug_calls(
+    state: &mut State,
+) -> Result<
+    Option<smithay::reexports::calloop::channel::Channel<casement_ipc::dbus::DebugCall>>,
+    RunError,
+> {
+    let (calls, connection) = casement_ipc::dbus::serve_debug()
+        .map_err(|error| RunError::Loop(format!("debug bus: {error}")))?;
+    state.ipc.handles.debug = Some(connection);
+    Ok(Some(calls))
 }
 
 /// Without `debug-inject` there is no Debug1.
 #[cfg(not(feature = "debug-inject"))]
-fn debug_calls() -> Option<std::convert::Infallible> {
-    None
+fn debug_calls(_state: &mut State) -> Result<Option<std::convert::Infallible>, RunError> {
+    Ok(None)
 }
 
 /// Starts the compositor, listens for clients, and runs the event loop: a turn dispatches
@@ -125,12 +132,12 @@ fn serve(config: cli::StartConfig) -> Result<(), RunError> {
         })
         .map_err(|error| loop_error(&error))?;
     #[cfg(feature = "debug-inject")]
-    let debug = match debug_calls() {
+    let debug = match debug_calls(&mut state)? {
         Some(calls) => Some(debug::attach(&handle, calls).map_err(RunError::Loop)?),
         None => None,
     };
     #[cfg(not(feature = "debug-inject"))]
-    let _ = debug_calls();
+    let _ = debug_calls(&mut state)?;
     core_loop::announce_outputs(&mut state);
     let stop = event_loop.get_signal();
     #[cfg(feature = "debug-inject")]
