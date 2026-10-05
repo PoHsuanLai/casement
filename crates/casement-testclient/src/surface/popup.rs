@@ -186,6 +186,14 @@ impl Popup {
         self.surface.commit();
     }
 
+    /// Asks for a frame callback and commits: the returned handle says when it came back.
+    pub fn request_frame(&self, client: &TestClient) -> crate::SyncDone {
+        let done = crate::SyncDone::default();
+        self.surface.frame(&client.qh(), done.clone());
+        self.surface.commit();
+        done
+    }
+
     /// Takes an explicit grab answering `serial`.
     pub fn grab(&self, seat: &WlSeat, serial: u32) {
         self.popup.grab(seat, serial);

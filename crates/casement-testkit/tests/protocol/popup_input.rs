@@ -319,6 +319,18 @@ fn closing_a_bar_popup_returns_the_keyboard_to_the_app() {
     );
 }
 
+/// A popup that asks for a frame callback after its first commit is told `done` on a frame: a
+/// menu that animates (a submenu fading in) never paints otherwise.
+#[test]
+fn a_popup_gets_its_frame_callbacks() {
+    let mut desk = Desk::open();
+    let done = desk.popup.request_frame(desk.fixture.client(desk.shell));
+    desk.fixture.pump();
+    desk.fixture.advance(std::time::Duration::from_millis(100));
+    desk.fixture.pump();
+    assert!(done.is_done(), "the popup's frame callback was answered");
+}
+
 /// The shell dies with its menu open: smithay drops the grab before the popup's destruction
 /// reaches casement, and the keyboard must still go back to the app the model says holds it.
 #[test]

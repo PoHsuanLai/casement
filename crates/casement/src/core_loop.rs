@@ -19,6 +19,7 @@ use casement_layout::{ConfigureNeed, SceneLayout, spec_of};
 use casement_motion::{FrameScene, retarget};
 use casement_render::OutputView;
 use casement_wayland::{commit_timing, fifo, presentation, session_lock, xdg_shell};
+use smithay::desktop::PopupManager;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::wayland::compositor::{
     SurfaceAttributes, TraversalAction, with_surface_tree_downward,
@@ -194,8 +195,8 @@ fn presented(
     state.release_blockers();
 }
 
-/// The root surfaces a frame of `output` drew: its windows, its layers, its lock surface and
-/// the cursor.
+/// The root surfaces a frame of `output` drew: its windows, its layers, their popups, its lock
+/// surface and the cursor.
 fn drawn_roots(
     state: &State,
     output: &OutputKey,
@@ -214,10 +215,20 @@ fn drawn_roots(
         .filter(|(_, spec)| spec.output == *output)
         .filter_map(|(key, _)| book.layer(key));
     let lock = book.lock(output);
-    windows
+    let roots: Vec<WlSurface> = windows
         .chain(layers)
         .chain(lock)
         .map(|entry| entry.root.clone())
+        .collect();
+    // A popup is drawn with its root (and may hang from another popup): it has frames too.
+    let popups: Vec<WlSurface> = roots
+        .iter()
+        .flat_map(PopupManager::popups_for_surface)
+        .map(|(popup, _)| popup.wl_surface().clone())
+        .collect();
+    roots
+        .into_iter()
+        .chain(popups)
         .chain(book.cursor().cloned())
         .collect()
 }

@@ -414,6 +414,8 @@ byte-exact for tier P and 2 per channel on at most 1000 ppm of pixels for tier L
   `output`; the plan spells it both ways).
 - **`casement-probe` rejects unknown flags** (exit 64) and `toplevel --maximised` prints
   `maximised` in its configure line. `Debug1::Inject` answers `ok <line>` as written.
+- **Popups get frame callbacks**: `drawn_roots` lists the popups of every drawn root (windows, layers,
+  lock surface), so a menu that animates is told `done` on each frame.
 - Not done: a Reserve bar's own placement is still against the whole output in hit-testing while
   the renderer shrinks it by earlier bars on other edges (two bars on one edge overlap in hit-tests).
 
