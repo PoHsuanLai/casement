@@ -33,13 +33,14 @@ impl Model {
         let Some(spec) = self.layers.get(&layer).cloned() else {
             return Moved::of(self);
         };
-        let sizes = self.sizes_on(std::slice::from_ref(&spec.output));
+        let outputs = [spec.output.clone()];
+        let sizes = self.sizes_on(&outputs);
         let model = Model {
             layers: self.layers.without_layer(&layer),
             ..self
         };
         Moved::of(model)
-            .then(|model| model.reconfigured(&sizes, layer))
+            .then(|model| model.reconfigured(&outputs, &sizes, Some(layer)))
             .then(|model| model.laid_out_for(&spec, &spec))
     }
 
@@ -58,42 +59,51 @@ impl Model {
             layers: self.layers.with_layer(layer, spec.clone()),
             ..self
         };
-        let size = model.size_of(&spec);
+        let size = model.sizes_on(&outputs).get(&layer).copied();
         Moved::of(model)
-            .with(Effect::ConfigureLayer { layer, size })
-            .then(|model| model.reconfigured(&sizes, layer))
+            .with_all(size.map(|size| Effect::ConfigureLayer { layer, size }))
+            .then(|model| model.reconfigured(&outputs, &sizes, Some(layer)))
             .then(|model| model.laid_out_for(before.as_ref().unwrap_or(&spec), &spec))
     }
 
-    /// The size `spec` is configured to, in the room wlr-layer-shell gives it.
-    fn size_of(&self, spec: &LayerSpec) -> LogicalSize {
-        self.output_rect(&spec.output)
-            .map_or(LogicalSize { w: 0, h: 0 }, |full| {
-                layer_size(spec, self.layers.room_for(spec, full).size)
-            })
-    }
-
-    /// The configured size of every layer surface on `outputs`.
-    fn sizes_on(&self, outputs: &[OutputKey]) -> BTreeMap<LayerKey, LogicalSize> {
-        self.layers
+    /// The configured size of every layer surface on `outputs`: each takes its size from the
+    /// room [`crate::layer::LayerBook::arrange`] gives it.
+    pub(super) fn sizes_on(&self, outputs: &[OutputKey]) -> BTreeMap<LayerKey, LogicalSize> {
+        outputs
             .iter()
-            .filter(|(_, spec)| outputs.contains(&spec.output))
-            .map(|(key, spec)| (*key, self.size_of(spec)))
+            .filter_map(|output| {
+                let full = self.output_rect(output)?;
+                let arranged = self.layers.arrange(output, full);
+                Some(
+                    self.layers
+                        .iter()
+                        .filter(|(_, spec)| spec.output == *output)
+                        .filter_map(|(key, spec)| {
+                            let room = arranged.room(key)?;
+                            Some((*key, layer_size(spec, room.size)))
+                        })
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .flatten()
             .collect()
     }
 
-    /// Every layer surface other than `except` whose size is not what `sizes` says it was, told
-    /// its new size (a surface that avoids zones follows the others' zones).
-    fn reconfigured(self, sizes: &BTreeMap<LayerKey, LogicalSize>, except: LayerKey) -> Moved {
+    /// Every layer surface on `outputs` other than `except` whose size is not what `sizes` says
+    /// it was, told its new size (a surface follows the zones of those arranged before it).
+    pub(super) fn reconfigured(
+        self,
+        outputs: &[OutputKey],
+        sizes: &BTreeMap<LayerKey, LogicalSize>,
+        except: Option<LayerKey>,
+    ) -> Moved {
         let effects: Vec<Effect> = self
-            .layers
-            .iter()
-            .filter(|(key, _)| **key != except)
-            .filter_map(|(key, spec)| {
-                let size = self.size_of(spec);
-                (sizes.get(key).is_some_and(|was| *was != size))
-                    .then_some(Effect::ConfigureLayer { layer: *key, size })
+            .sizes_on(outputs)
+            .into_iter()
+            .filter(|(key, size)| {
+                Some(*key) != except && sizes.get(key).is_some_and(|was| was != size)
             })
+            .map(|(layer, size)| Effect::ConfigureLayer { layer, size })
             .collect();
         Moved::of(self).with_all(effects)
     }

@@ -5,7 +5,7 @@ use crate::state::State;
 use casement_backend::headless::FrameSource;
 use casement_core::Model;
 use casement_core::geometry::{LogicalPoint, SubPx};
-use casement_core::layer::LayerLevel;
+use casement_core::layer::{Arranged, LayerLevel};
 use casement_core::time::Mono;
 use casement_core::window::WindowState;
 use casement_core::{LayerKey, OutputKey, WindowId};
@@ -16,12 +16,12 @@ use casement_render::{
     CasementElement, ChromeLayer, Compositor, LayerDraw, OutputView, TextureBook, output_elements,
     popup_surfaces,
 };
-use casement_wayland::layer_shell::layer_area;
 use casement_wayland::seat::{Candidate, SurfaceAt, surface_under};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::pixman::PixmanRenderer;
 #[cfg(feature = "testing")]
 use smithay::backend::renderer::test::DummyRenderer;
+use std::collections::BTreeMap;
 
 /// The frame the model's windows are in at `now`: motion sampled, each window's committed
 /// size from the surface book, its look from the model.
@@ -70,11 +70,16 @@ fn full_screen_windows(model: &Model) -> Vec<WindowId> {
         .collect()
 }
 
-/// The layer surfaces on `output`, by level, bottom of each level first (key order), and the
-/// full-screen windows.
+/// The layer surfaces on `output`, by level, bottom of each level first (key order), where the
+/// model arranges them, and the full-screen windows.
 pub(crate) fn layers_on(model: &Model, output: &OutputKey) -> LayerDraw {
     let covering = LayerDraw {
         full_screen: full_screen_windows(model),
+        arranged: model
+            .outputs()
+            .0
+            .get(output)
+            .map(|state| model.layers().arrange(output, state.config.logical_rect())),
         ..LayerDraw::default()
     };
     model
@@ -164,6 +169,15 @@ pub(super) fn stack(state: &State) -> Vec<(Hit, Candidate)> {
                 },
             ))
         });
+    let arranged: BTreeMap<OutputKey, Arranged> = model
+        .outputs()
+        .0
+        .iter()
+        .map(|(output, state)| {
+            let full = state.config.logical_rect();
+            (output.clone(), model.layers().arrange(output, full))
+        })
+        .collect();
     let layer = |levels: &'static [LayerLevel]| {
         let mut found: Vec<(Hit, Candidate)> = model
             .layers()
@@ -171,8 +185,7 @@ pub(super) fn stack(state: &State) -> Vec<(Hit, Candidate)> {
             .filter(|(_, spec)| levels.contains(&spec.level))
             .filter_map(|(key, spec)| {
                 let entry = book.layer(key)?;
-                let full = model.outputs().0.get(&spec.output)?.config.logical_rect();
-                let area = layer_area(spec, model.layers().room_for(spec, full), entry.committed);
+                let area = arranged.get(&spec.output)?.place(key, entry.committed)?;
                 Some((
                     Hit::Layer(*key),
                     Candidate {

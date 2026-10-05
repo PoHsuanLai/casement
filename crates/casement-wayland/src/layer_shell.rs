@@ -10,7 +10,7 @@
 
 mod spec;
 
-pub use spec::{anchors_of, exclusive_of, keyboard_of, layer_area, level_of, margins_of, spec_of};
+pub use spec::{anchors_of, exclusive_of, keyboard_of, level_of, margins_of, spec_of};
 
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::geometry::LogicalSize;

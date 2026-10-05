@@ -4,11 +4,12 @@
 mod support;
 
 use casement_core::focus::TokenCheck;
-use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
+use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize, Transform};
 use casement_core::layer::{
     Anchor, Anchors, ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerSpec, Margins,
     ShellRoleTag,
 };
+
 use casement_core::{Cause, Effect, Event, KeyboardTarget, LayerKey, OutputKey, WindowId};
 use support::driver::{Op, Run, assert_same_world, last, map, plug, run, run_from, unplug};
 use support::{headless, proven};
@@ -376,4 +377,70 @@ fn zones_that_do_not_move_a_layer_do_not_reconfigure_it() {
         .filter(|e| matches!(e, Effect::ConfigureLayer { layer, .. } if *layer != LayerKey(1)))
         .collect();
     assert!(others.is_empty(), "{others:?}");
+}
+
+fn dock(output: &str, zone: ExclusiveZone) -> LayerSpec {
+    LayerSpec {
+        anchor: Anchors {
+            top: Anchor::Held,
+            bottom: Anchor::Held,
+            left: Anchor::Held,
+            right: Anchor::Free,
+        },
+        namespace: "dock".to_owned(),
+        ..bar(output, zone)
+    }
+}
+
+#[test]
+fn an_exclusive_layer_is_sized_in_what_the_earlier_zones_left() {
+    // The bar is arranged first (key order within a level): the dock is sized below it.
+    let bar_first = run(vec![
+        plug("HEADLESS-1"),
+        mapped(1, bar("HEADLESS-1", ExclusiveZone::Reserve(28))),
+        mapped(2, dock("HEADLESS-1", ExclusiveZone::Reserve(64))),
+    ]);
+    assert!(last(&bar_first).contains(&configured(2, 0, 1080 - 28)));
+    // The dock is arranged first: the bar already mapped is told it is narrower.
+    let dock_first = run_from(
+        run(vec![
+            plug("HEADLESS-1"),
+            mapped(2, bar("HEADLESS-1", ExclusiveZone::Reserve(28))),
+        ])
+        .model,
+        vec![mapped(1, dock("HEADLESS-1", ExclusiveZone::Reserve(64)))],
+    );
+    assert!(last(&dock_first).contains(&configured(1, 0, 1080)));
+    assert!(last(&dock_first).contains(&configured(2, 1920 - 64, 0)));
+    // A zone that grows tells those arranged after it, and the usable area follows both.
+    let grown = run_from(
+        dock_first.model,
+        vec![changed(1, dock("HEADLESS-1", ExclusiveZone::Reserve(100)))],
+    );
+    assert!(last(&grown).contains(&configured(2, 1920 - 100, 0)));
+    assert_eq!(
+        usable(&grown, "HEADLESS-1"),
+        LogicalRect::new(
+            LogicalPoint { x: 100, y: 28 },
+            LogicalSize { w: 1820, h: 1052 }
+        )
+    );
+}
+
+#[test]
+fn a_layer_is_told_its_size_again_when_its_output_changes() {
+    let plugged = run(vec![
+        plug("HEADLESS-1"),
+        mapped(1, bar("HEADLESS-1", ExclusiveZone::Reserve(28))),
+    ]);
+    let mut config = plugged.model.outputs().0[&key("HEADLESS-1")].config;
+    config.transform = Transform::R90;
+    let rotated = run_from(
+        plugged.model,
+        vec![Op::Event(Event::OutputConfigured {
+            output: key("HEADLESS-1"),
+            config,
+        })],
+    );
+    assert!(last(&rotated).contains(&configured(1, 1080, 0)));
 }

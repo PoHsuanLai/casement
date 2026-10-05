@@ -270,6 +270,129 @@ fn a_zone_zero_layer_keeps_clear_of_the_bar() {
     );
 }
 
+/// What the pointer entered, by client, after it moved to `at`.
+fn pointer_enters_at(
+    fixture: &mut Fixture,
+    mouse: casement_core::DeviceId,
+    at: (i32, i32),
+    clients: &[ClientId],
+) -> Vec<usize> {
+    use casement_core::geometry::LogicalPoint;
+    let count = |fixture: &mut Fixture, id: ClientId| {
+        events_of(fixture.client(id), "wl_pointer#")
+            .iter()
+            .filter(|(event, _)| event == "enter")
+            .count()
+    };
+    let before: Vec<usize> = clients.iter().map(|id| count(fixture, *id)).collect();
+    fixture.advance(std::time::Duration::from_millis(100));
+    fixture
+        .input()
+        .pointer_to(mouse, LogicalPoint { x: at.0, y: at.1 });
+    fixture.pump();
+    clients
+        .iter()
+        .zip(before)
+        .map(|(id, before)| count(fixture, *id) - before)
+        .collect()
+}
+
+/// A bar on the top edge of `zone` pixels, drawn `height` tall.
+fn top_bar(zone: i32, height: u32) -> LayerAsk {
+    LayerAsk {
+        level: Layer::Top,
+        namespace: "bar",
+        anchor: Anchor::Top | Anchor::Left | Anchor::Right,
+        exclusive_zone: zone,
+        keyboard: KeyboardInteractivity::None,
+        size: (0, height),
+    }
+}
+
+/// wlr-layer-shell: each exclusive layer is arranged in what the earlier ones left. Two bars on
+/// the top edge stack, and the pointer enters each where it is drawn: the second bar's strip
+/// starts below the first, and the first bar's strip is not under the second.
+#[test]
+fn the_pointer_enters_the_second_bar_where_it_is_drawn() {
+    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let mouse = fixture.input().plug(
+        DeviceClass::Pointer,
+        TestOrigin::Physical(DeviceClass::Pointer),
+    );
+    let (first, second) = (
+        fixture.connect(ConnectionRole::Public),
+        fixture.connect(ConnectionRole::Public),
+    );
+    fixture.pump();
+    let _pointers = [first, second].map(|id| Pointer::bind(fixture.client(id)).expect("a pointer"));
+    let _first = map(&mut fixture, first, &top_bar(24, 24));
+    let _second = map(&mut fixture, second, &top_bar(30, 30));
+    let clients = [first, second];
+    assert_eq!(
+        pointer_enters_at(&mut fixture, mouse, (400, 10), &clients),
+        [1, 0],
+        "the first bar is at the top of the output"
+    );
+    assert_eq!(
+        pointer_enters_at(&mut fixture, mouse, (420, 40), &clients),
+        [0, 1],
+        "the second bar is below the first"
+    );
+}
+
+/// A bar on the top edge and then a dock on the left: the dock is arranged in what the bar left,
+/// so it starts below the bar, in the hit test as it does on screen.
+#[test]
+fn a_dock_mapped_after_a_bar_is_hit_below_it() {
+    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let mouse = fixture.input().plug(
+        DeviceClass::Pointer,
+        TestOrigin::Physical(DeviceClass::Pointer),
+    );
+    let (bar, dock) = (
+        fixture.connect(ConnectionRole::Public),
+        fixture.connect(ConnectionRole::Public),
+    );
+    fixture.pump();
+    let _pointers = [bar, dock].map(|id| Pointer::bind(fixture.client(id)).expect("a pointer"));
+    let _bar = map(&mut fixture, bar, &top_bar(24, 24));
+    let side = LayerAsk {
+        level: Layer::Top,
+        namespace: "dock",
+        anchor: Anchor::Top | Anchor::Bottom | Anchor::Left,
+        exclusive_zone: 64,
+        keyboard: KeyboardInteractivity::None,
+        size: (64, 0),
+    };
+    let dock_layer = LayerSurface::create(fixture.client(dock), &side).expect("a layer surface");
+    fixture.pump();
+    let configure = dock_layer.configure().expect("the initial configure");
+    assert_eq!(
+        (configure.width, configure.height),
+        (0, 1080 - 24),
+        "the dock's height is what the bar left"
+    );
+    assert!(dock_layer.ack(fixture.client(dock)));
+    let buffer = shm_buffer(
+        fixture.client(dock),
+        PhysicalSize { w: 64, h: 1056 },
+        Pattern::Solid(0xff20_2020),
+    );
+    dock_layer.show(fixture.client(dock), &buffer);
+    fixture.pump();
+    let clients = [bar, dock];
+    assert_eq!(
+        pointer_enters_at(&mut fixture, mouse, (10, 10), &clients),
+        [1, 0],
+        "the bar's strip is the bar's, the dock is not over it"
+    );
+    assert_eq!(
+        pointer_enters_at(&mut fixture, mouse, (10, 60), &clients),
+        [0, 1],
+        "below the bar is the dock"
+    );
+}
+
 /// A full-screen window covers the whole output, the bar's strip included: it is configured to
 /// the output's size and drawn there, and the bar is not above it (a full-screen window is above
 /// the top layer and below the overlay).

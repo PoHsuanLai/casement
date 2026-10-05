@@ -1,7 +1,6 @@
 //! One output's frame as render elements.
 
 pub(crate) mod convert;
-mod place;
 
 use crate::compositor::Compositor;
 use crate::element::{
@@ -10,6 +9,7 @@ use crate::element::{
 };
 use crate::texture_book::TextureBook;
 use casement_core::geometry::{LogicalPoint, LogicalRect, PhysicalRect, PhysicalSize, SubPoint};
+use casement_core::layer::Arranged;
 use casement_core::{LayerKey, OutputKey, WindowId};
 use casement_motion::{OutputFrame, PlacedWindow};
 use convert::{on_output, sub_of};
@@ -44,6 +44,9 @@ pub struct LayerDraw {
     pub top: Vec<LayerKey>,
     /// `overlay`.
     pub overlay: Vec<LayerKey>,
+    /// Where each of them is arranged: the one placement the hit test reads too
+    /// (`LayerBook::arrange`). `None` when there are no layers.
+    pub arranged: Option<Arranged>,
 }
 
 /// What the compositor draws over everything: the cursor and lock covers.
@@ -124,15 +127,21 @@ pub fn output_elements<R: Compositor>(
         elements.push(CasementElement::Cover(cover(view)));
         return elements;
     }
-    let places = place::place_layers(layers, book, view.area);
     let draw_level =
         |keys: &[LayerKey], elements: &mut Vec<CasementElement<R>>, renderer: &mut R| {
             for key in keys.iter().rev() {
-                let (Some(area), Some(entry)) = (places.get(key), book.layer(key)) else {
+                let Some(entry) = book.layer(key) else {
+                    continue;
+                };
+                let Some(area) = layers
+                    .arranged
+                    .as_ref()
+                    .and_then(|arranged| arranged.place(key, entry.committed))
+                else {
                     continue;
                 };
                 elements.extend(popup_elements(&entry.root, area.origin, view, renderer));
-                elements.extend(layer_elements(key, *area, view, book, renderer));
+                elements.extend(layer_elements(key, area, view, book, renderer));
             }
         };
     let (covering, others): (Vec<_>, Vec<_>) = frame

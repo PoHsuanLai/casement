@@ -191,12 +191,16 @@ impl Model {
         let Some(state) = self.outputs.0.get(output).cloned() else {
             return Moved::of(self);
         };
+        let outputs = [output.clone()];
+        let sizes = self.sizes_on(&outputs);
         let mut model = self;
         model
             .outputs
             .0
             .insert(output.clone(), OutputState { config, ..state });
-        model.redrawn(Cause::OutputChange, vec![output.clone()])
+        Moved::of(model)
+            .then(|model| model.reconfigured(&outputs, &sizes, None))
+            .then(|model| model.redrawn(Cause::OutputChange, outputs.to_vec()))
     }
 }
 
