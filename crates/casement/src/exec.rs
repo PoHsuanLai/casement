@@ -129,9 +129,9 @@ fn note_of(note: &CoreNote) {
     }
 }
 
-/// Moves keyboard focus to what the model says holds it.
-fn keyboard(state: &mut State, target: &KeyboardTarget) {
-    let focus: Option<WlSurface> = match target {
+/// The surface the model's keyboard target names.
+fn focus_surface(state: &State, target: &KeyboardTarget) -> Option<WlSurface> {
+    match target {
         KeyboardTarget::Window(window) => state
             .wl
             .xdg_shell
@@ -146,12 +146,27 @@ fn keyboard(state: &mut State, target: &KeyboardTarget) {
             .get(output)
             .map(|lock| lock.wl_surface().clone()),
         KeyboardTarget::Nothing => None,
-    };
+    }
+}
+
+/// Moves keyboard focus to what the model says holds it.
+fn keyboard(state: &mut State, target: &KeyboardTarget) {
+    let focus = focus_surface(state, target);
     let serial = InputSerial(SERIAL_COUNTER.next_serial().into());
     let handle = state.wl.seat.seat.clone();
     let followed = focus.clone();
     log(seat::apply_keyboard_focus(&handle, state, focus, serial));
     log(text_input::apply_text_focus(&handle, followed.as_ref()));
+}
+
+/// A popup's grab ended (a press outside it, or the client closed it): the keyboard grab is
+/// dropped and the keyboard goes where the model says. Smithay hands it to the popup's root
+/// surface, which may be a bar that never asked for the keyboard.
+pub fn end_popup_keyboard(state: &mut State) {
+    let keyboard = state.wl.seat.keyboard.clone();
+    keyboard.unset_grab(state);
+    let target = state.core.model.keyboard_target();
+    self::keyboard(state, &target);
 }
 
 fn configure_layer(state: &mut State, layer: LayerKey, size: LogicalSize) {

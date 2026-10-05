@@ -408,6 +408,11 @@ fn pressed(
         return;
     }
     let serial = next_serial();
+    if edge == Edge::Press && dismisses_popup_grab(state) {
+        // Smithay ends the grab at this press and would hand the keyboard to the popup's root
+        // (a bar that never asked for it, even for a moment): the model says where it goes.
+        exec::end_popup_keyboard(state);
+    }
     log(seat::apply_pointer(
         seat,
         state,
@@ -429,6 +434,22 @@ fn pressed(
             Some(button),
         );
     }
+}
+
+/// Whether a press now ends a popup's explicit grab: a popup's grab holds the pointer and the
+/// keyboard, and a press that lands on another client than the one holding the keyboard
+/// dismisses it (xdg-shell's rule, which smithay's popup pointer grab applies).
+fn dismisses_popup_grab(state: &State) -> bool {
+    let seat = &state.wl.seat;
+    let client_id = |surface: Option<WlSurface>| {
+        surface
+            .as_ref()
+            .and_then(Resource::client)
+            .map(|client| client.id())
+    };
+    seat.pointer.is_grabbed()
+        && seat.keyboard.is_grabbed()
+        && client_id(seat.pointer.current_focus()) != client_id(seat.keyboard.current_focus())
 }
 
 /// Routes a press on `window` through the model; whether the press is delivered to the client.

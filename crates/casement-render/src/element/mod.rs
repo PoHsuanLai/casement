@@ -14,7 +14,7 @@ pub use blur_v0::BlurV0Element;
 pub use cursor::cursor_elements;
 pub use layer::layer_elements;
 pub use lock_cover::LockCoverElement;
-pub use popup::popup_elements;
+pub use popup::{popup_elements, popup_surfaces};
 pub use solid::{Rgba8, solid_rect};
 pub use window::window_elements;
 

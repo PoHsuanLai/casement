@@ -113,11 +113,77 @@ impl Popup {
         }
     }
 
+    /// A popup of `parent` (a submenu), placed by `spec` in the parent popup's coordinates.
+    /// Nothing is committed.
+    pub fn of_popup(
+        client: &mut TestClient,
+        base: &WmBase,
+        parent: &Popup,
+        surface: WlSurface,
+        spec: PopupSpec,
+    ) -> Popup {
+        let log = PopupLog::default();
+        let positioner = positioner(client, base, spec);
+        let xdg_surface = base
+            .base
+            .get_xdg_surface(&surface, &client.qh(), log.clone());
+        let popup = xdg_surface.get_popup(
+            Some(&parent.xdg_surface),
+            &positioner,
+            &client.qh(),
+            log.clone(),
+        );
+        Popup {
+            surface,
+            xdg_surface,
+            popup,
+            positioner,
+            log,
+        }
+    }
+
+    /// A popup of a layer surface, placed by `spec` in the layer surface's coordinates: it has
+    /// no xdg parent, and the layer surface adopts it ([`crate::surface::layer::LayerSurface::adopt`]).
+    /// Nothing is committed.
+    pub fn of_layer(
+        client: &mut TestClient,
+        base: &WmBase,
+        surface: WlSurface,
+        spec: PopupSpec,
+    ) -> Popup {
+        let log = PopupLog::default();
+        let positioner = positioner(client, base, spec);
+        let xdg_surface = base
+            .base
+            .get_xdg_surface(&surface, &client.qh(), log.clone());
+        let popup = xdg_surface.get_popup(None, &positioner, &client.qh(), log.clone());
+        Popup {
+            surface,
+            xdg_surface,
+            popup,
+            positioner,
+            log,
+        }
+    }
+
     /// Acks the newest `xdg_surface.configure`; says which serial, if any.
     pub fn ack_latest(&self) -> Option<u32> {
         let serial = self.log.with(|seen| seen.serials.last().copied())?;
         self.xdg_surface.ack_configure(serial);
         Some(serial)
+    }
+
+    /// Attaches `buffer` over the whole popup and commits (the popup maps).
+    pub fn show(&self, buffer: &crate::shm::ShmBuffer) {
+        let size = buffer.size();
+        self.surface.attach(Some(buffer.buffer()), 0, 0);
+        self.surface.damage_buffer(
+            0,
+            0,
+            i32::try_from(size.w).unwrap_or(i32::MAX),
+            i32::try_from(size.h).unwrap_or(i32::MAX),
+        );
+        self.surface.commit();
     }
 
     /// Takes an explicit grab answering `serial`.

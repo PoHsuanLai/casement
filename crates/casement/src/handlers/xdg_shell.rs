@@ -17,6 +17,7 @@ use casement_wayland::xdg_shell::{
     on_window_menu,
 };
 use casement_wayland::{ClientState, xdg_foreign, xdg_toplevel_tag};
+use smithay::desktop::{PopupKind, find_popup_root_surface};
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::ResizeEdge;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
@@ -194,8 +195,14 @@ impl XdgShellHandler for State {
     }
 
     fn popup_destroyed(&mut self, surface: PopupSurface) {
+        let held = holds_the_keyboard(self, &surface);
         let events = xdg_shell::on_popup_destroyed(&mut self.wl.xdg_shell, &surface);
         core_loop::feed(self, events);
+        if held {
+            // The menu's own client closed it: its grab is over, and smithay would give the
+            // keyboard to the menu's root (a bar that never asked for it) at the next key.
+            crate::exec::end_popup_keyboard(self);
+        }
     }
 
     fn app_id_changed(&mut self, surface: ToplevelSurface) {
@@ -212,4 +219,14 @@ impl XdgShellHandler for State {
         let events = on_parent(&mut self.wl.xdg_shell, &surface);
         core_loop::feed(self, events);
     }
+}
+
+/// Whether `popup` is the first popup of a grab chain and holds the keyboard grab: when it goes,
+/// the grab is over. A nested popup that goes hands the grab back to its parent popup.
+fn holds_the_keyboard(state: &State, popup: &PopupSurface) -> bool {
+    let keyboard = &state.wl.seat.keyboard;
+    let kind = PopupKind::Xdg(popup.clone());
+    keyboard.is_grabbed()
+        && keyboard.current_focus().as_ref() == Some(popup.wl_surface())
+        && popup.get_parent_surface() == find_popup_root_surface(&kind).ok()
 }

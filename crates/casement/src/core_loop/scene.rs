@@ -12,6 +12,7 @@ use casement_motion::{
 };
 use casement_render::{
     CasementElement, ChromeLayer, Compositor, LayerDraw, OutputView, TextureBook, output_elements,
+    popup_surfaces,
 };
 use casement_wayland::layer_shell::layer_area;
 use casement_wayland::seat::{Candidate, SurfaceAt, surface_under};
@@ -123,9 +124,9 @@ pub(super) enum Hit {
     Window(WindowId),
 }
 
-/// Every drawn root surface, front to back: lock surfaces, overlay and top layers, windows by
-/// stacking (the sampled frame's, top first), bottom and background layers; each with where
-/// its top-left is in global logical pixels.
+/// Every drawn surface that takes input, front to back: lock surfaces, overlay and top layers,
+/// windows by stacking (the sampled frame's, top first), bottom and background layers; each
+/// root is preceded by its popups. Each with where its top-left is in global logical pixels.
 pub(super) fn stack(state: &State) -> Vec<(Hit, Candidate)> {
     let model = &state.core.model;
     let book = &state.render.textures;
@@ -186,7 +187,27 @@ pub(super) fn stack(state: &State) -> Vec<(Hit, Candidate)> {
         .chain(layer(&[LayerLevel::Overlay, LayerLevel::Top]))
         .chain(windows)
         .chain(layer(&[LayerLevel::Bottom, LayerLevel::Background]))
+        .flat_map(with_popups)
         .collect()
+}
+
+/// A root surface and its popups, popups first (a menu hangs over what it came from), each
+/// belonging to the same `Hit` and placed where the renderer draws it.
+fn with_popups((hit, root): (Hit, Candidate)) -> Vec<(Hit, Candidate)> {
+    let mut found: Vec<(Hit, Candidate)> = popup_surfaces(&root.root, root.origin)
+        .into_iter()
+        .map(|(surface, origin)| {
+            (
+                hit.clone(),
+                Candidate {
+                    root: surface,
+                    origin,
+                },
+            )
+        })
+        .collect();
+    found.push((hit, root));
+    found
 }
 
 /// The first surface in `stack` with input at `at`, and what it belongs to.

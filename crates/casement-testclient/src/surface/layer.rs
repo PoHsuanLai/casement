@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use wayland_client::protocol::wl_compositor::WlCompositor;
 use wayland_client::protocol::wl_surface::WlSurface;
 use wayland_client::{Connection, Dispatch, QueueHandle};
+use wayland_protocols::xdg::shell::client::xdg_popup::XdgPopup;
 use wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_shell_v1::{self, ZwlrLayerShellV1};
 use wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::{
     self, ZwlrLayerSurfaceV1,
@@ -145,6 +146,11 @@ impl LayerSurface {
         self.surface.attach(None, 0, 0);
         self.surface.commit();
         let _ = client.connection().flush();
+    }
+
+    /// Makes `popup` (an xdg popup made without a parent) a popup of this layer surface.
+    pub fn adopt(&self, popup: &XdgPopup) {
+        self.layer.get_popup(popup);
     }
 
     /// The `wl_surface`, for requests of other protocols (a drag from it, a cursor).

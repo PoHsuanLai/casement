@@ -22,6 +22,7 @@ mod layer_shell;
 mod output;
 mod pointer_constraints;
 mod pointer_gestures;
+mod popup_input;
 mod presentation;
 mod primary_selection;
 mod quire_window;
