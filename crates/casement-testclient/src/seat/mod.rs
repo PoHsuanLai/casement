@@ -6,4 +6,5 @@ pub mod keyboard;
 pub mod pointer;
 pub mod relative;
 pub mod shortcuts_inhibit;
+pub mod tablet;
 pub mod touch;

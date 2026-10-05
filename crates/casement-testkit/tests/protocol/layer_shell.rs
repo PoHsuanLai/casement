@@ -8,9 +8,12 @@ use casement_testclient::seat::pointer::Pointer;
 use casement_testclient::surface::layer::{
     Anchor, KeyboardInteractivity, Layer, LayerAsk, LayerSurface,
 };
+use casement_testclient::surface::toplevel::{State, WmBase};
 use casement_testclient::{Pattern, TestClient, shm_buffer};
 use casement_testkit::{ClientId, Fixture, FixtureSpec, TestOrigin};
 use porter_core::SandboxFacts;
+
+use crate::xdg_shell::map_toplevel;
 
 /// Whether the registry the client saw lists `interface`.
 fn advertises(client: &mut TestClient, interface: &str) -> bool {
@@ -129,12 +132,45 @@ fn a_layer_under_a_resting_pointer_gets_enter() {
 
 /// A bar's exclusive zone is subtracted from a maximised window's configure (A16).
 #[test]
-#[ignore = "body is todo!(): write it with casement_testclient::surface::toplevel (now on master) plus a maximise step"]
 fn exclusive_zones_shrink_maximised_windows() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
-    let client = fixture.connect(ConnectionRole::Public);
-    let _ = fixture.client(client);
-    todo!("P0-H3: a bar's exclusive zone is subtracted from a maximised window's configure (A16)")
+    let id = fixture.connect(ConnectionRole::Public);
+    fixture.pump();
+    let base = WmBase::bind(fixture.client(id), 6);
+    let window = map_toplevel(&mut fixture, id, &base, (400, 300));
+    // With no bar the output's whole 1920x1080 is usable.
+    window.set_maximized();
+    fixture.pump();
+    assert!(window.ack_latest().is_some());
+    let whole = window.configures().last().expect("a configure").clone();
+    assert_eq!(whole.size, (1920, 1080));
+    assert!(whole.states.contains(&State::Maximized));
+    // A 28 px bar on the top edge reserves its zone: the window shrinks to what is left.
+    let bar = LayerAsk {
+        level: Layer::Top,
+        namespace: "bar",
+        anchor: Anchor::Top | Anchor::Left | Anchor::Right,
+        exclusive_zone: 28,
+        keyboard: KeyboardInteractivity::None,
+        size: (0, 28),
+    };
+    let _bar = map(&mut fixture, id, &bar);
+    assert!(window.ack_latest().is_some());
+    let shrunk = window.configures().last().expect("a configure").clone();
+    assert_eq!(
+        shrunk.size,
+        (1920, 1080 - 28),
+        "the bar's zone is subtracted: {shrunk:?}"
+    );
+    assert!(shrunk.states.contains(&State::Maximized));
+    // The window now fills the area below the bar.
+    let model_window = *fixture.model().windows().keys().next().expect("a window");
+    let rect = crate::xdg_shell::rect_of(&fixture, model_window);
+    assert_eq!(
+        (rect.origin.y, rect.size.h),
+        (28, 1080 - 28),
+        "it is drawn below the bar"
+    );
 }
 
 /// A Sandboxed connection does not see zwlr_layer_shell_v1 (I7).

@@ -2,7 +2,8 @@
 //! P0-H4.
 //!
 //! Every event reaches the transcript through the connection's tap; the helper remembers the
-//! serial of the latest button press, which a drag or a move request must carry.
+//! serial of the latest button press, which a drag or a move request must carry, and of the
+//! latest enter, which a cursor request must carry.
 
 use crate::conn::{ClientError, ClientState, TestClient};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -18,9 +19,17 @@ pub struct Pointer {
     log: PointerLog,
 }
 
-/// What the pointer's events left behind: the serial of the latest button press.
+/// What the pointer's events left behind: the serial of the latest button press and of the
+/// latest enter.
 #[derive(Debug, Clone, Default)]
-pub struct PointerLog(Arc<Mutex<Option<u32>>>);
+pub struct PointerLog(Arc<Mutex<Serials>>);
+
+/// The serials a pointer was last given.
+#[derive(Debug, Clone, Copy, Default)]
+struct Serials {
+    press: Option<u32>,
+    enter: Option<u32>,
+}
 
 /// The user data of the seat object.
 #[derive(Debug, Clone, Copy, Default)]
@@ -38,7 +47,20 @@ impl Pointer {
 
     /// The serial of the latest button press this pointer received.
     pub fn press_serial(&self) -> Option<u32> {
-        *self.log.0.lock().unwrap_or_else(PoisonError::into_inner)
+        self.log
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .press
+    }
+
+    /// The serial of the latest `enter` this pointer received.
+    pub fn enter_serial(&self) -> Option<u32> {
+        self.log
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .enter
     }
 
     /// The `wl_pointer`.
@@ -73,10 +95,15 @@ impl Dispatch<WlPointer, PointerLog> for ClientState {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let wl_pointer::Event::Button { serial, state, .. } = event
-            && state == WEnum::Value(wl_pointer::ButtonState::Pressed)
-        {
-            *log.0.lock().unwrap_or_else(PoisonError::into_inner) = Some(serial);
+        let mut serials = log.0.lock().unwrap_or_else(PoisonError::into_inner);
+        match event {
+            wl_pointer::Event::Button { serial, state, .. }
+                if state == WEnum::Value(wl_pointer::ButtonState::Pressed) =>
+            {
+                serials.press = Some(serial);
+            }
+            wl_pointer::Event::Enter { serial, .. } => serials.enter = Some(serial),
+            _ => {}
         }
     }
 }

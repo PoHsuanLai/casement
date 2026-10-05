@@ -26,6 +26,25 @@ pub(crate) fn floating_target(
     )
 }
 
+/// The target for a window that fills `usable` (a maximise): its size held to its limits, at
+/// the area's origin. A fill asks nothing of its own, so the size always goes out as a
+/// configure (the wire drops one that repeats what the client was told).
+pub(crate) fn filled_target(
+    window: WindowId,
+    output: &OutputKey,
+    limits: SizeLimits,
+    usable: LogicalRect,
+) -> (WindowTarget, Option<LayoutReport>) {
+    let size = fit_size(usable.size, limits, usable);
+    placed(
+        window,
+        output,
+        LogicalSize { w: 0, h: 0 },
+        LogicalRect::new(usable.origin, size),
+        limits,
+    )
+}
+
 /// The target for a window that asked for `asked` and goes at `rect` (already fitted): a
 /// `Resize` when the size changed, and a report when its minimum is not met.
 pub(crate) fn placed(

@@ -1,5 +1,6 @@
 //! `session_lock` (P0-H3).
 
+use casement_core::OutputName;
 use casement_core::geometry::PhysicalSize;
 use casement_core::input::{DeviceClass, Edge, KeyCode};
 use casement_core::policy::ConnectionRole;
@@ -9,8 +10,18 @@ use casement_testclient::surface::layer::{
 };
 use casement_testclient::surface::lock::Locker;
 use casement_testclient::{Pattern, TestClient, shm_buffer};
-use casement_testkit::{Fixture, FixtureSpec, TestOrigin};
+use casement_testkit::{Fixture, FixtureSpec, FrameCount, ShotTarget, TestOrigin};
 use porter_core::SandboxFacts;
+use std::time::Duration;
+
+use crate::xdg_shell::{map_toplevel, settle};
+use casement_testclient::surface::toplevel::WmBase;
+
+/// An opaque black pixel.
+const BLACK: [u8; 4] = [0, 0, 0, 255];
+
+/// How far from the output's corner a cursor resting at the origin reaches.
+const CURSOR_REACH: u32 = 32;
 
 /// Whether the registry the client saw lists `interface`.
 fn advertises(client: &mut TestClient, interface: &str) -> bool {
@@ -120,12 +131,54 @@ fn lock_blocks_input_to_windows() {
 
 /// Killing the locker keeps every output covered; nothing of the session is drawn.
 #[test]
-#[ignore = "body is todo!(): Fixture::disconnect exists now; the cover assertion needs a frame shot (P0-R-scene shoot())"]
 fn a_dead_locker_leaves_the_lock_cover() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
-    let client = fixture.connect(ConnectionRole::Public);
-    let _ = fixture.client(client);
-    todo!("P0-H3: killing the locker keeps every output covered; nothing of the session is drawn")
+    let app = fixture.connect(ConnectionRole::Public);
+    fixture.pump();
+    let base = WmBase::bind(fixture.client(app), 6);
+    let _window = map_toplevel(&mut fixture, app, &base, (400, 300));
+    settle(&mut fixture);
+    // Before the lock the window is on the output: some pixel is not black.
+    let output = OutputName::parse("HEADLESS-1").expect("a valid output name");
+    fixture.frames(&output, FrameCount(2));
+    let before = fixture.shot(ShotTarget::Output(output.clone()));
+    assert!(
+        before.pixels().any(|pixel| pixel.0 != BLACK),
+        "the window is drawn before the lock"
+    );
+
+    // A locker covers the output, then dies.
+    let owner = fixture.connect(ConnectionRole::Public);
+    fixture.pump();
+    let locker = Locker::request(fixture.client(owner)).expect("a lock");
+    fixture.pump();
+    let cover = locker.cover(fixture.client(owner)).expect("a lock surface");
+    fixture.pump();
+    assert!(cover.ack(fixture.client(owner)));
+    let size = PhysicalSize { w: 1920, h: 1080 };
+    let buffer = shm_buffer(fixture.client(owner), size, Pattern::CoordinateEncoding);
+    cover.show(fixture.client(owner), &buffer);
+    fixture.pump();
+    assert!(locker.is_locked(), "the session is locked");
+    fixture.disconnect(owner);
+    fixture.pump();
+    fixture.advance(Duration::from_secs(2));
+    fixture.frames(&output, FrameCount(2));
+
+    // The compositor's own cover stands in: the session is still locked, and nothing of the
+    // window (or of the dead locker's lock surface) is drawn.
+    assert_eq!(
+        fixture.model().windows().len(),
+        1,
+        "the window is still there, behind the cover"
+    );
+    let shot = fixture.shot(ShotTarget::Output(output));
+    let leaked = shot
+        .enumerate_pixels()
+        .filter(|(x, y, _)| *x >= CURSOR_REACH || *y >= CURSOR_REACH)
+        .filter(|(_, _, pixel)| pixel.0 != BLACK)
+        .count();
+    assert_eq!(leaked, 0, "the cover left {leaked} pixels showing");
 }
 
 /// Locked arrives only after each output shows a lock surface or a cover.

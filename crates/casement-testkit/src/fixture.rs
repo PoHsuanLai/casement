@@ -23,7 +23,7 @@ use casement_core::{Event, Model, OutputName, WindowId};
 use casement_testclient::{ClientError, Pumped, TestClient};
 use porter_core::PeerIdentity;
 use smithay::reexports::calloop::EventLoop;
-use smithay::reexports::wayland_server::Display;
+use smithay::reexports::wayland_server::{Client, Display};
 use std::collections::BTreeMap;
 use std::os::fd::OwnedFd;
 use std::os::unix::net::UnixStream;
@@ -37,6 +37,8 @@ pub struct Fixture {
     display: SharedDisplay,
     event_loop: EventLoop<'static, State>,
     clients: BTreeMap<ClientId, TestClient>,
+    /// Each client as the compositor holds it.
+    servers: BTreeMap<ClientId, Client>,
     /// The next client's number.
     next_client: u32,
 }
@@ -141,6 +143,7 @@ impl Fixture {
             display,
             event_loop,
             clients: BTreeMap::new(),
+            servers: BTreeMap::new(),
             next_client: 1,
         };
         fixture.pump();
@@ -156,9 +159,10 @@ impl Fixture {
         server
             .set_nonblocking(true)
             .expect("a non-blocking server end");
-        clients::insert_client(&mut self.state, server, role, PeerIdentity::Unproven)
+        let held = clients::insert_client(&mut self.state, server, role, PeerIdentity::Unproven)
             .expect("the compositor takes the client");
         let id = ClientId(self.next_client);
+        self.servers.insert(id, held);
         self.next_client += 1;
         let client = TestClient::over(OwnedFd::from(client)).expect("the test client connects");
         self.clients.insert(id, client);
@@ -169,10 +173,16 @@ impl Fixture {
     /// Client `id` hangs up (its end of the socket closes), and the fixture pumps so the
     /// compositor sees it go.
     pub fn disconnect(&mut self, id: ClientId) {
+        self.servers.remove(&id);
         let gone = self.clients.remove(&id);
         assert!(gone.is_some(), "no client {id:?} in this fixture");
         drop(gone);
         self.pump();
+    }
+
+    /// Client `id` as the compositor holds it.
+    pub(crate) fn server_client(&self, id: ClientId) -> Option<&Client> {
+        self.servers.get(&id)
     }
 
     /// Client `id`.

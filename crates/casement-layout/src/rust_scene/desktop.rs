@@ -2,7 +2,7 @@
 //! floating and new windows goes.
 
 use super::cascade::cascade_rect;
-use super::floating::{fit_size, floating_target, placed};
+use super::floating::{filled_target, fit_size, floating_target, placed};
 use crate::{
     Arrangement, LayoutKnobs, OutputSpec, SceneMode, SpaceArrangement, SpaceSpec, SpaceTarget,
     WindowPlacement,
@@ -73,9 +73,10 @@ fn arrange_space(
                 new_so_far += 1;
                 placed(window.window, &output.output, asked, rect, window.limits)
             }
-            WindowPlacement::Minimised | WindowPlacement::Tiled(_) | WindowPlacement::Filled => {
-                continue;
+            WindowPlacement::Filled => {
+                filled_target(window.window, &output.output, window.limits, usable)
             }
+            WindowPlacement::Minimised | WindowPlacement::Tiled(_) => continue,
         };
         into.windows.push(target);
         into.reports.extend(report);

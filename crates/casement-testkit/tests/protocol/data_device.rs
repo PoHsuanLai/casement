@@ -16,7 +16,7 @@ use casement_testkit::{ClientId, Fixture, FixtureSpec, TestOrigin};
 const BTN_LEFT: ButtonCode = ButtonCode(0x110);
 
 /// A layer of `size` at the centre of the output, at `level`, taking the keyboard exclusively.
-fn focused(level: Layer, namespace: &'static str) -> LayerAsk {
+pub(crate) fn focused(level: Layer, namespace: &'static str) -> LayerAsk {
     LayerAsk {
         level,
         namespace,
@@ -29,7 +29,7 @@ fn focused(level: Layer, namespace: &'static str) -> LayerAsk {
 
 /// Maps `ask` the way a shell does: create, wait for the configure, acknowledge it and attach
 /// a buffer of the configured size.
-fn map(fixture: &mut Fixture, id: ClientId, ask: &LayerAsk) -> LayerSurface {
+pub(crate) fn map(fixture: &mut Fixture, id: ClientId, ask: &LayerAsk) -> LayerSurface {
     let layer = LayerSurface::create(fixture.client(id), ask).expect("a layer surface");
     fixture.pump();
     let configure = layer.configure().expect("the initial configure");
@@ -45,7 +45,7 @@ fn map(fixture: &mut Fixture, id: ClientId, ask: &LayerAsk) -> LayerSurface {
 }
 
 /// Whether `client`'s transcript has `event` from an object whose name starts with `prefix`.
-fn saw(client: &TestClient, prefix: &str, event: &str) -> bool {
+pub(crate) fn saw(client: &TestClient, prefix: &str, event: &str) -> bool {
     client
         .transcript()
         .0

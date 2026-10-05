@@ -90,6 +90,32 @@ fn new_windows_centre_then_cascade() {
 }
 
 #[test]
+fn a_filled_window_takes_the_usable_area_within_its_limits() {
+    let usable = rect(0, 24, 1920, 1056);
+    let max = SizeLimits {
+        min: LogicalSize { w: 0, h: 0 },
+        max: MaxSize::Bounded(size(1000, 700)),
+    };
+    let cases = [
+        ("no limits: the whole area", ANY_SIZE, size(1920, 1056)),
+        ("a maximum is respected", max, size(1000, 700)),
+    ];
+    for (name, limits, want) in cases {
+        let spec = one_desktop(usable, vec![window(1, WindowPlacement::Filled, limits)]);
+        let got = RustScene.arrange(&spec, &knobs());
+        let t = target(&got, 1);
+        assert_eq!(
+            (t.rect, t.size),
+            (
+                LogicalRect::new(usable.origin, want),
+                ConfigureNeed::Resize(want)
+            ),
+            "{name}"
+        );
+    }
+}
+
+#[test]
 fn floating_windows_stay_or_come_back_inside() {
     let usable = rect(0, 24, 1920, 1056);
     let min = |w, h| SizeLimits {

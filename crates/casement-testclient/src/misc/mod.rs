@@ -5,6 +5,7 @@ pub mod background_effect;
 pub mod commit_timing;
 pub mod content_type;
 pub mod decoration;
+pub mod dmabuf_buffer;
 pub mod dmabuf_feedback;
 pub mod fifo;
 pub mod fractional;

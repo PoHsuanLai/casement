@@ -1,14 +1,13 @@
 //! `dmabuf` (P0-H6).
-//!
-//! Written against the API that exists: the fixture's clients expose `globals()`. The steps
-//! that need more (a dma-buf mode on `FixtureSpec`, a client's `Connection` to run the
-//! feedback probe, udmabuf client buffers) are `todo!` with the missing piece named; every
-//! test stays ignored until the fixture itself runs (`Fixture::start` is P0-B-headless's).
-
 use casement_backend::DmabufMode;
+use casement_core::geometry::PhysicalSize;
 use casement_core::policy::ConnectionRole;
+use casement_testclient::Pattern;
 use casement_testclient::misc::dmabuf_feedback::{FeedbackProbe, TableRow, advertised_version};
+use casement_testclient::udmabuf::UdmabufSource;
+use casement_testkit::udmabuf::client_buffer;
 use casement_testkit::{Fixture, FixtureSpec};
+use smithay::reexports::drm::node::NodeType;
 
 /// With --dmabuf none there is no zwp_linux_dmabuf_v1 (shell-host F80 falls back to shm).
 #[test]
@@ -56,13 +55,50 @@ fn dmabuf_soft_advertises_the_fake_main_device() {
 
 /// A client dma-buf is tagged with its tranche's node (A5).
 #[test]
-#[ignore = "body is todo!(): needs a udmabuf client buffer through the testclient and the compositor's view of the imported Dmabuf (copy counters wait on P1-D4)"]
 fn imported_buffers_are_tagged_with_their_node() {
     let mut fixture =
         Fixture::start(FixtureSpec::desktop().with_dmabuf(DmabufMode::Soft)).expect("fixture");
     let client = fixture.connect(ConnectionRole::Public);
-    let _ = fixture.client(client);
-    todo!(
-        "P0-H6: create_immed a linear ARGB8888 udmabuf; the compositor's Dmabuf::node() is the main device's render node"
-    )
+    fixture.pump();
+    // A 64x64 linear ARGB8888 buffer: its stride (256) is what /dev/udmabuf accepts.
+    let size = PhysicalSize { w: 64, h: 64 };
+    let source = UdmabufSource::new(size, Pattern::Solid(0xff33_6699)).expect("a source");
+    let buffer = client_buffer(fixture.client(client), &source).expect("a dma-buf buffer");
+    fixture.pump();
+    assert!(
+        fixture.client(client).protocol_error().is_none(),
+        "create_immed of an offered format is not an error"
+    );
+    let imported = fixture
+        .imported_dmabuf(client, &buffer)
+        .expect("the compositor holds the import");
+    // `DrmNode::from_dev_id` types a device by reading /sys/dev/char/<major>:<minor>/device/drm,
+    // which only exists in a jail run with `--fabricate-gpus` (dev/gate.sh does; a bare jail
+    // does not). Without it nothing can say what the main device is, and the buffer is left
+    // untagged: smithay then skips its cross-GPU copy rather than guessing.
+    match fabricated_gpus() {
+        0 => assert_eq!(
+            imported.node(),
+            None,
+            "no fabricated node: the main device cannot be typed, so the buffer stays untagged"
+        ),
+        _ => {
+            let node = imported.node().expect("the import is tagged with a node");
+            assert_eq!(node.ty(), NodeType::Render, "the main device's render node");
+            assert_eq!(
+                node.dev_id(),
+                0xE280,
+                "226:128, the node the default feedback names"
+            );
+        }
+    }
+}
+
+/// How many soft GPU nodes the jail fabricated (`JAIL_GPUS`; none outside a jail run with the
+/// flag).
+fn fabricated_gpus() -> u32 {
+    std::env::var("JAIL_GPUS")
+        .ok()
+        .and_then(|count| count.parse().ok())
+        .unwrap_or(0)
 }
