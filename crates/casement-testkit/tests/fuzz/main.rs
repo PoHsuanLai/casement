@@ -14,12 +14,9 @@ use proptest::test_runner::{
 /// Ops in a sequence at most.
 const SEQUENCE: usize = 24;
 /// Sequences per seed at the merge tier; the phase tier takes five times as many. Measured in the
-/// jail: a case costs about 0.2 s, so 6 cases take about 1.2 s of a test's 10 s (under load
-/// 1.2-1.8 s) and the phase tier's 30 about 6 s. Raising the count past 6 today finds the fuzzed
-/// bind that seed 2 shows (a `Wire` request with a nonsense version for `wl_registry.bind`,
-/// oracle 2; P0-proto): seeds 1 and 3 fail at 24 and 48 cases. Once that is fixed, 24 merge
-/// cases (about 3.5 s) fit.
-const MERGE_CASES: u32 = 6;
+/// jail: a case costs about 0.15 s, so 24 cases take about 3.5 s of a test's 10 s. A fuzzed `wl_registry.bind` with a nonsense
+/// version is a core protocol error (`wl_display.invalid_object`), which oracle 2 documents.
+const MERGE_CASES: u32 = 24;
 
 /// How many sequences each seed's test runs: `CASEMENT_FUZZ_CASES` when set, else by tier.
 fn cases() -> u32 {
@@ -74,10 +71,9 @@ fn a_request_on_a_destroyed_object_disconnects_only_its_client() {
 
 /// The box, in eight fixed-seed shares so each stays inside a test's 10 s.
 macro_rules! the_typed_fuzz_box {
-    ($($(#[$meta:meta])* $name:ident: $seed:literal),* $(,)?) => {
+    ($($name:ident: $seed:literal),* $(,)?) => {
         $(
             #[test]
-            $(#[$meta])*
             fn $name() {
                 run_seed($seed);
             }
@@ -87,7 +83,6 @@ macro_rules! the_typed_fuzz_box {
 
 the_typed_fuzz_box! {
     the_typed_fuzz_box_keeps_the_five_oracles_seed_1: 1,
-    #[ignore = "P0-proto: the fuzzed bind picks zwp_primary_selection_device_manager_v1 at a version the global does not offer"]
     the_typed_fuzz_box_keeps_the_five_oracles_seed_2: 2,
     the_typed_fuzz_box_keeps_the_five_oracles_seed_3: 3,
     the_typed_fuzz_box_keeps_the_five_oracles_seed_4: 4,

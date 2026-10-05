@@ -205,14 +205,18 @@ impl Fixture {
             .dispatch(Some(Duration::ZERO), &mut self.state)
             .expect("the event loop dispatches");
         display::flush(&self.display);
-        let clients_moved =
-            self.clients
-                .values_mut()
-                .map(TestClient::pump)
-                .fold(Pumped::Quiet, |all, one| match (all, one) {
-                    (Pumped::Quiet, Pumped::Quiet) => Pumped::Quiet,
-                    _ => Pumped::Moved,
-                });
+        let now = self.now();
+        let clients_moved = self
+            .clients
+            .values_mut()
+            .map(|client| {
+                client.set_now(now);
+                client.pump()
+            })
+            .fold(Pumped::Quiet, |all, one| match (all, one) {
+                (Pumped::Quiet, Pumped::Quiet) => Pumped::Quiet,
+                _ => Pumped::Moved,
+            });
         let after = (self.display.dispatched(), self.clock().delivered());
         match (input, before == after, clients_moved) {
             (0, true, Pumped::Quiet) => Pumped::Quiet,
@@ -286,8 +290,9 @@ impl Fixture {
         &self.state
     }
 
-    /// The instant on the virtual clock.
-    pub(crate) fn now(&self) -> Mono {
+    /// The instant on the virtual clock (the model's own `now` is the instant of its latest
+    /// step, which a vblank or a timer that moves nothing in the model does not take).
+    pub fn now(&self) -> Mono {
         self.clock().now()
     }
 

@@ -22,7 +22,6 @@ fn a_client_over_a_socket_pair_sees_globals_and_goes_quiet() {
 }
 
 #[test]
-#[ignore = "P0-T-client: runs once P0-B-headless's Fixture lands"]
 fn an_shm_buffer_is_made_without_a_protocol_error() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     let id = fixture.connect(ConnectionRole::Public);
@@ -31,5 +30,8 @@ fn an_shm_buffer_is_made_without_a_protocol_error() {
         PhysicalSize { w: 64, h: 32 },
         Pattern::CoordinateEncoding,
     );
+    // The requests are served (that is a pump that moved), and nothing is left over.
+    assert_eq!(fixture.pump(), Pumped::Moved);
+    assert!(fixture.client(id).protocol_error().is_none());
     assert_eq!(fixture.pump(), Pumped::Quiet);
 }

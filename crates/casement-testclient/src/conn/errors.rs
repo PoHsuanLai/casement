@@ -15,6 +15,9 @@ pub(super) fn is_documented(interface: &str, code: u32) -> Option<bool> {
     }
     table![
         ("wl_display", wayland_client::protocol::wl_display::Error),
+        // A bind of an unknown global or an impossible version is refused on the registry with
+        // the core error codes (wl_registry has no error enum of its own).
+        ("wl_registry", wayland_client::protocol::wl_display::Error),
         ("wl_shm_pool", wayland_client::protocol::wl_shm_pool::Error),
         ("wl_shm", wayland_client::protocol::wl_shm::Error),
         ("wl_data_offer", wayland_client::protocol::wl_data_offer::Error),
@@ -91,6 +94,12 @@ mod tests {
         assert_eq!(is_documented("wl_display", 4), Some(false));
         assert_eq!(is_documented("xdg_wm_base", 4), Some(true));
         assert_eq!(is_documented("xdg_wm_base", 99), Some(false));
+    }
+
+    #[test]
+    fn a_refused_bind_is_a_core_error_on_the_registry() {
+        assert_eq!(is_documented("wl_registry", 0), Some(true));
+        assert_eq!(is_documented("wl_registry", 4), Some(false));
     }
 
     #[test]

@@ -37,7 +37,6 @@ fn every_version_binds_and_announces_its_clock() {
 
 /// Presented carries the virtual vblank instant and sequence; discarded when the surface is covered.
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn feedback_arrives_on_virtual_time() {
     let (mut fixture, id) = boot();
     let client = fixture.client(id);
@@ -52,10 +51,10 @@ fn feedback_arrives_on_virtual_time() {
         feedback_events(fixture.client(id), &feedback).is_empty(),
         "nothing before a frame"
     );
-    let started = fixture.model().now();
+    let started = fixture.now();
     fixture.frames(&OutputName::parse(OUTPUT).expect("a name"), FrameCount(1));
     fixture.pump();
-    let ended = fixture.model().now();
+    let ended = fixture.now();
     let seen = feedback_events(fixture.client(id), &feedback);
     let presented: Vec<_> = seen
         .iter()
