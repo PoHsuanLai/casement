@@ -5,7 +5,7 @@ use super::sections::{
     BindingsSection, KeyboardSection, OutputsSection, SpacesSection, WindowsSection,
 };
 use crate::cli::ConfigHome;
-use ds_settings::{FileName, Format, SettingsDoc};
+use ds_settings::{AppName, ConfigRoot, FileName, Format, SettingsDoc, Store};
 use serde::{Deserialize, Serialize};
 
 /// `casement/settings.toml`: one section per `CasementSettings` part. A key it does not read
@@ -30,8 +30,31 @@ impl SettingsDoc for CasementDoc {
     const FORMAT: Format = Format::Toml;
 }
 
-/// The document under `home` (missing file: the defaults).
+/// The program's directory name under the config home.
+const APP: AppName = AppName("casement");
+
+/// The document under `home` (a missing file: the defaults). A key the file sets that the
+/// document does not read, or whose value it refuses, is reported in the log and costs only
+/// itself.
+///
+/// `ConfigHome::At(dir)` stands in for `$XDG_CONFIG_HOME`, so the file is `dir/casement/settings.toml`
+/// (ds-settings' scratch root); `ConfigHome::Xdg` reads the environment.
 pub fn load(home: &ConfigHome) -> Result<CasementDoc, ConfigError> {
-    let _ = home;
-    todo!("P0-F1-output: config::load")
+    let loaded = store(home).load::<CasementDoc>();
+    for key in &loaded.unknown {
+        tracing::warn!("settings.toml: {key}");
+    }
+    for key in &loaded.invalid {
+        tracing::warn!("settings.toml: {key}");
+    }
+    Ok(loaded.value)
+}
+
+/// `home` as the ds-settings store it names.
+fn store(home: &ConfigHome) -> Store {
+    let root = match home {
+        ConfigHome::Xdg => ConfigRoot::Xdg,
+        ConfigHome::At(dir) => ConfigRoot::Scratch(dir.clone()),
+    };
+    Store::new(root, APP)
 }

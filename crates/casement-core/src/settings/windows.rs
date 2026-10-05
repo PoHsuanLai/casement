@@ -1,5 +1,7 @@
 //! Window-management settings (`windows.*`, 03 §1.17).
 
+use ds_core::word::Word;
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 /// `windows.*`.
@@ -26,7 +28,9 @@ pub struct WindowSettings {
 }
 
 /// A switch.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Word)]
+#[serde(rename_all = "snake_case")]
+#[word(case = snake)]
 pub enum Enabled {
     /// On.
     On,
@@ -35,7 +39,9 @@ pub enum Enabled {
 }
 
 /// How a window minimises.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Word)]
+#[serde(rename_all = "snake_case")]
+#[word(case = snake)]
 pub enum MinimiseEffect {
     /// The genie.
     Genie,
@@ -44,7 +50,9 @@ pub enum MinimiseEffect {
 }
 
 /// What double-clicking a titlebar does.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Word)]
+#[serde(rename_all = "snake_case")]
+#[word(case = snake)]
 pub enum TitleDoubleClick {
     /// Zoom.
     Zoom,
@@ -57,7 +65,9 @@ pub enum TitleDoubleClick {
 }
 
 /// What a first click on an inactive window does outside first-mouse regions (open D6).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Word)]
+#[serde(rename_all = "snake_case")]
+#[word(case = snake)]
 pub enum FirstClick {
     /// It only activates.
     ActivateOnly,

@@ -55,6 +55,7 @@ tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+toml = { workspace = true }
 
 [features]
 # Headless tests only (B10): the test kit builds casement with it. A binary with it refuses

@@ -1,0 +1,16 @@
+//! The document's sections: one file per `CasementSettings` part. Each key has a
+//! `#[settings(...)]` row (ds-settings' `SettingsSchema` derive), which is the schema detent and
+//! the Settings app read; each section's `Default` is the model's own default through
+//! `convert`, so no default is written twice.
+
+mod bindings;
+mod keyboard;
+mod outputs;
+mod spaces;
+mod windows;
+
+pub use bindings::BindingsSection;
+pub use keyboard::KeyboardSection;
+pub use outputs::{FirstSight, OutputsSection};
+pub use spaces::SpacesSection;
+pub use windows::WindowsSection;

@@ -2,16 +2,18 @@
 //! write, a debounced watch), its schema for detent (`casement --write-schema`), and the one
 //! conversion into the model's `CasementSettings` (ARCHITECTURE.md, "Add a settings key").
 
+mod action;
 mod convert;
 mod doc;
 mod schema;
 mod sections;
 
+pub use action::ActionWords;
 pub use convert::to_core;
 pub use doc::{CasementDoc, load};
-pub use schema::write_schema;
+pub use schema::{schema, write_schema};
 pub use sections::{
-    BindingsSection, KeyboardSection, OutputsSection, SpacesSection, WindowsSection,
+    BindingsSection, FirstSight, KeyboardSection, OutputsSection, SpacesSection, WindowsSection,
 };
 
 /// Why the settings could not be read or the schema written.

@@ -1,10 +1,34 @@
 //! `casement --write-schema DIR`: the schema detent and the Settings app read.
 
 use super::ConfigError;
+use super::sections::{KeyboardSection, OutputsSection, SpacesSection, WindowsSection};
+use ds_settings::schema::{AppId, FilePath, Schema, SettingsSchema};
 use std::path::Path;
 
-/// Writes `casement.settings.toml` into `to`.
+/// The schema's version: bumped when a key's meaning changes, never for a new key.
+const VERSION: u16 = 1;
+
+/// Every key the document reads, as `<app-id>.settings.toml` ships it. `[bindings]` is not in
+/// it: a chord table has no fixed keys to draw.
+pub fn schema() -> Schema {
+    Schema {
+        app: AppId("casement".to_owned()),
+        file: FilePath("casement/settings.toml".to_owned()),
+        version: VERSION,
+        key: [
+            WindowsSection::schema(),
+            SpacesSection::schema(),
+            KeyboardSection::schema(),
+            OutputsSection::schema(),
+        ]
+        .into_iter()
+        .flat_map(|schema| schema.key)
+        .collect(),
+    }
+}
+
+/// Writes `casement.settings.toml` into `to` (created if needed, replaced atomically).
 pub fn write_schema(to: &Path) -> Result<(), ConfigError> {
-    let _ = to;
-    todo!("P0-F1-output: config::write_schema")
+    schema().write_to(to)?;
+    Ok(())
 }
