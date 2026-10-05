@@ -2,7 +2,7 @@
 //! floating and new windows goes.
 
 use super::cascade::cascade_rect;
-use super::floating::{filled_target, fit_size, floating_target, placed};
+use super::floating::{filled_target, fit_size, floating_target, full_screen_target, placed};
 use crate::{
     Arrangement, LayoutKnobs, OutputSpec, SceneMode, SpaceArrangement, SpaceSpec, SpaceTarget,
     WindowPlacement,
@@ -57,7 +57,7 @@ fn arrange_space(
     knobs: &LayoutKnobs,
     into: &mut Arrangement,
 ) {
-    if space.kind != SpaceArrangement::Desktop {
+    if matches!(space.kind, SpaceArrangement::Split(_)) {
         return;
     }
     let usable = output.usable;
@@ -76,6 +76,10 @@ fn arrange_space(
             WindowPlacement::Filled => {
                 filled_target(window.window, &output.output, window.limits, usable)
             }
+            WindowPlacement::FullScreen => (
+                full_screen_target(window.window, &output.output, output.full),
+                None,
+            ),
             WindowPlacement::Minimised | WindowPlacement::Tiled(_) => continue,
         };
         into.windows.push(target);

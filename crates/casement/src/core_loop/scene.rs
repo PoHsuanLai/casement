@@ -3,9 +3,11 @@
 
 use crate::state::State;
 use casement_backend::headless::FrameSource;
+use casement_core::Model;
 use casement_core::geometry::{LogicalPoint, SubPx};
-use casement_core::layer::{LayerBook, LayerLevel};
+use casement_core::layer::LayerLevel;
 use casement_core::time::Mono;
+use casement_core::window::WindowState;
 use casement_core::{LayerKey, OutputKey, WindowId};
 use casement_motion::{
     CommittedSizes, FrameScene, OutputFrame, StripOffset, WindowLook, WindowLooks, sample,
@@ -58,12 +60,28 @@ pub(crate) fn empty_frame(output: &OutputKey) -> OutputFrame {
     }
 }
 
-/// The layer surfaces on `output`, by level, bottom of each level first (key order).
-pub(crate) fn layers_on(layers: &LayerBook, output: &OutputKey) -> LayerDraw {
-    layers
+/// The windows that are full screen: drawn and hit above the top layers.
+fn full_screen_windows(model: &Model) -> Vec<WindowId> {
+    model
+        .windows()
+        .iter()
+        .filter(|(_, window)| matches!(window.state, WindowState::FullScreen { .. }))
+        .map(|(id, _)| *id)
+        .collect()
+}
+
+/// The layer surfaces on `output`, by level, bottom of each level first (key order), and the
+/// full-screen windows.
+pub(crate) fn layers_on(model: &Model, output: &OutputKey) -> LayerDraw {
+    let covering = LayerDraw {
+        full_screen: full_screen_windows(model),
+        ..LayerDraw::default()
+    };
+    model
+        .layers()
         .iter()
         .filter(|(_, spec)| spec.output == *output)
-        .fold(LayerDraw::default(), |mut draw, (key, spec)| {
+        .fold(covering, |mut draw, (key, spec)| {
             let level = match spec.level {
                 LayerLevel::Background => &mut draw.background,
                 LayerLevel::Bottom => &mut draw.bottom,
@@ -124,8 +142,9 @@ pub(super) enum Hit {
     Window(WindowId),
 }
 
-/// Every drawn surface that takes input, front to back: lock surfaces, overlay and top layers,
-/// windows by stacking (the sampled frame's, top first), bottom and background layers; each
+/// Every drawn surface that takes input, front to back: lock surfaces, overlay layers, full-screen
+/// windows, top layers, the other windows by stacking (the sampled frame's, top first), bottom
+/// then background layers; each
 /// root is preceded by its popups. Each with where its top-left is in global logical pixels.
 pub(super) fn stack(state: &State) -> Vec<(Hit, Candidate)> {
     let model = &state.core.model;
@@ -153,7 +172,7 @@ pub(super) fn stack(state: &State) -> Vec<(Hit, Candidate)> {
             .filter_map(|(key, spec)| {
                 let entry = book.layer(key)?;
                 let full = model.outputs().0.get(&spec.output)?.config.logical_rect();
-                let area = layer_area(spec, full, entry.committed);
+                let area = layer_area(spec, model.layers().room_for(spec, full), entry.committed);
                 Some((
                     Hit::Layer(*key),
                     Candidate {
@@ -183,10 +202,17 @@ pub(super) fn stack(state: &State) -> Vec<(Hit, Candidate)> {
                 },
             ))
         });
+    let full_screen = full_screen_windows(model);
+    let (covering, others): (Vec<_>, Vec<_>) = windows
+        .into_iter()
+        .partition(|(hit, _)| matches!(hit, Hit::Window(id) if full_screen.contains(id)));
     locks
-        .chain(layer(&[LayerLevel::Overlay, LayerLevel::Top]))
-        .chain(windows)
-        .chain(layer(&[LayerLevel::Bottom, LayerLevel::Background]))
+        .chain(layer(&[LayerLevel::Overlay]))
+        .chain(covering)
+        .chain(layer(&[LayerLevel::Top]))
+        .chain(others)
+        .chain(layer(&[LayerLevel::Bottom]))
+        .chain(layer(&[LayerLevel::Background]))
         .flat_map(with_popups)
         .collect()
 }

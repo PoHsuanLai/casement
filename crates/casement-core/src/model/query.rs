@@ -56,6 +56,14 @@ impl Model {
             .map(|(key, _)| key.clone())
     }
 
+    /// Where the pointer starts: the centre of the primary output (never a corner, where it would
+    /// dwell in a hot corner before anyone touched the mouse).
+    pub fn pointer_start(&self) -> Option<LogicalPoint> {
+        self.primary_output()
+            .and_then(|key| self.output_rect(&key))
+            .map(|rect| rect.centre())
+    }
+
     /// The output the key window is on, else the primary one: where the person is working.
     pub(super) fn working_output(&self) -> Option<OutputKey> {
         self.focus

@@ -10,8 +10,8 @@ use crate::element::{
 };
 use crate::texture_book::TextureBook;
 use casement_core::geometry::{LogicalPoint, LogicalRect, PhysicalRect, PhysicalSize, SubPoint};
-use casement_core::{LayerKey, OutputKey};
-use casement_motion::OutputFrame;
+use casement_core::{LayerKey, OutputKey, WindowId};
+use casement_motion::{OutputFrame, PlacedWindow};
 use convert::{on_output, sub_of};
 use ds_core::geometry::scale::Scale;
 use smithay::backend::renderer::element::surface::render_elements_from_surface_tree;
@@ -30,9 +30,12 @@ pub struct OutputView {
     pub mode: PhysicalSize,
 }
 
-/// The layer-shell surfaces on an output, per level, bottom of each level first.
+/// The layer-shell surfaces on an output, per level, bottom of each level first, and the
+/// full-screen windows, which are drawn between the top and overlay levels.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct LayerDraw {
+    /// The full-screen windows on the output: above `top` (the bar and dock), below `overlay`.
+    pub full_screen: Vec<WindowId>,
     /// `background`.
     pub background: Vec<LayerKey>,
     /// `bottom`.
@@ -98,8 +101,8 @@ pub enum CursorShape {
 }
 
 /// The elements of one output's frame, front first (smithay's order): chrome (cursor, lock
-/// covers), overlay and top layers, the frame's windows top of the stack first with their
-/// popups, bottom and background layers. Windows and layers missing from `book` are skipped.
+/// covers), overlay layers, full-screen windows, top layers, the frame's other windows top of
+/// the stack first with their popups, bottom and background layers. Windows and layers missing from `book` are skipped.
 ///
 /// A locked output (one with a lock surface in `book`, or listed in `chrome.covers`) shows the
 /// cursor, its lock surface if any, and under it an opaque cover over the whole output; nothing
@@ -132,18 +135,27 @@ pub fn output_elements<R: Compositor>(
                 elements.extend(layer_elements(key, *area, view, book, renderer));
             }
         };
+    let (covering, others): (Vec<_>, Vec<_>) = frame
+        .windows
+        .iter()
+        .partition(|placed| layers.full_screen.contains(&placed.window));
+    let draw_windows =
+        |placed: &[&PlacedWindow], elements: &mut Vec<CasementElement<R>>, renderer: &mut R| {
+            for placed in placed.iter().rev() {
+                if let Some(entry) = book.window(&placed.window) {
+                    let origin = LogicalPoint {
+                        x: placed.at.x.round_logical(),
+                        y: placed.at.y.round_logical(),
+                    };
+                    elements.extend(popup_elements(&entry.root, origin, view, renderer));
+                    elements.extend(window_elements(placed, view, book, renderer));
+                }
+            }
+        };
     draw_level(&layers.overlay, &mut elements, renderer);
+    draw_windows(&covering, &mut elements, renderer);
     draw_level(&layers.top, &mut elements, renderer);
-    for placed in frame.windows.iter().rev() {
-        if let Some(entry) = book.window(&placed.window) {
-            let origin = LogicalPoint {
-                x: placed.at.x.round_logical(),
-                y: placed.at.y.round_logical(),
-            };
-            elements.extend(popup_elements(&entry.root, origin, view, renderer));
-            elements.extend(window_elements(placed, view, book, renderer));
-        }
-    }
+    draw_windows(&others, &mut elements, renderer);
     draw_level(&layers.bottom, &mut elements, renderer);
     draw_level(&layers.background, &mut elements, renderer);
     elements

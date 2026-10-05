@@ -72,6 +72,15 @@ pub struct Desk<'a> {
 impl<'a> Desk<'a> {
     /// Connects a public client to `fixture`.
     pub fn at(fixture: &'a mut Fixture) -> Desk<'a> {
+        // The compositor starts the pointer at the output's centre; the goldens were shot with
+        // the cursor in the corner, out of every scene's way.
+        let device = fixture.input().plug(
+            DeviceClass::Pointer,
+            TestOrigin::Physical(DeviceClass::Pointer),
+        );
+        fixture
+            .input()
+            .pointer_to(device, LogicalPoint { x: 0, y: 0 });
         let id = fixture.connect(ConnectionRole::Public);
         fixture.pump();
         let base = WmBase::bind(fixture.client(id), 6);

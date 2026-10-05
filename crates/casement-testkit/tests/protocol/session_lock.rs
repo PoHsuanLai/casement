@@ -20,8 +20,11 @@ use casement_testclient::surface::toplevel::WmBase;
 /// An opaque black pixel.
 const BLACK: [u8; 4] = [0, 0, 0, 255];
 
-/// How far from the output's corner a cursor resting at the origin reaches.
+/// How far from where it rests the cursor reaches.
 const CURSOR_REACH: u32 = 32;
+
+/// Where the cursor rests: the centre of the 1920x1080 output, where the pointer starts.
+const CURSOR_AT: (u32, u32) = (960, 540);
 
 /// Whether the registry the client saw lists `interface`.
 fn advertises(client: &mut TestClient, interface: &str) -> bool {
@@ -129,6 +132,23 @@ fn lock_blocks_input_to_windows() {
     assert!(after.1 > before.1, "the lock surface hears the keys");
 }
 
+/// A locker that never makes a lock surface is not waited for forever (ext-session-lock: the
+/// compositor "must impose a reasonable time limit"): the outputs are under the cover, and once
+/// the time is up `locked` arrives.
+#[test]
+fn a_locker_with_no_lock_surface_is_locked_when_the_wait_runs_out() {
+    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let client = fixture.connect(ConnectionRole::Public);
+    fixture.pump();
+    let locker = Locker::request(fixture.client(client)).expect("locker");
+    fixture.pump();
+    assert!(!locker.is_locked(), "it waits for a lock surface at first");
+    fixture.advance(Duration::from_millis(500));
+    assert!(!locker.is_locked(), "not before the limit");
+    fixture.advance(Duration::from_secs(1));
+    assert!(locker.is_locked(), "the limit passed with no surface");
+}
+
 /// Killing the locker keeps every output covered; nothing of the session is drawn.
 #[test]
 fn a_dead_locker_leaves_the_lock_cover() {
@@ -175,7 +195,9 @@ fn a_dead_locker_leaves_the_lock_cover() {
     let shot = fixture.shot(ShotTarget::Output(output));
     let leaked = shot
         .enumerate_pixels()
-        .filter(|(x, y, _)| *x >= CURSOR_REACH || *y >= CURSOR_REACH)
+        .filter(|(x, y, _)| {
+            x.abs_diff(CURSOR_AT.0) >= CURSOR_REACH || y.abs_diff(CURSOR_AT.1) >= CURSOR_REACH
+        })
         .filter(|(_, _, pixel)| pixel.0 != BLACK)
         .count();
     assert_eq!(leaked, 0, "the cover left {leaked} pixels showing");

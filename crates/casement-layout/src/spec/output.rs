@@ -10,6 +10,8 @@ use ds_core::geometry::scale::Scale;
 pub struct OutputSpec {
     /// The output.
     pub output: OutputKey,
+    /// Its whole rectangle, in global logical coordinates (what a full-screen window covers).
+    pub full: LogicalRect,
     /// Its area left after layer exclusive zones, in global logical coordinates.
     pub usable: LogicalRect,
     /// Its scale.

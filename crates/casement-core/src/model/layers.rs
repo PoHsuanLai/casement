@@ -7,6 +7,7 @@ use crate::effect::Effect;
 use crate::geometry::LogicalSize;
 use crate::ids::{LayerKey, OutputKey};
 use crate::layer::{Anchor, Anchors, ExclusiveZone, LayerSpec};
+use std::collections::BTreeMap;
 
 impl Model {
     /// A layer surface mapped on a plugged output. It is told its size, and the windows are
@@ -27,34 +28,74 @@ impl Model {
         }
     }
 
-    /// A layer surface unmapped.
+    /// A layer surface unmapped. Surfaces that avoid other zones get the room back.
     pub(super) fn unmap_layer(self, layer: LayerKey) -> Moved {
         let Some(spec) = self.layers.get(&layer).cloned() else {
             return Moved::of(self);
         };
+        let sizes = self.sizes_on(&[spec.output.clone()]);
         let model = Model {
             layers: self.layers.without_layer(&layer),
             ..self
         };
-        model.laid_out_for(&spec, &spec)
+        Moved::of(model)
+            .then(|model| model.reconfigured(&sizes, layer))
+            .then(|model| model.laid_out_for(&spec, &spec))
     }
 
-    /// The model with `layer` as `spec`: told its size, and the scene laid out again when its
+    /// The model with `layer` as `spec`: told its size, the surfaces that avoid other zones
+    /// told theirs when this one's zone moved them, and the scene laid out again when its
     /// exclusive zone, before or after, takes room.
     fn with_layer(self, layer: LayerKey, spec: LayerSpec) -> Moved {
         let before = self.layers.get(&layer).cloned();
-        let size = self
-            .output_rect(&spec.output)
-            .map_or(LogicalSize { w: 0, h: 0 }, |rect| {
-                layer_size(&spec, rect.size)
-            });
+        let outputs: Vec<OutputKey> = before
+            .iter()
+            .map(|before| before.output.clone())
+            .chain([spec.output.clone()])
+            .collect();
+        let sizes = self.sizes_on(&outputs);
         let model = Model {
             layers: self.layers.with_layer(layer, spec.clone()),
             ..self
         };
+        let size = model.size_of(&spec);
         Moved::of(model)
             .with(Effect::ConfigureLayer { layer, size })
+            .then(|model| model.reconfigured(&sizes, layer))
             .then(|model| model.laid_out_for(before.as_ref().unwrap_or(&spec), &spec))
+    }
+
+    /// The size `spec` is configured to, in the room wlr-layer-shell gives it.
+    fn size_of(&self, spec: &LayerSpec) -> LogicalSize {
+        self.output_rect(&spec.output)
+            .map_or(LogicalSize { w: 0, h: 0 }, |full| {
+                layer_size(spec, self.layers.room_for(spec, full).size)
+            })
+    }
+
+    /// The configured size of every layer surface on `outputs`.
+    fn sizes_on(&self, outputs: &[OutputKey]) -> BTreeMap<LayerKey, LogicalSize> {
+        self.layers
+            .iter()
+            .filter(|(_, spec)| outputs.contains(&spec.output))
+            .map(|(key, spec)| (*key, self.size_of(spec)))
+            .collect()
+    }
+
+    /// Every layer surface other than `except` whose size is not what `sizes` says it was, told
+    /// its new size (a surface that avoids zones follows the others' zones).
+    fn reconfigured(self, sizes: &BTreeMap<LayerKey, LogicalSize>, except: LayerKey) -> Moved {
+        let effects: Vec<Effect> = self
+            .layers
+            .iter()
+            .filter(|(key, _)| **key != except)
+            .filter_map(|(key, spec)| {
+                let size = self.size_of(spec);
+                (sizes.get(key).is_some_and(|was| *was != size))
+                    .then_some(Effect::ConfigureLayer { layer: *key, size })
+            })
+            .collect();
+        Moved::of(self).with_all(effects)
     }
 
     /// Windows are laid out again when `before` or `after` reserves room on an output.

@@ -18,6 +18,17 @@ fn a_new_model_keeps_its_invariants() {
 }
 
 #[test]
+fn the_pointer_starts_at_the_centre_of_the_primary_output() {
+    use casement_core::geometry::LogicalPoint;
+    assert_eq!(fresh().pointer_start(), None, "no output, no start");
+    let run = run(vec![plug("HEADLESS-1")]);
+    assert_eq!(
+        run.model.pointer_start(),
+        Some(LogicalPoint { x: 960, y: 540 })
+    );
+}
+
+#[test]
 fn a_plugged_output_shows_a_fresh_desktop() {
     let key = headless("HEADLESS-1").key;
     let run = run(vec![plug("HEADLESS-1")]);

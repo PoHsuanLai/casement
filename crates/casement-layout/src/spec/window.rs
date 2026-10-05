@@ -30,6 +30,8 @@ pub enum WindowPlacement {
     Tiled(TileZone),
     /// Filling the usable area.
     Filled,
+    /// Covering the whole output, the bar's strip and the dock's included.
+    FullScreen,
     /// In the dock: no desktop target (motion takes the dock tile from
     /// `Cause::Minimise`); in an overview, a thumbnail at a fixed 16:9.
     Minimised,

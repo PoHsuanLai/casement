@@ -60,6 +60,20 @@ impl LayerBook {
             .filter_map(reservation)
             .fold(full, shrink)
     }
+
+    /// The rectangle `spec` is sized and placed in, `full` being its output's whole rectangle
+    /// (wlr-layer-shell): the whole output for a surface that ignores zones (`-1`) and for one
+    /// that reserves a zone of its own along an edge (it is arranged against that edge, other
+    /// bars' share aside); the usable area for one that asks to avoid them (`0`), and for one
+    /// whose positive zone its anchoring does not make meaningful ("treated the same as zero").
+    pub fn room_for(&self, spec: &LayerSpec, full: LogicalRect) -> LogicalRect {
+        match (spec.exclusive, reservation(spec)) {
+            (ExclusiveZone::Ignore, _) | (_, Some(_)) => full,
+            (ExclusiveZone::Respect | ExclusiveZone::Reserve(_), None) => {
+                self.usable_area(&spec.output, full)
+            }
+        }
+    }
 }
 
 /// One reservation: this edge loses this many logical pixels.

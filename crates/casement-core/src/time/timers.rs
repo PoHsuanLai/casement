@@ -40,6 +40,8 @@ pub enum TimerKey {
     TrustedArm(TrustedKey),
     /// An agent lease's yield period ends.
     LeaseYield(LeaseId),
+    /// A session locker has had as long as it may to make its first lock surface.
+    LockWait,
 }
 
 /// A timer: when, and what for.

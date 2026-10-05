@@ -10,6 +10,7 @@ use casement_core::layer::{
     ShellRoleTag,
 };
 use casement_core::lock::{LockEvent, LockReply, LockState, LockSurfaces};
+use casement_core::time::TimerKey;
 use casement_core::{ClientKey, Effect, Event, KeyboardTarget, LayerKey, OutputKey, WindowId};
 use support::driver::{Op, assert_same_world, last, map, plug, run, run_from, unplug};
 use support::{headless, proven};
@@ -70,6 +71,52 @@ fn cover(output: &str) -> Effect {
 
 fn uncover(output: &str) -> Effect {
     Effect::Lock(LockReply::HideCover(key(output)))
+}
+
+#[test]
+fn a_locker_that_never_makes_a_surface_is_not_waited_for_forever() {
+    // ext-session-lock: the compositor may wait for the first lock surface before `locked`, but
+    // "must impose a reasonable time limit"; the covers are up, so nothing can be seen.
+    let base = run(vec![plug("HEADLESS-1"), requested()]);
+    let due = last(&base)
+        .iter()
+        .find_map(|effect| match effect {
+            Effect::ArmTimer(due) if due.key == TimerKey::LockWait => Some(due.clone()),
+            _ => None,
+        })
+        .expect("the wait for a lock surface is bounded by a timer");
+    assert!(
+        !last(&base).contains(&Effect::Lock(LockReply::SendLocked)),
+        "not yet"
+    );
+    let late = run_from(base.model, vec![Op::Event(Event::TimerFired(due.key))]);
+    assert!(last(&late).contains(&Effect::Lock(LockReply::SendLocked)));
+    assert_eq!(
+        late.model.lock(),
+        &LockState::Locked {
+            surfaces: LockSurfaces::Pending
+        }
+    );
+    // A surface that comes after is still taken in.
+    let after = run_from(late.model, vec![committed("HEADLESS-1")]);
+    assert!(last(&after).contains(&uncover("HEADLESS-1")));
+    assert!(!last(&after).contains(&Effect::Lock(LockReply::SendLocked)));
+}
+
+#[test]
+fn the_wait_ends_with_the_first_surface_and_a_stale_timer_changes_nothing() {
+    let base = run(vec![
+        plug("HEADLESS-1"),
+        requested(),
+        committed("HEADLESS-1"),
+    ]);
+    assert!(last(&base).contains(&Effect::CancelTimer(TimerKey::LockWait)));
+    let stale = run_from(
+        base.model.clone(),
+        vec![Op::Event(Event::TimerFired(TimerKey::LockWait))],
+    );
+    assert_same_world(&stale.model, &base.model, "a timer for a wait that is over");
+    assert!(!last(&stale).contains(&Effect::Lock(LockReply::SendLocked)));
 }
 
 #[test]

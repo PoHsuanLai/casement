@@ -34,7 +34,8 @@ fn output_spec(model: &Model, key: &OutputKey, state: &OutputState) -> Option<Ou
         .or_else(|| row.first().copied())?
         .id
         .clone();
-    let usable = model.layers().usable_area(key, state.config.logical_rect());
+    let full = state.config.logical_rect();
+    let usable = model.layers().usable_area(key, full);
     let spaces = row
         .into_iter()
         .map(|space| {
@@ -44,6 +45,7 @@ fn output_spec(model: &Model, key: &OutputKey, state: &OutputState) -> Option<Ou
         .collect();
     Some(OutputSpec {
         output: key.clone(),
+        full,
         usable,
         scale: state.config.scale,
         mode: SceneMode::Desktop { shown },
@@ -105,13 +107,14 @@ fn arrangement_of(content: &SpaceContent) -> SpaceArrangement {
     }
 }
 
-/// Where a window in this state goes (a full-screen window fills its own Space).
+/// Where a window in this state goes (a full-screen window covers its output).
 fn placement_of(state: &WindowState) -> WindowPlacement {
     match state {
         WindowState::New(size) => WindowPlacement::New(*size),
         WindowState::Floating(rect) => WindowPlacement::Floating(*rect),
         WindowState::Tiled { zone, .. } => WindowPlacement::Tiled(*zone),
-        WindowState::Filled { .. } | WindowState::FullScreen { .. } => WindowPlacement::Filled,
+        WindowState::Filled { .. } => WindowPlacement::Filled,
+        WindowState::FullScreen { .. } => WindowPlacement::FullScreen,
         WindowState::Minimised { .. } => WindowPlacement::Minimised,
     }
 }
@@ -160,12 +163,12 @@ mod tests {
                 WindowPlacement::Filled,
             ),
             (
-                "full screen fills its Space",
+                "full screen covers the output",
                 WindowState::FullScreen {
                     space,
                     restore: Restore::Floating(floor),
                 },
-                WindowPlacement::Filled,
+                WindowPlacement::FullScreen,
             ),
             (
                 "minimised",

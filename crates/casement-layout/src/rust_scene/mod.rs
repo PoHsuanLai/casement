@@ -33,9 +33,11 @@ impl SceneLayout for RustScene {
     /// changed gets a `Resize`; a minimum that cannot be met is reported
     /// (`LayoutReport::MinUnmet`).
     ///
-    /// At P0 every output is arranged as a desktop whatever its mode, and only floating and
-    /// new windows in desktop Spaces get targets: tile zones, fill, full screen, Split View,
-    /// the overviews and Show Desktop arrive with P3-Z, one file each.
+    /// A filled window takes the usable area and a full-screen one the whole output.
+    ///
+    /// At P0 every output is arranged as a desktop whatever its mode, and only floating, new,
+    /// filled and full-screen windows get targets: tile zones, Split View, the overviews and
+    /// Show Desktop arrive with P3-Z, one file each.
     fn arrange(&self, spec: &SceneSpec, knobs: &LayoutKnobs) -> Arrangement {
         let mut arrangement = Arrangement::default();
         for output in &spec.outputs {

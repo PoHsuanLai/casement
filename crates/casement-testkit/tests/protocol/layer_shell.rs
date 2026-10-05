@@ -130,6 +130,30 @@ fn a_layer_under_a_resting_pointer_gets_enter() {
     );
 }
 
+/// The pointer starts at the centre of the primary output, not at its top-left corner, where it
+/// would dwell in a hot corner at start-up.
+#[test]
+fn the_pointer_starts_at_the_centre_of_the_primary_output() {
+    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let _mouse = fixture.input().plug(
+        DeviceClass::Pointer,
+        TestOrigin::Physical(DeviceClass::Pointer),
+    );
+    let id = fixture.connect(ConnectionRole::Public);
+    fixture.pump();
+    let _pointer = Pointer::bind(fixture.client(id)).expect("a pointer");
+    let _layer = map(&mut fixture, id, &wallpaper());
+    let enters: Vec<_> = events_of(fixture.client(id), "wl_pointer#")
+        .into_iter()
+        .filter(|(event, _)| event == "enter")
+        .collect();
+    assert_eq!(
+        enters.last().map(|(_, args)| args[2..].to_vec()),
+        Some(vec!["960.000".to_owned(), "540.000".to_owned()]),
+        "the surface under the resting pointer is entered at the output's centre: {enters:?}"
+    );
+}
+
 /// A bar's exclusive zone is subtracted from a maximised window's configure (A16).
 #[test]
 fn exclusive_zones_shrink_maximised_windows() {
@@ -170,6 +194,146 @@ fn exclusive_zones_shrink_maximised_windows() {
         (rect.origin.y, rect.size.h),
         (28, 1080 - 28),
         "it is drawn below the bar"
+    );
+}
+
+/// wlr-layer-shell: zone 0 moves a surface out of other surfaces' exclusive zones. A surface held
+/// to all four edges is sized to what the bar leaves, whichever maps first, and the bar's strip
+/// is not under it.
+#[test]
+fn a_zone_zero_layer_keeps_clear_of_the_bar() {
+    use casement_core::geometry::LogicalPoint;
+    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let mouse = fixture.input().plug(
+        DeviceClass::Pointer,
+        TestOrigin::Physical(DeviceClass::Pointer),
+    );
+    // The pointer rests inside the bar's strip.
+    fixture
+        .input()
+        .pointer_to(mouse, LogicalPoint { x: 400, y: 20 });
+    let shell = fixture.connect(ConnectionRole::Public);
+    let centre = fixture.connect(ConnectionRole::Public);
+    fixture.pump();
+    let _shell_pointer = Pointer::bind(fixture.client(shell)).expect("a pointer");
+    let _centre_pointer = Pointer::bind(fixture.client(centre)).expect("a pointer");
+    let early = LayerAsk {
+        level: Layer::Overlay,
+        namespace: "notification-center",
+        anchor: Anchor::Top | Anchor::Bottom | Anchor::Left | Anchor::Right,
+        exclusive_zone: 0,
+        keyboard: KeyboardInteractivity::None,
+        size: (0, 0),
+    };
+    let first = LayerSurface::create(fixture.client(centre), &early).expect("a layer surface");
+    fixture.pump();
+    let before = first.configure().expect("the initial configure");
+    assert_eq!((before.width, before.height), (1920, 1080), "no bar yet");
+    let bar = LayerAsk {
+        level: Layer::Top,
+        namespace: "bar",
+        anchor: Anchor::Top | Anchor::Left | Anchor::Right,
+        exclusive_zone: 28,
+        keyboard: KeyboardInteractivity::None,
+        size: (0, 28),
+    };
+    let _bar = map(&mut fixture, shell, &bar);
+    let after = first.configure().expect("a configure for the new zone");
+    assert_eq!(
+        (after.width, after.height),
+        (1920, 1080 - 28),
+        "the bar's zone arrived: the surface is configured again"
+    );
+    assert!(first.ack(fixture.client(centre)));
+    let buffer = shm_buffer(
+        fixture.client(centre),
+        PhysicalSize { w: 1920, h: 1052 },
+        Pattern::Solid(0xff20_2020),
+    );
+    first.show(fixture.client(centre), &buffer);
+    fixture.pump();
+    // A frame later (the surfaces' sizes are read per frame), the pointer moves inside the bar's strip.
+    fixture.advance(std::time::Duration::from_millis(100));
+    fixture
+        .input()
+        .pointer_to(mouse, LogicalPoint { x: 420, y: 22 });
+    fixture.pump();
+    let entered = |fixture: &mut Fixture, id| {
+        events_of(fixture.client(id), "wl_pointer#")
+            .iter()
+            .any(|(event, _)| event == "enter")
+    };
+    assert!(entered(&mut fixture, shell), "the bar is under the pointer");
+    assert!(
+        !entered(&mut fixture, centre),
+        "the zone-0 surface is below the bar, not over it"
+    );
+}
+
+/// A full-screen window covers the whole output, the bar's strip included: it is configured to
+/// the output's size and drawn there, and the bar is not above it (a full-screen window is above
+/// the top layer and below the overlay).
+#[test]
+fn a_full_screen_window_covers_the_whole_output_with_a_bar_mapped() {
+    use casement_core::geometry::LogicalPoint;
+    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let mouse = fixture.input().plug(
+        DeviceClass::Pointer,
+        TestOrigin::Physical(DeviceClass::Pointer),
+    );
+    let app = fixture.connect(ConnectionRole::Public);
+    let shell = fixture.connect(ConnectionRole::Public);
+    fixture.pump();
+    let _pointer = Pointer::bind(fixture.client(app)).expect("a pointer");
+    let base = WmBase::bind(fixture.client(app), 6);
+    let window = map_toplevel(&mut fixture, app, &base, (400, 300));
+    let bar = LayerAsk {
+        level: Layer::Top,
+        namespace: "bar",
+        anchor: Anchor::Top | Anchor::Left | Anchor::Right,
+        exclusive_zone: 28,
+        keyboard: KeyboardInteractivity::None,
+        size: (0, 28),
+    };
+    let _bar = map(&mut fixture, shell, &bar);
+    window.set_fullscreen();
+    fixture.pump();
+    assert!(window.ack_latest().is_some());
+    let told = window.configures().last().expect("a configure").clone();
+    assert!(told.states.contains(&State::Fullscreen), "{told:?}");
+    assert_eq!(
+        told.size,
+        (1920, 1080),
+        "the whole output, not what the bar leaves: {told:?}"
+    );
+    let buffer = shm_buffer(
+        fixture.client(app),
+        PhysicalSize { w: 1920, h: 1080 },
+        Pattern::Gradient,
+    );
+    window.show(&buffer);
+    fixture.pump();
+    let model_window = *fixture.model().windows().keys().next().expect("a window");
+    let rect = crate::xdg_shell::rect_of(&fixture, model_window);
+    assert_eq!(
+        (rect.origin.x, rect.origin.y, rect.size.w, rect.size.h),
+        (0, 0, 1920, 1080),
+        "it is placed over the bar's strip"
+    );
+    crate::xdg_shell::settle(&mut fixture);
+    fixture
+        .input()
+        .pointer_to(mouse, LogicalPoint { x: 420, y: 20 });
+    // The window was under the pointer (the output's centre) already, so it is a motion that
+    // arrives, at the window's own coordinates: the window starts at the output's origin.
+    let motions: Vec<_> = events_of(fixture.client(app), "wl_pointer#")
+        .into_iter()
+        .filter(|(event, _)| event == "motion")
+        .collect();
+    assert_eq!(
+        motions.last().map(|(_, args)| args[1..].to_vec()),
+        Some(vec!["420.000".to_owned(), "20.000".to_owned()]),
+        "the pointer in the bar's old strip is over the window: {motions:?}"
     );
 }
 

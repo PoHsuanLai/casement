@@ -10,7 +10,7 @@
 use super::grab;
 use super::scene::{Hit, hit_test, stack};
 use crate::exec;
-use crate::state::State;
+use crate::state::{PointerStart, State};
 use casement_core::focus::{HitPart, Press};
 use casement_core::geometry::{LogicalPoint, SubPoint, SubPx};
 use casement_core::input::{
@@ -559,6 +559,28 @@ fn log(result: Result<(), casement_wayland::WaylandFault>) {
     if let Err(fault) = result {
         tracing::warn!(%fault, "an input delivery failed");
     }
+}
+
+/// The pointer's first position: the centre of the primary output, the first time there is one.
+pub(super) fn start_pointer(state: &mut State) {
+    if state.render.pointer == PointerStart::Placed {
+        return;
+    }
+    let Some(centre) = state.core.model.pointer_start() else {
+        return;
+    };
+    state.render.pointer = PointerStart::Placed;
+    let at = (f64::from(centre.x), f64::from(centre.y));
+    state.render.chrome.cursor_at = logical(at);
+    let seat = state.wl.seat.seat.clone();
+    let delivery = PointerDelivery::Motion {
+        focus: None,
+        at: sub_of(at),
+        delta: zero(),
+        time: state.clock.now(),
+    };
+    log(seat::apply_pointer(&seat, state, delivery));
+    refocus(state);
 }
 
 /// The pointer has not moved, but what is under it may have (a surface mapped, unmapped or

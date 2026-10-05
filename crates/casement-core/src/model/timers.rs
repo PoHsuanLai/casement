@@ -21,6 +21,7 @@ impl Model {
         match (gone, &key) {
             (Gone::Yes, _) => Moved::of(model).with(Effect::Note(CoreNote::StaleTimer(key))),
             (Gone::No, TimerKey::Ping(client)) => model.not_responding(*client),
+            (Gone::No, TimerKey::LockWait) => model.lock_wait_over(),
             (Gone::No, _) => Moved::of(model),
         }
     }
@@ -41,6 +42,7 @@ impl Model {
             | TimerKey::HotCorner(_)
             | TimerKey::TrustedArm(_)
             | TimerKey::LeaseYield(_) => None,
+            TimerKey::LockWait => Some(Gone::No),
         }
     }
 

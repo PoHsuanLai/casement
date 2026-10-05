@@ -319,6 +319,21 @@ fn closing_a_bar_popup_returns_the_keyboard_to_the_app() {
     );
 }
 
+/// The shell dies with its menu open: smithay drops the grab before the popup's destruction
+/// reaches casement, and the keyboard must still go back to the app the model says holds it.
+#[test]
+fn a_client_that_disconnects_with_its_popup_open_returns_the_keyboard_to_the_app() {
+    let mut desk = Desk::open();
+    desk.fixture.disconnect(desk.shell);
+    desk.fixture.pump();
+    let typed = desk.app_keys();
+    desk.tap(KEY_A);
+    assert!(
+        desk.app_keys() > typed,
+        "after the menu's client left the app gets the keys"
+    );
+}
+
 /// A press outside the menu dismisses it and leaves the keyboard with the app.
 #[test]
 fn clicking_outside_a_bar_popup_returns_the_keyboard_to_the_app() {

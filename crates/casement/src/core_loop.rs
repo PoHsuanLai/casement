@@ -121,7 +121,7 @@ pub fn frame(state: &mut State, output: &OutputKey) {
         scale: config.scale,
         mode: config.mode.size,
     };
-    let layers = layers_on(state.core.model.layers(), output);
+    let layers = layers_on(&state.core.model, output);
     let source = SceneSource {
         frame: &frame,
         view: &view,
@@ -350,6 +350,7 @@ fn connector(state: &mut State, event: ConnectorEvent) {
             if let Some(config) = wanted {
                 configure_output(state, &key, config);
             }
+            deliver::start_pointer(state);
         }
         ConnectorEvent::Changed(facts) => feed(state, vec![Event::OutputPlugged(facts)]),
         ConnectorEvent::Unplugged(key) => {
@@ -385,6 +386,9 @@ pub fn turn(state: &mut State) -> usize {
     let gone = crate::clients::take_gone(state);
     let departed = gone.len();
     feed(state, gone);
+    if departed > 0 {
+        crate::exec::resync_keyboard(state);
+    }
     let drained = drain_input(state);
     ime::settle(state);
     drained + polled + departed

@@ -194,6 +194,11 @@ impl Toplevel {
         self.toplevel.set_maximized();
     }
 
+    /// Asks to be full screen (on whichever output the compositor picks).
+    pub fn set_fullscreen(&self) {
+        self.toplevel.set_fullscreen(None);
+    }
+
     /// Asks to be minimised.
     pub fn set_minimized(&self) {
         self.toplevel.set_minimized();

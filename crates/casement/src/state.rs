@@ -80,6 +80,18 @@ pub struct RenderState {
     pub trackers: BTreeMap<OutputKey, OutputDamageTracker>,
     /// The cursor and lock covers.
     pub chrome: ChromeLayer,
+    /// Whether the pointer has had its first position.
+    pub pointer: PointerStart,
+}
+
+/// Whether the pointer has been put where it starts: the centre of the primary output, once an
+/// output is plugged.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PointerStart {
+    /// No output has been plugged yet: the pointer is nowhere.
+    Unplaced,
+    /// It has been placed; from here only input moves it.
+    Placed,
 }
 
 /// The agent edge's state (P2-Z and P4-Z give it fields).
@@ -234,6 +246,7 @@ impl State {
                 cursor_at: LogicalPoint { x: 0, y: 0 },
                 covers: Vec::new(),
             },
+            pointer: PointerStart::Unplaced,
         };
         Ok(State {
             core,

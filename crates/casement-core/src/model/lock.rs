@@ -6,6 +6,12 @@ use super::moved::Moved;
 use crate::effect::Effect;
 use crate::ids::OutputKey;
 use crate::lock::{LockEvent, LockReply, LockState, LockSurfaces};
+use crate::time::{Due, TimerKey};
+use std::time::Duration;
+
+/// How long a locker has to make its first lock surface before the session is locked without
+/// one (ext-session-lock: the compositor "must impose a reasonable time limit" if it waits).
+pub const LOCK_WAIT: Duration = Duration::from_secs(1);
 
 impl Model {
     /// The lock moved.
@@ -62,8 +68,27 @@ impl Model {
                 .with(Effect::Lock(LockReply::SendLocked));
         }
         let since = self.now;
+        let wait = Due {
+            at: since.after(LOCK_WAIT),
+            key: TimerKey::LockWait,
+        };
         self.with_lock(LockState::Locking { since })
             .with_all(outputs.into_iter().map(show_cover))
+            .with(Effect::ArmTimer(wait))
+    }
+
+    /// The locker has had its time to make a lock surface: every output is under the cover
+    /// already, so the session is locked without one. A surface that comes later is taken in.
+    /// (A wait that already ended with a surface, an unlock or a dead locker changes nothing.)
+    pub(super) fn lock_wait_over(self) -> Moved {
+        match self.lock {
+            LockState::Locking { .. } => self
+                .with_lock(LockState::Locked {
+                    surfaces: LockSurfaces::Pending,
+                })
+                .with(Effect::Lock(LockReply::SendLocked)),
+            _ => Moved::of(self),
+        }
     }
 
     /// The locker's surface on `output` committed: the cover there gives way to it. The first
@@ -75,17 +100,20 @@ impl Model {
         let (covered, announce) = match state {
             LockState::Locking { .. } => (
                 vec![output.clone()],
-                Some(Effect::Lock(LockReply::SendLocked)),
+                vec![
+                    Effect::Lock(LockReply::SendLocked),
+                    Effect::CancelTimer(TimerKey::LockWait),
+                ],
             ),
             LockState::Locked {
                 surfaces: LockSurfaces::Covering(covered),
             } => match covered.contains(&output) {
                 true => return Moved::of(self),
-                false => (with_output(covered, &output), None),
+                false => (with_output(covered, &output), Vec::new()),
             },
             LockState::Locked {
                 surfaces: LockSurfaces::Pending,
-            } => (vec![output.clone()], None),
+            } => (vec![output.clone()], Vec::new()),
             LockState::Unlocked | LockState::LockedWithoutSurface => return Moved::of(self),
         };
         self.with_lock(LockState::Locked {

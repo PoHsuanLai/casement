@@ -18,7 +18,7 @@ use casement_wayland::{
     session_lock, text_input, xdg_shell,
 };
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::SERIAL_COUNTER;
+use smithay::utils::{IsAlive, SERIAL_COUNTER};
 
 /// Carries out `effects` in order.
 pub fn exec(state: &mut State, effects: Vec<Effect>) {
@@ -167,6 +167,22 @@ pub fn end_popup_keyboard(state: &mut State) {
     keyboard.unset_grab(state);
     let target = state.core.model.keyboard_target();
     self::keyboard(state, &target);
+}
+
+/// A client left: when the seat's keyboard is not where the model says it is, it goes there.
+/// Smithay drops a popup grab whose client died before the popup's destruction reaches us, so
+/// `end_popup_keyboard` never ran: the seat is left holding a dead surface, or keyed to
+/// something the model does not name, and the app that should have the keys gets none. A live
+/// grab holding a live surface is left alone.
+pub fn resync_keyboard(state: &mut State) {
+    let wanted = focus_surface(state, &state.core.model.keyboard_target());
+    let keyboard = &state.wl.seat.keyboard;
+    let held = keyboard.current_focus();
+    let dead = held.as_ref().is_some_and(|surface| !surface.alive());
+    let adrift = !keyboard.is_grabbed() && held != wanted;
+    if dead || adrift {
+        end_popup_keyboard(state);
+    }
 }
 
 fn configure_layer(state: &mut State, layer: LayerKey, size: LogicalSize) {

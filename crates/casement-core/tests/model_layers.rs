@@ -292,3 +292,88 @@ fn among_exclusive_layers_the_highest_level_then_the_newest_holds_the_keyboard()
         assert_eq!(run(ops).model.keyboard_target(), want, "{name}");
     }
 }
+
+/// A surface held to all four edges that asks for zone 0 (a notification centre).
+fn centre(output: &str) -> LayerSpec {
+    LayerSpec {
+        anchor: Anchors {
+            top: Anchor::Held,
+            bottom: Anchor::Held,
+            left: Anchor::Held,
+            right: Anchor::Held,
+        },
+        level: LayerLevel::Overlay,
+        namespace: "centre".to_owned(),
+        ..bar(output, ExclusiveZone::Respect)
+    }
+}
+
+fn configured(layer: u64, w: u32, h: u32) -> Effect {
+    Effect::ConfigureLayer {
+        layer: LayerKey(layer),
+        size: LogicalSize { w, h },
+    }
+}
+
+#[test]
+fn a_zone_zero_layer_is_sized_inside_the_usable_area() {
+    let run = run(vec![
+        plug("HEADLESS-1"),
+        mapped(1, bar("HEADLESS-1", ExclusiveZone::Reserve(28))),
+        mapped(2, centre("HEADLESS-1")),
+    ]);
+    assert!(last(&run).contains(&configured(2, 1920, 1052)));
+}
+
+#[test]
+fn a_zone_zero_layer_follows_the_zones_that_come_change_and_go() {
+    let base = run(vec![
+        plug("HEADLESS-1"),
+        mapped(2, centre("HEADLESS-1")),
+        mapped(3, centre("HEADLESS-1")),
+    ]);
+    assert!(last(&base).contains(&configured(3, 1920, 1080)));
+    let steps = [
+        (
+            "a bar appears",
+            mapped(1, bar("HEADLESS-1", ExclusiveZone::Reserve(28))),
+            1052,
+        ),
+        (
+            "the bar grows",
+            changed(1, bar("HEADLESS-1", ExclusiveZone::Reserve(40))),
+            1040,
+        ),
+        ("the bar goes", unmapped(1), 1080),
+    ];
+    let mut model = base.model;
+    for (name, op, height) in steps {
+        let run = run_from(model, vec![op]);
+        for layer in [2, 3] {
+            assert!(
+                last(&run).contains(&configured(layer, 1920, height)),
+                "{name}: layer {layer}"
+            );
+        }
+        model = run.model;
+    }
+}
+
+#[test]
+fn zones_that_do_not_move_a_layer_do_not_reconfigure_it() {
+    let base = run(vec![
+        plug("HEADLESS-1"),
+        mapped(2, bar("HEADLESS-1", ExclusiveZone::Ignore)),
+        plug("HEADLESS-2"),
+        mapped(3, centre("HEADLESS-2")),
+    ]);
+    let run = run_from(
+        base.model,
+        vec![mapped(1, bar("HEADLESS-1", ExclusiveZone::Reserve(28)))],
+    );
+    let others: Vec<_> = last(&run)
+        .iter()
+        .filter(|e| matches!(e, Effect::ConfigureLayer { layer, .. } if *layer != LayerKey(1)))
+        .collect();
+    assert!(others.is_empty(), "{others:?}");
+}

@@ -45,6 +45,22 @@ pub(crate) fn filled_target(
     )
 }
 
+/// The target for a full-screen window: the whole output `full`, whatever the window's limits
+/// say (a full-screen window is as large as the output or it is not full screen). Like a fill
+/// it asks nothing of its own, so the size always goes out as a configure.
+pub(crate) fn full_screen_target(
+    window: WindowId,
+    output: &OutputKey,
+    full: LogicalRect,
+) -> WindowTarget {
+    WindowTarget {
+        window,
+        output: output.clone(),
+        rect: full,
+        size: ConfigureNeed::Resize(full.size),
+    }
+}
+
 /// The target for a window that asked for `asked` and goes at `rect` (already fitted): a
 /// `Resize` when the size changed, and a report when its minimum is not met.
 pub(crate) fn placed(

@@ -2,12 +2,14 @@
 //! alpha modifier) use for their pixman goldens and pixel probes (P0-R-scene's `shoot`).
 
 use casement_core::WindowId;
+use casement_core::geometry::LogicalPoint;
+use casement_core::input::DeviceClass;
 use casement_core::policy::ConnectionRole;
 use casement_render::golden::{Golden, GoldenOutcome, GoldenTier, compare};
 use casement_testclient::TestClient;
 use casement_testclient::surface::subsurface::Surface;
 use casement_testclient::surface::toplevel::{Toplevel, WmBase};
-use casement_testkit::{ClientId, Env, Fixture, FixtureSpec, ShotTarget};
+use casement_testkit::{ClientId, Env, Fixture, FixtureSpec, ShotTarget, TestOrigin};
 use std::time::Duration;
 
 /// How long a window's opening motion takes to settle, with room to spare.
@@ -16,6 +18,15 @@ const SETTLE: Duration = Duration::from_secs(2);
 /// A desktop with one client and its `xdg_wm_base`.
 pub(crate) fn desk() -> (Fixture, ClientId, WmBase) {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    // The pointer starts at the output's centre, over the windows these tests shoot: the shots
+    // are of the window, not of the cursor, so it goes to the corner.
+    let device = fixture.input().plug(
+        DeviceClass::Pointer,
+        TestOrigin::Physical(DeviceClass::Pointer),
+    );
+    fixture
+        .input()
+        .pointer_to(device, LogicalPoint { x: 0, y: 0 });
     let id = fixture.connect(ConnectionRole::Public);
     fixture.pump();
     let base = WmBase::bind(fixture.client(id), 6);

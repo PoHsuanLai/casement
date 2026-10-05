@@ -116,6 +116,27 @@ fn a_filled_window_takes_the_usable_area_within_its_limits() {
 }
 
 #[test]
+fn a_full_screen_window_covers_the_whole_output_whatever_its_limits() {
+    let full = rect(0, 0, 1920, 1080);
+    let usable = rect(0, 24, 1920, 1056);
+    let max = SizeLimits {
+        min: LogicalSize { w: 0, h: 0 },
+        max: MaxSize::Bounded(size(1000, 700)),
+    };
+    for (name, limits) in [("no limits", ANY_SIZE), ("a maximum", max)] {
+        let mut spec = one_desktop(usable, vec![window(1, WindowPlacement::FullScreen, limits)]);
+        spec.outputs[0].full = full;
+        let got = RustScene.arrange(&spec, &knobs());
+        let t = target(&got, 1);
+        assert_eq!(
+            (t.rect, t.size),
+            (full, ConfigureNeed::Resize(full.size)),
+            "{name}"
+        );
+    }
+}
+
+#[test]
 fn floating_windows_stay_or_come_back_inside() {
     let usable = rect(0, 24, 1920, 1056);
     let min = |w, h| SizeLimits {

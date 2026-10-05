@@ -388,6 +388,35 @@ byte-exact for tier P and 2 per channel on at most 1000 ppm of pixels for tier L
   on the same bus fails with `IpcError::Bus` and the first keeps the name. The bus thread is
   not joinable: it lives as long as the process.
 
+### P0-asks: what sill's acceptance scripts found
+
+- **A zone-0 layer lives in the usable area** (wlr-layer-shell): `LayerBook::room_for` gives the
+  rectangle a surface is sized and placed in: the whole output for `-1` and for a surface that
+  reserves a zone along its own edge, the usable area for `0` and for a positive zone its anchoring
+  makes meaningless (the protocol says "treated the same as zero"). Surfaces that avoid zones are
+  configured again when another layer's zone appears, changes or goes (`Model::reconfigured`).
+  Hit-testing places layers with the same rectangle as the renderer, and orders them by level
+  (overlay, top, bottom, background) instead of by key across levels.
+- **A full-screen window covers the output**: `OutputSpec.full`, `WindowPlacement::FullScreen`;
+  `RustScene` gives it the whole output with a `Resize`, whatever its limits. Windows in a
+  full-screen Space are arranged (Split View Spaces still are not, P3-Z). It is drawn and hit above
+  the top layers and below the overlay layers (`LayerDraw::full_screen`).
+- **Pointer start**: the centre of the primary output (`Model::pointer_start`), set once when the
+  first output is plugged (`PointerStart`). No document names a rule; this avoids a hot corner
+  at start-up.
+- **A client that leaves with its grabbing popup open**: smithay drops the grab before
+  `popup_destroyed`, so after `ClientGone` the loop puts the keyboard where the model says when the
+  seat holds a dead surface or is ungrabbed and out of step (`exec::resync_keyboard`).
+- **ext-session-lock waits at most `LOCK_WAIT` (1 s) for a lock surface**: the protocol lets the
+  compositor wait for the first surface before `locked` but says it "must impose a reasonable time
+  limit"; casement had none. `TimerKey::LockWait`; a surface that arrives later is still taken in.
+- **`casementctl output ...` is `casementctl debug output ...`** (the Debug1 verb table holds
+  `output`; the plan spells it both ways).
+- **`casement-probe` rejects unknown flags** (exit 64) and `toplevel --maximised` prints
+  `maximised` in its configure line. `Debug1::Inject` answers `ok <line>` as written.
+- Not done: a Reserve bar's own placement is still against the whole output in hit-testing while
+  the renderer shrinks it by earlier bars on other edges (two bars on one edge overlap in hit-tests).
+
 ### P0-fork: the smithay fork
 
 `PoHsuanLai/smithay` branch `casement` starts at upstream `118e34ff` (the rev casement had pinned) and carries
