@@ -87,7 +87,6 @@ fn every_version_binds_and_a_surface_commits() {
 /// The canonical flow's events (a buffer's pool, a surface, an attach and a commit) are the
 /// formats `wl_shm` announces and nothing else.
 #[test]
-#[ignore = "flaky: wl_shm.format arrives in HashSet order (0,1 or 1,0) and the golden fixes 0,1; same cause as shm::argb_and_xrgb_are_advertised (P0-proto)"]
 fn the_commit_flow_transcript_matches_its_golden() {
     let (mut fixture, id) = boot();
     let client = fixture.client(id);

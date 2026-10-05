@@ -3,18 +3,52 @@
 use crate::states::GlobalFilter;
 use casement_core::Event;
 use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
-use smithay::reexports::wayland_server::protocol::wl_shm::WlShm;
+use smithay::reexports::wayland_server::protocol::wl_shm::{Format, WlShm};
 use smithay::reexports::wayland_server::protocol::wl_shm_pool::WlShmPool;
-use smithay::reexports::wayland_server::{Dispatch, DisplayHandle, GlobalDispatch};
-use smithay::wayland::GlobalData;
+use smithay::reexports::wayland_server::{
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New,
+};
 use smithay::wayland::buffer::BufferHandler;
 use smithay::wayland::shm::{ShmHandler, ShmPoolUserData, ShmState};
+use smithay::wayland::{GlobalData, GlobalDispatch2};
+
+/// The version `wl_shm` is served at.
+const VERSION: u32 = 2;
+
+/// The pixel formats every client may assume, in the order a bind announces them. smithay
+/// announces from a `HashSet`, whose order changes from one run to the next, and no hash order
+/// may reach the wire (B17), so the global is ours and the announcement is this list.
+pub const ADVERTISED: [Format; 2] = [Format::Argb8888, Format::Xrgb8888];
 
 /// `wl_shm`.
 #[derive(Debug)]
 pub struct ShmPart {
-    /// smithay's state.
+    /// smithay's state (its pools and buffers; the formats it checks a buffer against).
     pub state: ShmState,
+}
+
+/// The user data of the `wl_shm` global: a bind announces [`ADVERTISED`] in order, and the
+/// object it makes is smithay's, so pools and buffers are smithay's too.
+#[derive(Debug, Clone, Copy)]
+pub struct ShmGlobal;
+
+impl<D> GlobalDispatch2<WlShm, D> for ShmGlobal
+where
+    D: Dispatch<WlShm, GlobalData> + 'static,
+{
+    fn bind(
+        &self,
+        _state: &mut D,
+        _display: &DisplayHandle,
+        _client: &Client,
+        resource: New<WlShm>,
+        data_init: &mut DataInit<'_, D>,
+    ) {
+        let shm = data_init.init(resource, GlobalData);
+        for format in ADVERTISED {
+            shm.format(format);
+        }
+    }
 }
 
 impl ShmPart {
@@ -23,6 +57,7 @@ impl ShmPart {
     pub fn new<D>(display: &DisplayHandle, role_filter: GlobalFilter) -> ShmPart
     where
         D: GlobalDispatch<WlShm, GlobalData>
+            + GlobalDispatch<WlShm, ShmGlobal>
             + Dispatch<WlShm, GlobalData>
             + Dispatch<WlShmPool, ShmPoolUserData>
             + BufferHandler
@@ -30,9 +65,11 @@ impl ShmPart {
             + 'static,
     {
         let _ = role_filter;
-        ShmPart {
-            state: ShmState::new::<D>(display, Vec::new()),
-        }
+        let state = ShmState::new::<D>(display, ADVERTISED);
+        // smithay's own global announces in hash order: ours takes its place.
+        display.remove_global::<D>(state.global());
+        display.create_global::<D, WlShm, _>(VERSION, ShmGlobal);
+        ShmPart { state }
     }
 }
 

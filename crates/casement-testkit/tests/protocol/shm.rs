@@ -72,7 +72,6 @@ fn formats(fixture: &mut Fixture, id: ClientId, version: u32) -> Vec<String> {
 
 /// Wl_shm advertises argb8888 and xrgb8888.
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn argb_and_xrgb_are_advertised() {
     let (mut fixture, id) = boot();
     for version in [1, 2] {
@@ -91,7 +90,6 @@ fn argb_and_xrgb_are_advertised() {
 
 /// The canonical flow's transcript: the two formats, once per bind.
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn the_format_flow_transcript_matches_its_golden() {
     let (mut fixture, id) = boot();
     let _buffer = shm_buffer(
