@@ -16,7 +16,7 @@ use casement_wayland::xdg_shell::{
     on_move, on_new_toplevel, on_parent, on_pong, on_resize, on_title, on_toplevel_destroyed,
     on_window_menu,
 };
-use casement_wayland::{ClientState, xdg_toplevel_tag};
+use casement_wayland::{ClientState, xdg_foreign, xdg_toplevel_tag};
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::ResizeEdge;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
@@ -184,6 +184,7 @@ impl XdgShellHandler for State {
     }
 
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
+        xdg_foreign::on_surface_destroyed(&self.wl.xdg_foreign, surface.wl_surface());
         if let Some(window) = self.wl.xdg_shell.window_of_surface(surface.wl_surface()) {
             xdg_toplevel_tag::on_forgotten(&mut self.wl.xdg_toplevel_tag, window);
             self.wl.quire_window.windows.remove(&window);
