@@ -1,7 +1,7 @@
 //! Which input serials answer a real press: the proof a move, resize, popup grab or activation
 //! request must carry (03 §1.2, A7).
 
-use casement_core::input::Origin;
+use casement_core::input::{ButtonCode, Origin};
 use casement_core::time::Mono;
 use casement_core::{ClientKey, InputSerial};
 use std::collections::BTreeMap;
@@ -17,6 +17,8 @@ pub struct PressRecord {
     pub kind: PressKind,
     /// Where it came from.
     pub origin: Origin,
+    /// The pointer button, for a button press: the one a grab it starts ends with.
+    pub button: Option<ButtonCode>,
 }
 
 /// What kind of press a serial answers.
@@ -56,6 +58,11 @@ impl SerialBook {
         SerialBook { presses }
     }
 
+    /// The pointer button the press `serial` answers was made with, if it was a button press.
+    pub fn button_of(&self, serial: InputSerial) -> Option<ButtonCode> {
+        self.presses.get(&serial).and_then(|press| press.button)
+    }
+
     /// The press `serial` answers, if it is recent and was delivered to `client`.
     pub fn answers(&self, serial: InputSerial, client: ClientKey) -> Option<&PressRecord> {
         self.presses
@@ -79,6 +86,7 @@ mod tests {
             at: Mono(std::time::Duration::from_millis(5)),
             kind: PressKind::Button,
             origin: Origin::Test,
+            button: None,
         }
     }
 

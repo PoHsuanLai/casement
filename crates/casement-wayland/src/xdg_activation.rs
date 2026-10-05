@@ -202,6 +202,7 @@ mod tests {
             at: at(ms),
             kind: PressKind::Button,
             origin: Origin::Physical(DeviceClass::Pointer),
+            button: None,
         }
     }
 

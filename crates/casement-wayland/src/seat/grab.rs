@@ -4,6 +4,8 @@
 //! the pointer and ends it at a button release.
 
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
+use casement_core::input::ButtonCode;
+use casement_core::window::{MaxSize, SizeLimits};
 use casement_core::{GrabSpec, ResizeEdges, WindowId};
 
 /// The smallest a resize makes a window.
@@ -19,15 +21,33 @@ pub struct Drag {
     /// The window's rectangle when the first pointer motion arrived (the layout has settled by
     /// then); none before.
     pub origin: Option<LogicalRect>,
+    /// The pointer button the grab began with: it ends when that button is released, and not
+    /// when another is (xdg-shell: the grab follows the press its serial answers). None when
+    /// the press that began it is not remembered.
+    pub button: Option<ButtonCode>,
 }
 
 impl Drag {
-    /// A grab of `spec` that began with the pointer at `start`.
-    pub fn begin(spec: GrabSpec, start: LogicalPoint) -> Drag {
+    /// A grab of `spec` that began with the pointer at `start`, holding `button`.
+    pub fn begin(spec: GrabSpec, start: LogicalPoint, button: Option<ButtonCode>) -> Drag {
         Drag {
             spec,
             start,
             origin: None,
+            button,
+        }
+    }
+
+    /// Whether releasing `released` ends the grab: its own button does, and any button does
+    /// when the grab does not know which one began it.
+    pub fn ends_with(&self, released: ButtonCode) -> bool {
+        self.button.is_none_or(|held| held == released)
+    }
+
+    /// The serial of the press that began it.
+    pub fn serial(&self) -> casement_core::InputSerial {
+        match self.spec {
+            GrabSpec::Move { serial, .. } | GrabSpec::Resize { serial, .. } => serial,
         }
     }
 
@@ -47,8 +67,14 @@ impl Drag {
     }
 
     /// The window's rectangle with the pointer at `at`: moved by how far the pointer went, or
-    /// resized from the edges it grabbed.
-    pub fn rect_at(&self, origin: LogicalRect, at: LogicalPoint) -> LogicalRect {
+    /// resized from the edges it grabbed, within `limits` (the side opposite the one grabbed
+    /// stays where it is when a limit holds the size).
+    pub fn rect_at(
+        &self,
+        origin: LogicalRect,
+        at: LogicalPoint,
+        limits: SizeLimits,
+    ) -> LogicalRect {
         let (dx, dy) = (
             at.x.saturating_sub(self.start.x),
             at.y.saturating_sub(self.start.y),
@@ -61,7 +87,7 @@ impl Drag {
                 },
                 origin.size,
             ),
-            GrabSpec::Resize { edges, .. } => resized(origin, edges, (dx, dy)),
+            GrabSpec::Resize { edges, .. } => resized(origin, edges, (dx, dy), limits),
         }
     }
 }
@@ -80,32 +106,81 @@ fn sides(edges: ResizeEdges) -> (bool, bool, bool, bool) {
     }
 }
 
-/// `origin` with the sides `edges` names moved by `by`; a side never crosses the opposite one.
-fn resized(origin: LogicalRect, edges: ResizeEdges, by: (i32, i32)) -> LogicalRect {
+/// `origin` with the sides `edges` names moved by `by`, its size held to `limits`.
+fn resized(
+    origin: LogicalRect,
+    edges: ResizeEdges,
+    by: (i32, i32),
+    limits: SizeLimits,
+) -> LogicalRect {
     let (left, right, top, bottom) = sides(edges);
-    let (x, w) = span(origin.origin.x, origin.size.w, by.0, left, right);
-    let (y, h) = span(origin.origin.y, origin.size.h, by.1, top, bottom);
+    let max = |pick: fn(LogicalSize) -> u32| match limits.max {
+        MaxSize::Unbounded => None,
+        MaxSize::Bounded(size) => Some(pick(size)),
+    };
+    let across = Span {
+        near: left,
+        far: right,
+        least: limits.min.w,
+        most: max(|size| size.w),
+    };
+    let down = Span {
+        near: top,
+        far: bottom,
+        least: limits.min.h,
+        most: max(|size| size.h),
+    };
+    let (x, w) = across.of(origin.origin.x, origin.size.w, by.0);
+    let (y, h) = down.of(origin.origin.y, origin.size.h, by.1);
     LogicalRect::new(LogicalPoint { x, y }, LogicalSize { w, h })
 }
 
-/// One axis: the start moved when the near side moves, the length grown or shrunk by the sides
-/// that move.
-fn span(start: i32, length: u32, by: i32, near: bool, far: bool) -> (i32, u32) {
-    let end = i64::from(start) + i64::from(length);
-    let new_start = i64::from(start) + if near { i64::from(by) } else { 0 };
-    let new_end = end + if far { i64::from(by) } else { 0 };
-    let new_start = new_start.min(new_end - i64::from(SMALLEST));
-    let clamp = |v: i64| i32::try_from(v).unwrap_or(if v < 0 { i32::MIN } else { i32::MAX });
-    (
-        clamp(new_start),
-        u32::try_from(new_end - new_start).unwrap_or(SMALLEST),
-    )
+/// What moves on one axis and how far the window may shrink or grow along it.
+#[derive(Debug, Clone, Copy)]
+struct Span {
+    /// Whether the near side (left, top) moves.
+    near: bool,
+    /// Whether the far side (right, bottom) moves.
+    far: bool,
+    /// The least length (0: none).
+    least: u32,
+    /// The most length.
+    most: Option<u32>,
+}
+
+impl Span {
+    /// The start and length of the window's extent on this axis, which began at `start` with
+    /// `length`, with the pointer `by` further on: the sides that move follow it; the length is
+    /// held between the limits (never below one); the far side stays when the near one moves.
+    fn of(self, start: i32, length: u32, by: i32) -> (i32, u32) {
+        if !self.near && !self.far {
+            return (start, length);
+        }
+        let end = i64::from(start) + i64::from(length);
+        let grown = i64::from(length) + if self.far { i64::from(by) } else { 0 }
+            - if self.near { i64::from(by) } else { 0 };
+        let floor = i64::from(self.least.max(SMALLEST));
+        let ceiling = self.most.map_or(i64::MAX, i64::from).max(floor);
+        let held = grown.clamp(floor, ceiling);
+        let new_start = if self.near {
+            end - held
+        } else {
+            i64::from(start)
+        };
+        let clamp = |v: i64| i32::try_from(v).unwrap_or(if v < 0 { i32::MIN } else { i32::MAX });
+        (clamp(new_start), u32::try_from(held).unwrap_or(SMALLEST))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use casement_core::InputSerial;
+
+    const NONE: SizeLimits = SizeLimits {
+        min: LogicalSize { w: 0, h: 0 },
+        max: MaxSize::Unbounded,
+    };
 
     fn rect(x: i32, y: i32, w: u32, h: u32) -> LogicalRect {
         LogicalRect::new(LogicalPoint { x, y }, LogicalSize { w, h })
@@ -123,6 +198,7 @@ mod tests {
                 edges,
             },
             point(100, 100),
+            None,
         )
     }
 
@@ -134,9 +210,10 @@ mod tests {
                 serial: InputSerial(1),
             },
             point(100, 100),
+            None,
         );
         assert_eq!(
-            drag.rect_at(rect(10, 20, 300, 200), point(190, 140)),
+            drag.rect_at(rect(10, 20, 300, 200), point(190, 140), NONE),
             rect(100, 60, 300, 200)
         );
     }
@@ -154,7 +231,7 @@ mod tests {
         ];
         for (edges, want) in rows {
             assert_eq!(
-                resize(edges).rect_at(origin, point(140, 130)),
+                resize(edges).rect_at(origin, point(140, 130), NONE),
                 want,
                 "{edges:?}"
             );
@@ -164,7 +241,45 @@ mod tests {
     #[test]
     fn a_resize_never_turns_the_window_inside_out() {
         let origin = rect(10, 20, 300, 200);
-        let squeezed = resize(ResizeEdges::Left).rect_at(origin, point(1000, 100));
+        let squeezed = resize(ResizeEdges::Left).rect_at(origin, point(1000, 100), NONE);
         assert_eq!(squeezed, rect(309, 20, 1, 200));
+    }
+
+    #[test]
+    fn limits_hold_the_size_and_the_far_side_stays() {
+        let origin = rect(10, 20, 300, 200);
+        let limits = SizeLimits {
+            min: LogicalSize { w: 250, h: 150 },
+            max: MaxSize::Bounded(LogicalSize { w: 400, h: 260 }),
+        };
+        let rows = [
+            // (edges, pointer, wanted)
+            (ResizeEdges::Left, point(200, 100), rect(60, 20, 250, 200)),
+            (ResizeEdges::Left, point(-100, 100), rect(-90, 20, 400, 200)),
+            (
+                ResizeEdges::TopLeft,
+                point(300, 300),
+                rect(60, 70, 250, 150),
+            ),
+            (
+                ResizeEdges::BottomRight,
+                point(0, 0),
+                rect(10, 20, 250, 150),
+            ),
+            (
+                ResizeEdges::BottomRight,
+                point(900, 900),
+                rect(10, 20, 400, 260),
+            ),
+            // An axis that is not grabbed keeps its length even outside the limits.
+            (ResizeEdges::Right, point(100, 400), rect(10, 20, 300, 200)),
+        ];
+        for (edges, at, want) in rows {
+            assert_eq!(
+                resize(edges).rect_at(origin, at, limits),
+                want,
+                "{edges:?} to {at:?}"
+            );
+        }
     }
 }

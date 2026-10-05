@@ -5,6 +5,8 @@
 use super::feed;
 use crate::state::State;
 use casement_core::geometry::LogicalPoint;
+use casement_core::input::ButtonCode;
+use casement_core::window::{MaxSize, SizeLimits};
 use casement_core::{Event, GrabSpec};
 use casement_wayland::seat::Drag;
 
@@ -16,6 +18,12 @@ pub(super) enum Follow {
     /// No grab: the motion goes to the clients.
     Free,
 }
+
+/// What a window the model no longer holds is limited to: nothing.
+const NO_LIMITS: SizeLimits = SizeLimits {
+    min: casement_core::geometry::LogicalSize { w: 0, h: 0 },
+    max: MaxSize::Unbounded,
+};
 
 /// A grab of `spec` begins with the pointer where it is.
 pub(crate) fn start(state: &mut State, spec: GrabSpec) {
@@ -31,7 +39,9 @@ pub(crate) fn start(state: &mut State, spec: GrabSpec) {
                 y: at.y.floor() as i32,
             }
         });
-    state.wl.seat.grab = Some(Drag::begin(spec, at));
+    let drag = Drag::begin(spec, at, None);
+    let button = state.wl.seat.serials.button_of(drag.serial());
+    state.wl.seat.grab = Some(Drag::begin(spec, at, button));
 }
 
 /// The pointer is at `at`: the grabbed window follows.
@@ -55,12 +65,25 @@ pub(super) fn follow(state: &mut State, at: LogicalPoint) -> Follow {
         return Follow::Free;
     };
     state.wl.seat.grab = Some(drag.from_rect(origin));
-    let rect = drag.rect_at(origin, at);
+    let limits = state
+        .core
+        .model
+        .windows()
+        .get(&window)
+        .map_or(NO_LIMITS, |held| held.limits);
+    let rect = drag.rect_at(origin, at, limits);
     feed(state, vec![Event::WindowDragged { window, rect }]);
     Follow::Taken
 }
 
-/// A button was released: the grab ends.
-pub(super) fn end(state: &mut State) {
-    state.wl.seat.grab = None;
+/// `released` was let go: the grab ends when it is the button the grab began with.
+pub(super) fn end(state: &mut State, released: ButtonCode) {
+    if state
+        .wl
+        .seat
+        .grab
+        .is_some_and(|drag| drag.ends_with(released))
+    {
+        state.wl.seat.grab = None;
+    }
 }

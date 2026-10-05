@@ -142,6 +142,7 @@ mod tests {
             at: Mono(std::time::Duration::from_millis(5)),
             kind,
             origin: Origin::Physical(DeviceClass::Pointer),
+            button: None,
         }
     }
 

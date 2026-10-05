@@ -129,6 +129,7 @@ fn remember(
     at: Mono,
     kind: PressKind,
     origin: Origin,
+    button: Option<casement_core::input::ButtonCode>,
 ) {
     if let Some(client) = surface.and_then(client_of) {
         state.wl.seat.record_press(
@@ -138,6 +139,7 @@ fn remember(
                 at,
                 kind,
                 origin,
+                button,
             },
         );
     }
@@ -257,6 +259,7 @@ fn deliver_key(state: &mut State, seat: &Seat<State>, key: KeyDelivery) {
                 key.time,
                 PressKind::Key,
                 origin,
+                None,
             );
         }
         Ok(None) => {}
@@ -372,7 +375,7 @@ fn pressed(
     edge: Edge,
 ) {
     if edge == Edge::Release {
-        grab::end(state);
+        grab::end(state, button);
         let (taken, fate) = std::mem::take(&mut state.wl.seat.taken).release_button(button);
         state.wl.seat.taken = taken;
         if fate == PressFate::Taken {
@@ -423,6 +426,7 @@ fn pressed(
             event.at,
             PressKind::Button,
             event.origin,
+            Some(button),
         );
     }
 }
@@ -525,6 +529,7 @@ fn touch(state: &mut State, seat: &Seat<State>, event: &InputEvent, step: TouchS
             event.at,
             PressKind::Touch,
             event.origin,
+            None,
         );
     }
 }
