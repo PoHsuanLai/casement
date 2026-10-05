@@ -127,7 +127,13 @@ impl Debug1 {
             })
             .collect::<fdo::Result<Vec<InjectLine>>>()?;
         match self.ask(DebugRequest::Inject(parsed)).await? {
-            DebugReply::Injected(answers) => Ok(answers),
+            // `ok <line>` as the grammar documents it: the line as written, one per line the loop
+            // carried out (its own answers are the parsed lines' `Debug` text).
+            DebugReply::Injected(done) => Ok(lines
+                .iter()
+                .take(done.len())
+                .map(|line| format!("ok {}", line.trim()))
+                .collect()),
             other => Err(unexpected(&other)),
         }
     }

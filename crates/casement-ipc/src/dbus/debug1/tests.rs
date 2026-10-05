@@ -53,12 +53,16 @@ async fn inject_parses_every_line_then_forwards_them_in_order() {
     let answers = debug
         .inject(vec![
             "move 3 4".to_owned(),
-            "press left".to_owned(),
-            "key a up".to_owned(),
+            "press left  ".to_owned(),
+            " key a up".to_owned(),
         ])
         .await
         .expect("inject");
-    assert_eq!(answers.len(), 3);
+    assert_eq!(
+        answers,
+        ["ok move 3 4", "ok press left", "ok key a up"],
+        "`ok <line>` as the grammar documents it, not the parsed line's Debug text"
+    );
     drop(debug);
     assert_eq!(
         seen.join().expect("loop"),

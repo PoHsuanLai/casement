@@ -125,13 +125,12 @@ pub fn parse(args: &[String]) -> Result<Command, CommandError> {
             let (verb, rest) = rest
                 .split_first()
                 .ok_or_else(|| CommandError::BadArgument("debug needs a verb".to_owned()))?;
-            let verb = DebugVerb::named(verb)?;
-            plan::plan(verb, rest)?;
-            Ok(Command::Debug {
-                verb,
-                args: rest.to_vec(),
-            })
+            debug_command(DebugVerb::named(verb)?, rest)
         }
+        // The freeze plan writes output control without `debug` (`casementctl output list
+        // --json`, `output set NAME --scale S`); the Debug1 table has it as a verb, so both
+        // spellings are the same command.
+        "output" => debug_command(DebugVerb::Output, rest),
         "shot" => {
             let (target, masked, out) = shot::parse_shot(rest)?;
             Ok(Command::Shot {
@@ -151,6 +150,15 @@ pub fn parse(args: &[String]) -> Result<Command, CommandError> {
         },
         other => Err(CommandError::Unknown(other.to_owned())),
     }
+}
+
+/// `debug VERB ARGS...`, its arguments checked.
+fn debug_command(verb: DebugVerb, args: &[String]) -> Result<Command, CommandError> {
+    plan::plan(verb, args)?;
+    Ok(Command::Debug {
+        verb,
+        args: args.to_vec(),
+    })
 }
 
 /// Runs `command` against the compositor on `$DBUS_SESSION_BUS_ADDRESS` (the jail's private
@@ -232,6 +240,32 @@ mod tests {
         ));
         assert!(matches!(
             parse(&args("shot --window x out.png")),
+            Err(CommandError::BadArgument(_))
+        ));
+    }
+
+    #[test]
+    fn output_without_debug_is_the_same_command() {
+        for text in [
+            "output list --json",
+            "output list",
+            "output set HEADLESS-1 --scale 2",
+            "output add 1920x1080",
+            "output remove HEADLESS-2",
+        ] {
+            let (_, rest) = text.split_once(' ').expect("a verb");
+            assert_eq!(
+                parse(&args(text)).expect(text),
+                parse(&args(&format!("debug output {rest}"))).expect(text),
+                "{text}"
+            );
+        }
+        assert!(matches!(
+            parse(&args("output")),
+            Err(CommandError::BadArgument(_))
+        ));
+        assert!(matches!(
+            parse(&args("output frobnicate")),
             Err(CommandError::BadArgument(_))
         ));
     }

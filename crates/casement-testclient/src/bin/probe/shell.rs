@@ -43,6 +43,8 @@ struct State {
     /// An `xdg_surface` or layer-surface configure has been acknowledged: safe to attach.
     acked: bool,
     closed: bool,
+    /// The states the last toplevel configure carried.
+    states: Vec<xdg_toplevel::State>,
 }
 
 /// The pieces both probes bind.
@@ -177,8 +179,57 @@ fn hold(bound: &mut Bound) -> Result<(), Failure> {
     Ok(())
 }
 
+/// The flags a probe takes: those that name a value after them, and those that stand alone.
+pub(crate) struct Flags {
+    valued: &'static [&'static str],
+    alone: &'static [&'static str],
+}
+
+/// What `toplevel` takes.
+pub(crate) const TOPLEVEL_FLAGS: Flags = Flags {
+    valued: &["--title", "--app-id", "--size"],
+    alone: &["--hold", "--maximised"],
+};
+
+/// What `layer` takes.
+pub(crate) const LAYER_FLAGS: Flags = Flags {
+    valued: &["--layer", "--namespace", "--size"],
+    alone: &["--hold"],
+};
+
+impl Flags {
+    /// `args` when every one is a flag of this probe (with its value, where it takes one);
+    /// otherwise a usage error: a misspelt flag is never ignored.
+    pub(crate) fn check(&self, args: &[String]) -> Result<(), Failure> {
+        let mut rest = args.iter();
+        while let Some(arg) = rest.next() {
+            let known = match arg.as_str() {
+                flag if self.valued.contains(&flag) => rest.next().is_some(),
+                flag => self.alone.contains(&flag),
+            };
+            if !known {
+                return Err(Failure::Usage);
+            }
+        }
+        Ok(())
+    }
+}
+
+/// The states in a configure's wire array of native-endian `u32`s (values this protocol version
+/// does not know are left out).
+fn states_of(words: &[u8]) -> Vec<xdg_toplevel::State> {
+    words
+        .chunks_exact(4)
+        .filter_map(|word| {
+            let value = u32::from_ne_bytes([word[0], word[1], word[2], word[3]]);
+            xdg_toplevel::State::try_from(value).ok()
+        })
+        .collect()
+}
+
 /// Maps an xdg toplevel and prints its configure.
 pub(crate) fn toplevel(args: &[String]) -> Result<(), Failure> {
+    TOPLEVEL_FLAGS.check(args)?;
     let (_conn, mut bound) = bind()?;
     let wm_base: XdgWmBase = bind_in(&bound.globals, &bound.qh, 1..=5)?;
     let surface = bound.compositor.create_surface(&bound.qh, ());
@@ -194,12 +245,16 @@ pub(crate) fn toplevel(args: &[String]) -> Result<(), Failure> {
             .unwrap_or("casement-probe")
             .to_owned(),
     );
+    if args.iter().any(|a| a == "--maximised") {
+        toplevel.set_maximized();
+    }
     surface.commit();
     wait_for(&mut bound, "the first configure", |state| state.acked)?;
     let (cw, ch) = bound.state.configured.unwrap_or((0, 0));
+    let maximised = bound.state.states.contains(&xdg_toplevel::State::Maximized);
     println!(
         "{}",
-        json!({ "event": "configure", "width": cw, "height": ch })
+        json!({ "event": "configure", "width": cw, "height": ch, "maximised": maximised })
     );
     let wanted = size_option(args);
     let (width, height) = if cw == 0 || ch == 0 { wanted } else { (cw, ch) };
@@ -222,6 +277,7 @@ pub(crate) fn toplevel(args: &[String]) -> Result<(), Failure> {
 
 /// Maps a layer surface and prints its configure.
 pub(crate) fn layer(args: &[String]) -> Result<(), Failure> {
+    LAYER_FLAGS.check(args)?;
     let (_conn, mut bound) = bind()?;
     let shell: ZwlrLayerShellV1 = bind_in(&bound.globals, &bound.qh, 1..=4)?;
     let which = match option(args, "--layer") {
@@ -337,8 +393,13 @@ impl Dispatch<XdgToplevel, ()> for State {
         _: &QueueHandle<Self>,
     ) {
         match event {
-            xdg_toplevel::Event::Configure { width, height, .. } => {
+            xdg_toplevel::Event::Configure {
+                width,
+                height,
+                states,
+            } => {
                 state.configured = Some((width.max(0) as u32, height.max(0) as u32));
+                state.states = states_of(&states);
             }
             xdg_toplevel::Event::Close => state.closed = true,
             _ => {}
@@ -368,5 +429,66 @@ impl Dispatch<ZwlrLayerSurfaceV1, ()> for State {
             zwlr_layer_surface_v1::Event::Closed => state.closed = true,
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(text: &str) -> Vec<String> {
+        text.split_whitespace().map(str::to_owned).collect()
+    }
+
+    #[test]
+    fn known_flags_pass_and_unknown_ones_are_usage_errors() {
+        let cases = [
+            ("toplevel: none", &TOPLEVEL_FLAGS, "", true),
+            (
+                "toplevel: every flag",
+                &TOPLEVEL_FLAGS,
+                "--title T --app-id A --size 10x10 --hold --maximised",
+                true,
+            ),
+            (
+                "toplevel: an unknown flag",
+                &TOPLEVEL_FLAGS,
+                "--maximized",
+                false,
+            ),
+            ("toplevel: a stray word", &TOPLEVEL_FLAGS, "hold", false),
+            (
+                "toplevel: a value flag with no value",
+                &TOPLEVEL_FLAGS,
+                "--title",
+                false,
+            ),
+            (
+                "layer: every flag",
+                &LAYER_FLAGS,
+                "--layer top --namespace n --size 1x1 --hold",
+                true,
+            ),
+            ("layer: a toplevel flag", &LAYER_FLAGS, "--maximised", false),
+        ];
+        for (name, flags, text, passes) in cases {
+            assert_eq!(flags.check(&args(text)).is_ok(), passes, "{name}");
+        }
+    }
+
+    #[test]
+    fn states_are_read_from_the_wire_array() {
+        let wire: Vec<u8> = [1_u32, 4, 999]
+            .into_iter()
+            .flat_map(u32::to_ne_bytes)
+            .collect();
+        assert_eq!(
+            states_of(&wire),
+            vec![
+                xdg_toplevel::State::Maximized,
+                xdg_toplevel::State::Activated
+            ]
+        );
+        assert_eq!(states_of(&[]), Vec::new());
     }
 }

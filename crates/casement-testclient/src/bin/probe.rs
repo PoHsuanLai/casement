@@ -1,6 +1,6 @@
 //! `casement-probe`: one-shot probes against `$WAYLAND_DISPLAY` for dev scripts, JSON lines on
 //! stdout: `globals`, `toplevel`, `layer`, `transcript`; `capture` (P1) and `lease` (P5) say
-//! they are not there yet. Runs only inside the jail: it refuses (exit 2, "could not run
+//! they are not there yet; an unknown flag is a usage error. Runs only inside the jail: it refuses (exit 2, "could not run
 //! safely") when a live session's sockets or `/dev/input` are visible.
 //!
 //! Exit codes: 0 passed, 1 the probe failed, 2 refused or unavailable, 64 usage.
@@ -41,7 +41,7 @@ fn main() -> ExitCode {
         }
         Err(Failure::Usage) => {
             eprintln!(
-                "usage: casement-probe globals | transcript | toplevel [--title T] [--app-id A] [--size WxH] [--hold] | layer [--layer L] [--namespace N] [--size WxH] [--hold] | capture | lease"
+                "usage: casement-probe globals | transcript | toplevel [--title T] [--app-id A] [--size WxH] [--hold] [--maximised] | layer [--layer L] [--namespace N] [--size WxH] [--hold] | capture | lease"
             );
             ExitCode::from(64)
         }
