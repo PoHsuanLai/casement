@@ -27,7 +27,7 @@ testing = []
 wlcs = "0.1"
 # The libwayland-client handles wlcs passes (ffi.rs only); the version the wlcs crate uses.
 wayland-sys = { version = "0.31.1", features = ["client", "server"] }
-smithay = { git = "https://github.com/Smithay/smithay", rev = "118e34ffc9b99854a2230c4805e1f37dc9029edb", default-features = false, features = ["wayland_frontend", "desktop", "renderer_test"] }
+smithay = { git = "https://github.com/PoHsuanLai/smithay", rev = "576cfd954b6bd5badbd5f15d1708cafc941a0522", default-features = false, features = ["wayland_frontend", "desktop", "renderer_test"] }
 
 [lints.rust]
 missing_docs = "warn"

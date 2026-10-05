@@ -79,15 +79,16 @@ pipewire = "0.10"
 # taffy alone; only `casement-layout/src/taffy_bridge/` names it (boundary row B2).
 taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "4863877b9cab21645b160d7f247901f90214fe27", default-features = false, features = ["std", "taffy_tree", "flexbox", "grid", "block_layout"] }
 
-# smithay (C2, A14): rev 118e34ff (master 2026-09-30, SP1). The plan pins our fork
-# `PoHsuanLai/smithay` branch `casement`; the fork does not exist yet and carries no patch, so
-# the pin names upstream at the same rev (FINDINGS). No features here: each crate names the
+# smithay (C2, A14): our fork `PoHsuanLai/smithay`, branch `casement`, which starts at upstream
+# rev 118e34ff (master 2026-09-30, SP1) and carries two patches (the xdg_surface role-object
+# errors, wl_region's negative sizes; QUIRKS and FINDINGS name them). The pin is the fork's
+# commit; patches live only there and nothing goes upstream. No features here: each crate names the
 # ones it uses, so the boundary rows see each crate's own graph. The union (the `casement`
 # binary) is A14's list: wayland_frontend desktop renderer_gl renderer_pixman renderer_multi
 # backend_winit backend_egl backend_drm backend_gbm backend_libinput backend_udev
 # backend_session_libseat backend_libei backend_vulkan use_system_lib; renderer_test only
 # under the `testing` feature; xwayland off until the Q-C5 gate.
-smithay = { git = "https://github.com/Smithay/smithay", rev = "118e34ffc9b99854a2230c4805e1f37dc9029edb", default-features = false }
+smithay = { git = "https://github.com/PoHsuanLai/smithay", rev = "576cfd954b6bd5badbd5f15d1708cafc941a0522", default-features = false }
 # The client side of the test kit: the protocol extensions smithay serves from these crates.
 wayland-protocols-wlr = { version = "0.3.12", features = ["client"] }
 wayland-protocols-misc = { version = "0.3.12", features = ["client"] }
@@ -103,9 +104,3 @@ tracing-subscriber = { version = "0.3", default-features = false, features = ["f
 unsafe_code = "deny"
 missing_docs = "warn"
 missing_debug_implementations = "warn"
-
-# smithay's `debug_assert!`s abort the compositor on a client's mistake that release builds
-# survive (a negative `wl_region` size, an icon request after `immutable`); the fuzz box found
-# them. Our own assertions stay on.
-[profile.dev.package.smithay]
-debug-assertions = false

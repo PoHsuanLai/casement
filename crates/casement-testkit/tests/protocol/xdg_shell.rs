@@ -509,12 +509,11 @@ fn destroying_the_base_first_is_defunct_surfaces() {
 
 /// An `xdg_surface` destroyed before its `xdg_toplevel` is `xdg_surface.defunct_role_object`;
 /// the second `get_toplevel` on one surface is `xdg_surface.already_constructed` (xdg-shell.xml).
-/// Ignored: smithay (118e34ff, `shell/xdg/handlers/surface.rs`) posts `xdg_wm_base.role` (0) for
-/// the first, and does not refuse the second at all (`give_role` with the same role succeeds, so
-/// a surface gets two toplevels). Both are decided inside smithay's own request handler, where
-/// the compositor has no hook; this runs once the smithay fork carries the patch (QUIRKS row).
+/// Upstream smithay (118e34ff, `shell/xdg/handlers/surface.rs`) posts `xdg_wm_base.role` for the
+/// first and does not refuse the second (`give_role` with the same role succeeds, so a surface
+/// got two toplevels). Both are decided inside smithay's request handler, where the compositor
+/// has no hook, so the casement fork carries the fix (QUIRKS row).
 #[test]
-#[ignore = "smithay 118e34ff: defunct_role_object is posted on xdg_wm_base, already_constructed is never posted; needs the casement smithay fork"]
 fn destruction_order_and_double_roles_are_errors() {
     let (mut fixture, id) = boot();
     let base = WmBase::bind(fixture.client(id), 7);
@@ -545,7 +544,7 @@ fn destruction_order_and_double_roles_are_errors() {
 }
 
 /// Destroying an `xdg_surface` before its role object disconnects that client and only that
-/// one (which object smithay names is the ignored test above's business).
+/// one (which error it gets is the test above's business).
 #[test]
 fn destroying_the_surface_before_its_role_disconnects_only_that_client() {
     let (mut fixture, id) = boot();

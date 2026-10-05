@@ -261,10 +261,10 @@ nodes (`--fabricate-gpus N`: `/sys/dev/char/226:(128+n)`, A3) for the multi-GPU 
 - `missing_docs` warns at the workspace, so every public item says what it means.
 - Sibling repos are path dependencies (`../quire`, `../porter`, `../casement-protocols`); a lane
   worktree links them beside itself.
-- smithay is pinned by rev (`118e34ff`, A14) with no default features; each crate names the
+- smithay is pinned by rev to our fork `PoHsuanLai/smithay` branch `casement` (upstream
+  `118e34ff` plus the patches FINDINGS lists, A14) with no default features; each crate names the
   features it uses and the `casement` binary carries A14's union. Nothing goes upstream to
-  smithay (DECISIONS, A13); patches would live in the fork `PoHsuanLai/smithay` branch
-  `casement` (not created yet: FINDINGS).
+  smithay (DECISIONS, A13); patches live only in the fork.
 - Frozen files lanes never edit: `crates/casement/src/state.rs`, `crates/casement/src/delegates.rs`,
   every `lib.rs`/`mod.rs`, `crates/casement-wayland/src/states.rs`, every `Cargo.toml`,
   `tests/golden/globals.txt`, `dev/gate/budgets.toml`, `dev/gate/expected-skips.toml`,

@@ -130,7 +130,7 @@ module); `Rgba8`; `TextureBook`; `Transcript`, `Pattern`; `FixtureSpec`, `TestOr
 | ds-style without dioxus still pulls `image` (png, jpeg, moxcms) into casement-core's graph (A22, SP8) | quire makes `image` an optional ds-style feature |
 | ds-behaviour is a dependency of casement-core with no caller yet | the switcher, hot-corner and Space-swipe machines run in casement (C41, P3-Z), fed through `Mono::stamp`, with their `*Params` in `CasementSettings` |
 | `CasementSettings::defaults` carries no bindings (C30 says the settings document holds the defaults) | P1-I1 writes the default table (Space steps, placement chords, hide and quit) into `settings/bindings.rs` (A26) |
-| The smithay fork `PoHsuanLai/smithay` (branch `casement`, C2) does not exist; the pin names upstream Smithay at the same rev `118e34ff` | the first casement patch to smithay creates the fork and moves the pin to it |
+| The smithay fork `PoHsuanLai/smithay` (branch `casement`, C2) exists (P0-fork) and the pin names its commit; it carries two patches, listed below | a further patch is one more commit on the fork and a new rev in the root Cargo.toml and `wlcs-casement/Cargo.toml` |
 | Workspace pins outside quire's pinned block: smithay, wayland-protocols-wlr, wayland-protocols-misc, xkbcommon 0.9 (quire's block says 0.8 through sctk 0.20, A14), libseat, tracing, tracing-subscriber | quire's `docs/workspace-deps.toml` carries them (with the xkbcommon note) and this workspace copies the block verbatim |
 | `reis` and `pipewire` are pinned (A14) and named by no crate | P2-Z (capture source) and P4-Z (EIS) name them |
 | wlcs attaches buffers before acking the first configure; smithay refuses (about 260 failures, A6) | the orchestrator decides: a wlcs-only relaxation under a debug feature, or a newer wlcs pin |
@@ -387,3 +387,19 @@ byte-exact for tier P and 2 per channel on at most 1000 ppm of pixels for tier L
 - **`serve_debug` takes Debug1's name with replacement off** (P0-debug-dbus): a second casement
   on the same bus fails with `IpcError::Bus` and the first keeps the name. The bus thread is
   not joinable: it lives as long as the process.
+
+### P0-fork: the smithay fork
+
+`PoHsuanLai/smithay` branch `casement` starts at upstream `118e34ff` (the rev casement had pinned) and carries
+two commits, one per patch, each local to its bug; patches live only there and nothing goes upstream (A13).
+
+- `87c4f4df` xdg_shell: destroying an `xdg_surface` before its role object posts `xdg_surface.defunct_role_object`
+  (was `xdg_wm_base.role`); a `get_toplevel` or `get_popup` on an `xdg_surface` that already has a role object
+  posts `xdg_surface.already_constructed` (was accepted). Test: `xdg_shell::destruction_order_and_double_roles_are_errors`,
+  no longer ignored.
+- `576cfd95` wl_region: `add`/`subtract` with a negative width or height is ignored (treated as empty; wl_region's XML
+  defines no error) instead of reaching `Size::new`'s `debug_assert`.
+
+The root and `wlcs-casement` pins (and both `Cargo.lock`s) name the fork's tip `576cfd954b6bd5badbd5f15d1708cafc941a0522`. The
+`[profile.dev.package.smithay] debug-assertions = false` override is removed: smithay's debug assertions are on in
+every dev build and the fuzz box (24 cases) passes with them.
