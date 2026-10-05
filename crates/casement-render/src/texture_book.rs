@@ -54,6 +54,15 @@ impl TextureBook {
         self
     }
 
+    /// The book with every layer surface's committed size read again by `size_of` (a layer
+    /// surface's buffer arrives on a commit that changes nothing the model hears about).
+    pub fn with_layers_sized(mut self, size_of: impl Fn(&WlSurface) -> LogicalSize) -> TextureBook {
+        self.layers
+            .values_mut()
+            .for_each(|entry| entry.committed = size_of(&entry.root));
+        self
+    }
+
     /// The book with `output`'s lock surface drawn from `entry`.
     pub fn with_lock(mut self, output: OutputKey, entry: SurfaceEntry) -> TextureBook {
         self.locks.insert(output, entry);

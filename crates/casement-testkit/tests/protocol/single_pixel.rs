@@ -6,6 +6,8 @@ use casement_testclient::surface::subsurface::Compositor;
 use casement_core::policy::ConnectionRole;
 use casement_testkit::{ClientId, Fixture, FixtureSpec};
 
+use crate::shoot;
+
 fn boot() -> (Fixture, ClientId) {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     let id = fixture.connect(ConnectionRole::Public);
@@ -13,13 +15,31 @@ fn boot() -> (Fixture, ClientId) {
     (fixture, id)
 }
 
-/// A 1x1 buffer scaled by a viewport draws its colour over the destination.
+/// A 1x1 buffer scaled by a viewport destination draws its colour over the destination.
 #[test]
-#[ignore = "body is todo!(): needs a pixman golden of a mapped toplevel (P0-R-scene shoot(); P0-H2's toplevel helper is on master)"]
 fn a_single_pixel_buffer_draws_its_colour() {
-    todo!(
-        "P0-H1: map a toplevel from a single-pixel buffer under a 64x32 viewport destination and read the pixels back"
-    )
+    let (mut fixture, id, base) = shoot::desk();
+    let (_top, _kept) = shoot::map_with(&mut fixture, id, &base, |client, top| {
+        let viewport = Viewporter::bind(client).viewport(client, &shoot::surface_of(top));
+        viewport.destination(64, 32);
+        let buffer = SinglePixel::bind(client).buffer(client, [u32::MAX, 0x8000_0000, 0, u32::MAX]);
+        top.surface.attach(Some(&buffer), 0, 0);
+        (buffer, viewport)
+    });
+    let window = shoot::windows(&fixture)[0];
+    let shot = shoot::shot_of(&mut fixture, window);
+    assert_eq!(shot.dimensions(), (64, 32), "the destination is the size");
+    // Opaque orange: red full, green half, blue none.
+    let wrong = shot
+        .pixels()
+        .filter(|pixel| {
+            pixel.0[0] != 255
+                || pixel.0[1].abs_diff(128) > 1
+                || pixel.0[2] != 0
+                || pixel.0[3] != 255
+        })
+        .count();
+    assert_eq!(wrong, 0, "{wrong} pixels are not the buffer's colour");
 }
 
 /// Every colour makes a buffer that attaches and commits, under a viewport destination, with no

@@ -1,11 +1,16 @@
 //! `alpha_modifier` (P0-H1).
 
+use casement_core::geometry::PhysicalSize;
 use casement_testclient::misc::viewporter::AlphaModifier;
 use casement_testclient::surface::subsurface::Compositor;
+use casement_testclient::surface::toplevel::Toplevel;
+use casement_testclient::{Pattern, shm_buffer};
 
 use casement_core::policy::ConnectionRole;
 use casement_testclient::TestClient;
 use casement_testkit::{ClientId, Env, Fixture, FixtureSpec};
+
+use crate::shoot;
 
 fn boot() -> (Fixture, ClientId) {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
@@ -55,13 +60,46 @@ fn check(name: &str, client: &TestClient, skip: &[&str]) {
     );
 }
 
+/// The backdrop's and the front window's sizes.
+const SIZE: (PhysicalSize, PhysicalSize) = (
+    PhysicalSize { w: 300, h: 200 },
+    PhysicalSize { w: 100, h: 100 },
+);
+
 /// A surface at half alpha composites at half (pixman golden).
 #[test]
-#[ignore = "body is todo!(): needs a pixman golden of a mapped toplevel (P0-R-scene shoot(); P0-H2's toplevel helper is on master)"]
 fn the_multiplier_reaches_the_frame() {
-    todo!(
-        "P0-H1: map a toplevel of one colour, set the multiplier to half, and compare its pixels over a known backdrop"
-    )
+    let (mut fixture, id, base) = shoot::desk();
+    let backdrop = |client: &mut TestClient, top: &Toplevel| {
+        let buffer = shm_buffer(client, SIZE.0, Pattern::Solid(0xffff_0000));
+        top.surface.attach(Some(buffer.buffer()), 0, 0);
+        buffer
+    };
+    let (_below, _kept_below) = shoot::map_with(&mut fixture, id, &base, backdrop);
+    let (_front, _kept_front) = shoot::map_with(&mut fixture, id, &base, |client, top| {
+        let alpha = AlphaModifier::bind(client).for_surface(client, &shoot::surface_of(top));
+        alpha.set_multiplier(0x8000_0000);
+        let buffer = shm_buffer(client, SIZE.1, Pattern::Solid(0xff00_00ff));
+        top.surface.attach(Some(buffer.buffer()), 0, 0);
+        (alpha, buffer)
+    });
+    // The backdrop is the window whose shot is its own size (ids do not say which came first).
+    let shot = shoot::windows(&fixture)
+        .into_iter()
+        .map(|window| shoot::shot_of(&mut fixture, window))
+        .find(|shot| shot.dimensions() == (SIZE.0.w, SIZE.0.h))
+        .unwrap_or_else(|| panic!("no shot of the backdrop"));
+    // The front window is cascaded onto the backdrop; opaque blue at half is half blue over
+    // half red, and the backdrop beside it is still red.
+    let blended = shot
+        .pixels()
+        .filter(|pixel| {
+            pixel.0[0].abs_diff(127) <= 2 && pixel.0[1] == 0 && pixel.0[2].abs_diff(127) <= 2
+        })
+        .count();
+    let front_area = (SIZE.1.w * SIZE.1.h) as usize;
+    assert_eq!(blended, front_area, "the front window blends at half");
+    shoot::check_pixels("alpha-multiplier", &shot);
 }
 
 /// A multiplier is accepted and committed with no protocol error and no event.

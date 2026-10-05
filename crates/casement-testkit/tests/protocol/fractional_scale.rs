@@ -1,7 +1,8 @@
 //! `fractional_scale` (P0-H1).
 
 use casement_testclient::misc::fractional::{FractionalScale, preferred};
-use casement_testclient::surface::subsurface::Compositor;
+use casement_testclient::surface::subsurface::{Compositor, Surface};
+use casement_testclient::surface::toplevel::WmBase;
 
 use casement_core::policy::ConnectionRole;
 use casement_testclient::TestClient;
@@ -60,11 +61,31 @@ fn boot_at(outputs: &[&str]) -> (Fixture, ClientId) {
 
 /// At scale 1.5 the surface receives preferred_scale(180) before its first xdg configure (shell-host FINDINGS 167).
 #[test]
-#[ignore = "body is todo!(): write it with casement_testclient::surface::toplevel (now on master)"]
 fn preferred_scale_comes_before_the_first_configure() {
-    todo!(
-        "P0-H1: create a toplevel and its fractional scale object, commit, and assert the transcript shows preferred_scale(180) before xdg_toplevel.configure"
-    )
+    let (mut fixture, id) = boot_at(&[SCALE_1_5]);
+    let base = WmBase::bind(fixture.client(id), 6);
+    let top = base.toplevel(fixture.client(id));
+    let client = fixture.client(id);
+    let manager = FractionalScale::bind(client);
+    let surface = Surface {
+        surface: top.surface.clone(),
+    };
+    let object = manager.for_surface(client, &surface);
+    top.commit_bare();
+    fixture.pump();
+    assert_eq!(preferred(fixture.client(id), &object), vec![180]);
+    let lines = fixture.client(id).transcript().0.clone();
+    let first = |object: &str, event: &str| {
+        lines
+            .iter()
+            .position(|line| line.object.starts_with(object) && line.event == event)
+    };
+    let scale = first("wp_fractional_scale_v1#", "preferred_scale").expect("a preferred scale");
+    let configure = first("xdg_toplevel#", "configure").expect("the first configure");
+    assert!(
+        scale < configure,
+        "preferred_scale (line {scale}) comes before xdg_toplevel.configure (line {configure})"
+    );
 }
 
 /// A surface learns its scale when its scale object is created, from the primary output, and

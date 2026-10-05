@@ -30,6 +30,7 @@ mod seat;
 mod security_context;
 mod session_lock;
 mod shm;
+mod shoot;
 mod shortcuts_inhibit;
 mod single_pixel;
 mod subcompositor;

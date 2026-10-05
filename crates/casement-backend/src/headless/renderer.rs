@@ -14,7 +14,7 @@ use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::pixman::PixmanRenderer;
-use smithay::backend::renderer::{Bind, ExportMem, Offscreen, RendererSuper, TextureMapping};
+use smithay::backend::renderer::{Bind, ExportMem, Offscreen, RendererSuper};
 use smithay::utils::{Buffer, Rectangle, Size};
 use std::fmt;
 
@@ -231,20 +231,23 @@ where
     let mapping = renderer
         .copy_framebuffer(&framebuffer, region, Fourcc::Abgr8888)
         .map_err(renderer_fault)?;
-    let flipped = mapping.flipped();
     let bytes = renderer.map_texture(&mapping).map_err(renderer_fault)?;
-    Ok(Drawn::Pixels(rows_top_down(bytes, size, flipped)))
+    Ok(Drawn::Pixels(rows_top_down(bytes, size)))
 }
 
-/// `bytes` as `size` rows of RGBA, top row first (`flipped`: the mapping is bottom row first).
-fn rows_top_down(bytes: &[u8], size: PhysicalSize, flipped: bool) -> Vec<u8> {
+/// `bytes` as `size` rows of RGBA, top row first. The rows of a read-back come top first on
+/// both renderers (GLES says its mapping is `flipped`, but the damage tracker's framebuffer
+/// is already y-inverted, so reversing the rows would turn the frame upside down; pixman and
+/// llvmpipe agree byte for byte on aligned scenes, tier X).
+fn rows_top_down(bytes: &[u8], size: PhysicalSize) -> Vec<u8> {
     let width = usize::try_from(size.w).unwrap_or(0).saturating_mul(4);
     let height = usize::try_from(size.h).unwrap_or(0);
-    let rows = bytes.chunks(width.max(1)).take(height);
-    match flipped {
-        true => rows.rev().flatten().copied().collect(),
-        false => rows.flatten().copied().collect(),
-    }
+    let mut out = Vec::with_capacity(width.saturating_mul(height));
+    bytes
+        .chunks(width.max(1))
+        .take(height)
+        .for_each(|row| out.extend_from_slice(row));
+    out
 }
 
 /// `size` as smithay's buffer size.

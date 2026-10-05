@@ -29,33 +29,37 @@ const SCENES: [(&str, &[&str]); 10] = [
     ("named-cursor-1.5x", &["HEADLESS-1:2880x1620@60000:180:0,0"]),
 ];
 
+mod build;
+mod desk;
+
 /// Builds scene `name` on `fixture` with test clients and shoots its output.
 fn shoot(fixture: &mut Fixture, name: &str) -> image::RgbaImage {
-    let _ = fixture;
-    todo!("P0-R-scene: build scene {name} with test clients and shoot it")
+    build::scene(fixture, name)
 }
 
 #[test]
-#[ignore = "body is todo!(): P0-R-scene builds each scene with test clients and shoot()s it"]
 fn the_ten_base_scenes_match_their_pixman_goldens() {
     let env = Env::of_process();
-    for (name, outputs) in SCENES {
-        let mut fixture = Fixture::start(FixtureSpec::desktop().with_outputs(outputs)).expect(name);
-        let actual = shoot(&mut fixture, name);
-        let golden = Golden {
-            scene: format!("tests/golden/scenes/{name}"),
-            tier: GoldenTier::Exact,
-        };
-        let outcome = compare(&golden, &actual, &env.out_dir, env.bless);
-        assert!(
-            matches!(outcome, GoldenOutcome::Match | GoldenOutcome::Blessed),
-            "{name}: {outcome:?}"
-        );
-    }
+    let failures: Vec<String> = SCENES
+        .iter()
+        .filter_map(|(name, outputs)| {
+            let mut fixture =
+                Fixture::start(FixtureSpec::desktop().with_outputs(outputs)).expect(name);
+            let actual = shoot(&mut fixture, name);
+            let golden = Golden {
+                scene: format!("tests/golden/scenes/{name}"),
+                tier: GoldenTier::Exact,
+            };
+            match compare(&golden, &actual, &env.out_dir, env.bless) {
+                GoldenOutcome::Match | GoldenOutcome::Blessed => None,
+                outcome => Some(format!("{name}: {outcome:?}")),
+            }
+        })
+        .collect();
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
 #[test]
-#[ignore = "body is todo!(): P0-R-scene builds blur-v0-1x with test clients and shoot()s it"]
 fn blur_v0_matches_its_llvmpipe_golden() {
     let env = Env::of_process();
     let spec = FixtureSpec::desktop().with_renderer(SoftRenderer::Llvmpipe);

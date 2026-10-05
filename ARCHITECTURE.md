@@ -233,7 +233,7 @@ the virtual clock as a calloop event source (A1). `pump` runs until a round move
 `advance` stops at every timer and vblank on the way, so how an advance is chopped never shows;
 transcripts carry virtual time only; no test sleeps. Protocol tests live in
 `crates/casement-testkit/tests/protocol/<p>.rs`, one per module; scene goldens in
-`crates/casement-testkit/tests/scene.rs` with PNGs under `tests/golden/scenes/`; the globals
+`crates/casement-testkit/tests/scene/` (`main.rs`, `desk.rs`, `build.rs`) with PNGs under `tests/golden/scenes/`; the globals
 golden is `tests/golden/globals.txt`.
 
 Everything runs inside the jail (`~/desktop/harness/jail.sh`): built outside, archived with

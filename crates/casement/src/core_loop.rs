@@ -29,6 +29,7 @@ use smithay::wayland::compositor::{
 mod deliver;
 mod input;
 mod scene;
+mod windows;
 
 /// Steps every event at the clock's now and carries out the effects ([`crate::exec::exec`]);
 /// a `Relayout` arranges once per feed (not once per event), retargets motion and asks the
@@ -76,7 +77,7 @@ fn note_settings(state: &State, events: &[Event]) {
     }
 }
 
-/// The surface book follows the layer and lock events: a layer surface that maps or changes is
+/// The surface book follows the window, layer and lock events: a layer surface that maps or changes is
 /// drawn from its surface tree at its committed size, one that unmaps is not drawn, and the
 /// lock surfaces are drawn over their outputs.
 fn sync_surfaces(state: &mut State, events: &[Event]) {
@@ -101,6 +102,9 @@ fn sync_surfaces(state: &mut State, events: &[Event]) {
                 let book = std::mem::take(&mut state.render.textures);
                 state.render.textures = book.without_layer(layer);
             }
+            Event::ToplevelMapped(_)
+            | Event::ToplevelCommitted { .. }
+            | Event::ToplevelUnmapped { .. } => windows::sync(state, event),
             Event::Lock(_) => sync_locks(state),
             _ => {}
         }
@@ -126,6 +130,7 @@ fn sync_locks(state: &mut State) {
 /// One frame on `output`: sample motion at the clock's now, build the elements, render,
 /// present, send frame callbacks and presentation feedback at the frame's instant.
 pub fn frame(state: &mut State, output: &OutputKey) {
+    windows::refresh_layers(state);
     let now = state.clock.now();
     let Some(plugged) = state.core.model.outputs().0.get(output) else {
         return;

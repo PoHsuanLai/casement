@@ -247,12 +247,9 @@ module); `Rgba8`; `TextureBook`; `Transcript`, `Pattern`; `FixtureSpec`, `TestOr
 
 ## Departures in the P0-R-scene fill
 
-P0-R-scene filled its 23 stubs with no `todo!()` left in `crates/casement-render`. The two
-ignored scene tests in `crates/casement-testkit/tests/scene.rs` (the ten fixture scenes and the
-blur v0 fixture scene) wait on P0-B-headless, P0-T-client and P0-H1..H4 for `Fixture` and the
-surface helpers; a follow-up lane writes their `shoot()`. Meanwhile renderer-only goldens in
-`crates/casement-render/tests/golden/` (ten tier P, `blur-v0-1x` tier L) and a tier X check
-cover what draws without a client surface.
+P0-R-scene filled its 23 stubs with no `todo!()` left in `crates/casement-render`. Renderer-only
+goldens in `crates/casement-render/tests/golden/` (ten tier P, `blur-v0-1x` tier L) and a tier X
+check cover what draws without a client surface; the fixture scenes are P0-shoot's (below).
 
 1. **`Compositor` grows, additively.** Its textures are bounded `Clone + Send + 'static`
    (`RendererSuper<TextureId: …>`; smithay's surface and memory elements need it), and it
@@ -282,6 +279,38 @@ cover what draws without a client surface.
    cover's id is thread-local and the cover's and blur's commits are content fingerprints, so a
    still frame has empty damage. The renderer tests read `CASEMENT_BLESS` with `Env`'s rule in
    `tests/support/mod.rs`, since casement-render cannot depend on the test kit.
+
+## Departures in the P0-shoot fill
+
+P0-shoot wrote the fixture scenes (`crates/casement-testkit/tests/scene/`: `the_ten_base_scenes_match_their_pixman_goldens`,
+tier P; `blur_v0_matches_its_llvmpipe_golden`, tier L), the three surface-adjunct pixel tests
+(viewporter crop, single pixel, alpha multiplier) and the fractional-scale ordering test. Real
+code the scenes found missing or wrong, fixed here:
+
+1. **No window was ever drawn.** Nothing filled `TextureBook`'s window map, so a mapped toplevel
+   showed as black. `casement::core_loop::windows` follows `ToplevelMapped`, `ToplevelCommitted`
+   and `ToplevelUnmapped`.
+2. **A layer surface's committed size was stale.** `LayerMapped` fires on the first commit (no
+   buffer yet) and the buffer's commit changes nothing the model hears, so the book kept 0 x 0
+   and a full-width bar drew from the output's middle. `core_loop::frame` now reads every layer
+   tree's size again (`TextureBook::with_layers_sized`).
+3. **GLES frames read back upside down.** `GlesMapping::flipped()` is a constant `true`, but the
+   damage tracker's framebuffer is already y-inverted, so reversing the rows turned the frame
+   over (the tier X check in casement-render never read through the backend). The headless
+   backend no longer reverses rows; pixman and llvmpipe agree.
+4. **Read-back was a per-byte iterator** (about 4 s a 4K scene in a debug build); it copies rows.
+5. **The scenes settle two virtual seconds** before the shot (a window opens with motion); the
+   desktop has no wallpaper (a layer client draws it), so an empty scene is black with the arrow
+   at the pointer.
+
+Test-support notes: `tests/scene.rs` became `tests/scene/main.rs`; the layer-shell and
+session-lock client helpers (`casement-testclient/src/surface/{layer,lock}.rs`) are the P0-H3
+helpers verbatim from `~/rs-wt/p0-h3/pending/p0-h3-protocol-tests.patch` (apply that patch
+without those two files); `BlurAsk::surface()` is a new accessor so a blur region can sit on a
+toplevel's own surface; `tests/protocol/shoot.rs` holds the helper the adjunct tests share.
+Goldens: `tests/golden/scenes/*.png` (the ten, `blur-v0-1x`, `viewport-crop`, `alpha-multiplier`),
+all blessed once on the first real run (nothing existed to differ from); the compare is
+byte-exact for tier P and 2 per channel on at most 1000 ppm of pixels for tier L (11 §2.8).
 
 ## Standing facts
 

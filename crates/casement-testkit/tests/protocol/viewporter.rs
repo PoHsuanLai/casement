@@ -9,6 +9,8 @@ use casement_core::policy::ConnectionRole;
 use casement_testclient::TestClient;
 use casement_testkit::{ClientId, Env, Fixture, FixtureSpec};
 
+use crate::shoot;
+
 fn boot() -> (Fixture, ClientId) {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     let id = fixture.connect(ConnectionRole::Public);
@@ -61,11 +63,35 @@ const SIZE: PhysicalSize = PhysicalSize { w: 64, h: 64 };
 
 /// A viewport's source and destination reach the frame (pixman golden).
 #[test]
-#[ignore = "body is todo!(): needs a pixman golden of a mapped toplevel (P0-R-scene shoot(); P0-H2's toplevel helper is on master)"]
 fn a_viewport_crops_and_scales() {
-    todo!(
-        "P0-H1: map a toplevel with a 64x64 gradient, source (16,16,32,32), destination 128x128, and compare the frame with tests/golden/scenes/viewport-crop.png"
-    )
+    let (mut fixture, id, base) = shoot::desk();
+    let (_top, _kept) = shoot::map_with(&mut fixture, id, &base, |client, top| {
+        let buffer = shm_buffer(client, SIZE, Pattern::Gradient);
+        let viewport = Viewporter::bind(client).viewport(client, &shoot::surface_of(top));
+        viewport.source(16.0, 16.0, 32.0, 32.0);
+        viewport.destination(128, 128);
+        top.surface.attach(Some(buffer.buffer()), 0, 0);
+        (buffer, viewport)
+    });
+    let window = shoot::windows(&fixture)[0];
+    let shot = shoot::shot_of(&mut fixture, window);
+    assert_eq!(shot.dimensions(), (128, 128), "the destination is the size");
+    // The crop starts at buffer pixel (16, 16): red and green are a quarter of the way up their
+    // ramps there (the gradient is 64 wide, so 16 / 63 of 255), and the far corner is at 47 / 63.
+    let near = |pixel: [u8; 4], red: u8, green: u8| {
+        pixel[0].abs_diff(red) <= 6 && pixel[1].abs_diff(green) <= 6
+    };
+    assert!(
+        near(shot.get_pixel(1, 1).0, 65, 65),
+        "{:?}",
+        shot.get_pixel(1, 1)
+    );
+    assert!(
+        near(shot.get_pixel(126, 126).0, 190, 190),
+        "{:?}",
+        shot.get_pixel(126, 126)
+    );
+    shoot::check_pixels("viewport-crop", &shot);
 }
 
 /// Valid source and destination are accepted, committed and removed again without a protocol

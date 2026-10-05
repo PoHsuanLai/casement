@@ -60,6 +60,12 @@ impl BlurAsk {
         })
     }
 
+    /// The surface the effect belongs to (to give it a role, an xdg toplevel say, so the blur
+    /// is behind a window).
+    pub fn surface(&self) -> &WlSurface {
+        &self.surface
+    }
+
     /// Reads what arrived.
     pub fn pump(&mut self) -> Result<Pumped, ClientError> {
         pump_queue(&self.connection, &mut self.queue, &mut self.announced)
