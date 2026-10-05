@@ -69,6 +69,10 @@ pub enum CommitStep {
 /// The step a commit takes: the whole life of a toplevel, one row per case.
 pub fn commit_step(phase: Phase, configured: Configured, buffer: Buffer) -> CommitStep {
     match (configured, phase, buffer) {
+        // smithay resets a toplevel's role (the initial configure included) in the very commit
+        // that removes its buffer, so a mapped window reads `Configured::No` exactly then: it is
+        // the unmap, and the configure follows the client's next bare commit.
+        (Configured::No, Phase::Mapped(_), Buffer::Absent) => CommitStep::Unmap,
         (Configured::No, _, _) => CommitStep::InitialConfigure,
         (Configured::Yes, Phase::Unmapped, Buffer::Present(size)) => CommitStep::Map(size),
         (Configured::Yes, Phase::Unmapped, Buffer::Absent) => CommitStep::Nothing,
@@ -386,6 +390,13 @@ mod tests {
                 "mapped, buffer removed: unmap",
                 Mapped(size(640, 480)),
                 Yes,
+                Absent,
+                CommitStep::Unmap,
+            ),
+            (
+                "mapped, null buffer, smithay already reset the role: unmap",
+                Mapped(size(640, 480)),
+                No,
                 Absent,
                 CommitStep::Unmap,
             ),

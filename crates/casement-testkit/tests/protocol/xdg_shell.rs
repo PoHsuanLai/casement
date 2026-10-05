@@ -319,7 +319,7 @@ fn a_floating_configure_has_no_tiled_edges() {
 
 /// Create, configure, ack, map, close: the transcript matches tests/golden/transcripts/xdg_shell-map.txt.
 #[test]
-#[ignore = "P0-B-headless: Fixture::start; P0-B-loop: core_loop, exec"]
+#[ignore = "P0-wire: the click must focus the window (the golden's last two lines are its activated configure)"]
 fn toplevel_transcript_golden() {
     let (mut fixture, id) = boot();
     let base = WmBase::bind(fixture.client(id), 7);
@@ -369,7 +369,6 @@ fn what_a_client_declares_reaches_the_model() {
 
 /// A null buffer unmaps the window; the same toplevel maps again after a new configure.
 #[test]
-#[ignore = "P0-B-headless: Fixture::start; P0-B-loop: core_loop, exec"]
 fn a_null_buffer_unmaps_and_the_next_buffer_maps_again() {
     let (mut fixture, id) = boot();
     let base = WmBase::bind(fixture.client(id), 7);
@@ -398,7 +397,6 @@ fn a_null_buffer_unmaps_and_the_next_buffer_maps_again() {
 /// A popup is configured at its first commit, placed inside the output (it slides back from an
 /// edge), repositioned with its token, and dismissed when its grab answers no press.
 #[test]
-#[ignore = "P0-B-headless: Fixture::start; P0-B-loop: core_loop, exec"]
 fn a_popup_is_placed_inside_the_output_and_repositioned() {
     let (mut fixture, id) = boot();
     let base = WmBase::bind(fixture.client(id), 7);
@@ -421,12 +419,25 @@ fn a_popup_is_placed_inside_the_output_and_repositioned() {
     fixture.pump();
     assert_eq!(popup.log.with(|seen| seen.repositioned.clone()), vec![7]);
     assert_eq!(popup.geometry(), Some((20, 20, 100, 50)));
-    // A grab with a serial that answers no press is refused: the popup is dismissed.
+    // A grab with a serial that answers no press is refused: the popup is dismissed. The
+    // protocol puts `grab` before the popup's first commit (xdg_popup.invalid_grab otherwise
+    // once it is mapped), and smithay hands it to the compositor at that commit, so this one
+    // is a second popup that grabs first and commits after.
     let pointer = bind_pointer(fixture.client(id));
     fixture.pump();
-    popup.grab(&pointer.seat, 9999);
+    let surface = fixture.client(id).create_surface().expect("a surface");
+    let refused = Popup::of(
+        fixture.client(id),
+        &base,
+        &parent,
+        surface,
+        PopupSpec::menu_at((20, 20)),
+    );
+    refused.grab(&pointer.seat, 9999);
+    refused.surface.commit();
     fixture.pump();
-    assert_eq!(popup.log.with(|seen| seen.done), 1);
+    assert_eq!(refused.log.with(|seen| seen.done), 1);
+    assert_eq!(popup.log.with(|seen| seen.done), 0, "only the refused one");
     assert!(fixture.client(id).protocol_error().is_none());
 }
 
@@ -450,10 +461,14 @@ fn destroying_the_base_first_is_defunct_surfaces() {
     assert!(fixture.client(other).protocol_error().is_none());
 }
 
-/// An `xdg_surface` destroyed before its `xdg_toplevel` is `defunct_role_object`; the second
-/// `get_toplevel` on one surface is `already_constructed`.
+/// An `xdg_surface` destroyed before its `xdg_toplevel` is `xdg_surface.defunct_role_object`;
+/// the second `get_toplevel` on one surface is `xdg_surface.already_constructed` (xdg-shell.xml).
+/// Ignored: smithay (118e34ff, `shell/xdg/handlers/surface.rs`) posts `xdg_wm_base.role` (0) for
+/// the first, and does not refuse the second at all (`give_role` with the same role succeeds, so
+/// a surface gets two toplevels). Both are decided inside smithay's own request handler, where
+/// the compositor has no hook; this runs once the smithay fork carries the patch (QUIRKS row).
 #[test]
-#[ignore = "P0-B-headless: Fixture::start; P0-B-loop: core_loop, exec"]
+#[ignore = "smithay 118e34ff: defunct_role_object is posted on xdg_wm_base, already_constructed is never posted; needs the casement smithay fork"]
 fn destruction_order_and_double_roles_are_errors() {
     let (mut fixture, id) = boot();
     let base = WmBase::bind(fixture.client(id), 7);
@@ -481,4 +496,20 @@ fn destruction_order_and_double_roles_are_errors() {
         .expect("a protocol error");
     assert_eq!(error.interface, "xdg_surface");
     assert_eq!(error.code, xdg_surface::Error::AlreadyConstructed as u32);
+}
+
+/// Destroying an `xdg_surface` before its role object disconnects that client and only that
+/// one (which object smithay names is the ignored test above's business).
+#[test]
+fn destroying_the_surface_before_its_role_disconnects_only_that_client() {
+    let (mut fixture, id) = boot();
+    let bystander = fixture.connect(ConnectionRole::Public);
+    fixture.pump();
+    let base = WmBase::bind(fixture.client(id), 7);
+    let top = base.toplevel(fixture.client(id));
+    top.xdg_surface.destroy();
+    fixture.pump();
+    assert!(fixture.client(id).protocol_error().is_some());
+    assert!(!fixture.client(id).is_connected());
+    assert!(fixture.client(bystander).is_connected());
 }
