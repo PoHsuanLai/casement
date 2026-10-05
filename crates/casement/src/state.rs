@@ -4,7 +4,8 @@ use crate::cli::StartConfig;
 use crate::config::{self, ConfigError};
 use crate::time::ClockSource;
 use casement_backend::{
-    BackendChoice, BackendError, BackendKind, HeadlessBackend, HeadlessConfig, WinitBackend,
+    BackendChoice, BackendError, BackendKind, DmabufMode, HeadlessBackend, HeadlessConfig,
+    WinitBackend,
 };
 use casement_core::geometry::LogicalPoint;
 use casement_core::settings::CasementSettings;
@@ -129,7 +130,7 @@ impl State {
         let settings = config::to_core(&config::load(&config.config_home)?);
         let filter = GlobalFilter::policy();
         let primary = primary_selection::PrimarySelectionPart::new::<State>(&dh, filter);
-        let wl = WaylandStates {
+        let mut wl = WaylandStates {
             clients: ClientMint::start(),
             compositor: compositor::CompositorPart::new::<State>(&dh, filter),
             subcompositor: subcompositor::SubcompositorPart::new(),
@@ -175,7 +176,7 @@ impl State {
             text_input: text_input::TextInputPart::new::<State>(&dh, filter),
             input_method: input_method::InputMethodPart::new::<State>(&dh, filter),
             virtual_keyboard: virtual_keyboard::VirtualKeyboardPart::new::<State>(&dh, filter),
-            idle_notify: idle_notify::IdleNotifyPart::new(&dh, filter, event_loop.clone()),
+            idle_notify: idle_notify::IdleNotifyPart::new::<State>(&dh, filter),
             idle_inhibit: idle_inhibit::IdleInhibitPart::new::<State>(&dh, filter),
             foreign_toplevel_list: foreign_toplevel_list::ForeignToplevelListPart::new::<State>(
                 &dh, filter,
@@ -183,6 +184,9 @@ impl State {
             security_context: security_context::SecurityContextPart::new::<State>(&dh, filter),
             background_effect: background_effect::BackgroundEffectPart::new::<State>(&dh, filter),
         };
+        if config.dmabuf == DmabufMode::Soft {
+            dmabuf::apply_offer::<State>(&mut wl.dmabuf, &dh, &dmabuf::DmabufOffer::soft())?;
+        }
         let backend = match config.backend {
             BackendChoice::Headless => {
                 BackendKind::Headless(HeadlessBackend::start(HeadlessConfig {

@@ -130,9 +130,16 @@ fn repeat_info_comes_from_settings() {
     assert_eq!(repeat.2, vec!["25".to_owned(), "600".to_owned()]);
 }
 
-/// Enter, modifiers, key: the order matches tests/golden/transcripts/seat-modifiers.txt.
+/// Enter, then the modifiers it carries, then each key; a modifier key's own `modifiers` follow
+/// its `key`.
+///
+/// The order is smithay's, and it is the right one: `wl_keyboard.modifiers` says the modifier
+/// state "has changed, and it should update its local state", the protocol fixes only that
+/// `modifiers` follows `enter`, and a `key` carries the raw evdev code, which a client reads
+/// with the state it held when the key arrived. So Shift's press is `key`, then `modifiers`
+/// (the state the following keys are read with), and Shift's release is `key`, then the
+/// `modifiers` that clear it; the keys between need none.
 #[test]
-#[ignore = "expectation is a guess (no seat-modifiers.txt golden): smithay sends enter, modifiers, key, modifiers, key, key, key, modifiers; decide the order against the protocol and bless the golden"]
 fn modifiers_ordering_transcript() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     let keys = fixture.input().plug(
@@ -163,25 +170,24 @@ fn modifiers_ordering_transcript() {
         .into_iter()
         .filter(|name| name != "keymap" && name != "repeat_info")
         .collect();
-    // enter and its modifiers; then each modifier change is sent before the key that made it.
+    // enter and its modifiers; shift down (key, then the modifiers it set); a down and up; shift up.
     assert_eq!(
         names,
         [
             "enter",
             "modifiers",
-            "modifiers",
-            "key",
-            "key",
             "key",
             "modifiers",
-            "key"
+            "key",
+            "key",
+            "key",
+            "modifiers"
         ]
     );
 }
 
 /// The surface now under a resting pointer receives enter at once (A16, SP1 A1).
 #[test]
-#[ignore = "real code: a commit that changes no model state (a layer's first buffer attach) never reaches core_loop's refocus, so no enter; handlers/compositor.rs commit must refocus after feed"]
 fn pointer_focus_is_recomputed_when_the_surface_under_it_unmaps() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     let mouse = fixture.input().plug(
@@ -214,4 +220,32 @@ fn pointer_focus_is_recomputed_when_the_surface_under_it_unmaps() {
         last_leave < last_enter && names.iter().filter(|name| *name == "enter").count() == 3,
         "leave then enter on the unmap, with no motion: {names:?}"
     );
+}
+
+/// A press the model swallowed (it only activated the window) takes its release with it: the
+/// client sees no `button` event for the first click, and both for the second.
+#[test]
+fn a_swallowed_press_takes_its_release_with_it() {
+    use crate::xdg_shell::{boot, click, map_toplevel, pointer as plug_pointer, settle, windows};
+    use casement_testclient::surface::toplevel::{WmBase, bind_pointer};
+    let (mut fixture, id) = boot();
+    let base = WmBase::bind(fixture.client(id), 7);
+    let _pointer = bind_pointer(fixture.client(id));
+    let _top = map_toplevel(&mut fixture, id, &base, (400, 300));
+    settle(&mut fixture);
+    let window = windows(&fixture)[0];
+    let device = plug_pointer(&mut fixture);
+    let buttons = |fixture: &mut Fixture| {
+        fixture
+            .client(id)
+            .transcript()
+            .0
+            .iter()
+            .filter(|line| line.object.starts_with("wl_pointer#") && line.event == "button")
+            .count()
+    };
+    click(&mut fixture, device, window);
+    assert_eq!(buttons(&mut fixture), 0, "the first click only activated");
+    click(&mut fixture, device, window);
+    assert_eq!(buttons(&mut fixture), 2, "the second click is the client's");
 }

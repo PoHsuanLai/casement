@@ -4,16 +4,13 @@
 //! and both object types are ours, and idleness is timed on the session's timers
 //! (`TimerKey::IdleNotify`, armed through `Effect::ArmTimer`) by the pure [`IdleBook`].
 //!
-//! smithay's [`IdleNotifierState`] stays in the part only because [`WaylandStates`] bounds its
-//! state type by smithay's `IdleNotifierHandler`; its global is withdrawn at once, so clients
-//! see `ext_idle_notifier_v1` exactly once, from here.
+//! smithay's `IdleNotifierState` is not created: clients see `ext_idle_notifier_v1` exactly
+//! once, from here.
 //!
 //! The hooks the core loop calls: [`on_activity`] for every input event of any origin (virtual
 //! keyboards included, I8), [`on_timer`] when `TimerFired(IdleNotify(..))` arrives and
 //! [`on_inhibit`] when idle-inhibit changes. Each returns timer effects for `exec` and sends
 //! `idled` or `resumed` itself. See `crate::idle_notify::machine` for what they decide.
-//!
-//! [`WaylandStates`]: crate::states::WaylandStates
 
 mod machine;
 
@@ -23,7 +20,6 @@ use crate::client::ClientState;
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::time::{IdleNotifierId, Mono};
 use casement_core::{ClientKey, Effect};
-use smithay::reexports::calloop::LoopHandle;
 use smithay::reexports::wayland_protocols::ext::idle_notify::v1::server::{
     ext_idle_notification_v1::{self, ExtIdleNotificationV1},
     ext_idle_notifier_v1::{self, ExtIdleNotifierV1},
@@ -32,8 +28,7 @@ use smithay::reexports::wayland_server::backend::{ClientId, GlobalId};
 use smithay::reexports::wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New,
 };
-use smithay::wayland::idle_notify::{IdleNotifierHandler, IdleNotifierState};
-use smithay::wayland::{Dispatch2, GlobalData, GlobalDispatch2};
+use smithay::wayland::{Dispatch2, GlobalDispatch2};
 use std::collections::BTreeMap;
 use std::time::Duration;
 
@@ -42,10 +37,7 @@ pub const VERSION: u32 = 2;
 
 /// `ext_idle_notifier_v1`: the watches and their objects.
 #[derive(Debug)]
-pub struct IdleNotifyPart<D: IdleNotifierHandler + 'static> {
-    /// smithay's state, kept for the handler trait that bounds `WaylandStates`; its global is
-    /// withdrawn and nothing reads it.
-    pub state: IdleNotifierState<D>,
+pub struct IdleNotifyPart {
     /// Our global.
     pub global: GlobalId,
     /// Who is watching, and for how long they have been quiet.
@@ -53,22 +45,14 @@ pub struct IdleNotifyPart<D: IdleNotifierHandler + 'static> {
     objects: BTreeMap<IdleNotifierId, ExtIdleNotificationV1>,
 }
 
-impl<D: IdleNotifierHandler + 'static> IdleNotifyPart<D> {
+impl IdleNotifyPart {
     /// Creates the global (version 2). Every connection sees it.
-    pub fn new(
-        display: &DisplayHandle,
-        role_filter: GlobalFilter,
-        event_loop: LoopHandle<'static, D>,
-    ) -> IdleNotifyPart<D>
+    pub fn new<D>(display: &DisplayHandle, role_filter: GlobalFilter) -> IdleNotifyPart
     where
-        D: GlobalDispatch<ExtIdleNotifierV1, GlobalData>
-            + GlobalDispatch<ExtIdleNotifierV1, IdleGlobal>,
+        D: GlobalDispatch<ExtIdleNotifierV1, IdleGlobal> + 'static,
     {
         let _ = role_filter;
-        let state = IdleNotifierState::new(display, event_loop);
-        display.remove_global::<D>(state.global());
         IdleNotifyPart {
-            state,
             global: display.create_global::<D, ExtIdleNotifierV1, _>(VERSION, IdleGlobal),
             book: IdleBook::default(),
             objects: BTreeMap::new(),
@@ -77,9 +61,9 @@ impl<D: IdleNotifierHandler + 'static> IdleNotifyPart<D> {
 }
 
 /// What the composition root provides to this protocol's dispatch.
-pub trait IdleNotifyHandler: IdleNotifierHandler + Sized + 'static {
+pub trait IdleNotifyHandler: Sized + 'static {
     /// The part.
-    fn idle_notify_part(&mut self) -> &mut IdleNotifyPart<Self>;
+    fn idle_notify_part(&mut self) -> &mut IdleNotifyPart;
     /// The session's now (the one clock, `casement::time`).
     fn session_now(&self) -> Mono;
     /// Carries out timer effects (`casement::exec::exec`).
@@ -112,8 +96,8 @@ pub struct Watched {
 
 /// `client` asked to be told after `timeout` of idleness at `now` (`honours`: whether idle
 /// inhibitors hold it off).
-pub fn on_notification<D: IdleNotifierHandler + 'static>(
-    part: &mut IdleNotifyPart<D>,
+pub fn on_notification(
+    part: &mut IdleNotifyPart,
     client: ClientKey,
     timeout: Duration,
     honours: Honours,
@@ -128,19 +112,12 @@ pub fn on_notification<D: IdleNotifierHandler + 'static>(
 }
 
 /// Binds notifier `id` to its protocol object.
-pub fn attach<D: IdleNotifierHandler + 'static>(
-    part: &mut IdleNotifyPart<D>,
-    id: IdleNotifierId,
-    object: ExtIdleNotificationV1,
-) {
+pub fn attach(part: &mut IdleNotifyPart, id: IdleNotifierId, object: ExtIdleNotificationV1) {
     part.objects.insert(id, object);
 }
 
 /// Input of any origin arrived at `now`: idle watches are told `resumed`.
-pub fn on_activity<D: IdleNotifierHandler + 'static>(
-    part: &mut IdleNotifyPart<D>,
-    now: Mono,
-) -> Vec<Effect> {
+pub fn on_activity(part: &mut IdleNotifyPart, now: Mono) -> Vec<Effect> {
     let (book, moved) = std::mem::take(&mut part.book).activity(now);
     part.book = book;
     settle(part, moved)
@@ -148,8 +125,8 @@ pub fn on_activity<D: IdleNotifierHandler + 'static>(
 
 /// `TimerFired(IdleNotify(client, id))` at `now`: the watch is told `idled` if it has been
 /// quiet its whole timeout, else its timer is re-armed.
-pub fn on_timer<D: IdleNotifierHandler + 'static>(
-    part: &mut IdleNotifyPart<D>,
+pub fn on_timer(
+    part: &mut IdleNotifyPart,
     client: ClientKey,
     id: IdleNotifierId,
     now: Mono,
@@ -160,21 +137,14 @@ pub fn on_timer<D: IdleNotifierHandler + 'static>(
 }
 
 /// Idle inhibition changed at `now` (idle-inhibit's [`Inhibited`]).
-pub fn on_inhibit<D: IdleNotifierHandler + 'static>(
-    part: &mut IdleNotifyPart<D>,
-    inhibited: Inhibited,
-    now: Mono,
-) -> Vec<Effect> {
+pub fn on_inhibit(part: &mut IdleNotifyPart, inhibited: Inhibited, now: Mono) -> Vec<Effect> {
     let (book, moved) = std::mem::take(&mut part.book).inhibit(inhibited, now);
     part.book = book;
     settle(part, moved)
 }
 
 /// The notification object `id` was destroyed (by its client or with it).
-pub fn on_destroyed<D: IdleNotifierHandler + 'static>(
-    part: &mut IdleNotifyPart<D>,
-    id: IdleNotifierId,
-) -> Vec<Effect> {
+pub fn on_destroyed(part: &mut IdleNotifyPart, id: IdleNotifierId) -> Vec<Effect> {
     part.objects.remove(&id);
     let (book, moved) = std::mem::take(&mut part.book).forget(id);
     part.book = book;
@@ -182,10 +152,7 @@ pub fn on_destroyed<D: IdleNotifierHandler + 'static>(
 }
 
 /// Sends `idled` to notifier `id`.
-pub fn apply_idle<D: IdleNotifierHandler + 'static>(
-    part: &mut IdleNotifyPart<D>,
-    id: IdleNotifierId,
-) -> Result<(), WaylandFault> {
+pub fn apply_idle(part: &mut IdleNotifyPart, id: IdleNotifierId) -> Result<(), WaylandFault> {
     part.objects
         .get(&id)
         .map(ExtIdleNotificationV1::idled)
@@ -193,10 +160,7 @@ pub fn apply_idle<D: IdleNotifierHandler + 'static>(
 }
 
 /// Sends `resumed` to notifier `id`.
-pub fn apply_resumed<D: IdleNotifierHandler + 'static>(
-    part: &mut IdleNotifyPart<D>,
-    id: IdleNotifierId,
-) -> Result<(), WaylandFault> {
+pub fn apply_resumed(part: &mut IdleNotifyPart, id: IdleNotifierId) -> Result<(), WaylandFault> {
     part.objects
         .get(&id)
         .map(ExtIdleNotificationV1::resumed)
@@ -205,10 +169,7 @@ pub fn apply_resumed<D: IdleNotifierHandler + 'static>(
 
 /// Tells clients what `moved` says, in order, and returns its timer effects. A signal for an
 /// object that is gone is dropped: its client left between the transition and the wire.
-fn settle<D: IdleNotifierHandler + 'static>(
-    part: &mut IdleNotifyPart<D>,
-    moved: Moved,
-) -> Vec<Effect> {
+fn settle(part: &mut IdleNotifyPart, moved: Moved) -> Vec<Effect> {
     for signal in &moved.signals {
         let _ = match signal {
             Signal::Idled(id) => apply_idle(part, *id),

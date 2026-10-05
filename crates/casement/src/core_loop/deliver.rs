@@ -3,9 +3,11 @@
 //! first (03 section 1.2) and key chords are resolved against the bindings before any client
 //! sees the key.
 //!
-//! Known gaps (their fixes need a field on `State`, an interface ask): the release of a press
-//! the model swallowed, or of a key a binding took, is still delivered.
+//! A press the model swallowed, a press the reach table refused and a key a binding took are
+//! remembered (`seat.taken`), so their releases are not delivered either. Keys wait at the
+//! text-input gate while an input method is about to grab the keyboard.
 
+use super::grab;
 use super::scene::{Hit, hit_test, stack};
 use crate::exec;
 use crate::state::State;
@@ -16,14 +18,15 @@ use casement_core::input::{
     Keysym, Origin, Reach, Resolved, TouchStep, resolve,
 };
 use casement_core::lock::LockState;
-use casement_core::time::Mono;
+use casement_core::time::{Due, Mono, TimerKey};
 use casement_core::{Effect, InputSerial, KeyboardTarget, Model};
 use casement_protocols::vocab::MacMods;
-use casement_wayland::ClientState;
-use casement_wayland::seat::{self, GestureDelivery, PointerDelivery, SurfaceAt};
+use casement_wayland::seat::{
+    self, GestureDelivery, KeyDelivery, PointerDelivery, PressFate, SurfaceAt,
+};
 use casement_wayland::serial::{PressKind, PressRecord};
 use casement_wayland::shortcuts_inhibit::{self, Bindings};
-use smithay::backend::input::{InputTime, KeyState, Keycode};
+use casement_wayland::{ClientState, text_input};
 use smithay::input::keyboard::{FilterResult, ModifiersState};
 use smithay::input::{Seat, pointer::PointerHandle};
 use smithay::reexports::wayland_server::Resource;
@@ -91,10 +94,6 @@ fn pointer_at(seat: &Seat<State>) -> Option<(i32, i32)> {
     let pointer: PointerHandle<State> = seat.get_pointer()?;
     let at = pointer.current_location();
     Some((at.x.floor() as i32, at.y.floor() as i32))
-}
-
-fn time_of(at: Mono) -> InputTime {
-    InputTime::from_micros(u64::try_from(at.0.as_micros()).unwrap_or(u64::MAX))
 }
 
 /// Whether the reach table refuses `event` on `target` for `use_`.
@@ -171,9 +170,9 @@ fn keyboard_target(model: &Model) -> InputTarget {
     }
 }
 
-/// A key: a chord that is a binding is carried out and not delivered; any other key goes to
-/// the keyboard focus. While a client inhibits shortcuts, or the session is locked, no chord
-/// resolves.
+/// A key waits at the text-input gate while an input method is about to take the keyboard
+/// (the first key after a field is enabled must reach the method, not the document); the keys
+/// the gate lets go are then delivered ([`deliver_keys`]).
 fn key(state: &mut State, seat: &Seat<State>, event: &InputEvent, code: KeyCode, edge: Edge) {
     if refused(
         state,
@@ -181,55 +180,87 @@ fn key(state: &mut State, seat: &Seat<State>, event: &InputEvent, code: KeyCode,
         &keyboard_target(&state.core.model),
         InputUse::Key,
     ) {
+        if edge == Edge::Press {
+            state.wl.seat.taken = std::mem::take(&mut state.wl.seat.taken).take_key(code);
+        }
         return;
     }
-    let Some(keyboard) = seat.get_keyboard() else {
-        return;
+    let delivery = KeyDelivery {
+        code,
+        edge,
+        serial: next_serial(),
+        time: event.at,
+        origin: event.origin,
     };
+    let now = state.clock.now();
+    let ready = text_input::admit_key(&mut state.wl.text_input, seat, delivery, now);
+    deliver_keys(state, seat, ready);
+    arm_ime_hold(state);
+}
+
+/// Asks for a timer at the instant the oldest waiting key may no longer wait.
+pub(super) fn arm_ime_hold(state: &mut State) {
+    if let Some(at) = state.wl.text_input.gate.due() {
+        let due = Due {
+            at,
+            key: TimerKey::ImeHold,
+        };
+        exec::exec(state, vec![Effect::ArmTimer(due)]);
+    }
+}
+
+/// The keys the gate let go, in order.
+pub(super) fn deliver_keys(state: &mut State, seat: &Seat<State>, keys: Vec<KeyDelivery>) {
+    for key in keys {
+        deliver_key(state, seat, key);
+    }
+}
+
+/// One key, through the keyboard: a chord that is a binding is carried out and not delivered;
+/// any other key goes to the keyboard focus. While a client inhibits shortcuts, or the session
+/// is locked, no chord resolves. The release of a key a binding took is not delivered.
+fn deliver_key(state: &mut State, seat: &Seat<State>, key: KeyDelivery) {
+    let (taken, fate) = std::mem::take(&mut state.wl.seat.taken).release_key(key.code);
+    state.wl.seat.taken = taken;
     let live = matches!(state.core.model.lock(), LockState::Unlocked)
         && shortcuts_inhibit::bindings(seat) == Bindings::Active
-        && edge == Edge::Press;
+        && key.edge == Edge::Press;
     let bindings = state.core.model.settings().bindings.clone();
-    let origin = event.origin;
-    let (keycode, key_state) = (
-        Keycode::new(code.0.saturating_add(8)),
-        match edge {
-            Edge::Press => KeyState::Pressed,
-            Edge::Release => KeyState::Released,
-        },
-    );
-    let serial = SERIAL_COUNTER.next_serial();
-    let taken = keyboard.input(
-        state,
-        keycode,
-        key_state,
-        serial,
-        time_of(event.at),
-        |_, mods, handle| {
-            let chord = handle.raw_latin_sym_or_raw_current_sym().map(|sym| Chord {
-                mods: mac_mods(mods),
-                key: Keysym(sym.raw()),
-            });
-            match chord.map(|chord| resolve(&bindings, &chord, &origin)) {
-                Some(Resolved::Action(action)) if live => FilterResult::Intercept(action),
-                _ => FilterResult::Forward,
-            }
-        },
-    );
-    match taken {
-        Some(action) => carry_out(state, &action),
-        None if edge == Edge::Press => {
-            let focus = keyboard.current_focus();
+    let origin = key.origin;
+    let answer = seat::apply_key(seat, state, key, |_, mods, handle| {
+        if key.edge == Edge::Release && fate == PressFate::Taken {
+            return FilterResult::Intercept(None);
+        }
+        let chord = handle.raw_latin_sym_or_raw_current_sym().map(|sym| Chord {
+            mods: mac_mods(mods),
+            key: Keysym(sym.raw()),
+        });
+        match chord.map(|chord| resolve(&bindings, &chord, &origin)) {
+            Some(Resolved::Action(action)) if live => FilterResult::Intercept(Some(action)),
+            _ => FilterResult::Forward,
+        }
+    });
+    match answer {
+        Ok(Some(Some(action))) => {
+            state.wl.seat.taken = std::mem::take(&mut state.wl.seat.taken).take_key(key.code);
+            carry_out(state, &action);
+        }
+        Ok(Some(None)) => {}
+        Ok(None) if key.edge == Edge::Press => {
+            let focus = seat
+                .get_keyboard()
+                .and_then(|keyboard| keyboard.current_focus());
             remember(
                 state,
                 focus.as_ref(),
-                InputSerial(serial.into()),
-                event.at,
+                key.serial,
+                key.time,
                 PressKind::Key,
                 origin,
             );
         }
-        None => {}
+        Ok(None) => {}
+        Err(fault) => tracing::warn!(%fault, "a key delivery failed"),
     }
 }
 
@@ -308,6 +339,9 @@ fn motion(
     let Some(at) = clamp(state, at) else {
         return;
     };
+    if grab::follow(state, logical(at)) == grab::Follow::Taken {
+        return;
+    }
     let under = hit_test(&stack(state), logical(at));
     if refused(
         state,
@@ -328,7 +362,8 @@ fn motion(
 }
 
 /// A pointer button. A press on a window is routed first: it may activate and raise the window
-/// and be delivered, or only activate and be swallowed.
+/// and be delivered, or only activate and be swallowed; a swallowed or refused press takes its
+/// release with it.
 fn pressed(
     state: &mut State,
     seat: &Seat<State>,
@@ -336,6 +371,14 @@ fn pressed(
     button: casement_core::input::ButtonCode,
     edge: Edge,
 ) {
+    if edge == Edge::Release {
+        grab::end(state);
+        let (taken, fate) = std::mem::take(&mut state.wl.seat.taken).release_button(button);
+        state.wl.seat.taken = taken;
+        if fate == PressFate::Taken {
+            return;
+        }
+    }
     let Some(here) = pointer_at(seat) else {
         return;
     };
@@ -347,14 +390,18 @@ fn pressed(
         },
     );
     let target = target_of(under.as_ref().map(|(hit, _)| hit));
-    if refused(state, event, &target, InputUse::Press) {
-        return;
-    }
     let surface = under.as_ref().map(|(_, at)| at.surface.clone());
-    if edge == Edge::Press
-        && let Some((Hit::Window(window), _)) = &under
-        && !deliver_press(state, seat, event, *window)
-    {
+    let delivered = !refused(state, event, &target, InputUse::Press)
+        && match (&under, edge) {
+            (Some((Hit::Window(window), _)), Edge::Press) => {
+                deliver_press(state, seat, event, *window)
+            }
+            _ => true,
+        };
+    if !delivered {
+        if edge == Edge::Press {
+            state.wl.seat.taken = std::mem::take(&mut state.wl.seat.taken).take_button(button);
+        }
         return;
     }
     let serial = next_serial();

@@ -21,6 +21,23 @@ impl Fixture {
         self.pump();
     }
 
+    /// Puts `scale` on `name` as if its display had been reconfigured (mode, transform and
+    /// position kept) and pumps. An output the model does not know changes nothing.
+    pub fn rescale(&mut self, name: &OutputName, scale: ds_core::geometry::scale::Scale) {
+        let known = self
+            .model()
+            .outputs()
+            .0
+            .iter()
+            .find(|(_, state)| state.facts.name == *name)
+            .map(|(key, state)| (key.clone(), state.config));
+        if let Some((key, config)) = known {
+            let config = casement_core::output::OutputConfig { scale, ..config };
+            core_loop::configure_output(self.state_mut(), &key, config);
+        }
+        self.pump();
+    }
+
     /// A shot of `target`, from the last presented frame. A window is cut out of the frame of
     /// the output it is on (the frame it is drawn in, not a render of it alone).
     pub fn shot(&mut self, target: ShotTarget) -> image::RgbaImage {

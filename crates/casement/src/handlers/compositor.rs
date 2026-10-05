@@ -63,6 +63,7 @@ impl CompositorHandler for State {
         ));
         events.extend(self.commit_role(route, surface));
         feed(self, events);
+        core_loop::refocus_pointer(self);
     }
 
     fn destroyed(&mut self, surface: &WlSurface) {

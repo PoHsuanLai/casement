@@ -15,7 +15,7 @@ use casement::cli::{ClockChoice, ConfigHome, Entropy, StartConfig, StartMode};
 use casement::display::{self, SharedDisplay, attach_display};
 use casement::time::{ClockSource, SharedClock};
 use casement::{State, clients, core_loop};
-use casement_backend::{BackendChoice, BackendKind, DmabufMode, FramePixels, HeadlessBackend};
+use casement_backend::{BackendChoice, BackendKind, FramePixels, HeadlessBackend};
 use casement_core::geometry::LogicalRect;
 use casement_core::policy::ConnectionRole;
 use casement_core::time::{Mono, Stop, TimerKey};
@@ -121,7 +121,7 @@ impl Fixture {
             clock: ClockChoice::Virtual,
             outputs: spec.outputs,
             renderer: spec.renderer,
-            dmabuf: DmabufMode::None,
+            dmabuf: spec.dmabuf,
             cost: spec.cost,
             mode: StartMode::Normal,
             config_home: ConfigHome::At(scratch_config_home()),

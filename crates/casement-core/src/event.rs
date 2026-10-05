@@ -2,7 +2,7 @@
 
 use crate::app::AppKey;
 use crate::focus::TokenCheck;
-use crate::geometry::{LogicalPoint, LogicalSize};
+use crate::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use crate::ids::{ClientKey, InputSerial, LayerKey, OutputKey, WindowId};
 use crate::input::InputEvent;
 use crate::layer::LayerSpec;
@@ -61,12 +61,27 @@ pub enum Event {
         /// What changed.
         meta: ToplevelMeta,
     },
+    /// An interactive move or resize (the person dragging) put a window at this rectangle.
+    WindowDragged {
+        /// The window.
+        window: WindowId,
+        /// Where it now is, in global logical coordinates.
+        rect: LogicalRect,
+    },
     /// A window's `quire_window_v1` hint changed (C50).
     WindowHint {
         /// The window.
         window: WindowId,
         /// What changed.
         hint: WindowHintChange,
+    },
+    /// A mapped toplevel's dialog hint changed (`xdg_dialog` `set_modal` / `unset_modal` after
+    /// the map; a hint set before it travels in [`MappedToplevel::modality`]).
+    ToplevelModality {
+        /// The window.
+        window: WindowId,
+        /// What it now blocks.
+        modality: Modality,
     },
     /// A layer surface mapped.
     LayerMapped {

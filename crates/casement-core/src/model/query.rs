@@ -26,6 +26,14 @@ impl Model {
         self.view().is_visible(window)
     }
 
+    /// Whether the person can see window `id` now: it is mapped, on a Space an output shows, not
+    /// in the dock, and its app not hidden.
+    pub fn shows(&self, id: crate::ids::WindowId) -> bool {
+        self.windows
+            .get(&id)
+            .is_some_and(|window| self.is_seen(window))
+    }
+
     /// The output a window is on: its Space's, or its home for a window on every Space.
     pub(super) fn output_of(&self, window: &Window) -> Option<OutputKey> {
         match &window.place {

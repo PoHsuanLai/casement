@@ -1,7 +1,7 @@
 //! What a fixture starts with.
 
 use crate::gpu::GpuTopology;
-use casement_backend::{RenderCostModel, SoftRenderer, VirtualOutputSpec};
+use casement_backend::{DmabufMode, RenderCostModel, SoftRenderer, VirtualOutputSpec};
 use casement_core::settings::CasementSettings;
 use std::time::Duration;
 
@@ -18,6 +18,8 @@ pub struct FixtureSpec {
     pub settings: CasementSettings,
     /// What a frame costs.
     pub cost: RenderCostModel,
+    /// Whether `zwp_linux_dmabuf_v1` is offered (a fake main device over `/dev/udmabuf`).
+    pub dmabuf: DmabufMode,
 }
 
 impl FixtureSpec {
@@ -33,7 +35,13 @@ impl FixtureSpec {
             gpus: GpuTopology::single(),
             settings: CasementSettings::defaults(),
             cost: RenderCostModel::Fixed(Duration::from_millis(4)),
+            dmabuf: DmabufMode::None,
         }
+    }
+
+    /// The same, with this dma-buf mode.
+    pub fn with_dmabuf(self, dmabuf: DmabufMode) -> FixtureSpec {
+        FixtureSpec { dmabuf, ..self }
     }
 
     /// The same, with these outputs.

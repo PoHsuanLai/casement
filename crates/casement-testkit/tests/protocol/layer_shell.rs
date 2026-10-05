@@ -105,7 +105,6 @@ fn an_exclusive_layer_takes_the_keyboard_on_its_mapping_commit() {
 
 /// A layer mapping under a pointer that does not move still receives enter (SP1 A1).
 #[test]
-#[ignore = "real code: a commit that changes no model state (the first buffer attach of a mapped layer) never reaches core_loop's refocus, so no enter; handlers/compositor.rs commit must refocus after feed"]
 fn a_layer_under_a_resting_pointer_gets_enter() {
     use casement_core::geometry::LogicalPoint;
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");

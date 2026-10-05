@@ -17,7 +17,6 @@ fn step(fixture: &mut Fixture, watch: &mut IdleWatch, by: Duration) {
 /// `IdleInhibitPart::inhibited` that holds idleness off; shown-Space visibility waits for the
 /// window lookup.)
 #[test]
-#[ignore = "P0-H8: written; runs once P0-B-headless (Fixture::start) and P0-T-client land"]
 fn a_visible_inhibitor_holds_off_idle() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     let client = fixture.connect(ConnectionRole::Public);
@@ -46,7 +45,6 @@ fn a_visible_inhibitor_holds_off_idle() {
 
 /// A `get_input_idle_notification` counts input only: an inhibitor does not hold it off.
 #[test]
-#[ignore = "P0-H8: written; runs once P0-B-headless (Fixture::start) and P0-T-client land"]
 fn an_input_idle_notification_ignores_inhibitors() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     let client = fixture.connect(ConnectionRole::Public);

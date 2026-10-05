@@ -3,7 +3,7 @@
 //! judged on the session clock, so these tests move the virtual clock and never sleep (A36).
 //! Ignored until the fixture and the core loop are filled.
 
-use crate::xdg_shell::{boot, click, map_toplevel, pointer, windows};
+use crate::xdg_shell::{Corner, boot, click_at, corner_of, map_toplevel, pointer, settle, windows};
 use casement_core::geometry::PhysicalSize;
 use casement_core::policy::ConnectionRole;
 use casement_testclient::misc::activation::{Activation, TokenError};
@@ -13,7 +13,6 @@ use std::time::Duration;
 
 /// A token from a recent press of the focused app activates; a stale or foreign one only marks attention.
 #[test]
-#[ignore = "P0-B-headless: Fixture::start; P0-B-loop: core_loop, exec"]
 fn activation_follows_the_a7_rule() {
     let (mut fixture, launcher) = boot();
     let app = fixture.connect(ConnectionRole::Public);
@@ -26,8 +25,11 @@ fn activation_follows_the_a7_rule() {
     let device = pointer(&mut fixture);
     let launcher_window = windows(&fixture)[0];
     // Two clicks: the first activates the launcher (swallowed), the second reaches it with a serial.
-    click(&mut fixture, device, launcher_window);
-    click(&mut fixture, device, launcher_window);
+    // (At the launcher's corner: the app's windows are cascaded over its middle later.)
+    settle(&mut fixture);
+    let on_launcher = corner_of(&fixture, launcher_window, Corner::TopLeft);
+    click_at(&mut fixture, device, on_launcher);
+    click_at(&mut fixture, device, on_launcher);
     let serial = launcher_pointer
         .last_press()
         .expect("the launcher was pressed");
@@ -66,7 +68,10 @@ fn activation_follows_the_a7_rule() {
     let bare = app_activation.token(fixture.client(app), None, None);
     fixture.pump();
     let bare_token = bare.with(|seen| seen.clone()).expect("a token arrives");
+    // Another app's window: a new window of the active app takes the key by mapping, with or
+    // without a token (03 section 1.2), so attention-only needs a different app.
     let second = app_base.toplevel(fixture.client(app));
+    second.set_app_id("org.example.Other");
     app_activation.activate(&bare_token, &second);
     second.commit_bare();
     fixture.pump();
@@ -80,7 +85,7 @@ fn activation_follows_the_a7_rule() {
     );
 
     // 3. A token earned by a press but used after its lifetime: stale, attention only.
-    click(&mut fixture, device, launcher_window);
+    click_at(&mut fixture, device, on_launcher);
     let serial = launcher_pointer.last_press().expect("a fresh press");
     let old = activation.token(
         fixture.client(launcher),
@@ -91,6 +96,7 @@ fn activation_follows_the_a7_rule() {
     let old_token = old.with(|seen| seen.clone()).expect("a token arrives");
     fixture.advance(Duration::from_secs(6));
     let third = app_base.toplevel(fixture.client(app));
+    third.set_app_id("org.example.Other");
     app_activation.activate(&old_token, &third);
     third.commit_bare();
     fixture.pump();

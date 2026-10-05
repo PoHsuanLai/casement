@@ -6,11 +6,15 @@
 //! functions take the seat (a cheap handle) and the state instead of the part.
 
 mod edge;
+mod grab;
 mod pointer;
+mod taken;
 mod touch;
 mod under;
 
+pub use grab::Drag;
 pub use pointer::{apply_axis, apply_gesture, apply_pointer, apply_refocus};
+pub use taken::{PressFate, Taken};
 pub use touch::apply_touch;
 pub use under::{Candidate, surface_under};
 
@@ -18,11 +22,13 @@ use crate::convert::serial_to;
 use crate::serial::{PressRecord, SerialBook};
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::geometry::{LogicalPoint, SubPoint};
-use casement_core::input::{ButtonCode, Edge, GestureStep, KeyCode, PinchDelta};
+use casement_core::input::{ButtonCode, Edge, GestureStep, KeyCode, Origin, PinchDelta};
 use casement_core::settings::KeyboardSettings;
 use casement_core::time::Mono;
 use casement_core::{Event, InputSerial};
-use smithay::input::keyboard::{FilterResult, KeyboardHandle, XkbConfig};
+use smithay::input::keyboard::{
+    FilterResult, KeyboardHandle, KeysymHandle, ModifiersState, XkbConfig,
+};
 use smithay::input::pointer::{CursorImageStatus, PointerHandle};
 use smithay::input::touch::TouchHandle;
 use smithay::input::{Seat, SeatHandler, SeatState};
@@ -49,6 +55,10 @@ pub struct SeatPart<D: SeatHandler + 'static> {
     pub touch: TouchHandle<D>,
     /// Which serials answer a real press.
     pub serials: SerialBook,
+    /// The presses taken before a client saw them (their releases are taken too).
+    pub taken: Taken,
+    /// The interactive move or resize in progress, if any.
+    pub grab: Option<Drag>,
     /// The cursor the focused client asked for.
     pub cursor: CursorImageStatus,
 }
@@ -90,6 +100,8 @@ impl<D: SeatHandler + 'static> SeatPart<D> {
             keyboard,
             touch,
             serials: SerialBook::empty(),
+            taken: Taken::none(),
+            grab: None,
             cursor: CursorImageStatus::default_named(),
         })
     }
@@ -132,7 +144,8 @@ pub enum PointerDelivery {
     },
 }
 
-/// One key delivery the model routed (bindings already taken out).
+/// One key to deliver: it waits at the text-input gate (`text_input::admit_key`) and is then
+/// carried to the focused client by [`apply_key`], which takes the bindings' filter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KeyDelivery {
     /// The key.
@@ -143,6 +156,8 @@ pub struct KeyDelivery {
     pub serial: InputSerial,
     /// When.
     pub time: Mono,
+    /// Where the key came from (a held key keeps it while it waits).
+    pub origin: Origin,
 }
 
 /// One gesture step the model routed to the focused client.
@@ -190,27 +205,29 @@ where
     Ok(())
 }
 
-/// Delivers a key to the focused client. Bindings were taken out before this, so the key is
-/// always forwarded; smithay sends the modifiers first when the key changed them, so the order
-/// on the wire is `enter`, `modifiers`, `key`.
-pub fn apply_key<D>(
+/// Delivers a key to the focused client through smithay's keyboard `input`, which honours the
+/// input method's grab and sends the modifiers first when the key changed them (so the order on
+/// the wire is `enter`, `modifiers`, `key`). `filter` sees the modifiers and the key's symbol
+/// first and may intercept it (a binding): its answer is returned, `None` when the key was
+/// forwarded.
+pub fn apply_key<D, T>(
     seat: &Seat<D>,
     state: &mut D,
     delivery: KeyDelivery,
-) -> Result<(), WaylandFault>
+    filter: impl FnOnce(&mut D, &ModifiersState, KeysymHandle<'_>) -> FilterResult<T>,
+) -> Result<Option<T>, WaylandFault>
 where
     D: SeatHandler + 'static,
 {
     let keyboard = seat.get_keyboard().ok_or(WaylandFault::SurfaceGone)?;
-    keyboard.input::<(), _>(
+    Ok(keyboard.input(
         state,
         edge::keycode_of(delivery.code),
         edge::key_state_of(delivery.edge),
         serial_to(delivery.serial),
         edge::time_of(delivery.time),
-        |_, _, _| FilterResult::Forward,
-    );
-    Ok(())
+        filter,
+    ))
 }
 
 /// Changes the repeat rate and delay every keyboard of the seat advertises (a settings

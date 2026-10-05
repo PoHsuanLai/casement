@@ -35,6 +35,7 @@ impl Model {
                 Some(exists(self.outputs.0.get(output).map(|_| ())))
             }
             TimerKey::KeyRepeat(_)
+            | TimerKey::ImeHold
             | TimerKey::IdleNotify(..)
             | TimerKey::SwitcherDelay
             | TimerKey::HotCorner(_)

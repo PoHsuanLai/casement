@@ -1,6 +1,6 @@
 //! `relative_pointer` (P0-H4).
 
-use casement_core::geometry::{LogicalPoint, PhysicalSize};
+use casement_core::geometry::{LogicalPoint, PhysicalSize, SubPoint, SubPx};
 use casement_core::input::DeviceClass;
 use casement_core::policy::ConnectionRole;
 use casement_testclient::seat::pointer::Pointer;
@@ -52,7 +52,6 @@ fn count(client: &TestClient, prefix: &str, event: &str) -> usize {
 
 /// Relative_motion carries the device's raw delta.
 #[test]
-#[ignore = "FixtureInput has no relative motion: pointer_to is InputKind::MotionTo with a zero delta, so no relative_motion is sent (add FixtureInput::pointer_by)"]
 fn relative_motion_is_unaccelerated() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     let mouse = fixture.input().plug(
@@ -71,9 +70,14 @@ fn relative_motion_is_unaccelerated() {
         id,
         &cover(Layer::Top, "game", KeyboardInteractivity::None),
     );
-    fixture
-        .input()
-        .pointer_to(mouse, LogicalPoint { x: 500, y: 300 });
+    // A mouse moving 100 px right: the delta in sub-pixels (120 to the pixel).
+    fixture.input().pointer_by(
+        mouse,
+        SubPoint {
+            x: SubPx(100 * 120),
+            y: SubPx(0),
+        },
+    );
     assert!(
         count(
             fixture.client(id),

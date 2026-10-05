@@ -22,6 +22,10 @@ pub enum Effect {
         /// What to send.
         configure: ConfigureSpec,
     },
+    /// List a window on `ext_foreign_toplevel_list_v1`, or send the title and app id it now has.
+    ListWindow(WindowId),
+    /// Withdraw a window from the foreign toplevel list.
+    UnlistWindow(WindowId),
     /// Ask a toplevel to close.
     SendClose {
         /// The window.

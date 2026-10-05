@@ -114,6 +114,50 @@ pub(crate) fn click(fixture: &mut Fixture, device: DeviceId, window: WindowId) {
         .button(device, ButtonCode(0x110), Edge::Release);
 }
 
+/// Lets the open animations run out (windows are drawn, and hit, where they are at the clock's
+/// now, so a click at a window's resting corner needs the window to have settled).
+pub(crate) fn settle(fixture: &mut Fixture) {
+    fixture.advance(std::time::Duration::from_secs(1));
+}
+
+/// Clicks the left button with the pointer at `at`.
+pub(crate) fn click_at(fixture: &mut Fixture, device: DeviceId, at: LogicalPoint) {
+    fixture.input().pointer_to(device, at);
+    fixture
+        .input()
+        .button(device, ButtonCode(0x110), Edge::Press);
+    fixture
+        .input()
+        .button(device, ButtonCode(0x110), Edge::Release);
+}
+
+/// A point of `window` that a window cascaded one step down and right of it does not cover (its
+/// top-left corner, inset), and its mirror: a point of the cascaded window that the first does
+/// not cover once it is raised (its bottom-right corner, inset).
+pub(crate) fn corner_of(fixture: &Fixture, window: WindowId, corner: Corner) -> LogicalPoint {
+    let rect = rect_of(fixture, window);
+    let inset = 6_i32;
+    match corner {
+        Corner::TopLeft => LogicalPoint {
+            x: rect.origin.x + inset,
+            y: rect.origin.y + inset,
+        },
+        Corner::BottomRight => LogicalPoint {
+            x: rect.origin.x + i32::try_from(rect.size.w).unwrap_or(0) - inset,
+            y: rect.origin.y + i32::try_from(rect.size.h).unwrap_or(0) - inset,
+        },
+    }
+}
+
+/// Which corner [`corner_of`] means.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Corner {
+    /// The top-left corner.
+    TopLeft,
+    /// The bottom-right corner.
+    BottomRight,
+}
+
 /// Compares `actual` with the golden at `path`; with `CASEMENT_BLESS=1` the golden is replaced
 /// (deliberate, with a reason in the commit).
 pub(crate) fn check_golden(path: &std::path::Path, actual: &str) -> Result<(), String> {
@@ -209,7 +253,6 @@ fn new_windows_centre_then_cascade() {
 
 /// Move/resize with a serial that answers no press does nothing; with a button serial they start a grab.
 #[test]
-#[ignore = "P0-B-headless: Fixture::start; P0-B-loop: core_loop, exec"]
 fn move_and_resize_need_a_press_serial() {
     let (mut fixture, id) = boot();
     let base = WmBase::bind(fixture.client(id), 7);
@@ -262,22 +305,26 @@ fn move_and_resize_need_a_press_serial() {
 
 /// A press on an inactive window activates it and sends activated in a configure.
 #[test]
-#[ignore = "P0-B-headless: Fixture::start; P0-B-loop: core_loop, exec"]
 fn click_to_focus() {
     let (mut fixture, id) = boot();
     let base = WmBase::bind(fixture.client(id), 7);
+    // Two windows of one size, the second cascaded: each has a corner the other does not cover
+    // (a window cannot be clicked where another lies over it).
     let first = map_toplevel(&mut fixture, id, &base, (400, 300));
-    let second = map_toplevel(&mut fixture, id, &base, (300, 200));
+    let second = map_toplevel(&mut fixture, id, &base, (400, 300));
     // A window that maps with no token takes no focus (A7).
     assert_eq!(fixture.model().focus().key, None);
     assert!(!first.newest_has(State::Activated) && !second.newest_has(State::Activated));
+    settle(&mut fixture);
     let ids = windows(&fixture);
     let device = pointer(&mut fixture);
-    click(&mut fixture, device, ids[0]);
+    let on_first = corner_of(&fixture, ids[0], Corner::TopLeft);
+    let on_second = corner_of(&fixture, ids[1], Corner::BottomRight);
+    click_at(&mut fixture, device, on_first);
     assert_eq!(fixture.model().focus().key, Some(ids[0]));
     assert!(first.newest_has(State::Activated));
     assert!(!second.newest_has(State::Activated));
-    click(&mut fixture, device, ids[1]);
+    click_at(&mut fixture, device, on_second);
     assert_eq!(fixture.model().focus().key, Some(ids[1]));
     assert!(second.newest_has(State::Activated));
     assert!(
@@ -319,7 +366,6 @@ fn a_floating_configure_has_no_tiled_edges() {
 
 /// Create, configure, ack, map, close: the transcript matches tests/golden/transcripts/xdg_shell-map.txt.
 #[test]
-#[ignore = "P0-wire: the click must focus the window (the golden's last two lines are its activated configure)"]
 fn toplevel_transcript_golden() {
     let (mut fixture, id) = boot();
     let base = WmBase::bind(fixture.client(id), 7);

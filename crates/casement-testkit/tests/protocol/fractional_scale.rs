@@ -4,9 +4,12 @@ use casement_testclient::misc::fractional::{FractionalScale, preferred};
 use casement_testclient::surface::subsurface::{Compositor, Surface};
 use casement_testclient::surface::toplevel::WmBase;
 
+use casement_core::OutputName;
+use casement_core::geometry::PhysicalSize;
 use casement_core::policy::ConnectionRole;
-use casement_testclient::TestClient;
+use casement_testclient::{Pattern, TestClient, shm_buffer};
 use casement_testkit::{ClientId, Env, Fixture, FixtureSpec};
+use ds_core::geometry::scale::Scale;
 
 /// The (interface, code) of the protocol error the compositor killed `id` with.
 fn fault(fixture: &mut Fixture, id: ClientId) -> (String, u32) {
@@ -85,6 +88,43 @@ fn preferred_scale_comes_before_the_first_configure() {
     assert!(
         scale < configure,
         "preferred_scale (line {scale}) comes before xdg_toplevel.configure (line {configure})"
+    );
+}
+
+/// An output that changes scale tells the surfaces on it their new preferred scale.
+#[test]
+fn a_scale_change_is_sent_again() {
+    let (mut fixture, id) = boot_at(&[SCALE_1_5]);
+    let client = fixture.client(id);
+    let base = WmBase::bind(client, 7);
+    let manager = FractionalScale::bind(client);
+    let compositor = Compositor::bind(client, 5);
+    let surface = compositor.surface(client);
+    let object = manager.for_surface(client, &surface);
+    let top = base.toplevel_on(client, surface.surface.clone());
+    top.commit_bare();
+    fixture.pump();
+    top.ack_latest();
+    let buffer = shm_buffer(
+        fixture.client(id),
+        PhysicalSize { w: 300, h: 200 },
+        Pattern::Gradient,
+    );
+    top.show(&buffer);
+    fixture.pump();
+    assert_eq!(preferred(fixture.client(id), &object), vec![180]);
+    let name = OutputName::parse("HEADLESS-1").expect("a connector name");
+    fixture.rescale(&name, Scale(240));
+    assert_eq!(
+        preferred(fixture.client(id), &object),
+        vec![180, 240],
+        "the window learns the new scale"
+    );
+    fixture.rescale(&name, Scale(240));
+    assert_eq!(
+        preferred(fixture.client(id), &object),
+        vec![180, 240],
+        "an unchanged scale is not sent again"
     );
 }
 

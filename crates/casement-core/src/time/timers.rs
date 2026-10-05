@@ -22,6 +22,8 @@ pub enum TimerKey {
     KeyRepeat(DeviceId),
     /// A ping to this client went unanswered for the not-responding interval.
     Ping(ClientKey),
+    /// The text-input gate has held a key for the input method's grab as long as it may.
+    ImeHold,
     /// A client's idle notification is due.
     IdleNotify(ClientKey, IdleNotifierId),
     /// An app asked to quit has had its grace period.

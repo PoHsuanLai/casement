@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 1623b147df460d57364874168fa1880a0f889eb41520e8c53fbe7fdb03268bbe # shrinks to [Request { role: Public, object: Valid(1), request: Wire { interface: "zwp_pointer_gesture_hold_v1", opcode: 0, args: [0, -1, 1688301463, 16, 1826068150] } }]

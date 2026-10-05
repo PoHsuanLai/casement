@@ -1,8 +1,12 @@
 //! `virtual_keyboard` (P0-H7).
 
 use casement_core::policy::ConnectionRole;
+use casement_core::time::Mono;
+use casement_testclient::ime::virtual_keyboard::VirtualBoard;
+use casement_testclient::misc::idle::{IdleKind, IdleLine, IdleSignal, IdleWatch};
 use casement_testkit::{Fixture, FixtureSpec};
 use porter_core::SandboxFacts;
+use std::time::Duration;
 
 fn sees_virtual_keyboard(fixture: &mut Fixture, role: ConnectionRole) -> bool {
     let client = fixture.connect(role);
@@ -30,18 +34,64 @@ fn the_virtual_keyboard_manager_is_hidden_from_sandboxed_clients() {
     assert!(!sees_virtual_keyboard(&mut fixture, sandboxed));
 }
 
-/// A virtual keyboard's key enters the model as Origin::Virtual(Keyboard) and resets idleness (I8).
-///
-/// Steps: a client creates a keyboard with `ime::virtual_keyboard::{bind_virtual_keyboard,
-/// send_keymap}`, a second client holds an idle notification of 30 s (H8's helper) and the
-/// first sends `key` at 20 s: `idled` arrives at 50 s, not 30 s; the model saw the key as
-/// `Origin::Virtual(Keyboard)` (the fixture's input log). A `key` before the keymap is the
-/// protocol error `no_keymap`.
+/// The smallest keymap libxkbcommon accepts: one key.
+const KEYMAP: &str = "xkb_keymap {\n xkb_keycodes { <A> = 38; };\n xkb_types {};\n xkb_compat {};\n xkb_symbols { key <A> { [ a ] }; };\n};\n";
+
+/// A virtual keyboard's key resets idleness (I8: every origin counts): an idle notification of
+/// 30 s asked at 0 goes off at 50 s when a virtual key arrives at 20 s. A `key` before the
+/// keymap is the protocol error `no_keymap`. (That the model sees the key as
+/// `Origin::Virtual(Keyboard)` is the unit test of `casement_wayland::virtual_keyboard`.)
 #[test]
-#[ignore = "body is todo!(): ime::virtual_keyboard on the client's queue, then the steps in its doc"]
 fn virtual_keys_are_origin_virtual_and_count_as_activity() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
-    let client = fixture.connect(ConnectionRole::Public);
-    let _ = fixture.client(client);
-    todo!("P0-T-client: the steps in this test's doc (ime::virtual_keyboard on the client's queue)")
+    let keys = fixture.connect(ConnectionRole::Public);
+    let watcher = fixture.connect(ConnectionRole::Public);
+    let careless = fixture.connect(ConnectionRole::Public);
+    fixture.pump();
+
+    let early = VirtualBoard::start(fixture.client(careless).globals()).expect("the keyboard");
+    fixture.pump();
+    early.key(0, 30, 1).expect("key");
+    fixture.pump();
+    let error = fixture
+        .client(careless)
+        .protocol_error()
+        .expect("a key before the keymap is an error");
+    assert_eq!(error.interface, "zwp_virtual_keyboard_v1");
+    assert_eq!(error.code, 0, "no_keymap");
+
+    let mut watch = IdleWatch::start(
+        fixture.client(watcher).globals(),
+        IdleKind::Inhibitable,
+        Duration::from_secs(30),
+    )
+    .expect("the notification");
+    let board = VirtualBoard::start(fixture.client(keys).globals()).expect("the keyboard");
+    fixture.pump();
+    board.keymap(KEYMAP).expect("keymap");
+    fixture.pump();
+    let mut step = |fixture: &mut Fixture, by: Duration| {
+        fixture.advance(by);
+        watch.pump(fixture.model().now()).expect("pump the watch");
+        watch.lines().to_vec()
+    };
+    assert!(step(&mut fixture, Duration::from_secs(20)).is_empty());
+    board.key(0, 30, 1).expect("key");
+    board.key(0, 30, 0).expect("key");
+    assert!(
+        step(&mut fixture, Duration::from_millis(29_999)).is_empty(),
+        "the key at 20 s moved the deadline to 50 s"
+    );
+    assert!(
+        fixture.client(keys).protocol_error().is_none(),
+        "a key after the keymap is fine"
+    );
+    let at_fifty = step(&mut fixture, Duration::from_millis(1));
+    assert_eq!(
+        at_fifty,
+        [IdleLine {
+            at: Mono(Duration::from_secs(50)),
+            signal: IdleSignal::Idled
+        }]
+    );
 }

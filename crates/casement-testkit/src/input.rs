@@ -55,6 +55,12 @@ impl<'a> FixtureInput<'a> {
         self.push(device, InputKind::MotionTo { at });
     }
 
+    /// Moves the pointer of `device` by `delta` (a relative motion: what a mouse sends), then
+    /// pumps.
+    pub fn pointer_by(&mut self, device: DeviceId, delta: SubPoint) {
+        self.push(device, InputKind::Motion { delta });
+    }
+
     /// A button on `device`, then a pump.
     pub fn button(&mut self, device: DeviceId, button: ButtonCode, edge: Edge) {
         self.push(device, InputKind::Button { button, edge });

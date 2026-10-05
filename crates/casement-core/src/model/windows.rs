@@ -62,6 +62,7 @@ impl Model {
                 (TokenCheck::Valid, Enabled::On, Some(space)) => model.show(&space),
                 _ => Moved::of(model),
             })
+            .then(|model| model.listed(id))
             .then(|model| model.feed_mapped(id, token))
             .then(|model| match sheet_of {
                 Some(parent) => model.feed(FocusIn::SheetOpened { parent, sheet: id }),
@@ -161,6 +162,7 @@ impl Model {
             })
         });
         moved
+            .then(|model| model.with_effect(Effect::UnlistWindow(id)))
             .then(|model| model.feed(FocusIn::Unmapped(id)))
             .then(|model| match closed_sheet {
                 Some(parent) => model.feed(FocusIn::SheetClosed { parent }),
@@ -189,6 +191,29 @@ impl Model {
             .then(|model| model.redrawn(Cause::Configure, outputs))
     }
 
+    /// A mapped toplevel's dialog hint changed. A window that now blocks its parent opens a
+    /// sheet on it, one that no longer does closes it (as at the map).
+    pub(super) fn modality(self, id: WindowId, modality: Modality) -> Moved {
+        let Some(window) = self.windows.get(&id).cloned() else {
+            return Moved::of(self).with(Effect::Note(CoreNote::UnknownWindow(id)));
+        };
+        if window.modality == modality {
+            return Moved::of(self);
+        }
+        let sheet_of = |modality: Modality| match (window.parent, modality) {
+            (Parent::Window(parent), Modality::WindowModal) => Some(parent),
+            _ => None,
+        };
+        let (before, after) = (sheet_of(window.modality), sheet_of(modality));
+        let mut model = self;
+        set(&mut model, id, |held| held.modality = modality);
+        Moved::of(model).then(|model| match (before, after) {
+            (None, Some(parent)) => model.feed(FocusIn::SheetOpened { parent, sheet: id }),
+            (Some(parent), None) => model.feed(FocusIn::SheetClosed { parent }),
+            _ => Moved::of(model),
+        })
+    }
+
     /// A toplevel's metadata changed.
     pub(super) fn meta(self, id: WindowId, meta: ToplevelMeta) -> Moved {
         let Some(window) = self.windows.get(&id) else {
@@ -197,6 +222,7 @@ impl Model {
         let (limits_before, app) = (window.limits, window.app.clone());
         let outputs = self.outputs_of(&[id]);
         let mut model = self;
+        let announces = matches!(meta, ToplevelMeta::Title(_) | ToplevelMeta::ClaimedId(_));
         let relayout = match meta {
             ToplevelMeta::Title(title) => {
                 set(&mut model, id, |window| window.title = title);
@@ -217,9 +243,13 @@ impl Model {
                 changed
             }
         };
-        match relayout {
+        let moved = match relayout {
             true => model.redrawn(Cause::Configure, outputs),
             false => Moved::of(model),
+        };
+        match announces {
+            true => moved.then(|model| model.listed(id)),
+            false => moved,
         }
     }
 
@@ -237,6 +267,16 @@ impl Model {
             WindowHintChange::Edited(edited) => window.hints.edited = edited,
         });
         Moved::of(model)
+    }
+
+    /// The window is listed on the foreign toplevel list, or its listing is brought up to date.
+    pub(super) fn listed(self, id: WindowId) -> Moved {
+        self.with_effect(Effect::ListWindow(id))
+    }
+
+    /// The model unchanged and `effect` asked.
+    pub(super) fn with_effect(self, effect: Effect) -> Moved {
+        Moved::of(self).with(effect)
     }
 
     /// The window `id` in state `state`.

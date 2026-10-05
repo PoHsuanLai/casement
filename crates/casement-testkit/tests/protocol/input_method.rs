@@ -1,6 +1,8 @@
 //! `input_method` (P0-H7).
 
+use crate::text_input::Typing;
 use casement_core::policy::ConnectionRole;
+use casement_testclient::ime::text_input::TextInputEvent;
 use casement_testkit::{Fixture, FixtureSpec};
 use porter_core::SandboxFacts;
 
@@ -24,19 +26,28 @@ fn input_method_is_advertised_to_public_clients() {
     assert!(sees_input_method(&mut fixture, ConnectionRole::Public));
 }
 
-/// The input method's commit_string reaches the focused text field.
-///
-/// Steps: as in text_input's `ime_commit_transcript`; the field's transcript holds
-/// `commit_string` then `done` carrying the serial of the field's own last `commit`.
+/// The input method's commit_string reaches the focused text field: `commit_string` then `done`
+/// carrying the serial of the field's own last `commit`.
 #[test]
-#[ignore = "body is todo!(): attach ime::input_method and ime::text_input to the client's queue (delegate_dispatch!), then the steps in its doc"]
 fn an_input_method_commits_to_the_focused_field() {
-    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
-    let client = fixture.connect(ConnectionRole::Public);
-    let _ = fixture.client(client);
-    todo!(
-        "P0-T-client: the steps in this test's doc (ime::input_method and ime::text_input on one queue)"
-    )
+    let mut typing = Typing::start();
+    typing.enable_and_grab();
+    typing.ime.commit_string("你").expect("commit_string");
+    typing.ime.commit_batch().expect("commit");
+    typing.pump();
+    let events: Vec<_> = typing
+        .ime
+        .field_events()
+        .iter()
+        .map(|line| line.event.clone())
+        .collect();
+    assert_eq!(
+        events[events.len().saturating_sub(2)..],
+        [
+            TextInputEvent::CommitString(Some("你".to_owned())),
+            TextInputEvent::Done(1)
+        ]
+    );
 }
 
 /// A Sandboxed connection does not see zwp_input_method_manager_v2 (I7).

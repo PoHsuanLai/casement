@@ -7,7 +7,7 @@
 //! field. Events arrive as [`TextInputEvent`]s, which print as transcript lines.
 
 use crate::ClientError;
-use wayland_client::globals::GlobalList;
+use crate::GlobalList;
 use wayland_client::protocol::wl_seat::WlSeat;
 use wayland_client::{Connection, Dispatch, QueueHandle};
 use wayland_protocols::wp::text_input::zv3::client::{

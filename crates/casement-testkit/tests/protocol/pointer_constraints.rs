@@ -1,6 +1,6 @@
 //! `pointer_constraints` (P0-H4).
 
-use casement_core::geometry::{LogicalPoint, PhysicalSize};
+use casement_core::geometry::{LogicalPoint, PhysicalSize, SubPoint, SubPx};
 use casement_core::input::DeviceClass;
 use casement_core::policy::ConnectionRole;
 use casement_testclient::seat::constraints::Constraint;
@@ -53,7 +53,6 @@ fn count(client: &TestClient, prefix: &str, event: &str) -> usize {
 
 /// A locked pointer stays put and relative motion still arrives.
 #[test]
-#[ignore = "real code: the lock activates only on enter, which waits on the commit refocus fix (see layer_shell); then needs FixtureInput::pointer_by for the relative half"]
 fn a_lock_holds_while_focused() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     let mouse = fixture.input().plug(
@@ -84,9 +83,13 @@ fn a_lock_holds_while_focused() {
         "zwp_relative_pointer_v1#",
         "relative_motion",
     );
-    fixture
-        .input()
-        .pointer_to(mouse, LogicalPoint { x: 600, y: 300 });
+    fixture.input().pointer_by(
+        mouse,
+        SubPoint {
+            x: SubPx(200 * 120),
+            y: SubPx(0),
+        },
+    );
     assert_eq!(
         count(fixture.client(id), "wl_pointer#", "motion"),
         motions,

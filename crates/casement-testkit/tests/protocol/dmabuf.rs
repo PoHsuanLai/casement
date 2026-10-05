@@ -5,8 +5,9 @@
 //! feedback probe, udmabuf client buffers) are `todo!` with the missing piece named; every
 //! test stays ignored until the fixture itself runs (`Fixture::start` is P0-B-headless's).
 
+use casement_backend::DmabufMode;
 use casement_core::policy::ConnectionRole;
-use casement_testclient::misc::dmabuf_feedback::advertised_version;
+use casement_testclient::misc::dmabuf_feedback::{FeedbackProbe, TableRow, advertised_version};
 use casement_testkit::{Fixture, FixtureSpec};
 
 /// With --dmabuf none there is no zwp_linux_dmabuf_v1 (shell-host F80 falls back to shm).
@@ -20,23 +21,45 @@ fn dmabuf_none_advertises_nothing() {
 
 /// With --dmabuf soft the default feedback names the fake main device (version 6, A3).
 #[test]
-#[ignore = "body is todo!(): FixtureSpec has no with_dmabuf(DmabufMode::Soft) yet, so the fixture cannot start in soft mode"]
 fn dmabuf_soft_advertises_the_fake_main_device() {
-    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let mut fixture =
+        Fixture::start(FixtureSpec::desktop().with_dmabuf(DmabufMode::Soft)).expect("fixture");
     let client = fixture.connect(ConnectionRole::Public);
     fixture.pump();
-    let _ = fixture.client(client);
-    // Once both exist: advertised_version(globals) == Some(6); a FeedbackProbe::start(
-    // client.connection(), client.globals()) reports device() == Some(0xE280) (226:128) and
-    // a first tranche of linear ARGB8888 and XRGB8888 targeting it.
-    todo!("P0-H6: soft advertises version 6 and a feedback whose main device is 226:128")
+    assert_eq!(
+        advertised_version(fixture.client(client).globals()),
+        Some(6)
+    );
+    let connection = fixture.client(client).connection().clone();
+    let mut probe = FeedbackProbe::start(&connection, fixture.client(client).globals())
+        .expect("the feedback probe");
+    fixture.pump();
+    let report = probe.report().expect("the feedback said done");
+    assert_eq!(
+        report.device(),
+        Some(0xE280),
+        "226:128, the first fabricated node"
+    );
+    let first = report.tranches.first().expect("a tranche");
+    assert_eq!(first.target_device, Some(0xE280));
+    let linear = |format: u32| TableRow {
+        format,
+        modifier: 0,
+    };
+    // ARGB8888 and XRGB8888 are the fourcc codes 'AR24' and 'XR24'; linear is modifier 0.
+    assert_eq!(
+        first.formats,
+        [linear(0x3432_5241), linear(0x3432_5258)],
+        "linear ARGB8888 and XRGB8888"
+    );
 }
 
 /// A client dma-buf is tagged with its tranche's node (A5).
 #[test]
-#[ignore = "body is todo!(): needs a soft-dmabuf fixture (FixtureSpec::with_dmabuf) and a udmabuf client buffer; copy counters wait on P1-D4"]
+#[ignore = "body is todo!(): needs a udmabuf client buffer through the testclient and the compositor's view of the imported Dmabuf (copy counters wait on P1-D4)"]
 fn imported_buffers_are_tagged_with_their_node() {
-    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let mut fixture =
+        Fixture::start(FixtureSpec::desktop().with_dmabuf(DmabufMode::Soft)).expect("fixture");
     let client = fixture.connect(ConnectionRole::Public);
     let _ = fixture.client(client);
     todo!(

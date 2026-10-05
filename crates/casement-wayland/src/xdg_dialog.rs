@@ -1,12 +1,11 @@
 //! `xdg_wm_dialog_v1`: dialogs and modal dialogs.
 
 use crate::states::GlobalFilter;
-use casement_core::Event;
+use casement_core::{Event, WindowId};
 use casement_protocols::vocab::Modality;
 use smithay::reexports::wayland_protocols::xdg::dialog::v1::server::xdg_wm_dialog_v1::XdgWmDialogV1;
 use smithay::reexports::wayland_server::{Dispatch, DisplayHandle, GlobalDispatch};
 use smithay::wayland::GlobalData;
-use smithay::wayland::shell::xdg::ToplevelSurface;
 use smithay::wayland::shell::xdg::dialog::XdgDialogState;
 
 /// `xdg_wm_dialog_v1`.
@@ -31,17 +30,12 @@ impl XdgDialogPart {
     }
 }
 
-/// `toplevel` became (or stopped being) a dialog or a modal one.
+/// The mapped window `window` became (or stopped being) a dialog or a modal one.
 ///
 /// smithay keeps the hint on the toplevel's role, and the model reads it when the window maps
 /// (`xdg_shell::modality_of`, in `MappedToplevel.modality`), so a hint set before the first
-/// buffer needs no event. The model has no event for a change after the map (an interface ask:
-/// `Event::ToplevelModality`), so this reports nothing today.
-pub fn on_modal(
-    part: &mut XdgDialogPart,
-    toplevel: &ToplevelSurface,
-    modality: Modality,
-) -> Vec<Event> {
-    let _ = (part, toplevel, modality);
-    Vec::new()
+/// buffer needs no event; one that changes after it is `Event::ToplevelModality`.
+pub fn on_modal(part: &mut XdgDialogPart, window: WindowId, modality: Modality) -> Vec<Event> {
+    let _ = part;
+    vec![Event::ToplevelModality { window, modality }]
 }

@@ -10,7 +10,6 @@ use crate::exec;
 use crate::state::State;
 use casement_backend::headless::Shown;
 use casement_backend::{BackendKind, ConnectorEvent, HeadlessBackend};
-use casement_core::geometry::LogicalSize;
 use casement_core::output::OutputConfig;
 use casement_core::settings::CasementSettings;
 use casement_core::space::SpaceSeed;
@@ -18,22 +17,31 @@ use casement_core::time::{Mono, VblankSeq};
 use casement_core::{Cause, Effect, Event, Model, OutputKey, OutputName};
 use casement_layout::{ConfigureNeed, SceneLayout, spec_of};
 use casement_motion::{FrameScene, retarget};
-use casement_render::{OutputView, SurfaceEntry};
+use casement_render::OutputView;
 use casement_wayland::{commit_timing, fifo, presentation, session_lock, xdg_shell};
-use smithay::desktop::utils::bbox_from_surface_tree;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::wayland::compositor::{
     SurfaceAttributes, TraversalAction, with_surface_tree_downward,
 };
 
 mod deliver;
+mod grab;
+mod idle;
+mod ime;
 mod input;
 mod scene;
+mod surfaces;
 mod windows;
+
+pub(crate) use grab::start as start_grab;
+pub(crate) use idle::sync_inhibitors;
+pub(crate) use surfaces::resend_scale;
 
 /// Steps every event at the clock's now and carries out the effects ([`crate::exec::exec`]);
 /// a `Relayout` arranges once per feed (not once per event), retargets motion and asks the
-/// outputs for frames.
+/// outputs for frames. An `Event::Input` (of any origin: the backend's queue, a virtual
+/// keyboard) is also told to the idle machine and then delivered to the clients by the reach
+/// table, the hit test and the seat, so every input takes the one path.
 pub fn feed(state: &mut State, events: Vec<Event>) {
     if events.is_empty() {
         return;
@@ -52,7 +60,23 @@ pub fn feed(state: &mut State, events: Vec<Event>) {
     );
     state.core.model = model;
     exec::exec(state, effects);
-    sync_surfaces(state, &events_seen);
+    surfaces::sync(state, &events_seen);
+    idle::hear(state, &events_seen, now);
+    ime::hear(state, &events_seen);
+    events_seen
+        .iter()
+        .filter_map(|event| match event {
+            Event::Input(input) => Some(input),
+            _ => None,
+        })
+        .for_each(|input| deliver::deliver(state, input));
+    deliver::refocus(state);
+}
+
+/// The pointer has not moved but a commit may have changed what is under it (a layer's first
+/// buffer, a surface that unmapped); `feed` returns early on no events, so a commit asks for
+/// this itself.
+pub fn refocus_pointer(state: &mut State) {
     deliver::refocus(state);
 }
 
@@ -75,56 +99,6 @@ fn note_settings(state: &State, events: &[Event]) {
             tracing::warn!(%fault, "repeat info did not follow the settings");
         }
     }
-}
-
-/// The surface book follows the window, layer and lock events: a layer surface that maps or changes is
-/// drawn from its surface tree at its committed size, one that unmaps is not drawn, and the
-/// lock surfaces are drawn over their outputs.
-fn sync_surfaces(state: &mut State, events: &[Event]) {
-    for event in events {
-        match event {
-            Event::LayerMapped { layer, .. } | Event::LayerChanged { layer, .. } => {
-                let Some(root) = state.wl.layer_shell.surface_of(*layer).cloned() else {
-                    continue;
-                };
-                let size = bbox_from_surface_tree(&root, (0, 0)).size;
-                let entry = SurfaceEntry {
-                    root,
-                    committed: LogicalSize {
-                        w: u32::try_from(size.w).unwrap_or(0),
-                        h: u32::try_from(size.h).unwrap_or(0),
-                    },
-                };
-                let book = std::mem::take(&mut state.render.textures);
-                state.render.textures = book.with_layer(*layer, entry);
-            }
-            Event::LayerUnmapped { layer } => {
-                let book = std::mem::take(&mut state.render.textures);
-                state.render.textures = book.without_layer(layer);
-            }
-            Event::ToplevelMapped(_)
-            | Event::ToplevelCommitted { .. }
-            | Event::ToplevelUnmapped { .. } => windows::sync(state, event),
-            Event::Lock(_) => sync_locks(state),
-            _ => {}
-        }
-    }
-}
-
-/// Each output's lock surface is drawn at its output's size.
-fn sync_locks(state: &mut State) {
-    let mut book = std::mem::take(&mut state.render.textures).without_locks();
-    for (output, lock) in &state.wl.session_lock.surfaces {
-        let Some(plugged) = state.core.model.outputs().0.get(output) else {
-            continue;
-        };
-        let entry = SurfaceEntry {
-            root: lock.wl_surface().clone(),
-            committed: plugged.config.logical_rect().size,
-        };
-        book = book.with_lock(output.clone(), entry);
-    }
-    state.render.textures = book;
 }
 
 /// One frame on `output`: sample motion at the clock's now, build the elements, render,
@@ -411,7 +385,9 @@ pub fn turn(state: &mut State) -> usize {
     let gone = crate::clients::take_gone(state);
     let departed = gone.len();
     feed(state, gone);
-    drain_input(state) + polled + departed
+    let drained = drain_input(state);
+    ime::settle(state);
+    drained + polled + departed
 }
 
 /// Delivers the input the backend queued, in the order it came: each event is told to the
@@ -424,8 +400,7 @@ pub fn drain_input(state: &mut State) -> usize {
     let queued = casement_backend::headless::HeadlessInput::drain(backend.input());
     let count = queued.len();
     for event in queued.iter().filter_map(input::event_of) {
-        feed(state, vec![Event::Input(event.clone())]);
-        deliver::deliver(state, &event);
+        feed(state, vec![Event::Input(event)]);
     }
     count
 }

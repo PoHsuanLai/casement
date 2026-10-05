@@ -15,14 +15,13 @@ use casement_core::WindowId;
 use casement_core::policy::{Advertise, ConnectionRole, GlobalKind};
 use smithay::input::SeatHandler;
 use smithay::reexports::wayland_server::Client;
-use smithay::wayland::idle_notify::IdleNotifierHandler;
 
 /// One field per protocol module: what the composition root holds as `State::wl`. Lanes fill
 /// each module's functions; the field set changes only in a freeze (each delta freeze adds its
 /// modules' parts). Generic over the composition root's state type `D` only because smithay's
-/// seat and idle notifier are.
+/// seat is.
 #[derive(Debug)]
-pub struct WaylandStates<D: SeatHandler + IdleNotifierHandler + 'static> {
+pub struct WaylandStates<D: SeatHandler + 'static> {
     /// Client keys minted as clients connect.
     pub clients: ClientMint,
     /// `wl_compositor`.
@@ -102,7 +101,7 @@ pub struct WaylandStates<D: SeatHandler + IdleNotifierHandler + 'static> {
     /// `zwp_virtual_keyboard_manager_v1`.
     pub virtual_keyboard: virtual_keyboard::VirtualKeyboardPart,
     /// `ext_idle_notifier_v1`.
-    pub idle_notify: idle_notify::IdleNotifyPart<D>,
+    pub idle_notify: idle_notify::IdleNotifyPart,
     /// `zwp_idle_inhibit_manager_v1`.
     pub idle_inhibit: idle_inhibit::IdleInhibitPart,
     /// `ext_foreign_toplevel_list_v1`.

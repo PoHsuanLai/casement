@@ -4,7 +4,7 @@
 //! keyboard grab and its popup surface with `wayland_client::delegate_dispatch!`.
 
 use crate::ClientError;
-use wayland_client::globals::GlobalList;
+use crate::GlobalList;
 use wayland_client::protocol::wl_seat::WlSeat;
 use wayland_client::{Connection, Dispatch, QueueHandle};
 use wayland_protocols_misc::zwp_input_method_v2::client::{

@@ -3,7 +3,8 @@
 //! Ignored until the fixture and the core loop are filled.
 
 use crate::xdg_shell::{
-    boot, check_golden, click, golden, lines_of, map_toplevel, pointer, windows,
+    Corner, boot, check_golden, click, click_at, corner_of, golden, lines_of, map_toplevel,
+    pointer, settle, windows,
 };
 use casement_core::policy::ConnectionRole;
 use casement_core::window::{A11yRoot, FrameHint};
@@ -34,13 +35,12 @@ fn the_global_is_advertised_from_p0() {
 
 /// The key window receives emphasis(key), the others inactive.
 #[test]
-#[ignore = "P0-B-headless: Fixture::start; P0-B-loop: core_loop, exec"]
 fn emphasis_follows_focus() {
     let (mut fixture, id) = boot();
     let base = WmBase::bind(fixture.client(id), 7);
     let manager = WindowManager::bind(fixture.client(id), 1);
     let first = map_toplevel(&mut fixture, id, &base, (400, 300));
-    let second = map_toplevel(&mut fixture, id, &base, (300, 200));
+    let second = map_toplevel(&mut fixture, id, &base, (400, 300));
     let first_ext = manager.window(fixture.client(id), &first);
     let second_ext = manager.window(fixture.client(id), &second);
     fixture.pump();
@@ -49,10 +49,14 @@ fn emphasis_follows_focus() {
     assert_eq!(first_ext.placement(), Some(PlacementMark::Free));
     let ids = windows(&fixture);
     let device = pointer(&mut fixture);
-    click(&mut fixture, device, ids[0]);
+    settle(&mut fixture);
+    // The second window is cascaded over the first: each has a corner the other leaves open.
+    let on_first = corner_of(&fixture, ids[0], Corner::TopLeft);
+    let on_second = corner_of(&fixture, ids[1], Corner::BottomRight);
+    click_at(&mut fixture, device, on_first);
     assert_eq!(first_ext.emphasis(), Some(Emphasis::Key));
     assert_eq!(second_ext.emphasis(), Some(Emphasis::Inactive));
-    click(&mut fixture, device, ids[1]);
+    click_at(&mut fixture, device, on_second);
     assert_eq!(first_ext.emphasis(), Some(Emphasis::Inactive));
     assert_eq!(second_ext.emphasis(), Some(Emphasis::Key));
 }
@@ -77,7 +81,6 @@ fn a_second_get_window_is_already_constructed() {
 
 /// Request_placement with a press serial is stored in the model, not acted on at P0.
 #[test]
-#[ignore = "P0-B-headless: Fixture::start; P0-B-loop: core_loop, exec"]
 fn request_placement_is_stored() {
     let (mut fixture, id) = boot();
     let base = WmBase::bind(fixture.client(id), 7);

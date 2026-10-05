@@ -3,9 +3,9 @@
 //! panics the loop (CONVENTIONS addendum 2).
 //!
 //! A batch's `Relayout`s collapse into one arrangement, made after the rest of the batch.
-//! Three effects have no wire function to call yet and are logged: `StartGrab` (the grab
-//! machinery is xdg_shell's, P0-H2), `Route` (the press's delivery is the seat's, P0-H4) and
-//! `Disconnect` (a client key names no connection until the client table exists).
+//! Some effects have no wire function to call yet and are logged: `Route` (the press's
+//! delivery is the seat's and was decided before the effect), `Disconnect` (a client key names
+//! no connection until the client table exists), `Bell` and `Attention` (P3).
 
 use crate::core_loop;
 use crate::state::State;
@@ -14,7 +14,8 @@ use casement_core::{Cause, CoreNote, Effect, KeyboardTarget, LayerKey, OutputKey
 use casement_core::{InputSerial, geometry::LogicalSize, lock::LockReply};
 use casement_wayland::output::OutputWire;
 use casement_wayland::{
-    WaylandFault, layer_shell, output, presentation, quire_window, seat, session_lock, xdg_shell,
+    WaylandFault, foreign_toplevel_list, layer_shell, output, presentation, quire_window, seat,
+    session_lock, text_input, xdg_shell,
 };
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::SERIAL_COUNTER;
@@ -57,6 +58,18 @@ fn apply(state: &mut State, effect: Effect) {
                 &configure,
             ));
         }
+        Effect::ListWindow(window) => {
+            if let Some(held) = state.core.model.windows().get(&window) {
+                log(foreign_toplevel_list::apply_toplevel(
+                    &mut state.wl.foreign_toplevel_list,
+                    held,
+                ));
+            }
+        }
+        Effect::UnlistWindow(window) => log(foreign_toplevel_list::apply_closed(
+            &mut state.wl.foreign_toplevel_list,
+            window,
+        )),
         Effect::SendClose { window } => {
             log(xdg_shell::apply_close(&mut state.wl.xdg_shell, window));
         }
@@ -83,7 +96,7 @@ fn apply(state: &mut State, effect: Effect) {
         Effect::Bell { .. } | Effect::Attention { .. } => {
             tracing::debug!("the bell and attention have no compositor-side effect before P3");
         }
-        Effect::StartGrab(grab) => tracing::debug!(?grab, "a grab waits for xdg_shell's grab"),
+        Effect::StartGrab(grab) => core_loop::start_grab(state, grab),
         Effect::Route(route) => tracing::debug!(?route, "a press route is the seat's to carry"),
         Effect::Disconnect { client, fault } => {
             tracing::warn!(
@@ -136,7 +149,9 @@ fn keyboard(state: &mut State, target: &KeyboardTarget) {
     };
     let serial = InputSerial(SERIAL_COUNTER.next_serial().into());
     let handle = state.wl.seat.seat.clone();
+    let followed = focus.clone();
     log(seat::apply_keyboard_focus(&handle, state, focus, serial));
+    log(text_input::apply_text_focus(&handle, followed.as_ref()));
 }
 
 fn configure_layer(state: &mut State, layer: LayerKey, size: LogicalSize) {
@@ -187,6 +202,7 @@ fn apply_output(state: &mut State, output: &OutputKey, config: &OutputConfig) {
         false => output::apply_plug::<State>(&mut state.wl.output, &state.display, &wire),
     };
     log(result);
+    core_loop::resend_scale(state, output, config.scale);
     if let Some(global) = state.wl.output.outputs.get(output) {
         presentation::learn_output(&mut state.wl.presentation, output.clone(), global.clone());
     }

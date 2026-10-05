@@ -35,7 +35,6 @@ fn the_notifier_is_advertised_once_at_version_2() {
 
 /// A 30 s notification fires idled after exactly 30 s of virtual time without input.
 #[test]
-#[ignore = "P0-H8: written; runs once P0-B-headless (Fixture::start) and P0-T-client land"]
 fn idle_is_notified_at_virtual_time() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     let client = fixture.connect(ConnectionRole::Public);
@@ -68,7 +67,6 @@ fn idle_is_notified_at_virtual_time() {
 
 /// Input after idled sends resumed, and idleness counts again from the input.
 #[test]
-#[ignore = "P0-H8: written; runs once P0-B-headless (Fixture::start) and P0-T-client land"]
 fn activity_resumes() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     let client = fixture.connect(ConnectionRole::Public);
@@ -102,7 +100,6 @@ fn activity_resumes() {
 
 /// Activity before the timer is due moves the deadline: no idled at the original instant.
 #[test]
-#[ignore = "P0-H8: written; runs once P0-B-headless (Fixture::start) and P0-T-client land"]
 fn input_moves_the_deadline() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     let client = fixture.connect(ConnectionRole::Public);

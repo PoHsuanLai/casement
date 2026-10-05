@@ -70,6 +70,22 @@ impl Model {
         }
     }
 
+    /// An interactive move or resize put the window at `rect`: it floats there. A window in any
+    /// other state (full screen, in the dock) does not follow a drag; a tiled or filled one
+    /// left its place when the grab began.
+    pub(super) fn dragged(self, id: WindowId, rect: LogicalRect) -> Moved {
+        let Some(window) = self.windows.get(&id) else {
+            return Moved::of(self).with(Effect::Note(CoreNote::UnknownWindow(id)));
+        };
+        match &window.state {
+            WindowState::Floating(held) if *held == rect => Moved::of(self),
+            WindowState::Floating(_) | WindowState::New(_) => self
+                .with_state(id, WindowState::Floating(rect))
+                .then(|model| model.relaid_out(id, Cause::Drag)),
+            _ => Moved::of(self),
+        }
+    }
+
     /// The window goes where `target` says. Full-screen and minimised windows stay put.
     pub(super) fn place(self, window: &Window, target: PlaceTarget) -> Moved {
         let Some(usable) = self
