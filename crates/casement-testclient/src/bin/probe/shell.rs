@@ -219,11 +219,10 @@ impl Flags {
 /// does not know are left out).
 fn states_of(words: &[u8]) -> Vec<xdg_toplevel::State> {
     words
-        .chunks_exact(4)
-        .filter_map(|word| {
-            let value = u32::from_ne_bytes([word[0], word[1], word[2], word[3]]);
-            xdg_toplevel::State::try_from(value).ok()
-        })
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .filter_map(|word| xdg_toplevel::State::try_from(u32::from_ne_bytes(*word)).ok())
         .collect()
 }
 

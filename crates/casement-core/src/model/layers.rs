@@ -33,7 +33,7 @@ impl Model {
         let Some(spec) = self.layers.get(&layer).cloned() else {
             return Moved::of(self);
         };
-        let sizes = self.sizes_on(&[spec.output.clone()]);
+        let sizes = self.sizes_on(std::slice::from_ref(&spec.output));
         let model = Model {
             layers: self.layers.without_layer(&layer),
             ..self
