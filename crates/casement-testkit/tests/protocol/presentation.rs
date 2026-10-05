@@ -22,7 +22,6 @@ const OUTPUT: &str = "HEADLESS-1";
 
 /// The compositor announces CLOCK_MONOTONIC at both versions.
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn every_version_binds_and_announces_its_clock() {
     let (mut fixture, id) = boot();
     for version in [1, 2] {
@@ -78,7 +77,6 @@ fn feedback_arrives_on_virtual_time() {
 
 /// Feedback of a surface destroyed before its frame is discarded, never presented.
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn feedback_of_a_destroyed_surface_is_discarded() {
     let (mut fixture, id) = boot();
     let client = fixture.client(id);
@@ -98,7 +96,6 @@ fn feedback_of_a_destroyed_surface_is_discarded() {
 
 /// A second commit with feedback supersedes the first: the first is discarded, the second shown.
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn a_superseded_commit_is_discarded() {
     let (mut fixture, id) = boot();
     let client = fixture.client(id);

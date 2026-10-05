@@ -9,7 +9,6 @@ use casement_testclient::surface::toplevel::extras::SystemBell;
 
 /// Ring with a surface yields Effect::Bell for that window's app.
 #[test]
-#[ignore = "P0-B-headless: Fixture::start; P0-B-loop: core_loop, exec"]
 fn the_bell_rings_for_the_surfaces_app() {
     let (mut fixture, id) = boot();
     let base = WmBase::bind(fixture.client(id), 7);

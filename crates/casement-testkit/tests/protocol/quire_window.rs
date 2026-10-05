@@ -16,7 +16,6 @@ use casement_testclient::surface::toplevel::{WmBase, bind_pointer};
 
 /// Quire_window_manager_v1 version 1 is advertised to public clients (C50: shell-host's probe).
 #[test]
-#[ignore = "P0-B-headless: Fixture::start; P0-B-loop: core_loop, exec"]
 fn the_global_is_advertised_from_p0() {
     let (mut fixture, id) = boot();
     let advertised = fixture
@@ -60,7 +59,6 @@ fn emphasis_follows_focus() {
 
 /// A second get_window on one toplevel raises already_constructed.
 #[test]
-#[ignore = "P0-B-headless: Fixture::start; P0-B-loop: core_loop, exec"]
 fn a_second_get_window_is_already_constructed() {
     let (mut fixture, id) = boot();
     let base = WmBase::bind(fixture.client(id), 7);
@@ -111,7 +109,6 @@ fn request_placement_is_stored() {
 /// `dialog` and `shell` are not roles a client may ask for (`bad_role`); a role it may ask for
 /// reaches the model.
 #[test]
-#[ignore = "P0-B-headless: Fixture::start; P0-B-loop: core_loop, exec"]
 fn roles_are_checked() {
     let (mut fixture, id) = boot();
     let base = WmBase::bind(fixture.client(id), 7);
@@ -137,7 +134,6 @@ fn roles_are_checked() {
 
 /// Once the toplevel is destroyed every request but `destroy` is `defunct_toplevel`.
 #[test]
-#[ignore = "P0-B-headless: Fixture::start; P0-B-loop: core_loop, exec"]
 fn a_defunct_toplevel_is_an_error() {
     let (mut fixture, id) = boot();
     let base = WmBase::bind(fixture.client(id), 7);
@@ -163,7 +159,6 @@ fn a_defunct_toplevel_is_an_error() {
 /// Frame hints are double-buffered (they apply at the toplevel's next commit); the rest apply at
 /// once; destroying the object forgets them all.
 #[test]
-#[ignore = "P0-B-headless: Fixture::start; P0-B-loop: core_loop, exec"]
 fn hints_apply_on_commit_and_are_forgotten_on_destroy() {
     let (mut fixture, id) = boot();
     let base = WmBase::bind(fixture.client(id), 7);
@@ -210,7 +205,6 @@ fn hints_apply_on_commit_and_are_forgotten_on_destroy() {
 /// A new extension object is told its emphasis and placement once, at creation: the transcript
 /// matches tests/golden/transcripts/quire_window-create.txt.
 #[test]
-#[ignore = "P0-B-headless: Fixture::start; P0-B-loop: core_loop, exec"]
 fn the_creation_transcript_matches_its_golden() {
     let (mut fixture, id) = boot();
     let base = WmBase::bind(fixture.client(id), 7);

@@ -11,7 +11,6 @@ fn rect(x: i32, y: i32, w: u32, h: u32) -> LogicalRect {
 
 /// The manager announces that it blurs when it is bound.
 #[test]
-#[ignore = "P0-H8: written; runs once P0-B-headless (Fixture::start) and P0-T-client land"]
 fn the_manager_announces_blur() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     let client = fixture.connect(ConnectionRole::Public);
@@ -27,7 +26,6 @@ fn the_manager_announces_blur() {
 /// `background_effect::blur_region_of`, which the scene tests of P0-R-scene draw from; this
 /// file checks the protocol exchange stays clean through set, commit, unset, commit, destroy.)
 #[test]
-#[ignore = "P0-H8: written; runs once P0-B-headless (Fixture::start) and P0-T-client land"]
 fn a_blur_region_is_stored() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     let client = fixture.connect(ConnectionRole::Public);

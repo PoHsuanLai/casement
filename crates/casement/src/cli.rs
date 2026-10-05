@@ -69,7 +69,8 @@ pub enum StartMode {
 pub enum ConfigHome {
     /// `$XDG_CONFIG_HOME/casement` (read where the binary starts).
     Xdg,
-    /// This directory.
+    /// This directory stands in for `$XDG_CONFIG_HOME`: the settings file is
+    /// `DIR/casement/settings.toml`.
     At(PathBuf),
 }
 

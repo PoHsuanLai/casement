@@ -57,7 +57,7 @@ fn check(name: &str, client: &TestClient, skip: &[&str]) {
 
 /// A surface at half alpha composites at half (pixman golden).
 #[test]
-#[ignore = "P0-R-scene: a pixman golden of a mapped window (needs P0-H2's toplevel helper and P0-B-loop's frames)"]
+#[ignore = "body is todo!(): needs a pixman golden of a mapped toplevel (P0-R-scene shoot(); P0-H2's toplevel helper is on master)"]
 fn the_multiplier_reaches_the_frame() {
     todo!(
         "P0-H1: map a toplevel of one colour, set the multiplier to half, and compare its pixels over a known backdrop"
@@ -66,7 +66,6 @@ fn the_multiplier_reaches_the_frame() {
 
 /// A multiplier is accepted and committed with no protocol error and no event.
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn a_multiplier_is_accepted() {
     let (mut fixture, id) = boot();
     let client = fixture.client(id);
@@ -88,7 +87,6 @@ fn a_multiplier_is_accepted() {
 
 /// A second alpha object on one surface is wp_alpha_modifier_v1.already_constructed (0).
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn a_second_alpha_object_is_a_protocol_error() {
     let (mut fixture, id) = boot();
     let client = fixture.client(id);

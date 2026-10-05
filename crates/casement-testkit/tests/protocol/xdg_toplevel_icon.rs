@@ -8,7 +8,6 @@ use casement_testclient::{Pattern, shm_buffer};
 
 /// A toplevel icon with a buffer is accepted without error.
 #[test]
-#[ignore = "P0-B-headless: Fixture::start; P0-B-loop: core_loop, exec"]
 fn an_icon_is_accepted() {
     let (mut fixture, id) = boot();
     let base = WmBase::bind(fixture.client(id), 7);

@@ -20,7 +20,6 @@ fn sees_virtual_keyboard(fixture: &mut Fixture, role: ConnectionRole) -> bool {
 /// A Public connection sees zwp_virtual_keyboard_manager_v1 (version 1); a Sandboxed one
 /// does not (I7).
 #[test]
-#[ignore = "P0-H7: written; runs once P0-B-headless (Fixture::start) and P0-T-client (TestClient) land"]
 fn the_virtual_keyboard_manager_is_hidden_from_sandboxed_clients() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     assert!(sees_virtual_keyboard(&mut fixture, ConnectionRole::Public));
@@ -39,7 +38,7 @@ fn the_virtual_keyboard_manager_is_hidden_from_sandboxed_clients() {
 /// `Origin::Virtual(Keyboard)` (the fixture's input log). A `key` before the keymap is the
 /// protocol error `no_keymap`.
 #[test]
-#[ignore = "P0-H7: written; runs once P0-B-headless (Fixture::start) and P0-T-client (TestClient) land"]
+#[ignore = "body is todo!(): ime::virtual_keyboard on the client's queue, then the steps in its doc"]
 fn virtual_keys_are_origin_virtual_and_count_as_activity() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     let client = fixture.connect(ConnectionRole::Public);

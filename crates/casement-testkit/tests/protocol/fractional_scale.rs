@@ -60,7 +60,7 @@ fn boot_at(outputs: &[&str]) -> (Fixture, ClientId) {
 
 /// At scale 1.5 the surface receives preferred_scale(180) before its first xdg configure (shell-host FINDINGS 167).
 #[test]
-#[ignore = "P0-H2: needs the xdg toplevel helper (surface::toplevel) to see the first configure"]
+#[ignore = "body is todo!(): write it with casement_testclient::surface::toplevel (now on master)"]
 fn preferred_scale_comes_before_the_first_configure() {
     todo!(
         "P0-H1: create a toplevel and its fractional scale object, commit, and assert the transcript shows preferred_scale(180) before xdg_toplevel.configure"
@@ -70,7 +70,6 @@ fn preferred_scale_comes_before_the_first_configure() {
 /// A surface learns its scale when its scale object is created, from the primary output, and
 /// the transcript matches tests/golden/transcripts/fractional-scale-preferred.txt.
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn a_surface_learns_the_primary_outputs_scale() {
     let (mut fixture, id) = boot_at(&[SCALE_1_5]);
     let client = fixture.client(id);
@@ -89,7 +88,6 @@ fn a_surface_learns_the_primary_outputs_scale() {
 
 /// The primary output is the top-left one: a second output to its right does not change it.
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn the_primary_output_decides() {
     let (mut fixture, id) = boot_at(&[
         "HEADLESS-2:3840x2160@60000:240:1920,0",
@@ -107,7 +105,6 @@ fn the_primary_output_decides() {
 /// A second scale object on one surface is wp_fractional_scale_manager_v1.fractional_scale_exists
 /// (0), posted on the surface.
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn a_second_scale_object_is_a_protocol_error() {
     let (mut fixture, id) = boot_at(&[SCALE_1_5]);
     let client = fixture.client(id);

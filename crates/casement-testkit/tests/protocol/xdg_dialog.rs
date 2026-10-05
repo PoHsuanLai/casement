@@ -10,7 +10,6 @@ use casement_testclient::{Pattern, shm_buffer};
 
 /// Set_modal reaches the model as Modality::Modal on the dialog's window.
 #[test]
-#[ignore = "P0-B-headless: Fixture::start; P0-B-loop: core_loop, exec"]
 fn a_modal_dialog_is_stored_as_modal() {
     let (mut fixture, id) = boot();
     let base = WmBase::bind(fixture.client(id), 7);
@@ -55,7 +54,6 @@ fn a_modal_dialog_is_stored_as_modal() {
 
 /// A second `xdg_dialog_v1` for one toplevel is `already_used`; the global binds at version 1.
 #[test]
-#[ignore = "P0-B-headless: Fixture::start; P0-B-loop: core_loop, exec"]
 fn a_second_dialog_object_is_already_used() {
     let (mut fixture, id) = boot();
     let base = WmBase::bind(fixture.client(id), 7);

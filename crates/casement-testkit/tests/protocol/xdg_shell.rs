@@ -163,7 +163,6 @@ pub(crate) fn flow_text(fixture: &mut Fixture, id: ClientId) -> String {
 
 /// Xdg_wm_base binds at every version from 1 to 7; asking for 8 is refused by the client side.
 #[test]
-#[ignore = "P0-B-headless: Fixture::start; P0-B-loop: core_loop, exec"]
 fn every_version_binds() {
     let (mut fixture, _) = boot();
     for version in 1..=7 {
@@ -192,7 +191,6 @@ fn every_version_binds() {
 
 /// The first window is centred in the usable area, the next one cascade step further (floating only).
 #[test]
-#[ignore = "P0-B-headless: Fixture::start; P0-B-loop: core_loop, exec"]
 fn new_windows_centre_then_cascade() {
     let (mut fixture, id) = boot();
     let base = WmBase::bind(fixture.client(id), 7);
@@ -290,7 +288,6 @@ fn click_to_focus() {
 
 /// P0 never sends tiled_* states.
 #[test]
-#[ignore = "P0-B-headless: Fixture::start; P0-B-loop: core_loop, exec"]
 fn a_floating_configure_has_no_tiled_edges() {
     let (mut fixture, id) = boot();
     let base = WmBase::bind(fixture.client(id), 7);
@@ -341,7 +338,6 @@ fn toplevel_transcript_golden() {
 
 /// Titles, app ids and limits a client declares before it maps reach the model with the window.
 #[test]
-#[ignore = "P0-B-headless: Fixture::start; P0-B-loop: core_loop, exec"]
 fn what_a_client_declares_reaches_the_model() {
     let (mut fixture, id) = boot();
     let base = WmBase::bind(fixture.client(id), 7);
@@ -436,7 +432,6 @@ fn a_popup_is_placed_inside_the_output_and_repositioned() {
 
 /// Destroying the `xdg_wm_base` while an `xdg_surface` lives is `defunct_surfaces`.
 #[test]
-#[ignore = "P0-B-headless: Fixture::start; P0-B-loop: core_loop, exec"]
 fn destroying_the_base_first_is_defunct_surfaces() {
     let (mut fixture, id) = boot();
     let base = WmBase::bind(fixture.client(id), 7);

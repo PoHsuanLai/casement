@@ -25,7 +25,6 @@ fn facts() -> EngineFacts {
 /// context's facts (H8 exit): it sees the sandbox's globals (I7) and not the privileged ones,
 /// and not the security-context manager itself.
 #[test]
-#[ignore = "P0-H8: written; runs once P0-B-headless (Fixture::start) and P0-T-client land"]
 fn a_listener_tags_its_clients_sandboxed() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     let engine = fixture.connect(ConnectionRole::Public);
@@ -82,7 +81,6 @@ fn a_listener_tags_its_clients_sandboxed() {
 
 /// Closing the engine's pipe ends the listener: a later connection is never served.
 #[test]
-#[ignore = "P0-H8: written; runs once P0-B-headless (Fixture::start) and P0-T-client land"]
 fn closing_the_pipe_stops_the_listener() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     let engine = fixture.connect(ConnectionRole::Public);

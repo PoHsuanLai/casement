@@ -19,7 +19,6 @@ fn sees_input_method(fixture: &mut Fixture, role: ConnectionRole) -> bool {
 
 /// A Public connection sees zwp_input_method_manager_v2 (version 1).
 #[test]
-#[ignore = "P0-H7: written; runs once P0-B-headless (Fixture::start) and P0-T-client (TestClient) land"]
 fn input_method_is_advertised_to_public_clients() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     assert!(sees_input_method(&mut fixture, ConnectionRole::Public));
@@ -30,7 +29,7 @@ fn input_method_is_advertised_to_public_clients() {
 /// Steps: as in text_input's `ime_commit_transcript`; the field's transcript holds
 /// `commit_string` then `done` carrying the serial of the field's own last `commit`.
 #[test]
-#[ignore = "P0-H7: written; runs once P0-B-headless (Fixture::start) and P0-T-client (TestClient) land"]
+#[ignore = "body is todo!(): attach ime::input_method and ime::text_input to the client's queue (delegate_dispatch!), then the steps in its doc"]
 fn an_input_method_commits_to_the_focused_field() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     let client = fixture.connect(ConnectionRole::Public);
@@ -42,7 +41,6 @@ fn an_input_method_commits_to_the_focused_field() {
 
 /// A Sandboxed connection does not see zwp_input_method_manager_v2 (I7).
 #[test]
-#[ignore = "P0-H7: written; runs once P0-B-headless (Fixture::start) and P0-T-client (TestClient) land"]
 fn input_method_is_hidden_from_sandboxed_clients() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     let sandboxed = ConnectionRole::Sandboxed(SandboxFacts::Flatpak {

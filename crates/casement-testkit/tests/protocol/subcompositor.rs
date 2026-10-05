@@ -60,7 +60,6 @@ const SIZE: PhysicalSize = PhysicalSize { w: 32, h: 32 };
 
 /// Place_above/place_below order and synchronised commits reach the frame together.
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn subsurfaces_stack_and_sync() {
     let (mut fixture, id) = boot();
     let client = fixture.client(id);
@@ -95,7 +94,6 @@ fn subsurfaces_stack_and_sync() {
 
 /// Making a surface its own subsurface is the bad_surface error and disconnects only that client.
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn a_subsurface_of_itself_is_a_protocol_error() {
     let (mut fixture, bad) = boot();
     let good = fixture.connect(ConnectionRole::Public);
@@ -113,7 +111,6 @@ fn a_subsurface_of_itself_is_a_protocol_error() {
 
 /// A sibling that is not one is wl_subsurface.bad_surface.
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn restacking_against_a_stranger_is_a_protocol_error() {
     let (mut fixture, id) = boot();
     let client = fixture.client(id);
@@ -130,7 +127,6 @@ fn restacking_against_a_stranger_is_a_protocol_error() {
 
 /// A second subsurface role on the same surface is bad_surface.
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn a_surface_cannot_be_a_subsurface_twice() {
     let (mut fixture, id) = boot();
     let client = fixture.client(id);
@@ -146,7 +142,6 @@ fn a_surface_cannot_be_a_subsurface_twice() {
 
 /// The parent destroyed first: the child's requests stay valid until it is destroyed too.
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn destroying_the_parent_first_is_clean() {
     let (mut fixture, id) = boot();
     let client = fixture.client(id);

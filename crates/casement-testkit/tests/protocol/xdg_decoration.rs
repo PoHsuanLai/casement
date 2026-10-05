@@ -8,7 +8,6 @@ use casement_testclient::surface::toplevel::WmBase;
 
 /// A client asking for server-side decoration is told client_side at P0.
 #[test]
-#[ignore = "P0-B-headless: Fixture::start; P0-B-loop: core_loop, exec"]
 fn client_side_is_preferred() {
     let (mut fixture, id) = boot();
     let base = WmBase::bind(fixture.client(id), 7);
@@ -41,7 +40,6 @@ fn client_side_is_preferred() {
 
 /// The global binds at version 1 for a public connection.
 #[test]
-#[ignore = "P0-B-headless: Fixture::start; P0-B-loop: core_loop, exec"]
 fn the_global_binds_at_version_one() {
     let (mut fixture, id) = boot();
     assert!(DecorationManager::bind(fixture.client(id)).is_some());
@@ -57,7 +55,6 @@ fn the_global_binds_at_version_one() {
 /// A second decoration object for one toplevel is `already_constructed`, and only that client
 /// is disconnected.
 #[test]
-#[ignore = "P0-B-headless: Fixture::start; P0-B-loop: core_loop, exec"]
 fn a_second_decoration_is_already_constructed() {
     let (mut fixture, id) = boot();
     let other = fixture.connect(ConnectionRole::Public);
@@ -80,7 +77,6 @@ fn a_second_decoration_is_already_constructed() {
 /// the same mode is answered by a configure, not a repeated `configure(mode)`): its transcript
 /// matches tests/golden/transcripts/xdg_decoration-mode.txt.
 #[test]
-#[ignore = "P0-B-headless: Fixture::start; P0-B-loop: core_loop, exec"]
 fn the_decoration_transcript_matches_its_golden() {
     let (mut fixture, id) = boot();
     let base = WmBase::bind(fixture.client(id), 7);

@@ -11,7 +11,6 @@ use casement_testkit::{Fixture, FixtureSpec};
 
 /// With --dmabuf none there is no zwp_linux_dmabuf_v1 (shell-host F80 falls back to shm).
 #[test]
-#[ignore = "P0-H6: written; runs once P0-B-headless (Fixture::start) and P0-T-client land"]
 fn dmabuf_none_advertises_nothing() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     let client = fixture.connect(ConnectionRole::Public);
@@ -21,7 +20,7 @@ fn dmabuf_none_advertises_nothing() {
 
 /// With --dmabuf soft the default feedback names the fake main device (version 6, A3).
 #[test]
-#[ignore = "P0-H6: needs FixtureSpec::with_dmabuf(DmabufMode::Soft) (P0-B-headless) and TestClient::connection (P0-T-client)"]
+#[ignore = "body is todo!(): FixtureSpec has no with_dmabuf(DmabufMode::Soft) yet, so the fixture cannot start in soft mode"]
 fn dmabuf_soft_advertises_the_fake_main_device() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     let client = fixture.connect(ConnectionRole::Public);
@@ -35,7 +34,7 @@ fn dmabuf_soft_advertises_the_fake_main_device() {
 
 /// A client dma-buf is tagged with its tranche's node (A5).
 #[test]
-#[ignore = "P0-H6: needs a udmabuf client buffer (P0-T-client) and the soft topology's copy counters (P1-D4)"]
+#[ignore = "body is todo!(): needs a soft-dmabuf fixture (FixtureSpec::with_dmabuf) and a udmabuf client buffer; copy counters wait on P1-D4"]
 fn imported_buffers_are_tagged_with_their_node() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     let client = fixture.connect(ConnectionRole::Public);

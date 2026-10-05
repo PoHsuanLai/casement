@@ -33,7 +33,6 @@ const SIZE: PhysicalSize = PhysicalSize { w: 16, h: 16 };
 /// Observed through the buffers: committing the second buffer replaces the first, which the
 /// compositor then releases, so the first buffer's release says the second commit was applied.
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn a_fifo_barrier_waits_for_the_next_vblank() {
     let (mut fixture, id) = boot();
     let client = fixture.client(id);
@@ -61,7 +60,6 @@ fn a_fifo_barrier_waits_for_the_next_vblank() {
 /// A second fifo object on one surface is wp_fifo_manager_v1.already_exists (0), posted on the
 /// surface.
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn a_second_fifo_object_is_a_protocol_error() {
     let (mut fixture, id) = boot();
     let client = fixture.client(id);
@@ -75,7 +73,6 @@ fn a_second_fifo_object_is_a_protocol_error() {
 
 /// Requests on a fifo object whose surface is gone are wp_fifo_v1.surface_destroyed (0).
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn a_fifo_outliving_its_surface_is_a_protocol_error() {
     let (mut fixture, id) = boot();
     let client = fixture.client(id);

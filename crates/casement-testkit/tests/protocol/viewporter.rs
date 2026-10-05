@@ -61,7 +61,7 @@ const SIZE: PhysicalSize = PhysicalSize { w: 64, h: 64 };
 
 /// A viewport's source and destination reach the frame (pixman golden).
 #[test]
-#[ignore = "P0-R-scene: a pixman golden of a mapped window (needs P0-H2's toplevel helper and P0-B-loop's frames)"]
+#[ignore = "body is todo!(): needs a pixman golden of a mapped toplevel (P0-R-scene shoot(); P0-H2's toplevel helper is on master)"]
 fn a_viewport_crops_and_scales() {
     todo!(
         "P0-H1: map a toplevel with a 64x64 gradient, source (16,16,32,32), destination 128x128, and compare the frame with tests/golden/scenes/viewport-crop.png"
@@ -71,7 +71,6 @@ fn a_viewport_crops_and_scales() {
 /// Valid source and destination are accepted, committed and removed again without a protocol
 /// error; the viewport object leaves no events.
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn a_viewport_is_accepted_and_removed() {
     let (mut fixture, id) = boot();
     let client = fixture.client(id);
@@ -99,7 +98,6 @@ fn a_viewport_is_accepted_and_removed() {
 
 /// A second viewport on one surface is wp_viewporter.viewport_exists (0), posted on the surface.
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn a_second_viewport_is_a_protocol_error() {
     let (mut fixture, id) = boot();
     let client = fixture.client(id);
@@ -113,7 +111,6 @@ fn a_second_viewport_is_a_protocol_error() {
 
 /// A destination of zero, or a negative source origin, is wp_viewport.bad_value (0).
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn bad_values_are_protocol_errors() {
     for (destination, source) in [(Some((0, 10)), None), (None, Some((-1.0, 0.0, 10.0, 10.0)))] {
         let (mut fixture, id) = boot();
@@ -133,7 +130,6 @@ fn bad_values_are_protocol_errors() {
 
 /// A source outside the buffer is wp_viewport.out_of_buffer (2), raised at commit.
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn a_source_outside_the_buffer_is_a_protocol_error() {
     let (mut fixture, id) = boot();
     let client = fixture.client(id);
@@ -149,7 +145,6 @@ fn a_source_outside_the_buffer_is_a_protocol_error() {
 
 /// A fractional source without a destination is wp_viewport.bad_size (1).
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn a_fractional_size_without_a_destination_is_a_protocol_error() {
     let (mut fixture, id) = boot();
     let client = fixture.client(id);
@@ -165,7 +160,6 @@ fn a_fractional_size_without_a_destination_is_a_protocol_error() {
 
 /// Requests on a viewport whose surface is gone are wp_viewport.no_surface (3).
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn a_viewport_outliving_its_surface_is_a_protocol_error() {
     let (mut fixture, id) = boot();
     let client = fixture.client(id);

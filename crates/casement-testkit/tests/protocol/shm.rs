@@ -109,7 +109,6 @@ fn the_format_flow_transcript_matches_its_golden() {
 
 /// A buffer past its pool's end is invalid_stride/invalid_fd and disconnects only that client.
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn a_pool_too_small_for_its_buffer_is_a_protocol_error() {
     let (mut fixture, bad) = boot();
     let good = fixture.connect(ConnectionRole::Public);
@@ -125,7 +124,6 @@ fn a_pool_too_small_for_its_buffer_is_a_protocol_error() {
 
 /// A format the compositor did not advertise is wl_shm.invalid_format (0).
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn an_unadvertised_format_is_a_protocol_error() {
     let (mut fixture, id) = boot();
     let client = fixture.client(id);
@@ -137,7 +135,6 @@ fn an_unadvertised_format_is_a_protocol_error() {
 
 /// An empty pool is wl_shm.invalid_stride (1), posted on the wl_shm.
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn an_empty_pool_is_a_protocol_error() {
     let (mut fixture, id) = boot();
     let _pool = RawPool::new(fixture.client(id), 2, 0);
@@ -147,7 +144,6 @@ fn an_empty_pool_is_a_protocol_error() {
 
 /// Destroying a pool leaves its buffers valid (the mapping lives while a buffer does).
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn a_buffer_outlives_its_pool() {
     let (mut fixture, id) = boot();
     let client = fixture.client(id);

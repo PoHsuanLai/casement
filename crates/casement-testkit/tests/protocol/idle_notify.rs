@@ -17,7 +17,6 @@ fn step(fixture: &mut Fixture, watch: &mut IdleWatch, by: Duration) {
 
 /// The notifier is advertised once, at version 2 (smithay's own global is withdrawn).
 #[test]
-#[ignore = "P0-H8: written; runs once P0-B-headless (Fixture::start) and P0-T-client land"]
 fn the_notifier_is_advertised_once_at_version_2() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     let client = fixture.connect(ConnectionRole::Public);

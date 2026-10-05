@@ -62,7 +62,6 @@ fn check(name: &str, client: &TestClient, skip: &[&str]) {
 /// at commit, in any order, with no error; `casement_wayland::content_type`'s unit tests check
 /// the stored kind.
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn the_content_type_is_stored() {
     let (mut fixture, id) = boot();
     let client = fixture.client(id);
@@ -86,7 +85,6 @@ fn the_content_type_is_stored() {
 /// A second content-type object on one surface is
 /// wp_content_type_manager_v1.already_constructed (0).
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn a_second_content_type_object_is_a_protocol_error() {
     let (mut fixture, id) = boot();
     let client = fixture.client(id);

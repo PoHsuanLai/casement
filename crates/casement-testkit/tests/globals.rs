@@ -146,7 +146,6 @@ fn every_global_kind_but_dmabuf_has_a_golden_row_and_rows_are_unique() {
 /// The default fixture advertises exactly the golden's globals at its versions to a public
 /// client (one wl_output for its one output).
 #[test]
-#[ignore = "P0-T-client: runs once P0-B-headless's Fixture lands"]
 fn the_default_fixture_advertises_the_golden_globals() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     let client = fixture.connect(ConnectionRole::Public);

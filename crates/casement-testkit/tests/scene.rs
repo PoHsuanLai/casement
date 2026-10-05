@@ -36,7 +36,7 @@ fn shoot(fixture: &mut Fixture, name: &str) -> image::RgbaImage {
 }
 
 #[test]
-#[ignore = "P0-R-scene: waits on P0-B-headless, P0-T-client and P0-H1..H4 (shoot() by a follow-up lane)"]
+#[ignore = "body is todo!(): P0-R-scene builds each scene with test clients and shoot()s it"]
 fn the_ten_base_scenes_match_their_pixman_goldens() {
     let env = Env::of_process();
     for (name, outputs) in SCENES {
@@ -55,7 +55,7 @@ fn the_ten_base_scenes_match_their_pixman_goldens() {
 }
 
 #[test]
-#[ignore = "P0-R-scene: waits on P0-B-headless, P0-T-client and P0-H1..H4 (shoot() by a follow-up lane)"]
+#[ignore = "body is todo!(): P0-R-scene builds blur-v0-1x with test clients and shoot()s it"]
 fn blur_v0_matches_its_llvmpipe_golden() {
     let env = Env::of_process();
     let spec = FixtureSpec::desktop().with_renderer(SoftRenderer::Llvmpipe);

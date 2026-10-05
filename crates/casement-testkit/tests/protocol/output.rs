@@ -36,7 +36,6 @@ fn output_globals(client: &TestClient) -> Vec<u32> {
 
 /// Three outputs at scales 1, 1.5 and 2 each advertise wl_output with name, mode and the integer scale ceiling; xdg-output gives logical size.
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn each_plugged_output_is_advertised_with_its_name_and_scale() {
     let (mut fixture, id) = boot_with(&THREE);
     // Every version of wl_output the global offers (1 to 4) is bound once per output.
@@ -71,7 +70,6 @@ fn each_plugged_output_is_advertised_with_its_name_and_scale() {
 
 /// A plugged output is advertised to a client that is already connected.
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn a_hotplugged_output_appears_in_the_registry() {
     let (mut fixture, id) = boot_with(&THREE[..1]);
     assert_eq!(output_globals(fixture.client(id)).len(), 1);
@@ -82,7 +80,6 @@ fn a_hotplugged_output_appears_in_the_registry() {
 
 /// Unplugging removes the global; a client bound to it sees it gone.
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn an_unplugged_output_global_is_withdrawn() {
     let (mut fixture, id) = boot_with(&THREE);
     let bound = bind_outputs(fixture.client(id), 4, true).expect("outputs bind");

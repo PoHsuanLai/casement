@@ -7,7 +7,7 @@ use porter_core::SandboxFacts;
 
 /// Each mapped window appears with title and app id; closing it sends closed.
 #[test]
-#[ignore = "P0-H8: written but its window step waits on a toplevel helper (P0-T-client surface::toplevel / P0-H2) as well as P0-B-headless"]
+#[ignore = "body is todo!(): write it with casement_testclient::surface::toplevel (now on master)"]
 fn windows_are_listed_and_closed() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     let watcher = fixture.connect(ConnectionRole::Public);
@@ -25,7 +25,6 @@ fn windows_are_listed_and_closed() {
 
 /// A Sandboxed connection does not see ext_foreign_toplevel_list_v1 (I7).
 #[test]
-#[ignore = "P0-H8: written; runs once P0-B-headless (Fixture::start) and P0-T-client land"]
 fn the_list_is_hidden_from_sandboxed_clients() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     let client = fixture.connect(ConnectionRole::Sandboxed(SandboxFacts::Flatpak {

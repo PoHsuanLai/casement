@@ -32,7 +32,6 @@ const SIZE: PhysicalSize = PhysicalSize { w: 16, h: 16 };
 /// Observed through the buffers: the timed commit replaces the first buffer, which the
 /// compositor then releases, so its release says the timed commit was applied.
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn a_timestamped_commit_waits_for_its_instant() {
     let (mut fixture, id) = boot();
     let started = fixture.model().now();
@@ -60,7 +59,6 @@ fn a_timestamped_commit_waits_for_its_instant() {
 /// A second timer on one surface is wp_commit_timing_manager_v1.commit_timer_exists (0), posted
 /// on the surface.
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn a_second_timer_is_a_protocol_error() {
     let (mut fixture, id) = boot();
     let client = fixture.client(id);
@@ -74,7 +72,6 @@ fn a_second_timer_is_a_protocol_error() {
 
 /// Two timestamps in one commit are wp_commit_timer_v1.timestamp_exists (1).
 #[test]
-#[ignore = "P0-B: needs Fixture::start (P0-B-headless), the loop (P0-B-loop) and the client wiring of Fixture::connect"]
 fn two_timestamps_in_one_commit_are_a_protocol_error() {
     let (mut fixture, id) = boot();
     let client = fixture.client(id);

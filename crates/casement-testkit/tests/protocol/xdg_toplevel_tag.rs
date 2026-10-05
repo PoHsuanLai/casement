@@ -9,7 +9,6 @@ use casement_testclient::surface::toplevel::extras::TagManager;
 
 /// Set_toplevel_tag is kept for placement memory.
 #[test]
-#[ignore = "P0-B-headless: Fixture::start; P0-B-loop: core_loop, exec"]
 fn a_tag_is_stored() {
     let (mut fixture, id) = boot();
     let base = WmBase::bind(fixture.client(id), 7);

@@ -107,7 +107,6 @@ fn activation_follows_the_a7_rule() {
 
 /// A token request committed twice is `already_used`; the global binds at version 1.
 #[test]
-#[ignore = "P0-B-headless: Fixture::start; P0-B-loop: core_loop, exec"]
 fn a_token_commits_once() {
     let (mut fixture, id) = boot();
     let activation = Activation::bind(fixture.client(id));

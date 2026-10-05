@@ -20,7 +20,7 @@ without drift, `buffer_size` at 1, 1.25, 1.5 and 2).
 
 ### P0-Z2: the smithay-facing crates, the root, the test kit
 
-`todo!()` by lane (270): P0-R-scene 23, P0-H1 18, P0-H2 51, P0-H3 15, P0-H4 11, P0-H5 6, P0-H6 3, P0-H7 12, P0-H8 12, P0-B-headless 79, P0-B-loop 14, P0-F1-output 3, P0-T-client 6, P0-T-dev 11, P1-D1 1, P1-F2 2, P2-Q2 2, P3-Z 1. Seventy-six more sit in ignored test bodies (the protocol
+`todo!()` by lane (267): P0-R-scene 23, P0-H1 18, P0-H2 51, P0-H3 15, P0-H4 11, P0-H5 6, P0-H6 3, P0-H7 12, P0-H8 12, P0-B-headless 79, P0-B-loop 14, P0-T-client 6, P0-T-dev 11, P1-D1 1, P1-F2 2, P2-Q2 2, P3-Z 1. Seventy-six more sit in ignored test bodies (the protocol
 tests' client steps, the scene builder, the fuzz box), each naming the same lane: the fixture
 setup and the assertion are written, the client steps wait for the helper the lane writes in
 `casement-testclient`. The excluded crates add 20 (`wlcs-casement`: 16 for P0-T-wlcs in
@@ -96,9 +96,6 @@ P3-CSS, three in `src/` and its ignored parity test, never built at P0-Z2).
 | `crates/casement/src/time/calloop.rs` | arm (1) | P0-B-loop | `crates/casement/tests/time.rs`; frames through `crates/casement-testkit/tests/fixture.rs` |
 | `crates/casement/src/time/source.rs` | ClockSource::start, ClockSource::now (2) | P0-B-loop | `crates/casement/tests/time.rs`; frames through `crates/casement-testkit/tests/fixture.rs` |
 | `crates/casement/src/time/virtual_clock.rs` | SharedClock::update, SharedClock::advance_to, EventSource::process_events, EventSource::before_sleep (4) | P0-B-loop | `crates/casement/tests/time.rs`; frames through `crates/casement-testkit/tests/fixture.rs` |
-| `crates/casement/src/config/convert.rs` | to_core (1) | P0-F1-output | `crates/casement/tests/config.rs` |
-| `crates/casement/src/config/doc.rs` | load (1) | P0-F1-output | `crates/casement/tests/config.rs` |
-| `crates/casement/src/config/schema.rs` | write_schema (1) | P0-F1-output | `crates/casement/tests/config.rs` |
 | `crates/casement-testclient/src/bin/probe.rs` | main (1) | P0-T-client | `crates/casement-testclient/tests/infra.rs`; `crates/casement-testkit/tests/globals.rs`; `crates/casement-testkit/tests/fuzz/main.rs` |
 | `crates/casement-testclient/src/conn.rs` | TestClient::over, TestClient::connect_env, TestClient::pump (3) | P0-T-client | `crates/casement-testclient/tests/infra.rs`; `crates/casement-testkit/tests/globals.rs`; `crates/casement-testkit/tests/fuzz/main.rs` |
 | `crates/casement-testclient/src/shm.rs` | shm_buffer (1) | P0-T-client | `crates/casement-testclient/tests/infra.rs`; `crates/casement-testkit/tests/globals.rs`; `crates/casement-testkit/tests/fuzz/main.rs` |
@@ -349,3 +346,15 @@ cover what draws without a client surface.
   splitmix64 sequence over the seed's counter.
 - **A parent is its own app's window**: a sheet or a dialog names a mapped window of the same
   app; any other parent is dropped to none, so a sheet cannot pull focus into another app.
+- **`ConfigHome::At(DIR)` is a config home** (P0-F1-output): it stands in for `$XDG_CONFIG_HOME`,
+  so the document is `DIR/casement/settings.toml`, not `DIR/settings.toml`.
+- **Bindings are word lists** (P0-F1-output): a `[bindings]` entry is chord text to a list of
+  words (`"cmd+q" = ["desktop", "quit_active"]`, `"ctrl+option+t" = ["spawn", "foot", ...]`),
+  not a nested table; an entry whose chord or words do not parse is dropped with a warning.
+- **casement-core's settings enums derive `Word`** (P0-F1-output): the ds-settings derive gives
+  each its document spelling; the serde derives stay for the model's own stores.
+- **casement takes a `toml` dev-dependency** (P0-F1-output): `tests/config.rs` writes and reads
+  documents through it.
+- **`serve_debug` takes Debug1's name with replacement off** (P0-debug-dbus): a second casement
+  on the same bus fails with `IpcError::Bus` and the first keeps the name. The bus thread is
+  not joinable: it lives as long as the process.

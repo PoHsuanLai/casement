@@ -5,7 +5,6 @@ use casement_testkit::{Fixture, FixtureSpec};
 
 /// Every connection sees the text-input manager (I7 shows it to everyone).
 #[test]
-#[ignore = "P0-H7: written; runs once P0-B-headless (Fixture::start) and P0-T-client (TestClient) land"]
 fn text_input_is_advertised_to_every_role() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     let public = fixture.connect(ConnectionRole::Public);
@@ -30,7 +29,7 @@ fn text_input_is_advertised_to_every_role() {
 /// `fixture.input()` *without* pumping in between the `enable` and the key; after the pump
 /// the method's grab saw the key and the document's `wl_keyboard` saw none.
 #[test]
-#[ignore = "P0-H7: written; runs once P0-B-headless (Fixture::start) and P0-T-client (TestClient) land"]
+#[ignore = "body is todo!(): attach ime::text_input and ime::input_method to the client's queue (delegate_dispatch!), then the steps in its doc"]
 fn the_first_key_after_enable_reaches_the_input_method() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     let client = fixture.connect(ConnectionRole::Public);
@@ -46,7 +45,7 @@ fn the_first_key_after_enable_reaches_the_input_method() {
 /// `commit(serial)`, then `commit_string("你")`, `commit(serial)`; the field's transcript
 /// (with object ids stripped) is the golden's lines.
 #[test]
-#[ignore = "P0-H7: written; runs once P0-B-headless (Fixture::start) and P0-T-client (TestClient) land"]
+#[ignore = "body is todo!(): the steps in its doc, compared with tests/golden/transcripts/text_input-commit.txt"]
 fn ime_commit_transcript() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     let client = fixture.connect(ConnectionRole::Public);
