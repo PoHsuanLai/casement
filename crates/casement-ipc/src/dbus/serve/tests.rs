@@ -101,7 +101,7 @@ async fn a_client_call_reaches_the_channel_and_gets_the_reply() {
         .call("Inject", &(vec!["sleep 5"],))
         .await
         .expect("Inject");
-    assert_eq!(injected, ["ok"]);
+    assert_eq!(injected, ["ok sleep 5"]);
 
     let seen = event_loop.requests();
     assert_eq!(seen.len(), 3, "{seen:?}");
