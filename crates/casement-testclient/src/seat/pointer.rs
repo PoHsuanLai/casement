@@ -97,9 +97,11 @@ impl Dispatch<WlPointer, PointerLog> for ClientState {
     ) {
         let mut serials = log.0.lock().unwrap_or_else(PoisonError::into_inner);
         match event {
-            wl_pointer::Event::Button { serial, state, .. }
-                if state == WEnum::Value(wl_pointer::ButtonState::Pressed) =>
-            {
+            wl_pointer::Event::Button {
+                serial,
+                state: WEnum::Value(wl_pointer::ButtonState::Pressed),
+                ..
+            } => {
                 serials.press = Some(serial);
             }
             wl_pointer::Event::Enter { serial, .. } => serials.enter = Some(serial),

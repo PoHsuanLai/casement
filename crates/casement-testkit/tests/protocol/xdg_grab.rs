@@ -13,7 +13,7 @@ use casement_core::input::{ButtonCode, Edge};
 use casement_testclient::surface::toplevel::{
     BoundPointer, ResizeEdge, Toplevel, WmBase, bind_pointer,
 };
-use casement_testkit::{ClientId, Fixture};
+use casement_testkit::Fixture;
 
 const BTN_LEFT: ButtonCode = ButtonCode(0x110);
 const BTN_RIGHT: ButtonCode = ButtonCode(0x111);
@@ -22,7 +22,6 @@ const BTN_RIGHT: ButtonCode = ButtonCode(0x111);
 /// serial of a delivered left click.
 struct Desk {
     fixture: Fixture,
-    id: ClientId,
     top: Toplevel,
     seat: BoundPointer,
     device: DeviceId,
@@ -58,7 +57,6 @@ fn desk(limits: Option<((i32, i32), (i32, i32))>) -> Desk {
     let serial = seat.last_press().expect("a press was delivered");
     Desk {
         fixture,
-        id,
         top,
         seat,
         device,
@@ -78,15 +76,6 @@ impl Desk {
 
     fn button(&mut self, button: ButtonCode, edge: Edge) {
         self.fixture.input().button(self.device, button, edge);
-    }
-
-    /// Puts the pointer at the window's centre plus `by`.
-    fn pointer_from_centre(&mut self, by: (i32, i32)) {
-        let at = self.rect().centre();
-        self.pointer_to(LogicalPoint {
-            x: at.x + by.0,
-            y: at.y + by.1,
-        });
     }
 }
 
@@ -124,7 +113,6 @@ fn a_grab_ends_with_its_own_button() {
         y: centre.y,
     });
     assert_eq!(desk.rect().origin.x, start.origin.x + 80);
-    let _ = desk.id;
 }
 
 /// A resize never makes the window smaller than its minimum or larger than its maximum, and
@@ -183,5 +171,4 @@ fn a_resize_respects_the_size_limits() {
         "the bottom-right corner did not move"
     );
     desk.button(BTN_LEFT, Edge::Release);
-    let _ = desk.pointer_from_centre((0, 0));
 }
