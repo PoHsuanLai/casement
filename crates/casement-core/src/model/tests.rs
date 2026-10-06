@@ -97,6 +97,7 @@ fn healthy() -> Model {
         },
         keyboard: KeyboardInteractivity::None,
         namespace: "bar".to_owned(),
+        size: crate::geometry::LogicalSize::ZERO,
         role: ShellRoleTag::Unassigned,
     };
     let events = vec![

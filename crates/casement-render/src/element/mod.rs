@@ -4,6 +4,7 @@
 
 mod blur_v0;
 mod cursor;
+mod geometry;
 mod layer;
 mod lock_cover;
 mod popup;
@@ -12,6 +13,7 @@ mod window;
 
 pub use blur_v0::BlurV0Element;
 pub use cursor::cursor_elements;
+pub use geometry::{geometry_size, surface_origin, surface_origin_logical};
 pub use layer::layer_elements;
 pub use lock_cover::LockCoverElement;
 pub use popup::{popup_elements, popup_surfaces};

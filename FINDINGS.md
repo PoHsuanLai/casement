@@ -507,3 +507,53 @@ cursor (not asserted).
   `Toplevel::set_fullscreen_on`, `unset_fullscreen`. wl_compositor test binds 1 to 6.
 - wlcs: `ClientSurfaceEventsTest.surface_enters_output` passes and is off the list: 298 entries
   before, 297 after; `--phase` runs 928 tests, 597 pass, none fail.
+
+### P0-layer-geom: where things are drawn and hit (W1, W2)
+
+- **W2, window geometry.** A toplevel's place and size are its `xdg_surface.set_window_geometry` rect's
+  (the model already took the size from it); the buffer is drawn offset so the geometry origin lands at
+  the window's place, and the hit test and the pointer-local coordinates use the same origin.
+  `casement_render::surface_origin` / `surface_origin_logical` are the one conversion (the renderer's
+  `window_elements` and `output_elements`, and `core_loop::scene::stack`, call them); popups already
+  added the root's geometry offset, so they now hang off the same origin. A window's committed size
+  in the surface book is the geometry's when it declared one (`windows::tree_size`).
+- **W1, layer-shell.** Four causes, none a wlcs expectation that is wrong (checked against
+  wlr-layer-shell-unstable-v1):
+  1. `set_size` was dropped: `LayerSpec` had no size and the configure said 0 on every axis not held to
+     both ends. The spec now carries `size`; `Arranged::configure_size` is what a surface is told
+     (what it asked for on an axis, else the room less margins when held to both ends, else 0), and
+     `Arranged::place` places the configured box, not the buffer (a smaller buffer sits at the box's
+     corner). The model's `layer_size` is gone: the configure and the placement read `Arranged`.
+  2. A maximised or full-screen request made before the first commit was dropped (the model knew no
+     window yet), so the initial configure had no state and no size; wlcs' client maps only from a
+     size it is told, so the "exclusive zone does not shrink the toplevel" tests timed out. Now the
+     edge keeps the ask (`ToplevelRecord::opening`), writes the state and `Model::opening_room`'s size
+     into the pending configure, and replays the request to the model right after the map.
+     (The doc line "a request for a window that has not mapped is dropped" in `xdg_shell/requests.rs`
+     is amended.) The existing test `a_dock_mapped_after_a_bar_is_hit_below_it` asserted the old width
+     0 for a dock that asked for 64; it now expects 64.
+  3. wlcs' `move_surface_to` on a layer surface was a no-op in the shim (it moved toplevels only), so
+     the 25 `LayerSurfaceLayerTest` x layer-pair tests had both surfaces centred on each other. A
+     layer put by hand is `Event::LayerPlaced` (a pin in `LayerBook`, read by `Arranged::place`, so
+     the draw, the hit test and the sizes agree); no protocol sends it, only `Fixture::place_layer`
+     (the shim). Stacking by `set_layer` itself already worked (test added).
+  4. Layer popups were never placed inside the output (`wlr_layer_surface.get_popup` only tracked
+     them): they now go through `popups::new_popup`, and `bounds_of` knows a layer root.
+  Also: `zwlr_layer_surface_v1` keyboard interactivity `on_demand` was not implemented. A surface that
+  asks for it takes the keyboard when it maps with no key window, or when it is pressed
+  (`Model::press_layer`, called from the pointer press path); a window that is pressed or becomes key
+  takes it back (`Model::demand`, cleared in `run` and `press`). 03 §1.2's line "layer surfaces never
+  take the keyboard" holds for `none` only.
+- **Not fixed, diagnosed.** The four `LayerShellPopup/XdgPopupTest` grab tests (now tagged W8 with the
+  four `XdgPopupStable` twins): `xdg_popup.grab` is refused because wlcs passes the client's latest
+  serial of any event and the seat's `SerialBook` proves presses only, so the popup is dismissed
+  at once (with the proof bypassed `grabbed_popup_gets_keyboard_focus` and, on layers,
+  `grabbed_popups_get_done_events_in_correct_order` pass; `popup_gives_up_pointer_focus_when_gone` and
+  `grabbed_popup_gets_done_event_when_new_toplevel_created` still fail for another reason). The four
+  `input_seen_*_after_*_unmapped_and_remapped/6,7` tests were tagged W2 but are W13 (remap after a null
+  buffer; `/4,5` are the same on the other builder).
+- Tests: `tests/protocol/geometry.rs` (pointer-local at a geometry offset, drawn pixel at a geometry
+  offset, configure sizes, placement by the configured box, open maximised / full screen, a layer put by
+  hand, `set_layer` stacking, a layer popup kept inside the output), `tests/protocol/layer_keyboard.rs`,
+  `layer/arrange_size_tests.rs`. Test kit: `Fixture::layer_of`, `Fixture::place_layer`; test client:
+  `LayerSurface::set_layer`.

@@ -41,6 +41,7 @@ fn spec(on: &str, edges: [bool; 4], zone: u32, margin: i32) -> LayerSpec {
         },
         keyboard: KeyboardInteractivity::None,
         namespace: "test".to_owned(),
+        size: crate::geometry::LogicalSize::ZERO,
         role: ShellRoleTag::Unassigned,
     }
 }

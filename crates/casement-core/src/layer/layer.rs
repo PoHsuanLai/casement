@@ -1,5 +1,6 @@
 //! One layer surface's state, as its client configured it (wlr-layer-shell, in our words).
 
+use crate::geometry::LogicalSize;
 use crate::ids::OutputKey;
 use casement_protocols::vocab::ShellRole;
 
@@ -12,6 +13,8 @@ pub struct LayerSpec {
     pub level: LayerLevel,
     /// The edges it is held to.
     pub anchor: Anchors,
+    /// The size it asked for (`set_size`); 0 on an axis leaves that axis to the compositor.
+    pub size: LogicalSize,
     /// The space it keeps windows out of.
     pub exclusive: ExclusiveZone,
     /// Its distance from each anchored edge.

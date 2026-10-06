@@ -157,6 +157,14 @@ impl LayerSurface {
         let _ = client.connection().flush();
     }
 
+    /// Moves the surface to `level` (double-buffered: it takes effect at the next commit, which
+    /// this makes).
+    pub fn set_layer(&self, client: &TestClient, level: Layer) {
+        self.layer.set_layer(level);
+        self.surface.commit();
+        let _ = client.connection().flush();
+    }
+
     /// Makes `popup` (an xdg popup made without a parent) a popup of this layer surface.
     pub fn adopt(&self, popup: &XdgPopup) {
         self.layer.get_popup(popup);

@@ -16,6 +16,8 @@ pub use layer::{
 };
 
 #[cfg(test)]
+mod arrange_size_tests;
+#[cfg(test)]
 mod arrange_tests;
 #[cfg(test)]
 mod usable_area_tests;

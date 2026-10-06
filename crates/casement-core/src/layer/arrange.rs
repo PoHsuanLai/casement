@@ -29,6 +29,10 @@ struct Slot {
     anchor: Anchors,
     margin: Margins,
     room: LogicalRect,
+    /// The size the surface is configured to (0 on an axis it chooses).
+    size: LogicalSize,
+    /// Where it was put by hand, if it was.
+    pin: Option<LogicalPoint>,
 }
 
 impl Arranged {
@@ -42,10 +46,34 @@ impl Arranged {
         self.slots.get(layer).map(|slot| slot.room)
     }
 
-    /// Where `layer` sits (global logical pixels) when its surface has `committed` size.
+    /// The size `layer` is configured to: what it asked for on an axis, else all the room less
+    /// the margins when it is held to both ends of that axis, else 0 (the surface chooses).
+    pub fn configure_size(&self, layer: &LayerKey) -> Option<LogicalSize> {
+        self.slots.get(layer).map(|slot| slot.size)
+    }
+
+    /// Where `layer` sits (global logical pixels) when its surface has `committed` size. The
+    /// configured size decides where it sits, not the buffer (a smaller buffer sits at the
+    /// corner of the box it was given, wlr-layer-shell); the committed size stands in on an
+    /// axis the surface chooses.
     pub fn place(&self, layer: &LayerKey, committed: LogicalSize) -> Option<LogicalRect> {
         let slot = self.slots.get(layer)?;
-        Some(place_in(slot.anchor, slot.margin, slot.room, committed))
+        let own = |configured: u32, committed: u32| {
+            if configured == 0 {
+                committed
+            } else {
+                configured
+            }
+        };
+        let size = LogicalSize {
+            w: own(slot.size.w, committed.w),
+            h: own(slot.size.h, committed.h),
+        };
+        let placed = place_in(slot.anchor, slot.margin, slot.room, size);
+        Some(match slot.pin {
+            Some(origin) => LogicalRect::new(origin, placed.size),
+            None => placed,
+        })
     }
 }
 
@@ -63,7 +91,7 @@ impl super::LayerBook {
         let (usable, mut slots) = reserving.into_iter().fold(
             (full, BTreeMap::new()),
             |(usable, mut slots), (key, spec)| {
-                slots.insert(*key, slot(spec, usable));
+                slots.insert(*key, slot(spec, usable, self.pin(key)));
                 let left = reservation(spec).map_or(usable, |taken| shrink(usable, taken));
                 (left, slots)
             },
@@ -73,17 +101,44 @@ impl super::LayerBook {
                 ExclusiveZone::Ignore => full,
                 ExclusiveZone::Respect | ExclusiveZone::Reserve(_) => usable,
             };
-            slots.insert(*key, slot(spec, room));
+            slots.insert(*key, slot(spec, room, self.pin(key)));
         }
         Arranged { slots, usable }
     }
 }
 
-fn slot(spec: &LayerSpec, room: LogicalRect) -> Slot {
+fn slot(spec: &LayerSpec, room: LogicalRect, pin: Option<LogicalPoint>) -> Slot {
     Slot {
+        pin,
         anchor: spec.anchor,
         margin: spec.margin,
         room,
+        size: LogicalSize {
+            w: configured(
+                spec.size.w,
+                (spec.anchor.left, spec.anchor.right),
+                room.size.w,
+                (spec.margin.left, spec.margin.right),
+            ),
+            h: configured(
+                spec.size.h,
+                (spec.anchor.top, spec.anchor.bottom),
+                room.size.h,
+                (spec.margin.top, spec.margin.bottom),
+            ),
+        },
+    }
+}
+
+/// The length a surface is configured to along one axis: what it asked for when that is not 0,
+/// else all the room less the margins when it is held to both ends, else 0.
+fn configured(asked: u32, ends: (Anchor, Anchor), room: u32, margins: (i32, i32)) -> u32 {
+    match (asked, ends) {
+        (0, (Anchor::Held, Anchor::Held)) => {
+            let taken = i64::from(margins.0) + i64::from(margins.1);
+            u32::try_from((i64::from(room) - taken).max(0)).unwrap_or(0)
+        }
+        (asked, _) => asked,
     }
 }
 

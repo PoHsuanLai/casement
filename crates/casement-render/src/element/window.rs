@@ -2,6 +2,7 @@
 
 use super::CasementElement;
 use super::blur_v0;
+use super::geometry::surface_origin;
 use crate::compositor::Compositor;
 use crate::scene::OutputView;
 use crate::scene::convert::on_output;
@@ -15,7 +16,8 @@ use smithay::backend::renderer::element::surface::render_elements_from_surface_t
 /// on `view`, front first, with its blur v0 behind it when it asked for one. Empty when the
 /// book has no surface for it.
 ///
-/// The tree is drawn at its committed size: the closed element set has no rescaling wrapper,
+/// The tree is drawn so that the root's window geometry origin lands at the sampled place
+/// ([`surface_origin`]), at its committed size: the closed element set has no rescaling wrapper,
 /// so a sampled size that differs from the committed one (a resize in flight) shows once the
 /// client commits it (FINDINGS: P3-Z adds the wrapper with the effect elements).
 pub fn window_elements<R: Compositor>(
@@ -27,15 +29,16 @@ pub fn window_elements<R: Compositor>(
     let Some(entry) = book.window(&placed.window) else {
         return Vec::new();
     };
+    let origin = surface_origin(&entry.root, placed.at);
     let mut elements: Vec<CasementElement<R>> = render_elements_from_surface_tree(
         renderer,
         &entry.root,
-        on_output(placed.at, view),
+        on_output(origin, view),
         view.scale.as_f64(),
         alpha(placed.opacity),
         Kind::Unspecified,
     );
-    elements.extend(blur_v0::behind(&entry.root, placed.at, view).map(CasementElement::Blur));
+    elements.extend(blur_v0::behind(&entry.root, origin, view).map(CasementElement::Blur));
     elements
 }
 

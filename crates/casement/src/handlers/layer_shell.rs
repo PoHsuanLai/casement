@@ -1,10 +1,10 @@
 //! `zwlr_layer_shell_v1` (P0-H3).
 
+use super::xdg_shell::popups;
 use crate::core_loop;
 use crate::state::State;
 use casement_core::OutputKey;
 use casement_wayland::layer_shell::{self, LayerNamespace};
-use smithay::desktop::{PopupKind, PopupManager};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::wayland::shell::wlr_layer::{
@@ -76,10 +76,9 @@ impl WlrLayerShellHandler for State {
 
     fn new_popup(&mut self, parent: LayerSurface, popup: PopupSurface) {
         let events = layer_shell::on_layer_popup(&mut self.wl.layer_shell, &parent, &popup);
-        let popups: &mut PopupManager = &mut self.wl.xdg_shell.popups;
-        if let Err(error) = popups.track_popup(PopupKind::Xdg(popup.clone())) {
-            tracing::warn!(%error, "a layer popup could not be tracked");
-        }
+        // Placed by its positioner inside the output, as the popups of windows are.
+        let positioner = popup.with_pending_state(|state| state.positioner);
+        popups::new_popup(self, popup.clone(), positioner);
         if let Err(error) = popup.send_configure() {
             tracing::warn!(%error, "a layer popup could not be configured");
         }

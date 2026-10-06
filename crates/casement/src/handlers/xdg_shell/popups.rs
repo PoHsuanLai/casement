@@ -2,7 +2,7 @@
 
 use crate::core_loop;
 use crate::state::State;
-use casement_core::geometry::LogicalPoint;
+use casement_core::geometry::{LogicalPoint, LogicalSize};
 use casement_wayland::convert::{point_of, serial_of};
 use casement_wayland::xdg_shell::{
     GrabUse, PopupBounds, on_new_popup, on_popup_grab, on_reposition,
@@ -13,6 +13,7 @@ use smithay::desktop::{
 };
 use smithay::input::pointer::Focus;
 use smithay::reexports::wayland_server::protocol::wl_seat::WlSeat;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::Serial;
 use smithay::wayland::shell::xdg::{PopupSurface, PositionerState};
 
@@ -25,7 +26,7 @@ fn bounds_of(state: &State, surface: &PopupSurface) -> PopupBounds {
         return PopupBounds::Unbounded;
     };
     let Some(window) = state.wl.xdg_shell.window_of_surface(&root) else {
-        return PopupBounds::Unbounded;
+        return layer_bounds(state, &kind, &root);
     };
     let Some(target) = state
         .core
@@ -47,8 +48,42 @@ fn bounds_of(state: &State, surface: &PopupSurface) -> PopupBounds {
     PopupBounds::relative_to(output.config.logical_rect(), parent_origin)
 }
 
+/// The room an output leaves a popup whose root is a layer surface: the output the layer is on,
+/// seen from where the layer is arranged. Unknown while the layer is not arranged.
+fn layer_bounds(state: &State, kind: &PopupKind, root: &WlSurface) -> PopupBounds {
+    let model = &state.core.model;
+    let (Some(layer), outputs) = (state.wl.layer_shell.key_of(root), model.outputs()) else {
+        return PopupBounds::Unbounded;
+    };
+    let Some(spec) = model.layers().get(&layer) else {
+        return PopupBounds::Unbounded;
+    };
+    let Some(output) = outputs.0.get(&spec.output) else {
+        return PopupBounds::Unbounded;
+    };
+    let full = output.config.logical_rect();
+    let committed = state
+        .render
+        .textures
+        .layer(&layer)
+        .map_or(LogicalSize::ZERO, |entry| entry.committed);
+    let Some(at) = model
+        .layers()
+        .arrange(&spec.output, full)
+        .place(&layer, committed)
+    else {
+        return PopupBounds::Unbounded;
+    };
+    let nested = point_of(get_popup_toplevel_coords(kind));
+    let parent_origin = LogicalPoint {
+        x: at.origin.x.saturating_add(nested.x),
+        y: at.origin.y.saturating_add(nested.y),
+    };
+    PopupBounds::relative_to(full, parent_origin)
+}
+
 /// A popup was created: it gets a key and is placed.
-pub(super) fn new_popup(state: &mut State, surface: PopupSurface, positioner: PositionerState) {
+pub(crate) fn new_popup(state: &mut State, surface: PopupSurface, positioner: PositionerState) {
     let key = state.wl.xdg_shell.mint_popup();
     let bounds = bounds_of(state, &surface);
     let events = on_new_popup(&mut state.wl.xdg_shell, &surface, &positioner, key, bounds);

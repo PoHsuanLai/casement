@@ -172,6 +172,7 @@ fn layer_spec() -> impl Strategy<Value = LayerSpec> {
                 },
                 keyboard,
                 namespace: "ns".to_owned(),
+                size: casement_core::geometry::LogicalSize::ZERO,
                 role: ShellRoleTag::Unassigned,
             }
         })

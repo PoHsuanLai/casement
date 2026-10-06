@@ -31,7 +31,7 @@ use crate::app::{App, AppKey};
 use crate::effect::Effect;
 use crate::event::Event;
 use crate::focus::Focus;
-use crate::ids::{ClientKey, OutputKey, WindowId};
+use crate::ids::{ClientKey, LayerKey, OutputKey, WindowId};
 use crate::invariants::{self, InvariantBreak};
 use crate::layer::LayerBook;
 use crate::lock::LockState;
@@ -40,6 +40,7 @@ use crate::settings::CasementSettings;
 use crate::space::{SpaceBook, SpaceSeed};
 use crate::time::{Mono, TimerBook};
 use moved::Moved;
+pub use query::OpeningRoom;
 use std::collections::BTreeMap;
 
 /// Everything casement knows, as one value.
@@ -52,6 +53,9 @@ pub struct Model {
     spaces: SpaceBook,
     outputs: OutputBook,
     layers: LayerBook,
+    /// The on-demand layer surface that holds the keyboard: the one that mapped with no key
+    /// window, or the one a press last landed on. A window pressed or keyed takes it back.
+    demand: Option<LayerKey>,
     lock: LockState,
     focus: Focus,
     timers: TimerBook,
@@ -83,6 +87,7 @@ impl Model {
             spaces: SpaceBook::empty(),
             outputs: OutputBook::default(),
             layers: LayerBook::empty(),
+            demand: None,
             lock: LockState::Unlocked,
             focus: Focus::none(),
             timers: TimerBook::empty(),
@@ -109,7 +114,12 @@ impl Model {
     /// `f` on this model at `now`, then the keyboard effect if who holds the keyboard moved.
     fn run(self, now: Mono, f: impl FnOnce(Model) -> Moved) -> (Model, Vec<Effect>) {
         let before = self.keyboard_target();
-        let moved = f(Model { now, ..self });
+        let keyed = self.focus.key;
+        let mut moved = f(Model { now, ..self });
+        // A window that becomes key takes the keyboard back from an on-demand layer.
+        if moved.model.focus.key != keyed && moved.model.focus.key.is_some() {
+            moved.model.demand = None;
+        }
         let after = moved.model.keyboard_target();
         let moved = if before == after {
             moved
@@ -134,6 +144,7 @@ impl Model {
             Event::WindowHint { window, hint } => self.hint(window, hint),
             Event::LayerMapped { layer, spec } => self.map_layer(layer, spec),
             Event::LayerChanged { layer, spec } => self.change_layer(layer, spec),
+            Event::LayerPlaced { layer, at } => self.place_layer(layer, at),
             Event::LayerUnmapped { layer } => self.unmap_layer(layer),
             Event::Lock(event) => self.lock_event(event),
             Event::Input(_) => Moved::of(self),

@@ -369,8 +369,8 @@ fn a_dock_mapped_after_a_bar_is_hit_below_it() {
     let configure = dock_layer.configure().expect("the initial configure");
     assert_eq!(
         (configure.width, configure.height),
-        (0, 1080 - 24),
-        "the dock's height is what the bar left"
+        (64, 1080 - 24),
+        "the dock keeps the width it asked for, its height is what the bar left"
     );
     assert!(dock_layer.ack(fixture.client(dock)));
     let buffer = shm_buffer(

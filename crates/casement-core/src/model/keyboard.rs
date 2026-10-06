@@ -1,5 +1,6 @@
-//! Who holds the keyboard: the lock, else a layer surface asking for it exclusively, else
-//! the key window.
+//! Who holds the keyboard: the lock, else a layer surface asking for it exclusively, else an
+//! on-demand layer surface that has it (it mapped with no key window, or was pressed), else the
+//! key window.
 
 use super::Model;
 use crate::effect::KeyboardTarget;
@@ -14,6 +15,7 @@ impl Model {
         match &self.lock {
             LockState::Unlocked => self
                 .exclusive_layer()
+                .or_else(|| self.demanding_layer())
                 .or_else(|| self.focus.key.map(KeyboardTarget::Window))
                 .unwrap_or(KeyboardTarget::Nothing),
             LockState::Locked {
@@ -28,6 +30,18 @@ impl Model {
             }
             | LockState::LockedWithoutSurface => KeyboardTarget::Nothing,
         }
+    }
+
+    /// The on-demand layer surface that holds the keyboard, if it is still mapped and still
+    /// asks to take it on demand.
+    fn demanding_layer(&self) -> Option<KeyboardTarget> {
+        self.demand
+            .filter(|key| {
+                self.layers
+                    .get(key)
+                    .is_some_and(|spec| spec.keyboard == KeyboardInteractivity::OnDemand)
+            })
+            .map(KeyboardTarget::Layer)
     }
 
     /// The layer surface that holds the keyboard exclusively: among those above the windows

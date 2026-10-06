@@ -5,7 +5,7 @@ pub(crate) mod convert;
 use crate::compositor::Compositor;
 use crate::element::{
     CasementElement, LockCoverElement, Rgba8, cursor_elements, layer_elements, popup_elements,
-    window_elements,
+    surface_origin_logical, window_elements,
 };
 use crate::texture_book::TextureBook;
 use casement_core::geometry::{LogicalPoint, LogicalRect, PhysicalRect, PhysicalSize, SubPoint};
@@ -152,10 +152,13 @@ pub fn output_elements<R: Compositor>(
         |placed: &[&PlacedWindow], elements: &mut Vec<CasementElement<R>>, renderer: &mut R| {
             for placed in placed.iter().rev() {
                 if let Some(entry) = book.window(&placed.window) {
-                    let origin = LogicalPoint {
-                        x: placed.at.x.round_logical(),
-                        y: placed.at.y.round_logical(),
-                    };
+                    let origin = surface_origin_logical(
+                        &entry.root,
+                        LogicalPoint {
+                            x: placed.at.x.round_logical(),
+                            y: placed.at.y.round_logical(),
+                        },
+                    );
                     elements.extend(popup_elements(&entry.root, origin, view, renderer));
                     elements.extend(window_elements(placed, view, book, renderer));
                 }

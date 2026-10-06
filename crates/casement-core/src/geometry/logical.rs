@@ -20,6 +20,11 @@ pub struct LogicalSize {
     pub h: u32,
 }
 
+impl LogicalSize {
+    /// No extent.
+    pub const ZERO: LogicalSize = LogicalSize { w: 0, h: 0 };
+}
+
 /// An axis-aligned rectangle in logical pixels, half-open: it holds `origin` and stops just
 /// before `origin + size`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

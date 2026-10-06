@@ -1,20 +1,22 @@
 //! What a mapped toplevel asks for: an interactive move or resize, zoom, minimise, full screen,
 //! the window menu, and the pong that answers a ping. The model decides; this module reports
-//! the ask. A request for a window that has not mapped is dropped (the model knows no such
-//! window).
+//! the ask. A request for a window that has not mapped is not the model's yet (it knows no such
+//! window): to open maximised or full screen is remembered with the pending state, so that the
+//! initial configure already says so and carries the room, and the map replays it to the model.
 //!
 //! A move or resize must answer a real press: the handler asks [`grab_proven`] of the press
 //! the seat's `SerialBook` recorded before it calls [`on_move`] or [`on_resize`].
 
 use super::XdgShellPart;
 use super::commit::Phase;
+use crate::convert::size_to;
 use crate::serial::{PressKind, PressRecord};
-use casement_core::geometry::LogicalPoint;
+use casement_core::geometry::{LogicalPoint, LogicalSize};
 use casement_core::{
-    ClientKey, Event, InputSerial, OutputKey, ResizeEdges, ToplevelRequest, WindowId,
+    ClientKey, Event, InputSerial, OpeningRoom, OutputKey, ResizeEdges, ToplevelRequest, WindowId,
 };
 use casement_protocols::vocab::Toggle;
-use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::ResizeEdge;
+use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::{ResizeEdge, State};
 use smithay::wayland::shell::xdg::ToplevelSurface;
 
 /// What a serial is offered as proof for.
@@ -60,6 +62,49 @@ fn request(part: &XdgShellPart, surface: &ToplevelSurface, request: ToplevelRequ
         .collect()
 }
 
+/// The request as an event when `surface` is mapped; before that, a request to open in `state`
+/// (at `size`) is written into the pending state and remembered, and one to leave it is
+/// forgotten again.
+fn request_or_open(
+    part: &mut XdgShellPart,
+    surface: &ToplevelSurface,
+    asked: ToplevelRequest,
+    (state, size): (State, Option<LogicalSize>),
+) -> Vec<Event> {
+    let Some(window) = part.window_of_surface(surface.wl_surface()) else {
+        return Vec::new();
+    };
+    let Some(record) = part.records.get_mut(&window) else {
+        return Vec::new();
+    };
+    if matches!(record.phase, Phase::Mapped(_)) {
+        return vec![Event::ToplevelRequest {
+            window,
+            request: asked,
+        }];
+    }
+    let on = matches!(
+        asked,
+        ToplevelRequest::Maximise(Toggle::On)
+            | ToplevelRequest::FullScreen {
+                toggle: Toggle::On,
+                ..
+            }
+    );
+    surface.with_pending_state(|pending| match on {
+        true => {
+            pending.states.set(state);
+            pending.size = size.map(size_to);
+        }
+        false => {
+            pending.states.unset(state);
+            pending.size = None;
+        }
+    });
+    record.opening = on.then_some(asked);
+    Vec::new()
+}
+
 fn mapped_window(part: &XdgShellPart, surface: &ToplevelSurface) -> Option<WindowId> {
     let window = part.window_of_surface(surface.wl_surface())?;
     part.records
@@ -87,13 +132,20 @@ pub fn on_resize(
     request(part, surface, ToplevelRequest::Resize { serial, edges })
 }
 
-/// Maximise (zoom) on or off.
+/// Maximise (zoom) on or off. Before the window maps, `room` is what it opens at.
 pub fn on_maximise(
     part: &mut XdgShellPart,
     surface: &ToplevelSurface,
     toggle: Toggle,
+    room: Option<OpeningRoom>,
 ) -> Vec<Event> {
-    request(part, surface, ToplevelRequest::Maximise(toggle))
+    let size = room.map(|room| room.maximised);
+    request_or_open(
+        part,
+        surface,
+        ToplevelRequest::Maximise(toggle),
+        (State::Maximized, size),
+    )
 }
 
 /// Minimise.
@@ -107,11 +159,14 @@ pub fn on_full_screen(
     surface: &ToplevelSurface,
     toggle: Toggle,
     output: Option<OutputKey>,
+    room: Option<OpeningRoom>,
 ) -> Vec<Event> {
-    request(
+    let size = room.map(|room| room.full_screen);
+    request_or_open(
         part,
         surface,
         ToplevelRequest::FullScreen { toggle, output },
+        (State::Fullscreen, size),
     )
 }
 

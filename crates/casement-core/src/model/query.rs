@@ -98,6 +98,18 @@ impl Model {
             .map(|full| self.layers.usable_area(output, full))
     }
 
+    /// The room a toplevel that asks to open maximised or full screen is given before it maps:
+    /// the usable area of, and the whole of, the output new windows go to. `None` with no
+    /// output plugged.
+    pub fn opening_room(&self) -> Option<OpeningRoom> {
+        let output = self.working_output()?;
+        let full = self.output_rect(&output)?;
+        Some(OpeningRoom {
+            maximised: self.layers.usable_area(&output, full).size,
+            full_screen: full.size,
+        })
+    }
+
     /// The stack rank above every window's.
     pub(super) fn top_rank(&self) -> crate::window::StackRank {
         let above = self
@@ -108,6 +120,15 @@ impl Model {
             .map_or(0, |top| top.saturating_add(1));
         crate::window::StackRank(above)
     }
+}
+
+/// The sizes a window that opens maximised or full screen is first configured to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OpeningRoom {
+    /// What the layers' exclusive zones leave of the output.
+    pub maximised: LogicalSize,
+    /// The whole output.
+    pub full_screen: LogicalSize,
 }
 
 /// `size` centred in `area`, never left or above it.

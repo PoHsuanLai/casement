@@ -14,7 +14,7 @@ use casement_motion::{
 };
 use casement_render::{
     CasementElement, ChromeLayer, Compositor, LayerDraw, OutputView, TextureBook, output_elements,
-    popup_surfaces,
+    popup_surfaces, surface_origin_logical,
 };
 use casement_wayland::seat::{Candidate, SurfaceAt, surface_under};
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -208,10 +208,13 @@ pub(super) fn stack(state: &State) -> Vec<(Hit, Candidate)> {
                 Hit::Window(placed.window),
                 Candidate {
                     root: entry.root.clone(),
-                    origin: LogicalPoint {
-                        x: placed.at.x.round_logical(),
-                        y: placed.at.y.round_logical(),
-                    },
+                    origin: surface_origin_logical(
+                        &entry.root,
+                        LogicalPoint {
+                            x: placed.at.x.round_logical(),
+                            y: placed.at.y.round_logical(),
+                        },
+                    ),
                 },
             ))
         });

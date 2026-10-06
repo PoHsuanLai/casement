@@ -4,9 +4,11 @@ use super::Model;
 use super::moved::Moved;
 use crate::cause::Cause;
 use crate::effect::Effect;
-use crate::geometry::LogicalSize;
+use crate::geometry::{LogicalPoint, LogicalSize};
 use crate::ids::{LayerKey, OutputKey};
-use crate::layer::{Anchor, Anchors, ExclusiveZone, LayerSpec};
+use crate::layer::{ExclusiveZone, KeyboardInteractivity, LayerSpec};
+use crate::lock::LockState;
+use crate::time::Mono;
 use std::collections::BTreeMap;
 
 impl Model {
@@ -17,7 +19,33 @@ impl Model {
         if !self.outputs.0.contains_key(&spec.output) {
             return Moved::of(self);
         }
-        self.with_layer(layer, spec)
+        let takes_keyboard = spec.keyboard == KeyboardInteractivity::OnDemand
+            && self.focus.key.is_none()
+            && self.demand.is_none();
+        let model = Model {
+            demand: takes_keyboard.then_some(layer).or(self.demand),
+            ..self
+        };
+        model.with_layer(layer, spec)
+    }
+
+    /// A press landed on a layer surface: one that takes the keyboard on demand holds it from
+    /// now (a window is pressed or keyed to take it back). Pressing any other layer changes
+    /// nothing.
+    pub fn press_layer(self, layer: LayerKey, now: Mono) -> (Model, Vec<Effect>) {
+        self.run(now, |model| {
+            let on_demand = model
+                .layers
+                .get(&layer)
+                .is_some_and(|spec| spec.keyboard == KeyboardInteractivity::OnDemand);
+            match (&model.lock, on_demand) {
+                (LockState::Unlocked, true) => Moved::of(Model {
+                    demand: Some(layer),
+                    ..model
+                }),
+                _ => Moved::of(model),
+            }
+        })
     }
 
     /// A layer surface changed what it asks for. One never mapped is not known.
@@ -25,6 +53,18 @@ impl Model {
         match self.layers.get(&layer) {
             Some(_) if self.outputs.0.contains_key(&spec.output) => self.with_layer(layer, spec),
             _ => Moved::of(self),
+        }
+    }
+
+    /// A layer surface was pinned with its top-left at `at`. One never mapped is not known.
+    pub(super) fn place_layer(self, layer: LayerKey, at: LogicalPoint) -> Moved {
+        match self.layers.get(&layer).cloned() {
+            Some(spec) => Moved::of(Model {
+                layers: self.layers.with_pin(layer, at),
+                ..self
+            })
+            .then(|model| model.laid_out_for(&spec, &spec)),
+            None => Moved::of(self),
         }
     }
 
@@ -78,10 +118,7 @@ impl Model {
                     self.layers
                         .iter()
                         .filter(|(_, spec)| spec.output == *output)
-                        .filter_map(|(key, spec)| {
-                            let room = arranged.room(key)?;
-                            Some((*key, layer_size(spec, room.size)))
-                        })
+                        .filter_map(|(key, _)| Some((*key, arranged.configure_size(key)?)))
                         .collect::<Vec<_>>(),
                 )
             })
@@ -121,39 +158,5 @@ impl Model {
             true => Moved::of(self),
             false => self.redrawn(Cause::Configure, outputs),
         }
-    }
-}
-
-/// The size a layer surface is configured to: along an axis it is held to both ends of, the
-/// output less its margins; otherwise 0, the surface chooses (wlr-layer-shell).
-fn layer_size(spec: &LayerSpec, output: LogicalSize) -> LogicalSize {
-    let Anchors {
-        top,
-        bottom,
-        left,
-        right,
-    } = spec.anchor;
-    LogicalSize {
-        w: along(
-            (left, right),
-            output.w,
-            (spec.margin.left, spec.margin.right),
-        ),
-        h: along(
-            (top, bottom),
-            output.h,
-            (spec.margin.top, spec.margin.bottom),
-        ),
-    }
-}
-
-/// The length along one axis: all the room less the margins when both ends are held, else 0.
-fn along(ends: (Anchor, Anchor), room: u32, margins: (i32, i32)) -> u32 {
-    match ends {
-        (Anchor::Held, Anchor::Held) => {
-            let taken = i64::from(margins.0) + i64::from(margins.1);
-            u32::try_from((i64::from(room) - taken).max(0)).unwrap_or(0)
-        }
-        _ => 0,
     }
 }

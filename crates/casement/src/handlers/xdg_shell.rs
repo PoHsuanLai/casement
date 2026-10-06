@@ -3,7 +3,7 @@
 //! (where a window goes, whether a press focuses it, what a configure says); a move or resize
 //! only goes on after the seat says its serial answers a real press.
 
-mod popups;
+pub(super) mod popups;
 
 use crate::core_loop;
 use crate::state::State;
@@ -134,12 +134,17 @@ impl XdgShellHandler for State {
     }
 
     fn maximize_request(&mut self, surface: ToplevelSurface) {
-        let events = on_maximise(&mut self.wl.xdg_shell, &surface, Toggle::On);
+        let events = on_maximise(
+            &mut self.wl.xdg_shell,
+            &surface,
+            Toggle::On,
+            self.core.model.opening_room(),
+        );
         core_loop::feed(self, events);
     }
 
     fn unmaximize_request(&mut self, surface: ToplevelSurface) {
-        let events = on_maximise(&mut self.wl.xdg_shell, &surface, Toggle::Off);
+        let events = on_maximise(&mut self.wl.xdg_shell, &surface, Toggle::Off, None);
         core_loop::feed(self, events);
     }
 
@@ -147,12 +152,18 @@ impl XdgShellHandler for State {
         let output = output
             .as_ref()
             .and_then(|output| self.output_key_of(output));
-        let events = on_full_screen(&mut self.wl.xdg_shell, &surface, Toggle::On, output);
+        let events = on_full_screen(
+            &mut self.wl.xdg_shell,
+            &surface,
+            Toggle::On,
+            output,
+            self.core.model.opening_room(),
+        );
         core_loop::feed(self, events);
     }
 
     fn unfullscreen_request(&mut self, surface: ToplevelSurface) {
-        let events = on_full_screen(&mut self.wl.xdg_shell, &surface, Toggle::Off, None);
+        let events = on_full_screen(&mut self.wl.xdg_shell, &surface, Toggle::Off, None, None);
         core_loop::feed(self, events);
     }
 

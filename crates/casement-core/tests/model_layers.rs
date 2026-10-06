@@ -37,6 +37,7 @@ fn bar(output: &str, zone: ExclusiveZone) -> LayerSpec {
         },
         keyboard: KeyboardInteractivity::None,
         namespace: "bar".to_owned(),
+        size: casement_core::geometry::LogicalSize::ZERO,
         role: ShellRoleTag::Unassigned,
     }
 }
@@ -266,9 +267,9 @@ fn among_exclusive_layers_the_highest_level_then_the_newest_holds_the_keyboard()
             KeyboardTarget::Nothing,
         ),
         (
-            "on demand is not exclusive",
+            "on demand takes the keyboard on mapping when no window holds it",
             vec![(1, on_demand)],
-            KeyboardTarget::Nothing,
+            KeyboardTarget::Layer(LayerKey(1)),
         ),
         (
             "the newer of one level",
@@ -305,6 +306,7 @@ fn centre(output: &str) -> LayerSpec {
         },
         level: LayerLevel::Overlay,
         namespace: "centre".to_owned(),
+        size: casement_core::geometry::LogicalSize::ZERO,
         ..bar(output, ExclusiveZone::Respect)
     }
 }
@@ -388,6 +390,7 @@ fn dock(output: &str, zone: ExclusiveZone) -> LayerSpec {
             right: Anchor::Free,
         },
         namespace: "dock".to_owned(),
+        size: casement_core::geometry::LogicalSize::ZERO,
         ..bar(output, zone)
     }
 }

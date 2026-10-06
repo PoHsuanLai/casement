@@ -4,7 +4,7 @@
 use crate::state::State;
 use casement_core::geometry::LogicalSize;
 use casement_core::{Event, WindowId};
-use casement_render::SurfaceEntry;
+use casement_render::{SurfaceEntry, geometry_size};
 use smithay::desktop::utils::bbox_from_surface_tree;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 
@@ -28,9 +28,10 @@ pub(super) fn refresh_layers(state: &mut State) {
     state.render.textures = book.with_layers_sized(tree_size);
 }
 
-/// The size of a surface tree, in logical pixels.
+/// The size of a surface tree, in logical pixels: its window geometry when it declared one (what
+/// a window's size is), else everything it draws.
 fn tree_size(root: &WlSurface) -> LogicalSize {
-    let tree = bbox_from_surface_tree(root, (0, 0)).size;
+    let tree = geometry_size(root).unwrap_or_else(|| bbox_from_surface_tree(root, (0, 0)).size);
     LogicalSize {
         w: u32::try_from(tree.w).unwrap_or(0),
         h: u32::try_from(tree.h).unwrap_or(0),

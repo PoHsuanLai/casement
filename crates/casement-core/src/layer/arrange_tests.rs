@@ -9,7 +9,7 @@ use crate::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use crate::ids::{LayerKey, OutputKey, OutputName};
 use crate::output::{EdidFacts, EdidSerial};
 
-fn output(name: &str) -> OutputKey {
+pub(super) fn output(name: &str) -> OutputKey {
     let edid = EdidFacts {
         make: String::new(),
         model: String::new(),
@@ -18,7 +18,7 @@ fn output(name: &str) -> OutputKey {
     OutputKey::of(&edid, &OutputName::parse(name).expect("name"))
 }
 
-fn rect(x: i32, y: i32, w: u32, h: u32) -> LogicalRect {
+pub(super) fn rect(x: i32, y: i32, w: u32, h: u32) -> LogicalRect {
     LogicalRect::new(LogicalPoint { x, y }, LogicalSize { w, h })
 }
 
@@ -31,7 +31,7 @@ const NONE: Margins = Margins {
 
 /// One layer in a case: its level, edges ("t", "b", "l", "r"), zone, margins and the size its
 /// surface committed.
-struct Ask {
+pub(super) struct Ask {
     level: LayerLevel,
     edges: &'static str,
     zone: ExclusiveZone,
@@ -39,7 +39,7 @@ struct Ask {
     committed: (u32, u32),
 }
 
-fn ask(edges: &'static str, zone: ExclusiveZone, committed: (u32, u32)) -> Ask {
+pub(super) fn ask(edges: &'static str, zone: ExclusiveZone, committed: (u32, u32)) -> Ask {
     Ask {
         level: LayerLevel::Top,
         edges,
@@ -50,7 +50,7 @@ fn ask(edges: &'static str, zone: ExclusiveZone, committed: (u32, u32)) -> Ask {
 }
 
 impl Ask {
-    fn spec(&self) -> LayerSpec {
+    pub(super) fn spec(&self) -> LayerSpec {
         let held = |c: char| match self.edges.contains(c) {
             true => Anchor::Held,
             false => Anchor::Free,
@@ -68,6 +68,7 @@ impl Ask {
             margin: self.margin,
             keyboard: KeyboardInteractivity::None,
             namespace: "test".to_owned(),
+            size: crate::geometry::LogicalSize::ZERO,
             role: ShellRoleTag::Unassigned,
         }
     }

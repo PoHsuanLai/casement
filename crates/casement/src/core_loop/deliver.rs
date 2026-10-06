@@ -399,6 +399,11 @@ fn pressed(
             (Some((Hit::Window(window), _)), Edge::Press) => {
                 deliver_press(state, seat, event, *window)
             }
+            (Some((Hit::Layer(layer), _)), Edge::Press) => {
+                let effects = run_model(state, |model, now| model.press_layer(*layer, now));
+                exec::exec(state, effects);
+                true
+            }
             _ => true,
         };
     if !delivered {

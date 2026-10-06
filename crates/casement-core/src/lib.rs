@@ -40,4 +40,4 @@ pub use ids::{
     PopupKey, WindowId,
 };
 pub use invariants::InvariantBreak;
-pub use model::{Model, OutputBook, OutputState};
+pub use model::{Model, OpeningRoom, OutputBook, OutputState};

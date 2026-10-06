@@ -97,6 +97,15 @@ pub enum Event {
         /// What it now asks for.
         spec: LayerSpec,
     },
+    /// A layer surface was put by hand with its top-left at `at` (global logical pixels), where
+    /// its anchors would not have put it: the wlcs shim's `position_window_absolute`. No protocol
+    /// sends it. A pin lasts until the surface unmaps.
+    LayerPlaced {
+        /// The surface.
+        layer: LayerKey,
+        /// Where its top-left goes.
+        at: LogicalPoint,
+    },
     /// A layer surface unmapped.
     LayerUnmapped {
         /// The surface.

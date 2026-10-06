@@ -131,7 +131,17 @@ impl Compositor for Host {
                 surface,
                 at,
             } => {
-                if let Some(window) = self.client_surface(client, surface) {
+                let layer = self
+                    .clients
+                    .get(&client)
+                    .and_then(|id| self.fixture.layer_of(*id, surface.0));
+                if let Some(layer) = layer {
+                    // A layer surface sits where its anchors put it; wlcs' layer tests still
+                    // move surfaces about, so the shim pins them.
+                    self.fixture.place_layer(layer, whole(at));
+                    self.fixture.advance(SETTLE);
+                    self.fixture.refocus_pointer();
+                } else if let Some(window) = self.client_surface(client, surface) {
                     self.fixture.place_window(window, whole(at));
                     // The window glides to its place; wlcs' next step hit-tests where it is.
                     self.fixture.advance(SETTLE);

@@ -11,7 +11,7 @@ use casement_core::ToplevelRequest;
 use casement_core::focus::TokenCheck;
 use casement_core::geometry::{LogicalPoint, LogicalRect};
 use casement_core::policy::ConnectionRole;
-use casement_core::{Event, WindowId};
+use casement_core::{Event, LayerKey, WindowId};
 use porter_core::PeerIdentity;
 use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -60,6 +60,22 @@ impl Fixture {
             .iter()
             .find(|(_, toplevel)| toplevel.wl_surface().id() == surface.id())
             .map(|(window, _)| *window)
+    }
+
+    /// The layer surface that surface object `object` of `client` is, if it is one.
+    pub fn layer_of(&self, client: ClientId, object: u32) -> Option<LayerKey> {
+        let held = self.servers.get(&client)?;
+        let surface: WlSurface = held
+            .object_from_protocol_id(&self.state.display, object)
+            .ok()?;
+        self.state.wl.layer_shell.key_of(&surface)
+    }
+
+    /// Puts `layer`'s top-left corner at `at` wherever its anchors would have put it
+    /// ([`Event::LayerPlaced`]); then pumps.
+    pub fn place_layer(&mut self, layer: LayerKey, at: LogicalPoint) {
+        core_loop::feed(&mut self.state, vec![Event::LayerPlaced { layer, at }]);
+        self.pump();
     }
 
     /// Puts `window`'s top-left corner at `at`, keeping its size, as if the person had

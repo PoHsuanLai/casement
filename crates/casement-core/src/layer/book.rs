@@ -1,7 +1,7 @@
 //! Every layer surface, and the usable area their exclusive zones leave on an output.
 
 use super::LayerSpec;
-use crate::geometry::LogicalRect;
+use crate::geometry::{LogicalPoint, LogicalRect};
 use crate::ids::{LayerKey, OutputKey};
 use std::collections::BTreeMap;
 
@@ -9,6 +9,8 @@ use std::collections::BTreeMap;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LayerBook {
     layers: BTreeMap<LayerKey, LayerSpec>,
+    /// Where the surfaces put by hand sit (the top-left); the others sit where their anchors say.
+    pins: BTreeMap<LayerKey, LogicalPoint>,
 }
 
 impl LayerBook {
@@ -16,6 +18,7 @@ impl LayerBook {
     pub fn empty() -> LayerBook {
         LayerBook {
             layers: BTreeMap::new(),
+            pins: BTreeMap::new(),
         }
     }
 
@@ -23,14 +26,29 @@ impl LayerBook {
     pub fn with_layer(self, layer: LayerKey, spec: LayerSpec) -> LayerBook {
         let mut layers = self.layers;
         layers.insert(layer, spec);
-        LayerBook { layers }
+        LayerBook { layers, ..self }
+    }
+
+    /// The book with `layer` put with its top-left at `at`, wherever its anchors would have
+    /// put it.
+    pub fn with_pin(self, layer: LayerKey, at: LogicalPoint) -> LayerBook {
+        let mut pins = self.pins;
+        pins.insert(layer, at);
+        LayerBook { pins, ..self }
     }
 
     /// The book without `layer`.
     pub fn without_layer(self, layer: &LayerKey) -> LayerBook {
         let mut layers = self.layers;
         layers.remove(layer);
-        LayerBook { layers }
+        let mut pins = self.pins;
+        pins.remove(layer);
+        LayerBook { layers, pins }
+    }
+
+    /// Where `layer` was put by hand, if it was.
+    pub fn pin(&self, layer: &LayerKey) -> Option<LogicalPoint> {
+        self.pins.get(layer).copied()
     }
 
     /// What the surface `layer` asked for.
@@ -103,6 +121,7 @@ mod tests {
             margin,
             keyboard: KeyboardInteractivity::None,
             namespace: "test".to_owned(),
+            size: crate::geometry::LogicalSize::ZERO,
             role: ShellRoleTag::Unassigned,
         }
     }

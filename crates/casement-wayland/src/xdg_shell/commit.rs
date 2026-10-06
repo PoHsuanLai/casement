@@ -14,7 +14,7 @@ use casement_core::app::AppKey;
 use casement_core::focus::TokenCheck;
 use casement_core::geometry::LogicalSize;
 use casement_core::window::{Parent, SizeLimits, WindowTitle};
-use casement_core::{ClientKey, Event, MappedToplevel, ToplevelMeta, WindowId};
+use casement_core::{ClientKey, Event, MappedToplevel, ToplevelMeta, ToplevelRequest, WindowId};
 use porter_core::ClaimedId;
 use smithay::backend::renderer::utils::with_renderer_surface_state;
 use smithay::reexports::wayland_server::Resource;
@@ -101,6 +101,9 @@ pub struct ToplevelRecord {
     pub parent: Parent,
     /// How the activation token it asked with before mapping checked out (A7).
     pub staged: TokenCheck,
+    /// What it asked to open as (maximised, full screen) before it mapped: the model hears it
+    /// right after the map, and the initial configure already carried it.
+    pub opening: Option<ToplevelRequest>,
 }
 
 /// What a client has declared about a toplevel, read from smithay's surface state.
@@ -196,6 +199,7 @@ pub fn on_new_toplevel(
             claimed: claimed_of(None, state.key),
             parent: Parent::None,
             staged: TokenCheck::Missing,
+            opening: None,
         },
     );
     Vec::new()
@@ -297,6 +301,13 @@ fn mapped_events(
             meta: ToplevelMeta::Title(declared.title.clone()),
         });
     }
+    // What it asked to open as: the model hears it now that the window exists.
+    events.extend(
+        record
+            .opening
+            .take()
+            .map(|request| Event::ToplevelRequest { window, request }),
+    );
     events
 }
 
@@ -423,6 +434,7 @@ mod tests {
             claimed: claimed_of(None, ClientKey(1)),
             parent: Parent::None,
             staged: TokenCheck::Missing,
+            opening: None,
         };
         let window = WindowId(3);
         let wider = limits_of((100, 100), (0, 0));

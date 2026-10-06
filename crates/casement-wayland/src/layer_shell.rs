@@ -252,6 +252,7 @@ mod tests {
                 left: Anchor::Held,
                 right: Anchor::Held,
             },
+            size: casement_core::geometry::LogicalSize::ZERO,
             exclusive: ExclusiveZone::Reserve(30),
             margin: Margins {
                 top: margin_top,

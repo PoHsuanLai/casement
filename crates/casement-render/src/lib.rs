@@ -21,8 +21,9 @@ pub mod golden;
 pub use compositor::{Compositor, EffectSupport};
 pub use damage::{RenderError, RenderSync, Rendered, render_output};
 pub use element::{
-    BlurV0Element, CasementElement, LockCoverElement, Rgba8, cursor_elements, layer_elements,
-    popup_elements, popup_surfaces, solid_rect, window_elements,
+    BlurV0Element, CasementElement, LockCoverElement, Rgba8, cursor_elements, geometry_size,
+    layer_elements, popup_elements, popup_surfaces, solid_rect, surface_origin,
+    surface_origin_logical, window_elements,
 };
 pub use gl_raw::surfaceless_gles;
 pub use scene::{ChromeLayer, CursorDraw, CursorShape, LayerDraw, OutputView, output_elements};

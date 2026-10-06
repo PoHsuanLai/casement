@@ -36,7 +36,12 @@ impl Model {
                 .get(&press.window)
                 .is_some_and(|w| model.is_seen(w));
             match (&model.lock, seen) {
-                (LockState::Unlocked, true) => model.feed(FocusIn::Press(press)),
+                // A press on a window takes the keyboard back from an on-demand layer.
+                (LockState::Unlocked, true) => Model {
+                    demand: None,
+                    ..model
+                }
+                .feed(FocusIn::Press(press)),
                 _ => Moved::of(model),
             }
         })

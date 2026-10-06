@@ -2,6 +2,7 @@
 //! [`LayerSpec`] here (where a layer sits is `casement_core::layer::Arranged`, read by everyone).
 
 use casement_core::OutputKey;
+use casement_core::geometry::LogicalSize;
 use casement_core::layer::{
     Anchor, Anchors, ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerSpec, Margins,
     ShellRoleTag,
@@ -73,6 +74,10 @@ pub fn spec_of(output: &OutputKey, cached: &LayerSurfaceCachedState, namespace: 
         output: output.clone(),
         level: level_of(cached.layer),
         anchor: anchors_of(cached.anchor),
+        size: LogicalSize {
+            w: u32::try_from(cached.size.w).unwrap_or(0),
+            h: u32::try_from(cached.size.h).unwrap_or(0),
+        },
         exclusive: exclusive_of(cached.exclusive_zone),
         margin: margins_of(cached.margin),
         keyboard: keyboard_of(cached.keyboard_interactivity),
