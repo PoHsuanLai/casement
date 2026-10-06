@@ -19,3 +19,21 @@ slow-timeout = { period = "10s", terminate-after = 1 }
 failure-output = "immediate-final"
 fail-fast = false
 slow-timeout = { period = "10s", terminate-after = 1 }
+
+# 3000 cases of a debug-built model run take 6 s alone and over 10 s beside the other tests on a
+# loaded host (P0-exit: two timeouts at load 33 on 32 cores); the one property gets 30 s.
+[[profile.fast.overrides]]
+filter = 'package(casement-core) and test(random_runs_keep_every_invariant)'
+slow-timeout = { period = "30s", terminate-after = 1 }
+
+# 3000 cases of a debug-built model run take 6 s alone and over 10 s beside the other tests on a
+# loaded host (P0-exit: two timeouts at load 33 on 32 cores); the one property gets 30 s.
+[[profile.merge.overrides]]
+filter = 'package(casement-core) and test(random_runs_keep_every_invariant)'
+slow-timeout = { period = "30s", terminate-after = 1 }
+
+# 3000 cases of a debug-built model run take 6 s alone and over 10 s beside the other tests on a
+# loaded host (P0-exit: two timeouts at load 33 on 32 cores); the one property gets 30 s.
+[[profile.phase.overrides]]
+filter = 'package(casement-core) and test(random_runs_keep_every_invariant)'
+slow-timeout = { period = "30s", terminate-after = 1 }
