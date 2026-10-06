@@ -23,10 +23,22 @@ impl Typing {
     /// Maps a toplevel, binds the field and the method (before the window is focused, so the
     /// field gets `enter` with the focus), then clicks the window: it takes the key.
     pub(crate) fn start() -> Typing {
+        Typing::start_with(true)
+    }
+
+    /// As [`Typing::start`], but the input method binds only if `with_method` (an IME that
+    /// starts after the apps binds later with [`Typing::start_method`]).
+    pub(crate) fn start_with(with_method: bool) -> Typing {
         let (mut fixture, client) = boot();
         let base = WmBase::bind(fixture.client(client), 7);
         let window = map_toplevel(&mut fixture, client, &base, (400, 300));
-        let ime = ImeSession::start(fixture.client(client).globals()).expect("the session");
+        let globals = fixture.client(client).globals();
+        let ime = if with_method {
+            ImeSession::start(globals)
+        } else {
+            ImeSession::start_field(globals)
+        }
+        .expect("the session");
         fixture.pump();
         settle(&mut fixture);
         let id = windows(&fixture)[0];
@@ -57,6 +69,14 @@ impl Typing {
         self.fixture.pump();
         let now = self.fixture.model().now();
         self.ime.pump(now).expect("pump the session");
+    }
+
+    /// The input method starts (fcitx5 after the apps): it binds, and the compositor answers.
+    pub(crate) fn start_method(&mut self) {
+        let globals = self.fixture.client(self.client).globals();
+        self.ime.bind_method(globals).expect("bind the method");
+        self.pump();
+        self.pump();
     }
 
     /// The field enables text input; the method hears `activate` and grabs the keyboard.
@@ -198,4 +218,91 @@ fn ime_commit_transcript() {
     let lines = typing.ime.field_lines();
     check_golden(&golden("text_input-commit.txt"), &lines).expect("the transcript");
     let _ = typing.client;
+}
+
+/// The IME starts after the app (fcitx5 usually does). The field got `enter` with the focus
+/// although no input method existed, enabled itself with its state, and the input method that
+/// binds later is activated for it with that state, then types into it.
+#[test]
+fn an_input_method_that_starts_after_the_field_is_enabled_gets_the_field() {
+    let mut typing = Typing::start_with(false);
+    assert!(
+        typing
+            .ime
+            .field_events()
+            .iter()
+            .any(|line| line.event == TextInputEvent::Enter),
+        "the field got enter with no input method running"
+    );
+    typing
+        .ime
+        .enable_with_state("héllo", 3)
+        .expect("enable with state");
+    typing.pump();
+    typing.start_method();
+    let seen: Vec<_> = typing
+        .ime
+        .method_events()
+        .iter()
+        .map(|line| line.event.clone())
+        .collect();
+    assert_eq!(
+        seen,
+        [
+            InputMethodEvent::Activate,
+            InputMethodEvent::SurroundingText {
+                text: "héllo".to_owned(),
+                cursor: 3,
+                anchor: 3
+            },
+            InputMethodEvent::ContentType {
+                hint: 0,
+                purpose: 13
+            },
+            InputMethodEvent::Done,
+        ],
+        "activate, the field's state, done"
+    );
+    typing.ime.grab_keyboard().expect("grab");
+    typing.pump();
+    typing.ime.commit_string("你").expect("commit_string");
+    typing.ime.commit_batch().expect("commit");
+    typing.pump();
+    assert!(
+        typing
+            .ime
+            .field_events()
+            .iter()
+            .any(|line| line.event == TextInputEvent::CommitString(Some("你".to_owned()))),
+        "the late input method types into the field"
+    );
+}
+
+/// The input method quits and another starts: the field stays enabled (no `leave`, the
+/// protocol has no event for a missing method) and the next method is activated for it.
+#[test]
+fn a_field_stays_enabled_when_its_input_method_goes_away() {
+    let mut typing = Typing::start();
+    typing.enable_and_grab();
+    typing.ime.destroy_method().expect("destroy the method");
+    typing.pump();
+    assert!(
+        typing
+            .ime
+            .field_events()
+            .iter()
+            .all(|line| line.event != TextInputEvent::Leave),
+        "the field was not left"
+    );
+    let activations = |typing: &Typing| {
+        typing
+            .ime
+            .method_events()
+            .iter()
+            .filter(|line| line.event == InputMethodEvent::Activate)
+            .count()
+    };
+    assert_eq!(activations(&typing), 1);
+    typing.start_method();
+    assert_eq!(activations(&typing), 2, "the next method is activated");
 }

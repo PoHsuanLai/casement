@@ -122,7 +122,7 @@ fn a_viewport_is_accepted_and_removed() {
     );
 }
 
-/// A second viewport on one surface is wp_viewporter.viewport_exists (0), posted on the surface.
+/// A second viewport on one surface is wp_viewporter.viewport_exists (0), posted on the manager.
 #[test]
 fn a_second_viewport_is_a_protocol_error() {
     let (mut fixture, id) = boot();
@@ -132,7 +132,7 @@ fn a_second_viewport_is_a_protocol_error() {
     let _first = viewporter.viewport(client, &surface);
     let _second = viewporter.viewport(client, &surface);
     fixture.pump();
-    assert_eq!(fault(&mut fixture, id), ("wl_surface".to_owned(), 0));
+    assert_eq!(fault(&mut fixture, id), ("wp_viewporter".to_owned(), 0));
 }
 
 /// A destination of zero, or a negative source origin, is wp_viewport.bad_value (0).
@@ -182,6 +182,48 @@ fn a_fractional_size_without_a_destination_is_a_protocol_error() {
     surface.commit();
     fixture.pump();
     assert_eq!(fault(&mut fixture, id), ("wp_viewport".to_owned(), 1));
+}
+
+/// A viewport made after the surface committed a buffer still gets `bad_size`: smithay inserts the
+/// surface's viewport state at the first commit, and the check must not depend on who inserted it.
+#[test]
+fn a_viewport_made_after_the_first_commit_is_checked_for_bad_size() {
+    let (mut fixture, id) = boot();
+    let client = fixture.client(id);
+    let surface = Compositor::bind(client, 5).surface(client);
+    let buffer = shm_buffer(client, SIZE, Pattern::Gradient);
+    surface.attach(&buffer);
+    surface.commit();
+    fixture.pump();
+    let client = fixture.client(id);
+    let viewport = Viewporter::bind(client).viewport(client, &surface);
+    viewport.source(0.0, 0.0, 10.5, 10.5);
+    surface.commit();
+    fixture.pump();
+    assert_eq!(fault(&mut fixture, id), ("wp_viewport".to_owned(), 1));
+}
+
+/// A commit that sets only the buffer scale changes the surface size, and a source that no longer
+/// fits is wp_viewport.out_of_buffer (2): the check runs at every commit, not only with a buffer.
+#[test]
+fn a_scale_change_without_a_new_buffer_is_checked_for_out_of_buffer() {
+    let (mut fixture, id) = boot();
+    let client = fixture.client(id);
+    let surface = Compositor::bind(client, 5).surface(client);
+    let viewport = Viewporter::bind(client).viewport(client, &surface);
+    let buffer = shm_buffer(client, SIZE, Pattern::Gradient);
+    surface.attach(&buffer);
+    viewport.source(0.0, 0.0, 64.0, 64.0);
+    surface.commit();
+    fixture.pump();
+    assert!(
+        fixture.client(id).protocol_error().is_none(),
+        "it fits at scale 1"
+    );
+    surface.surface.set_buffer_scale(2);
+    surface.commit();
+    fixture.pump();
+    assert_eq!(fault(&mut fixture, id), ("wp_viewport".to_owned(), 2));
 }
 
 /// Requests on a viewport whose surface is gone are wp_viewport.no_surface (3).

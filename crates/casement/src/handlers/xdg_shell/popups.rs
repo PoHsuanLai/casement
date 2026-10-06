@@ -147,14 +147,12 @@ pub(super) fn grab(state: &mut State, surface: PopupSurface, _seat: WlSeat, seri
         grab.ungrab(PopupUngrabStrategy::All);
         return;
     }
-    // A nested grab replaces its parent's. The parent's pointer grab, when it goes, drops a
-    // keyboard grab of the same serial and hands the keyboard to the root (a bar that never asked
-    // for it): a submenu opened with the serial its parent used would lose its grab. So the
-    // keyboard grab is lifted first, with no focus change, and set again after.
-    keyboard.unset_grab(state);
-    pointer.set_grab(state, PopupPointerGrab::new(&grab), serial, Focus::Keep);
+    // A nested grab replaces its parent's: the keyboard grab goes first, so the parent's pointer
+    // grab, when it goes, finds the keyboard grab is another popup grab's and leaves it (the
+    // fork's rule; a submenu opened with its parent's serial keeps the keyboard).
     keyboard.set_focus(state, grab.current_grab(), serial);
     keyboard.set_grab(state, PopupKeyboardGrab::new(&grab), serial);
+    pointer.set_grab(state, PopupPointerGrab::new(&grab), serial, Focus::Keep);
 }
 
 /// The keyboard is about to go to `next` while a popup holds the grab: when `next` is not the

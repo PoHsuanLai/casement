@@ -119,12 +119,13 @@ pub fn apply_text_focus<D: SeatHandler + 'static>(
     if text.focus().as_ref() == focus {
         return Ok(());
     }
-    let served = seat.input_method().has_instance() || text.compositor_input_method();
-    if served && text.focus().is_some() {
+    // `enter` and `leave` follow focus with or without an input method (the fork's rule: an IME
+    // usually starts after the apps).
+    if text.focus().is_some() {
         text.leave();
     }
     text.set_focus(focus.cloned());
-    if served && focus.is_some() {
+    if focus.is_some() {
         text.enter();
     }
     Ok(())

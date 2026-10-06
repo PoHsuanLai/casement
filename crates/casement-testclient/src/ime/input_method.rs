@@ -42,6 +42,13 @@ pub enum InputMethodEvent {
         /// Anchor byte offset.
         anchor: u32,
     },
+    /// The kind of field.
+    ContentType {
+        /// The hints, as the wire's bit set.
+        hint: u32,
+        /// The purpose, as the wire's value.
+        purpose: u32,
+    },
     /// The end of one batch of state.
     Done,
     /// Another method holds the seat.
@@ -87,6 +94,7 @@ impl InputMethodEvent {
             InputMethodEvent::Activate => "activate",
             InputMethodEvent::Deactivate => "deactivate",
             InputMethodEvent::SurroundingText { .. } => "surrounding_text",
+            InputMethodEvent::ContentType { .. } => "content_type",
             InputMethodEvent::Done => "done",
             InputMethodEvent::Unavailable => "unavailable",
             InputMethodEvent::GrabKey { .. } => "key",
@@ -146,6 +154,12 @@ where
                 cursor,
                 anchor,
             },
+            zwp_input_method_v2::Event::ContentType { hint, purpose } => {
+                InputMethodEvent::ContentType {
+                    hint: u32::from(hint),
+                    purpose: u32::from(purpose),
+                }
+            }
             zwp_input_method_v2::Event::Done => InputMethodEvent::Done,
             zwp_input_method_v2::Event::Unavailable => InputMethodEvent::Unavailable,
             _ => return,

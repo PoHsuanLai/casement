@@ -79,16 +79,21 @@ pipewire = "0.10"
 # taffy alone; only `casement-layout/src/taffy_bridge/` names it (boundary row B2).
 taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "4863877b9cab21645b160d7f247901f90214fe27", default-features = false, features = ["std", "taffy_tree", "flexbox", "grid", "block_layout"] }
 
-# smithay (C2, A14): our fork `PoHsuanLai/smithay`, branch `casement`, which starts at upstream
-# rev 118e34ff (master 2026-09-30, SP1) and carries two patches (the xdg_surface role-object
-# errors, wl_region's negative sizes; QUIRKS and FINDINGS name them). The pin is the fork's
-# commit; patches live only there and nothing goes upstream. No features here: each crate names the
+# smithay (C2, A14): our fork `PoHsuanLai/smithay`, which starts at upstream rev 118e34ff (master
+# 2026-09-30, SP1). The pin is a commit of the fork's branch `casement-textinput`, which carries these
+# patches (QUIRKS and FINDINGS name each): the xdg_surface role-object errors, wl_region's negative
+# sizes, text-input `enter` and `leave` with keyboard focus without an input method, activation of an
+# input method that binds late, `unavailable` to the new input method, a zero-size anchor rectangle,
+# the fractional-scale and viewporter errors on their manager, the viewporter `bad_size` hook and
+# check, buffer scale and transform applied at every commit, and a popup pointer grab that leaves a
+# nested popup's keyboard grab alone. Each patch is its own commit.
+# Patches live only in the fork and nothing goes upstream (A13). No features here: each crate names the
 # ones it uses, so the boundary rows see each crate's own graph. The union (the `casement`
 # binary) is A14's list: wayland_frontend desktop renderer_gl renderer_pixman renderer_multi
 # backend_winit backend_egl backend_drm backend_gbm backend_libinput backend_udev
 # backend_session_libseat backend_libei backend_vulkan use_system_lib; renderer_test only
 # under the `testing` feature; xwayland off until the Q-C5 gate.
-smithay = { git = "https://github.com/PoHsuanLai/smithay", rev = "576cfd954b6bd5badbd5f15d1708cafc941a0522", default-features = false }
+smithay = { git = "https://github.com/PoHsuanLai/smithay", rev = "dc7ca684e0a75b2c889718e5e97cc49bc94760ba", default-features = false }
 # The client side of the test kit: the protocol extensions smithay serves from these crates.
 wayland-protocols-wlr = { version = "0.3.12", features = ["client"] }
 wayland-protocols-misc = { version = "0.3.12", features = ["client"] }

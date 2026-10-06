@@ -431,9 +431,47 @@ two commits, one per patch, each local to its bug; patches live only there and n
 - `576cfd95` wl_region: `add`/`subtract` with a negative width or height is ignored (treated as empty; wl_region's XML
   defines no error) instead of reaching `Size::new`'s `debug_assert`.
 
-The root and `wlcs-casement` pins (and both `Cargo.lock`s) name the fork's tip `576cfd954b6bd5badbd5f15d1708cafc941a0522`. The
+The root and `wlcs-casement` pins (and both `Cargo.lock`s) named the fork's tip `576cfd954b6bd5badbd5f15d1708cafc941a0522` here; P0-smithay moved them (see its section below). The
 `[profile.dev.package.smithay] debug-assertions = false` override is removed: smithay's debug assertions are on in
 every dev build and the fuzz box (24 cases) passes with them.
+
+### P0-smithay: the fork's text-input, W3 and popup-grab patches
+
+The fork branch is now `casement-textinput` (from `casement` at `576cfd95`; the `casement` branch is untouched). The pins (root
+`Cargo.toml`, both `Cargo.lock`s) name its tip `dc7ca684e0a75b2c889718e5e97cc49bc94760ba`. Nine commits, each its own protocol rule:
+
+- `579ac4b7` text_input: `enter`/`leave` follow keyboard focus with or without an input method; a text input created while its
+  client holds the focus gets `enter` at once (on that object only).
+- `690afd1f` input_method: `unavailable` goes to the newcomer, not the bound input method.
+- `19d90eb2` text_input: requests are taken without an input method and the committed state (surrounding text, change cause, content
+  type, cursor rectangle) is kept; an input method that binds later is activated for the enabled field with that state and a `done`;
+  an input method that goes away leaves the field enabled (no event exists for it, `leave` would disable it); the active text input's
+  destruction deactivates the input method and frees the active slot.
+- `78abd7d6` xdg_positioner: `set_anchor_rect` accepts a zero size.
+- `a0eda85e` fractional_scale and viewporter: the `*_exists` errors are raised on the manager.
+- `b63854af` viewporter: the `bad_size` pre-commit hook is installed even when the surface state exists already.
+- `999aac58` renderer utils: buffer scale and transform apply at every commit, not only with a new buffer.
+- `66dd1e8e` viewporter: `ensure_viewport_valid` checks `out_of_buffer` and then `bad_size` at each commit (a source both fractional
+  and outside the buffer is `out_of_buffer`, as wlcs expects); the hook covers commits before a buffer.
+- `dc7ca684` popup grab: `PopupPointerGrab::unset` leaves a keyboard grab that another popup grab owns (grab ids). casement's
+  workaround (lift the keyboard grab before replacing the pointer grab) is gone: `handlers/xdg_shell/popups.rs` now sets the
+  keyboard grab, then the pointer grab.
+
+casement side: `apply_text_focus` sends `leave`/`enter` without the input-method condition; the test kit's `ImeSession` can start
+without an input method (`start_field`, `bind_method`, `destroy_method`, `enable_with_state`) and sees `content_type`. Tests added,
+each failing against the old pin: `text_input::an_input_method_that_starts_after_the_field_is_enabled_gets_the_field`,
+`text_input::a_field_stays_enabled_when_its_input_method_goes_away`, `popup_input::a_popup_may_anchor_to_a_point`,
+`viewporter::a_viewport_made_after_the_first_commit_is_checked_for_bad_size`,
+`viewporter::a_scale_change_without_a_new_buffer_is_checked_for_out_of_buffer`; `fractional_scale::a_second_scale_object_is_a_protocol_error`
+and `viewporter::a_second_viewport_is_a_protocol_error` now expect the manager as the error object; the existing
+`popup_grab::a_nested_grab_with_the_same_serial_keeps_the_keyboard` fails against the old pin without the workaround and passes with the fix.
+
+wlcs `--phase`, before: 857 pass, 37 listed, 331 skip; after: 871 pass, 23 listed, 331 skip. Removed from the list: the zero-size
+anchor, the fractional-scale and the three viewporter tests (W3), nine of the eleven text-input tests (W12). Left in W12:
+`text_input_enters_grabbing_popup` and `text_input_enters_parent_surface_after_child_destroyed` run under gmock `InSequence` and expect
+`enter` before the toplevel's first configure; the shim's lenient policy keys a window in the commit that maps it, after that configure.
+The remaining W3 rows are the four `xdg_wm_base` error tests (smithay raises no error for `get_xdg_surface` on a surface with a role or
+a buffer, and attaching to an unconfigured surface is the A37 relaxation).
 
 ### P0-accept: the seven acceptance scripts
 

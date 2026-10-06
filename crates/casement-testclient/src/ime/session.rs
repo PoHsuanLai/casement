@@ -20,7 +20,9 @@ use wayland_client::protocol::wl_keyboard::{self, WlKeyboard};
 use wayland_client::protocol::wl_seat::{self, WlSeat};
 use wayland_client::{Connection, Dispatch, EventQueue, QueueHandle, delegate_dispatch};
 use wayland_protocols::wp::text_input::zv3::client::{
-    zwp_text_input_manager_v3::ZwpTextInputManagerV3, zwp_text_input_v3::ZwpTextInputV3,
+    zwp_text_input_manager_v3::ZwpTextInputManagerV3,
+    zwp_text_input_v3::ZwpTextInputV3,
+    zwp_text_input_v3::{ContentHint, ContentPurpose},
 };
 use wayland_protocols_misc::zwp_input_method_v2::client::{
     zwp_input_method_keyboard_grab_v2::ZwpInputMethodKeyboardGrabV2,
@@ -120,7 +122,7 @@ pub struct ImeSession {
     queue: EventQueue<Seen>,
     seen: Seen,
     field: ZwpTextInputV3,
-    method: ZwpInputMethodV2,
+    method: Option<ZwpInputMethodV2>,
     grab: Option<ZwpInputMethodKeyboardGrabV2>,
     _keyboard: WlKeyboard,
 }
@@ -129,6 +131,14 @@ impl ImeSession {
     /// Binds the seat, its keyboard, a text input and an input method. The requests are
     /// flushed; the compositor sees them at the fixture's next pump.
     pub fn start(globals: &GlobalList) -> Result<ImeSession, ClientError> {
+        let mut session = ImeSession::start_field(globals)?;
+        session.bind_method(globals)?;
+        Ok(session)
+    }
+
+    /// Binds the seat, its keyboard and a text input only: an app whose input method (fcitx5)
+    /// has not started yet. [`ImeSession::bind_method`] starts it later.
+    pub fn start_field(globals: &GlobalList) -> Result<ImeSession, ClientError> {
         let (connection, queue) = side_queue::<Seen>(globals)?;
         let qh = queue.handle();
         let seat = globals
@@ -136,7 +146,6 @@ impl ImeSession {
             .map_err(|_| ClientError::MissingGlobal("wl_seat".to_owned()))?;
         let keyboard = seat.get_keyboard(&qh, ());
         let field = bind_text_input(globals, &qh, &seat)?;
-        let method = bind_input_method(globals, &qh, &seat)?;
         let session = ImeSession {
             connection,
             queue,
@@ -147,12 +156,30 @@ impl ImeSession {
                 document_keys: Vec::new(),
             },
             field,
-            method,
+            method: None,
             grab: None,
             _keyboard: keyboard,
         };
         session.flush()?;
         Ok(session)
+    }
+
+    /// The input method starts: binds the input-method manager and asks for the seat's method.
+    pub fn bind_method(&mut self, globals: &GlobalList) -> Result<(), ClientError> {
+        let qh = self.queue.handle();
+        let seat = globals
+            .bind::<WlSeat, _, _>(&qh, 1..=1, ())
+            .map_err(|_| ClientError::MissingGlobal("wl_seat".to_owned()))?;
+        self.method = Some(bind_input_method(globals, &qh, &seat)?);
+        self.flush()
+    }
+
+    /// The input method goes away (fcitx5 quits).
+    pub fn destroy_method(&mut self) -> Result<(), ClientError> {
+        if let Some(method) = self.method.take() {
+            method.destroy();
+        }
+        self.flush()
     }
 
     fn flush(&self) -> Result<(), ClientError> {
@@ -175,22 +202,42 @@ impl ImeSession {
         self.flush()
     }
 
+    /// The field enables text input with its state: the text around the cursor, a content
+    /// type and the cursor rectangle, all in one commit.
+    pub fn enable_with_state(&self, text: &str, cursor: i32) -> Result<(), ClientError> {
+        self.field.enable();
+        self.field
+            .set_surrounding_text(text.to_owned(), cursor, cursor);
+        self.field
+            .set_content_type(ContentHint::None, ContentPurpose::Terminal);
+        self.field.set_cursor_rectangle(10, 20, 3, 16);
+        self.field.commit();
+        self.flush()
+    }
+
     /// The input method grabs the keyboard.
     pub fn grab_keyboard(&mut self) -> Result<(), ClientError> {
         let qh = self.queue.handle();
-        self.grab = Some(self.method.grab_keyboard(&qh, GrabData));
+        self.grab = self
+            .method
+            .as_ref()
+            .map(|method| method.grab_keyboard(&qh, GrabData));
         self.flush()
     }
 
     /// The input method sets the preedit text.
     pub fn set_preedit(&self, text: &str, begin: i32, end: i32) -> Result<(), ClientError> {
-        self.method.set_preedit_string(text.to_owned(), begin, end);
+        if let Some(method) = &self.method {
+            method.set_preedit_string(text.to_owned(), begin, end);
+        }
         self.flush()
     }
 
     /// The input method commits text.
     pub fn commit_string(&self, text: &str) -> Result<(), ClientError> {
-        self.method.commit_string(text.to_owned());
+        if let Some(method) = &self.method {
+            method.commit_string(text.to_owned());
+        }
         self.flush()
     }
 
@@ -203,7 +250,9 @@ impl ImeSession {
             .iter()
             .filter(|line| line.event == InputMethodEvent::Done)
             .count();
-        self.method.commit(u32::try_from(dones).unwrap_or(u32::MAX));
+        if let Some(method) = &self.method {
+            method.commit(u32::try_from(dones).unwrap_or(u32::MAX));
+        }
         self.flush()
     }
 

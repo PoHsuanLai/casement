@@ -3,7 +3,7 @@
 //! from. The shell's bar is a layer surface that never takes the keyboard; its menu is an xdg
 //! popup with an explicit grab, made after a click on the bar.
 
-use super::xdg_shell::{click, map_toplevel, pointer, rect_of, settle, windows};
+use super::xdg_shell::{boot, click, map_toplevel, pointer, rect_of, settle, windows};
 use casement_core::DeviceId;
 use casement_core::geometry::{LogicalPoint, PhysicalSize};
 use casement_core::input::{ButtonCode, DeviceClass, Edge, KeyCode};
@@ -440,4 +440,25 @@ fn closing_a_submenu_leaves_the_keyboard_with_its_menu() {
         desk.app_gets_a_typed_key(),
         "the app has it once the menu is gone"
     );
+}
+
+/// A zero-size anchor rectangle is a point anchor, not an error: xdg_positioner.set_anchor_rect
+/// refuses only a negative size. The popup is configured at the point.
+#[test]
+fn a_popup_may_anchor_to_a_point() {
+    let (mut fixture, id) = boot();
+    let base = WmBase::bind(fixture.client(id), 7);
+    let top = map_toplevel(&mut fixture, id, &base, (400, 300));
+    settle(&mut fixture);
+    let surface = fixture.client(id).create_surface().expect("a surface");
+    let spec = PopupSpec {
+        size: (100, 50),
+        anchor_rect: (20, 20, 0, 0),
+        ..PopupSpec::menu_at((0, 0))
+    };
+    let popup = Popup::of(fixture.client(id), &base, &top, surface, spec);
+    popup.surface.commit();
+    fixture.pump();
+    assert!(fixture.client(id).protocol_error().is_none(), "no error");
+    assert!(popup.ack_latest().is_some(), "the popup was configured");
 }

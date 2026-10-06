@@ -164,7 +164,7 @@ fn the_primary_output_decides() {
 }
 
 /// A second scale object on one surface is wp_fractional_scale_manager_v1.fractional_scale_exists
-/// (0), posted on the surface.
+/// (0), posted on the manager.
 #[test]
 fn a_second_scale_object_is_a_protocol_error() {
     let (mut fixture, id) = boot_at(&[SCALE_1_5]);
@@ -175,5 +175,8 @@ fn a_second_scale_object_is_a_protocol_error() {
     let _first = manager.for_surface(client, &surface);
     let _second = manager.for_surface(client, &surface);
     fixture.pump();
-    assert_eq!(fault(&mut fixture, id), ("wl_surface".to_owned(), 0));
+    assert_eq!(
+        fault(&mut fixture, id),
+        ("wp_fractional_scale_manager_v1".to_owned(), 0)
+    );
 }
