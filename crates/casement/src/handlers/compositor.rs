@@ -15,6 +15,23 @@ use smithay::wayland::compositor::{
     CompositorClientState, CompositorHandler, CompositorState, add_pre_commit_hook,
 };
 
+/// The activation, with a valid token, of each toplevel `events` map (the lenient policy).
+#[cfg(feature = "testing")]
+fn activations(events: &[Event]) -> Vec<Event> {
+    use casement_core::ToplevelRequest;
+    use casement_core::focus::TokenCheck;
+    events
+        .iter()
+        .filter_map(|event| match event {
+            Event::ToplevelMapped(mapped) => Some(Event::ToplevelRequest {
+                window: mapped.window,
+                request: ToplevelRequest::Activate(TokenCheck::Valid),
+            }),
+            _ => None,
+        })
+        .collect()
+}
+
 impl CompositorHandler for State {
     fn compositor_state(&mut self) -> &mut CompositorState {
         &mut self.wl.compositor.state
@@ -105,6 +122,11 @@ impl State {
                                 surface,
                                 state,
                             ));
+                            // wlcs takes a window that maps to be the active one; casement keys
+                            // none nobody asked for (A7), so the ask is made here, in the commit
+                            // that maps it: the client's next request (a selection set right
+                            // after it created its window) finds the window already keyed.
+                            events.extend(activations(&events));
                         }
                         events
                     }

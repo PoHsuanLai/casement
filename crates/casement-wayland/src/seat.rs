@@ -8,6 +8,7 @@
 mod edge;
 mod focus_origin;
 mod grab;
+mod hold;
 mod live;
 mod pointer;
 mod taken;
@@ -16,7 +17,7 @@ mod under;
 
 pub use grab::Drag;
 pub use live::Live;
-pub use pointer::{apply_axis, apply_gesture, apply_pointer, apply_refocus, forget_dead};
+pub use pointer::{apply_axis, apply_gesture, apply_pointer, apply_refocus, end_grab, forget_dead};
 pub use taken::{PressFate, Taken};
 pub use touch::{apply_touch, release_dead};
 pub use under::{Candidate, surface_under};

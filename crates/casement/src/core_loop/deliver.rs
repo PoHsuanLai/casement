@@ -374,6 +374,22 @@ fn pressed(
     button: casement_core::input::ButtonCode,
     edge: Edge,
 ) {
+    let ends_grab = edge == Edge::Release && grab::ends_with(state, button);
+    press_edge(state, seat, event, button, edge);
+    if ends_grab {
+        // The grab left the pointer over nothing; it is over what it is over again now, and the
+        // client under it is told (after the release, which that client never saw the press of).
+        refocus(state);
+    }
+}
+
+fn press_edge(
+    state: &mut State,
+    seat: &Seat<State>,
+    event: &InputEvent,
+    button: casement_core::input::ButtonCode,
+    edge: Edge,
+) {
     if edge == Edge::Release {
         grab::end(state, button);
         let (taken, fate) = std::mem::take(&mut state.wl.seat.taken).release_button(button);
@@ -428,17 +444,24 @@ fn pressed(
             time: event.at,
         },
     ));
-    if edge == Edge::Press {
-        remember(
-            state,
-            surface.as_ref(),
-            serial,
-            event.at,
-            PressKind::Button,
-            event.origin,
-            Some(button),
-        );
-    }
+    let (kind, held_by) = match edge {
+        Edge::Press => (PressKind::Button, surface),
+        Edge::Release => (
+            PressKind::Release,
+            seat.get_pointer()
+                .and_then(|pointer| pointer.current_focus())
+                .and_then(Option::<WlSurface>::from),
+        ),
+    };
+    remember(
+        state,
+        held_by.as_ref(),
+        serial,
+        event.at,
+        kind,
+        event.origin,
+        Some(button),
+    );
 }
 
 /// Whether a press now ends a popup's explicit grab: a popup's grab holds the pointer and the
@@ -592,6 +615,10 @@ pub(super) fn start_pointer(state: &mut State) {
 /// The pointer has not moved, but what is under it may have (a surface mapped, unmapped or
 /// moved): the surface now there gets the pointer (A16).
 pub(super) fn refocus(state: &mut State) {
+    if state.wl.seat.grab.is_some() {
+        // An interactive move or resize holds the pointer: no client is under it until it ends.
+        return;
+    }
     let seat = state.wl.seat.seat.clone();
     let Some(here) = pointer_at(&seat) else {
         return;

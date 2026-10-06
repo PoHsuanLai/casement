@@ -12,7 +12,10 @@ use smithay::desktop::PopupKind;
 use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Rectangle};
-use smithay::wayland::shell::xdg::{PopupSurface, PositionerState};
+use smithay::wayland::compositor::with_states;
+use smithay::wayland::shell::xdg::{
+    PopupCachedState, PopupConfigure, PopupConfigureError, PopupSurface, PositionerState,
+};
 
 /// How much room a popup may take, in the parent surface's own coordinates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,6 +129,48 @@ pub fn on_reposition(
     });
     surface.send_repositioned(token);
     Vec::new()
+}
+
+/// Every live popup, for the ones that follow their parent.
+pub fn popups_of(part: &XdgShellPart) -> Vec<PopupSurface> {
+    part.popup_surfaces.values().cloned().collect()
+}
+
+/// The room a reactive popup is constrained by changed (its parent moved): a mapped popup whose
+/// positioner is `reactive` is placed again and configured with the new position
+/// (xdg_positioner.set_reactive). Any other popup stays where it is.
+pub fn on_room_changed(popup: &PopupSurface, bounds: PopupBounds) {
+    if !popup.is_initial_configure_sent() {
+        return;
+    }
+    let (positioner, held) = popup.with_pending_state(|state| (state.positioner, state.geometry));
+    if !positioner.reactive {
+        return;
+    }
+    let wanted = placed(&positioner, bounds);
+    if wanted == held {
+        return;
+    }
+    popup.with_pending_state(|state| state.geometry = wanted);
+    // A popup that has not mapped yet is refused (smithay asks for the committed positioner);
+    // it takes the new place with its first buffer, and is not an error.
+    match popup.send_configure() {
+        Err(PopupConfigureError::NotReactive) | Ok(_) => {}
+        Err(error) => tracing::warn!(%error, "a reactive popup could not be configured"),
+    }
+}
+
+/// A mapped popup's acked configure takes effect at once, not at the next commit: "the client
+/// must acknowledge the new popup configuration for the new position to take effect"
+/// (xdg_popup.repositioned). Before the first commit the ack waits for it as ever.
+pub fn on_popup_acked(surface: &WlSurface, configure: PopupConfigure) {
+    with_states(surface, |states| {
+        let mut cached = states.cached_state.get::<PopupCachedState>();
+        let current = cached.current();
+        if current.last_acked.is_some() {
+            current.last_acked = Some(configure);
+        }
+    });
 }
 
 #[cfg(test)]

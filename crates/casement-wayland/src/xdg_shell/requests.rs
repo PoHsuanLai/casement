@@ -25,7 +25,7 @@ pub enum GrabUse {
     /// An interactive move, resize or window menu: a pointer button, a touch or a pen tip.
     Drag,
     /// A popup grab or a placement request: any press, a key included (a menu opened from the
-    /// keyboard, a placement chosen with a shortcut).
+    /// keyboard, a placement chosen with a shortcut), and a button release (a menu opened on it).
     AnyPress,
 }
 
@@ -34,7 +34,7 @@ pub enum GrabUse {
 pub fn grab_proven(record: Option<&PressRecord>, use_: GrabUse) -> bool {
     match (record.map(|press| press.kind), use_) {
         (None, _) => false,
-        (Some(PressKind::Key), GrabUse::Drag) => false,
+        (Some(PressKind::Key | PressKind::Release), GrabUse::Drag) => false,
         (Some(_), GrabUse::Drag | GrabUse::AnyPress) => true,
     }
 }
@@ -222,6 +222,18 @@ mod tests {
                 Some(PressKind::Button),
                 GrabUse::AnyPress,
                 true,
+            ),
+            (
+                "a release opens a menu",
+                Some(PressKind::Release),
+                GrabUse::AnyPress,
+                true,
+            ),
+            (
+                "a release starts no drag",
+                Some(PressKind::Release),
+                GrabUse::Drag,
+                false,
             ),
         ];
         for (case, kind, use_, want) in rows {

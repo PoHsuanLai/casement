@@ -557,3 +557,77 @@ cursor (not asserted).
   hand, `set_layer` stacking, a layer popup kept inside the output), `tests/protocol/layer_keyboard.rs`,
   `layer/arrange_size_tests.rs`. Test kit: `Fixture::layer_of`, `Fixture::place_layer`; test client:
   `LayerSurface::set_layer`.
+
+### P0-popups: popup grabs, popup motion, interactive move focus, constraints (W8, W10, W13, part of W9 and W12)
+
+wlcs `--phase`, after: 857 pass, 37 fail (the listed ones), 331 skip; before: 829 pass, 65 fail.
+Per row, before to after: W3 4 to 9 (five re-tagged), W4 1 to 5 (four re-tagged), W7 6 to 6, W8 12 to 0
+(11 fixed, 1 re-tagged W3), W9 1 to 1 (diagnosed), W10 4 to 0, W12 29 to 16 (5 fixed, 8 re-tagged W3/W4),
+W13 8 to 0.
+
+- **W8, the grab serial.** `SerialBook` now records a pointer button release too (`PressKind::Release`),
+  and keeps each client's latest recorded input. `xdg_popup.grab` is accepted when its serial is that
+  client's latest input (a press, a release, a key press, a touch down on a surface of the client), or
+  the press that the latest release ended (a menu opened on the press by a client that has not yet read
+  the release: GTK). A stale serial, a forged one and another client's are refused. Qt opens its context
+  menus on the release. A release proves no move or resize (`grab_proven`, `GrabUse::Drag`).
+- **W8, the second cause behind `popup_gives_up_pointer_focus_when_gone`.** The client destroys its
+  `xdg_popup`, then the `wl_surface`. casement refocused only when the surface was gone, and smithay sends
+  no `leave` to a dead surface, so the client was told of an `enter` with no `leave` before it. The
+  handler now refocuses the pointer when the popup is destroyed (`popup_destroyed`), while the surface
+  still lives.
+- **W8, `grabbed_popup_gets_done_event_when_new_toplevel_created` and the done order.** smithay's popup
+  keyboard grab ignores a focus change while the grab holds, and the swallowed activating press never
+  reached the pointer grab, so nothing dismissed the popups when the user moved on. `exec::keyboard`
+  now asks `popups::dismiss_for_focus` first: a keyboard target other than the popup's root dismisses the
+  grab's popups, topmost first (smithay's `send_done` order), and ends both grabs. Layer roots too.
+- **W8, a nested grab with its parent's serial** (a submenu a timer opens, no new input). smithay's old
+  `PopupPointerGrab::unset` unsets a keyboard grab that has the same serial, so the submenu's own
+  keyboard grab was dropped and the keyboard went to the root (a bar that never asked for it). `grab` now
+  lifts the keyboard grab first (no focus change), replaces the pointer grab, then sets the keyboard grab.
+- **W8, reactive popups and reposition.** A popup whose positioner is `reactive` is placed again and
+  configured when the arrangement changes (`relayout` calls `refit_reactive`); an unmapped one is left to
+  its first buffer. A mapped popup's acked configure takes effect at once, not at the next commit
+  (`xdg_popup.repositioned`: "must acknowledge ... for the new position to take effect"): `ack_configure`
+  copies the configure into smithay's committed popup state (`PopupCachedState`, public) when the popup
+  has mapped. wlcs acks and never commits.
+- **W10.** xdg_toplevel.move/resize: "the surface will lose the focus of the device used for the move".
+  `grab::start` ends the press's implicit pointer grab and leaves the surface; `refocus` does nothing
+  while a grab holds the pointer; the release gives the pointer back (after the release is delivered).
+  The shim also lets a dropped window glide to rest (1 s at each release): casement springs a dragged
+  window after the pointer by design.
+- **W13.** casement was right (a null buffer returns the toplevel to its initial state, xdg-shell's
+  "Unmapping"; the lenient policy already maps a buffer without an ack). The test
+  (`tests/relax.rs`) passes without a casement change. A toplevel that maps again keeps its id and is a
+  fresh window (`WindowState::New`) where casement puts it; wlcs takes it to be where it was. The shim
+  remembers where wlcs put each toplevel and puts a window that maps again there.
+- **W12, pointer constraints (5 fixed).** A confined pointer is pinned to the last pixel of its room
+  (the surface tree's extent cut to the region's added rectangles) instead of not moving when the
+  motion would leave it, and keeps its surface as the focus (`seat/hold.rs`). A constraint is released
+  when its surface loses the keyboard and holds again when it has it back and the pointer is on it
+  (`pointer_constraints::on_keyboard_focus`).
+- **The flaky `CopyCutPaste.given_source_has_offered_when_sink_gets_focus_it_sees_offer`.** The shim
+  activated a mapped window a pass after the commit that mapped it; a client that sets the selection
+  in its next request, right after its roundtrip, can be ahead of that, and smithay ignores a
+  selection from a client without the keyboard. 11 failures in 300 runs under 12-way load before;
+  0 in 300 after. Now the lenient policy activates the window in the commit that maps it.
+- **Diagnosed, not casement bugs** (rows W3, W4, W9, W12 in `dev/wlcs/expected-failures.txt`): the
+  zero-size anchor rectangle (smithay rejects 0, the XML only negative), the error objects of
+  fractional-scale and viewporter, the viewporter's missing `bad_size` hook and `out_of_buffer` check,
+  the decoration configure and orphaned tests (wlcs-side), set_selection from an unfocused source
+  (smithay policy), text-input `enter` without an input method (smithay's rule, and wlcs' unflushed
+  `get_input_method`), and the touch at y = -5 (a placement rule).
+- Interface asks for the smithay fork (`PoHsuanLai/smithay`, branch `casement`): set_anchor_rect to accept
+  a zero size; `fractional_scale_exists` and `viewport_exists` raised on the manager object; the
+  viewporter pre-commit hook added when `ViewporterSurfaceState` exists but is `None`; `out_of_buffer`
+  checked when only `set_source` changes; `PopupPointerGrab::unset` not to unset a keyboard grab that a
+  nested popup took with the same serial. Nothing was pushed.
+- `dead_focus::a_popup_destroyed_under_the_pointer_gets_no_leave` (P0-dead-focus) asserted no `leave`;
+  now the client is told once, at the `xdg_popup`'s destruction, and nothing follows the surface's death.
+- Tests: `tests/protocol/popup_grab.rs` (a release or the press it ended grabs; a stale, forged or
+  foreign serial does not; a nested grab with the same serial keeps the keyboard; done when another
+  window is activated; leave when a popup is destroyed under the pointer; a reactive popup follows and
+  another does not; a reposition at the ack; a window in a move loses the pointer and gets it back),
+  `tests/protocol/pointer_constraints.rs` (stops at the edge; released and held again with the
+  keyboard), `tests/relax.rs` (remap), unit tests in `serial.rs`, `xdg_shell/requests.rs`,
+  `seat/hold.rs`. Each failed with the fix disabled, except the remap test (casement needed no change).

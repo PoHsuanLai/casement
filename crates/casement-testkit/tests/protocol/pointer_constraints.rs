@@ -104,3 +104,123 @@ fn a_lock_holds_while_focused() {
         "relative motion still arrives"
     );
 }
+
+/// The last `wl_pointer.motion` position the client was given, as it was written in the
+/// transcript.
+fn last_motion(client: &TestClient) -> Option<Vec<String>> {
+    client
+        .transcript()
+        .0
+        .iter()
+        .rev()
+        .find(|line| line.object.starts_with("wl_pointer#") && line.event == "motion")
+        .map(|line| line.args.clone())
+}
+
+/// A confined pointer that is pushed past the surface's edge stops on its last pixel; it does not
+/// stay where it was, and it is not taken off the surface (which would end the confinement).
+#[test]
+fn a_confined_pointer_stops_at_the_edge() {
+    use super::xdg_shell::{map_toplevel, rect_of, settle, windows};
+    use casement_testclient::surface::toplevel::WmBase;
+    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let mouse = fixture.input().plug(
+        DeviceClass::Pointer,
+        TestOrigin::Physical(DeviceClass::Pointer),
+    );
+    let id = fixture.connect(ConnectionRole::Public);
+    fixture.pump();
+    let pointer = Pointer::bind(fixture.client(id)).expect("a pointer");
+    let base = WmBase::bind(fixture.client(id), 7);
+    let window = map_toplevel(&mut fixture, id, &base, (200, 150));
+    settle(&mut fixture);
+    let a = windows(&fixture)[0];
+    fixture.activate_window(a);
+    let rect = rect_of(&fixture, a);
+    fixture.input().pointer_to(mouse, rect.centre());
+    fixture.pump();
+    let _confine =
+        Constraint::confine(fixture.client(id), &window.surface, &pointer).expect("confine");
+    fixture.pump();
+    assert_eq!(
+        count(fixture.client(id), "zwp_confined_pointer_v1#", "confined"),
+        1
+    );
+    // Far past the right and bottom edges in one motion.
+    fixture.input().pointer_by(
+        mouse,
+        SubPoint {
+            x: SubPx(10_000 * 120),
+            y: SubPx(10_000 * 120),
+        },
+    );
+    fixture.pump();
+    let last = last_motion(fixture.client(id)).expect("the pointer moved");
+    assert!(
+        last[1].starts_with("199") && last[2].starts_with("149"),
+        "the pointer stopped on the window's last pixel: {last:?}"
+    );
+    assert_eq!(
+        count(fixture.client(id), "zwp_confined_pointer_v1#", "unconfined"),
+        0,
+        "and is still confined"
+    );
+}
+
+/// A constraint holds while its surface has the keyboard: when another window is activated the
+/// lock is released, and it holds again when the window has the keyboard back (a persistent lock).
+#[test]
+fn a_lock_is_released_when_another_window_takes_the_keyboard() {
+    use super::xdg_shell::{map_toplevel, windows};
+    use casement_testclient::surface::toplevel::WmBase;
+    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let mouse = fixture.input().plug(
+        DeviceClass::Pointer,
+        TestOrigin::Physical(DeviceClass::Pointer),
+    );
+    let id = fixture.connect(ConnectionRole::Public);
+    fixture.pump();
+    let pointer = Pointer::bind(fixture.client(id)).expect("a pointer");
+    let base = WmBase::bind(fixture.client(id), 7);
+    let first = map_toplevel(&mut fixture, id, &base, (200, 150));
+    super::xdg_shell::settle(&mut fixture);
+    let a = windows(&fixture)[0];
+    // Near the window's top-left corner: the second window, which cascades down and right of
+    // it, does not cover the pointer, so the pointer stays on the first throughout.
+    let corner = super::xdg_shell::rect_of(&fixture, a).origin;
+    fixture.activate_window(a);
+    fixture.input().pointer_to(
+        mouse,
+        LogicalPoint {
+            x: corner.x + 3,
+            y: corner.y + 3,
+        },
+    );
+    fixture.pump();
+    let _lock = Constraint::lock(fixture.client(id), &first.surface, &pointer).expect("lock");
+    fixture.pump();
+    assert_eq!(
+        count(fixture.client(id), "zwp_locked_pointer_v1#", "locked"),
+        1,
+        "the lock took hold on the window with the keyboard"
+    );
+    // A second window, put out of the pointer's way, takes the keyboard.
+    let _second = map_toplevel(&mut fixture, id, &base, (200, 150));
+    let b = *windows(&fixture).last().expect("a second window");
+    fixture.place_window(b, LogicalPoint { x: 1500, y: 800 });
+    fixture.advance(std::time::Duration::from_secs(1));
+    fixture.activate_window(b);
+    fixture.pump();
+    assert_eq!(
+        count(fixture.client(id), "zwp_locked_pointer_v1#", "unlocked"),
+        1,
+        "the first window lost the keyboard, so its lock was released"
+    );
+    fixture.activate_window(a);
+    fixture.pump();
+    assert_eq!(
+        count(fixture.client(id), "zwp_locked_pointer_v1#", "locked"),
+        2,
+        "and it holds again when the window has the keyboard back"
+    );
+}

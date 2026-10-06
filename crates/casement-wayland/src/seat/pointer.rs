@@ -4,6 +4,7 @@
 
 use super::edge::{logical_of, time_of, whole_of};
 use super::focus_origin;
+use super::hold::{Hold, confined_focus, hold_of, settled};
 use super::{GestureDelivery, PointerDelivery, SurfaceAt};
 use crate::convert::serial_to;
 use crate::states::WaylandFault;
@@ -19,76 +20,7 @@ use smithay::input::pointer::{
 use smithay::input::{Seat, SeatHandler};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, SERIAL_COUNTER};
-use smithay::wayland::compositor::RegionAttributes;
-use smithay::wayland::pointer_constraints::{
-    PointerConstraint, PointerConstraintsHandler, with_pointer_constraint,
-};
-
-/// What an active constraint does to a motion over its surface.
-#[derive(Debug)]
-enum Hold<S> {
-    /// Nothing holds the pointer.
-    Free,
-    /// The pointer stays where it is.
-    Locked(S),
-    /// The pointer stays inside the region (surface-local; `None` is the whole surface).
-    Confined(S, Option<RegionAttributes>),
-}
-
-/// The constraint that is active on the surface the pointer is over.
-fn hold_of<D>(pointer: &PointerHandle<D>) -> Hold<WlSurface>
-where
-    D: SeatHandler + 'static,
-    D::PointerFocus: Into<Option<WlSurface>>,
-{
-    let Some(surface) = pointer.current_focus().and_then(Into::into) else {
-        return Hold::Free;
-    };
-    with_pointer_constraint::<D, _, _>(&surface, pointer, |constraint| match constraint {
-        Some(held) if held.is_active() => match &*held {
-            PointerConstraint::Locked(_) => Hold::Locked(surface.clone()),
-            PointerConstraint::Confined(_) => {
-                Hold::Confined(surface.clone(), held.region().cloned())
-            }
-        },
-        Some(_) | None => Hold::Free,
-    })
-}
-
-/// Whether `at` (global) is inside `region` of the surface whose origin is `origin`.
-fn inside(
-    region: Option<&RegionAttributes>,
-    origin: Point<f64, Logical>,
-    at: Point<f64, Logical>,
-) -> bool {
-    let local = at - origin;
-    region.is_none_or(|region| region.contains(local.to_i32_floor()))
-}
-
-/// Where a motion to `wanted` over `over` (a surface and its origin) ends up under `hold`:
-/// `None` when the pointer may not move at all (locked, or confined and the motion would leave
-/// the region or the surface), else `wanted`.
-fn settled<S: PartialEq>(
-    hold: &Hold<S>,
-    over: Option<(&S, Point<f64, Logical>)>,
-    wanted: Point<f64, Logical>,
-) -> Option<Point<f64, Logical>> {
-    let origin_over = |held: &S| {
-        over.filter(|(surface, _)| *surface == held)
-            .map(|(_, at)| at)
-    };
-    match hold {
-        Hold::Free => Some(wanted),
-        Hold::Locked(held) => match origin_over(held) {
-            Some(_) => None,
-            None => Some(wanted),
-        },
-        Hold::Confined(held, region) => match origin_over(held) {
-            Some(origin) if inside(region.as_ref(), origin, wanted) => Some(wanted),
-            Some(_) | None => None,
-        },
-    }
-}
+use smithay::wayland::pointer_constraints::{PointerConstraintsHandler, with_pointer_constraint};
 
 fn pair<D: SeatHandler>(focus: Option<SurfaceAt>) -> Option<(D::PointerFocus, Point<f64, Logical>)>
 where
@@ -175,6 +107,8 @@ where
             let moved = settled(&hold, over, logical_of(at));
             let relative = relative_of(&focus, delta, time);
             if let Some(location) = moved {
+                // A confined pointer is held on its surface, wherever the motion asked it to go.
+                let focus = confined_focus(&hold).or(focus);
                 send_motion(&pointer, state, focus, location, time);
             }
             if let Some((target, event)) = relative {
@@ -201,6 +135,19 @@ where
         }
     }
     Ok(())
+}
+
+/// Ends whatever grab holds the pointer (a popup's, once its popups are dismissed), restoring
+/// the focus the pointer is over.
+pub fn end_grab<D: SeatHandler + 'static>(
+    seat: &Seat<D>,
+    state: &mut D,
+    serial: InputSerial,
+    time: Mono,
+) {
+    if let Some(pointer) = seat.get_pointer() {
+        pointer.unset_grab(state, serial_to(serial), time_of(time));
+    }
 }
 
 /// A relative motion with the focus it goes to.
@@ -380,73 +327,5 @@ fn pinch_update(update: PinchDelta, time: InputTime) -> GesturePinchUpdateEvent 
         delta: logical_of(update.delta),
         scale: f64::from(update.scale.0) / 1000.0,
         rotation: f64::from(update.rotation_millideg) / 1000.0,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use smithay::utils::Rectangle;
-    use smithay::wayland::compositor::RectangleKind;
-
-    fn at(x: f64, y: f64) -> Point<f64, Logical> {
-        Point::from((x, y))
-    }
-
-    fn region(width: i32, height: i32) -> RegionAttributes {
-        RegionAttributes {
-            rects: vec![(
-                RectangleKind::Add,
-                Rectangle::new((0, 0).into(), (width, height).into()),
-            )],
-        }
-    }
-
-    const HERE: u32 = 7;
-    const ELSEWHERE: u32 = 8;
-
-    #[test]
-    fn a_free_pointer_goes_where_it_is_sent() {
-        let moved = settled(&Hold::Free, Some((&HERE, at(0.0, 0.0))), at(5.0, 5.0));
-        assert_eq!(moved, Some(at(5.0, 5.0)));
-    }
-
-    #[test]
-    fn a_locked_pointer_stays_put_over_its_surface_and_moves_off_it() {
-        let hold = Hold::Locked(HERE);
-        let over_it = settled(&hold, Some((&HERE, at(0.0, 0.0))), at(5.0, 5.0));
-        assert_eq!(over_it, None);
-        let off_it = settled(&hold, Some((&ELSEWHERE, at(0.0, 0.0))), at(5.0, 5.0));
-        assert_eq!(off_it, Some(at(5.0, 5.0)));
-        assert_eq!(settled(&hold, None, at(5.0, 5.0)), Some(at(5.0, 5.0)));
-    }
-
-    #[test]
-    fn a_confined_pointer_does_not_leave_its_region_or_its_surface() {
-        let hold = Hold::Confined(HERE, Some(region(100, 100)));
-        let origin = at(10.0, 10.0);
-        // (50, 50) is (40, 40) inside the region; (200, 200) and (9, 50) are outside it.
-        let inside = settled(&hold, Some((&HERE, origin)), at(50.0, 50.0));
-        assert_eq!(inside, Some(at(50.0, 50.0)));
-        let beyond = settled(&hold, Some((&HERE, origin)), at(200.0, 200.0));
-        assert_eq!(beyond, None);
-        let left_of_it = settled(&hold, Some((&HERE, origin)), at(9.0, 50.0));
-        assert_eq!(
-            left_of_it, None,
-            "left of the surface is outside the region"
-        );
-        let off_the_surface = settled(&hold, Some((&ELSEWHERE, origin)), at(50.0, 50.0));
-        assert_eq!(
-            off_the_surface, None,
-            "another surface does not take a confined pointer"
-        );
-        assert_eq!(settled(&hold, None, at(50.0, 50.0)), None);
-    }
-
-    #[test]
-    fn a_confinement_without_a_region_covers_the_whole_surface() {
-        let hold = Hold::Confined(HERE, None);
-        let moved = settled(&hold, Some((&HERE, at(0.0, 0.0))), at(900.0, 900.0));
-        assert_eq!(moved, Some(at(900.0, 900.0)));
     }
 }

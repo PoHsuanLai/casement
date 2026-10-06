@@ -24,8 +24,11 @@ pub struct PressRecord {
 /// What kind of press a serial answers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PressKind {
-    /// A pointer button.
+    /// A pointer button press.
     Button,
+    /// A pointer button release: a popup grab may answer it (Qt opens a context menu on release),
+    /// a move or resize may not.
+    Release,
     /// A key.
     Key,
     /// A touch down.
@@ -38,6 +41,17 @@ pub enum PressKind {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SerialBook {
     presses: BTreeMap<InputSerial, PressRecord>,
+    /// Each client's latest recorded input: a popup grab must answer this one.
+    latest: BTreeMap<ClientKey, Latest>,
+}
+
+/// A client's latest input, and the press it closes when it is a button release.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Latest {
+    serial: InputSerial,
+    /// The press of the same button this release ended: a client that has not yet read the
+    /// release (a click faster than its event loop) still answers that press.
+    closes: Option<InputSerial>,
 }
 
 impl SerialBook {
@@ -49,13 +63,38 @@ impl SerialBook {
     /// The book with `serial` recorded as `press` (forgetting the oldest beyond the bound).
     pub fn record(self, serial: InputSerial, press: PressRecord) -> SerialBook {
         let mut presses = self.presses;
+        let mut latest = self.latest;
         presses.insert(serial, press);
+        let closes = match press.kind {
+            PressKind::Release => presses
+                .iter()
+                .rev()
+                .find(|(_, held)| {
+                    held.client == press.client
+                        && held.kind == PressKind::Button
+                        && held.button == press.button
+                })
+                .map(|(held, _)| *held),
+            _ => None,
+        };
+        latest.insert(press.client, Latest { serial, closes });
         while presses.len() > REMEMBERED {
             if presses.pop_first().is_none() {
                 break;
             }
         }
-        SerialBook { presses }
+        SerialBook { presses, latest }
+    }
+
+    /// The input `serial` answers, if it is `client`'s latest recorded input, or the press the
+    /// latest release ended (a popup grab's proof: a stale serial, a forged one and another
+    /// client's are all refused).
+    pub fn answers_latest(&self, serial: InputSerial, client: ClientKey) -> Option<&PressRecord> {
+        self.answers(serial, client).filter(|_| {
+            self.latest
+                .get(&client)
+                .is_some_and(|last| last.serial == serial || last.closes == Some(serial))
+        })
     }
 
     /// The pointer button the press `serial` answers was made with, if it was a button press.
@@ -96,6 +135,35 @@ mod tests {
         assert_eq!(book.answers(InputSerial(10), ClientKey(1)), Some(&press(1)));
         assert_eq!(book.answers(InputSerial(10), ClientKey(2)), None);
         assert_eq!(book.answers(InputSerial(11), ClientKey(1)), None);
+    }
+
+    #[test]
+    fn only_a_clients_latest_input_answers_a_grab() {
+        let book = SerialBook::empty()
+            .record(InputSerial(1), press(1))
+            .record(InputSerial(2), press(2))
+            .record(InputSerial(3), press(1));
+        assert!(book.answers_latest(InputSerial(3), ClientKey(1)).is_some());
+        assert!(book.answers_latest(InputSerial(1), ClientKey(1)).is_none());
+        assert!(book.answers_latest(InputSerial(2), ClientKey(1)).is_none());
+        assert!(book.answers_latest(InputSerial(2), ClientKey(2)).is_some());
+    }
+
+    #[test]
+    fn a_release_keeps_the_press_it_ended_answering() {
+        let button = |kind, code| PressRecord {
+            kind,
+            button: Some(ButtonCode(code)),
+            ..press(1)
+        };
+        let book = SerialBook::empty()
+            .record(InputSerial(1), button(PressKind::Button, 0x110))
+            .record(InputSerial(2), button(PressKind::Release, 0x110));
+        assert!(book.answers_latest(InputSerial(1), ClientKey(1)).is_some());
+        assert!(book.answers_latest(InputSerial(2), ClientKey(1)).is_some());
+        let later = book.record(InputSerial(3), button(PressKind::Button, 0x110));
+        assert!(later.answers_latest(InputSerial(1), ClientKey(1)).is_none());
+        assert!(later.answers_latest(InputSerial(3), ClientKey(1)).is_some());
     }
 
     #[test]

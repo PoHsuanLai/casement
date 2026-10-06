@@ -14,9 +14,10 @@ use casement::relax::{self, AckPolicy};
 use casement_core::geometry::{LogicalPoint, SubPoint, SubPx};
 use casement_core::input::{ButtonCode, DeviceClass, Edge as InputEdge, TouchStep};
 use casement_core::policy::ConnectionRole;
+use casement_core::window::WindowState;
 use casement_core::{DeviceId, WindowId};
 use casement_testkit::{ClientId, Fixture, FixtureSpec, TestOrigin};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::mpsc::{Receiver, Sender, TryRecvError};
 use std::time::{Duration, Instant};
 
@@ -44,6 +45,9 @@ pub struct Host {
     touch: DeviceId,
     /// The windows that have already been activated.
     activated: BTreeSet<WindowId>,
+    /// Where wlcs put each toplevel by hand: a toplevel that unmaps and maps again (a null buffer,
+    /// then a buffer) is a new window of the same id, and wlcs takes it to be where it left it.
+    placed: BTreeMap<(WlcsClient, WlcsSurface), LogicalPoint>,
 }
 
 impl Host {
@@ -64,6 +68,7 @@ impl Host {
             pointer,
             touch,
             activated: BTreeSet::new(),
+            placed: BTreeMap::new(),
         }
     }
 
@@ -101,12 +106,44 @@ impl Host {
             .model()
             .windows()
             .keys()
-            .filter(|window| !self.activated.contains(window))
+            .filter(|window| !self.activated.contains(window) || self.remapped(**window))
             .copied()
             .collect();
         for window in fresh {
             self.fixture.activate_window(window);
             self.activated.insert(window);
+            self.replace_by_hand(window);
+        }
+    }
+
+    /// Whether `window` mapped again after wlcs put it somewhere: a toplevel that unmaps (a null
+    /// buffer) keeps its id and maps as a fresh window, one casement has not placed yet, while
+    /// wlcs takes it to be where it left it.
+    fn remapped(&self, window: WindowId) -> bool {
+        let fresh = matches!(
+            self.fixture
+                .model()
+                .windows()
+                .get(&window)
+                .map(|held| &held.state),
+            Some(WindowState::New(_))
+        );
+        fresh && self.spot_of(window).is_some()
+    }
+
+    fn spot_of(&self, window: WindowId) -> Option<LogicalPoint> {
+        self.placed
+            .iter()
+            .find(|((client, surface), _)| self.client_surface(*client, *surface) == Some(window))
+            .map(|(_, at)| *at)
+    }
+
+    /// A window that mapped again goes back where wlcs had put the surface it is.
+    fn replace_by_hand(&mut self, window: WindowId) {
+        if let Some(at) = self.spot_of(window) {
+            self.fixture.place_window(window, at);
+            self.fixture.advance(SETTLE);
+            self.fixture.refocus_pointer();
         }
     }
 
@@ -142,6 +179,7 @@ impl Compositor for Host {
                     self.fixture.advance(SETTLE);
                     self.fixture.refocus_pointer();
                 } else if let Some(window) = self.client_surface(client, surface) {
+                    self.placed.insert((client, surface), whole(at));
                     self.fixture.place_window(window, whole(at));
                     // The window glides to its place; wlcs' next step hit-tests where it is.
                     self.fixture.advance(SETTLE);
@@ -161,6 +199,12 @@ impl Compositor for Host {
                 self.fixture
                     .input()
                     .button(device, code(button), input_edge(edge));
+                if input_edge(edge) == InputEdge::Release {
+                    // A dragged window glides after the pointer (a spring); the test's next step
+                    // hit-tests where it dropped.
+                    self.fixture.advance(SETTLE);
+                    self.fixture.refocus_pointer();
+                }
             }
             WlcsEvent::TouchDown { id, at } => self.touch_step(TouchStep::Down {
                 slot: slot(id),

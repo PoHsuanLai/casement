@@ -26,7 +26,8 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Client, Resource};
 use smithay::utils::{Logical, Point, Serial};
 use smithay::wayland::shell::xdg::{
-    PopupSurface, PositionerState, ShellClient, ToplevelSurface, XdgShellHandler, XdgShellState,
+    Configure, PopupSurface, PositionerState, ShellClient, ToplevelSurface, XdgShellHandler,
+    XdgShellState,
 };
 
 impl State {
@@ -49,6 +50,19 @@ impl State {
         surface
             .client()
             .is_some_and(|client| grab_proven(self.press_of(&client, serial).as_ref(), use_))
+    }
+
+    /// Whether `serial` is the latest input its client's seat delivered to it and a popup grab
+    /// may answer it (a press, a release, a key or a touch down).
+    pub(crate) fn grab_serial_proves(&self, surface: &WlSurface, serial: InputSerial) -> bool {
+        let Some(key) = surface
+            .client()
+            .and_then(|client| ClientState::of(&client).map(|data| data.key))
+        else {
+            return false;
+        };
+        let record = self.wl.seat.serials.answers_latest(serial, key);
+        grab_proven(record, GrabUse::AnyPress)
     }
 
     /// The output a client's `wl_output` is, as the model keys it.
@@ -186,6 +200,12 @@ impl XdgShellHandler for State {
         core_loop::feed(self, events);
     }
 
+    fn ack_configure(&mut self, surface: WlSurface, configure: Configure) {
+        if let Configure::Popup(configure) = configure {
+            popups::acked(self, &surface, configure);
+        }
+    }
+
     fn reposition_request(
         &mut self,
         surface: PopupSurface,
@@ -214,6 +234,10 @@ impl XdgShellHandler for State {
             // keyboard to the menu's root (a bar that never asked for it) at the next key.
             crate::exec::end_popup_keyboard(self);
         }
+        // The pointer leaves the popup while its surface still lives (the client destroys the
+        // xdg_popup first): a client that is told of an enter with no leave before it, as the
+        // surface was destroyed under the pointer, is in a state the protocol does not allow.
+        core_loop::refocus_pointer(self);
     }
 
     fn app_id_changed(&mut self, surface: ToplevelSurface) {

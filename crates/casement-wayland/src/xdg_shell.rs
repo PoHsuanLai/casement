@@ -28,7 +28,8 @@ pub use commit::{
 pub use declared::{claimed_of, limits_of, modality_of, role_of};
 pub use meta::{base_role, on_app_id, on_limits, on_parent, on_title};
 pub use popup::{
-    PopupBounds, on_new_popup, on_popup_commit, on_popup_destroyed, on_popup_grab, on_reposition,
+    PopupBounds, on_new_popup, on_popup_acked, on_popup_commit, on_popup_destroyed, on_popup_grab,
+    on_reposition, on_room_changed, popups_of,
 };
 pub use requests::{
     GrabUse, edges_of, grab_proven, on_full_screen, on_maximise, on_minimise, on_move, on_pong,

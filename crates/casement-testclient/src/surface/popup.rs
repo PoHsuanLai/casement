@@ -93,8 +93,32 @@ impl Popup {
         surface: WlSurface,
         spec: PopupSpec,
     ) -> Popup {
-        let log = PopupLog::default();
         let positioner = positioner(client, base, spec);
+        Popup::placed_by(client, base, parent, surface, positioner)
+    }
+
+    /// As [`Popup::of`], placed by `spec` and asking to follow its parent when that moves
+    /// (`xdg_positioner.set_reactive`).
+    pub fn reactive_of(
+        client: &mut TestClient,
+        base: &WmBase,
+        parent: &Toplevel,
+        surface: WlSurface,
+        spec: PopupSpec,
+    ) -> Popup {
+        let positioner = positioner(client, base, spec);
+        positioner.set_reactive();
+        Popup::placed_by(client, base, parent, surface, positioner)
+    }
+
+    fn placed_by(
+        client: &mut TestClient,
+        base: &WmBase,
+        parent: &Toplevel,
+        surface: WlSurface,
+        positioner: XdgPositioner,
+    ) -> Popup {
+        let log = PopupLog::default();
         let xdg_surface = base
             .base
             .get_xdg_surface(&surface, &client.qh(), log.clone());

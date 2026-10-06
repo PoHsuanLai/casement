@@ -48,6 +48,12 @@ pub struct BoundPointer {
 }
 
 impl BoundPointer {
+    /// The serial of the newest button event, press or release, if any.
+    pub fn last_button(&self) -> Option<u32> {
+        self.log
+            .with(|seen| seen.buttons.last().map(|button| button.serial))
+    }
+
     /// The serial of the newest press (not release), if any.
     pub fn last_press(&self) -> Option<u32> {
         self.log.with(|seen| {

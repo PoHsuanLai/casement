@@ -64,3 +64,34 @@ where
     }
     Vec::new()
 }
+
+/// The keyboard moved from `left` to `entered` (a window was activated): a constraint holds only
+/// while its surface has the keyboard as well as the pointer, as the compositors wlcs was
+/// written against decide ("when the compositor deems implementation-specific constraints are
+/// satisfied", pointer-constraints-v1). The surface that lost it is released (a persistent
+/// constraint waits, a one-shot one is over); the one that gained it, when the pointer is on it,
+/// holds again.
+pub fn on_keyboard_focus<D>(
+    pointer: &PointerHandle<D>,
+    left: Option<&WlSurface>,
+    entered: Option<&WlSurface>,
+) where
+    D: PointerConstraintsHandler + 'static,
+    D::PointerFocus: Into<Option<WlSurface>>,
+{
+    if let Some(left) = left.filter(|left| Some(*left) != entered) {
+        with_pointer_constraint::<D, _, _>(left, pointer, |constraint| {
+            if let Some(constraint) = constraint {
+                constraint.deactivate();
+            }
+        });
+    }
+    let under: Option<WlSurface> = pointer.current_focus().and_then(Into::into);
+    if let Some(entered) = entered.filter(|entered| under.as_ref() == Some(*entered)) {
+        with_pointer_constraint::<D, _, _>(entered, pointer, |constraint| {
+            if let Some(constraint) = constraint {
+                constraint.activate();
+            }
+        });
+    }
+}

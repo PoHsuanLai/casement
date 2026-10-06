@@ -14,8 +14,8 @@ use casement_core::{Cause, CoreNote, Effect, KeyboardTarget, LayerKey, OutputKey
 use casement_core::{InputSerial, geometry::LogicalSize, lock::LockReply};
 use casement_wayland::output::OutputWire;
 use casement_wayland::{
-    WaylandFault, foreign_toplevel_list, layer_shell, output, presentation, quire_window, seat,
-    session_lock, text_input, xdg_shell,
+    WaylandFault, foreign_toplevel_list, layer_shell, output, pointer_constraints, presentation,
+    quire_window, seat, session_lock, text_input, xdg_shell,
 };
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{IsAlive, SERIAL_COUNTER};
@@ -152,11 +152,15 @@ fn focus_surface(state: &State, target: &KeyboardTarget) -> Option<WlSurface> {
 /// Moves keyboard focus to what the model says holds it.
 fn keyboard(state: &mut State, target: &KeyboardTarget) {
     let focus = focus_surface(state, target);
+    crate::handlers::dismiss_popups_for_focus(state, focus.as_ref());
     let serial = InputSerial(SERIAL_COUNTER.next_serial().into());
     let handle = state.wl.seat.seat.clone();
     let followed = focus.clone();
+    let left = state.wl.seat.keyboard.current_focus();
     log(seat::apply_keyboard_focus(&handle, state, focus, serial));
     log(text_input::apply_text_focus(&handle, followed.as_ref()));
+    let pointer = state.wl.seat.pointer.clone();
+    pointer_constraints::on_keyboard_focus(&pointer, left.as_ref(), followed.as_ref());
 }
 
 /// A popup's grab ended (a press outside it, or the client closed it): the keyboard grab is

@@ -7,8 +7,9 @@ use crate::state::State;
 use casement_core::geometry::LogicalPoint;
 use casement_core::input::ButtonCode;
 use casement_core::window::{MaxSize, SizeLimits};
-use casement_core::{Event, GrabSpec};
-use casement_wayland::seat::Drag;
+use casement_core::{Event, GrabSpec, InputSerial};
+use casement_wayland::seat::{self, Drag};
+use smithay::utils::SERIAL_COUNTER;
 
 /// Whether the grab took the pointer motion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,6 +43,19 @@ pub(crate) fn start(state: &mut State, spec: GrabSpec) {
     let drag = Drag::begin(spec, at, None);
     let button = state.wl.seat.serials.button_of(drag.serial());
     state.wl.seat.grab = Some(Drag::begin(spec, at, button));
+    // xdg_toplevel.move/resize: "the surface will lose the focus of the device used".
+    let seat = state.wl.seat.seat.clone();
+    let now = state.clock.now();
+    // The press that started it holds an implicit grab on the surface: that ends first.
+    seat::end_grab(
+        &seat,
+        state,
+        InputSerial(SERIAL_COUNTER.next_serial().into()),
+        now,
+    );
+    if let Err(fault) = seat::apply_refocus(&seat, state, None, now) {
+        tracing::warn!(%fault, "the pointer could not leave the grabbed surface");
+    }
 }
 
 /// The pointer is at `at`: the grabbed window follows.
@@ -78,12 +92,16 @@ pub(super) fn follow(state: &mut State, at: LogicalPoint) -> Follow {
 
 /// `released` was let go: the grab ends when it is the button the grab began with.
 pub(super) fn end(state: &mut State, released: ButtonCode) {
-    if state
+    if ends_with(state, released) {
+        state.wl.seat.grab = None;
+    }
+}
+
+/// Whether the grab in progress ends with `released`.
+pub(super) fn ends_with(state: &State, released: ButtonCode) -> bool {
+    state
         .wl
         .seat
         .grab
         .is_some_and(|drag| drag.ends_with(released))
-    {
-        state.wl.seat.grab = None;
-    }
 }

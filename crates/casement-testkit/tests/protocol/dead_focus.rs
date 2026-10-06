@@ -115,8 +115,11 @@ fn a_layer_surface_destroyed_under_the_pointer_gets_no_leave() {
     );
 }
 
+/// The client destroys the popup's objects newest first, so the pointer is told it left the popup
+/// while the `wl_surface` still lives (once, at the `xdg_popup`'s destruction: P0-popups, W8), and
+/// nothing is sent to the surface after it is gone.
 #[test]
-fn a_popup_destroyed_under_the_pointer_gets_no_leave() {
+fn a_popup_destroyed_under_the_pointer_is_left_once_and_nothing_follows() {
     let (mut fixture, id) = boot();
     let _pointer = Pointer::bind(fixture.client(id)).expect("pointer");
     let base = WmBase::bind(fixture.client(id), 7);
@@ -151,7 +154,12 @@ fn a_popup_destroyed_under_the_pointer_gets_no_leave() {
     popup.destroy();
     fixture.pump();
     fixture.pump();
-    assert_eq!(count(fixture.client(id), "wl_pointer#", "leave"), leaves);
+    assert_eq!(
+        count(fixture.client(id), "wl_pointer#", "leave"),
+        leaves + 1,
+        "left once"
+    );
+    assert_eq!(fixture.client(id).protocol_error(), None);
 }
 
 #[test]

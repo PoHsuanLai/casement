@@ -43,5 +43,8 @@ mod xdg_decoration;
 mod xdg_dialog;
 mod xdg_foreign;
 mod xdg_shell;
+pub(crate) use xdg_shell::popups::{
+    dismiss_for_focus as dismiss_popups_for_focus, refit_reactive as refit_reactive_popups,
+};
 mod xdg_toplevel_icon;
 mod xdg_toplevel_tag;

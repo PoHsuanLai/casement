@@ -34,3 +34,15 @@ pub(super) fn moved(focus: &SurfaceAt) -> bool {
             .is_some_and(|origin| origin != Some(focus.origin))
     })
 }
+
+/// Where `surface`'s top-left was when its client was last given the pointer's position.
+pub(super) fn of(
+    surface: &smithay::reexports::wayland_server::protocol::wl_surface::WlSurface,
+) -> Option<LogicalPoint> {
+    with_states(surface, |states| {
+        states
+            .data_map
+            .get::<Told>()
+            .and_then(|held| held.0.lock().ok().and_then(|origin| *origin))
+    })
+}
