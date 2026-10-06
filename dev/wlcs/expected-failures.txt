@@ -32,8 +32,7 @@
 # W4: xdg_toplevel.wm_capabilities is expected after a roundtrip with no commit. The protocol sends it
 #     with the first configure, which follows the first commit (xdg-shell.xml: once before the first
 #     xdg_surface.configure): a wlcs-side expectation, not a casement bug.
-# W5: wl_surface.enter and leave for wl_output are never sent (casement-wayland output has no surface
-#     to output tracking). A casement gap.
+# W5: FIXED by P0-output-enter (wl_surface.enter and leave for wl_output); no entry remains.
 # W7: subsurface tests on an xdg parent: input stacking ignores place_above/place_below, and sync/desync
 #     commit caching expectations differ (subsurfaces.cpp). Not diagnosed further.
 # W8: xdg popup tests (grab, done order, keyboard focus, reposition, reactive parent move). Not
@@ -189,7 +188,6 @@ AnchorRect/XdgPopupPositionerTest.layer_shell_popup_placed_correctly/2  # W1
 AnchorRect/XdgPopupPositionerTest.layer_shell_popup_placed_correctly/3  # W1
 AnchorRect/XdgPopupPositionerTest.layer_shell_popup_placed_correctly/4  # W1
 AnchorRect/XdgPopupPositionerTest.layer_shell_popup_placed_correctly/5  # W1
-ClientSurfaceEventsTest.surface_enters_output  # W5
 ConstraintAdjustmentFlip/XdgPopupPositionerTest.layer_shell_popup_placed_correctly/1  # W1
 ConstraintAdjustmentFlip/XdgPopupPositionerTest.layer_shell_popup_placed_correctly/2  # W1
 ConstraintAdjustmentFlip/XdgPopupPositionerTest.layer_shell_popup_placed_correctly/3  # W1

@@ -27,7 +27,7 @@ pub struct CompositorPart {
 }
 
 impl CompositorPart {
-    /// Creates the `wl_compositor` (version 5) and `wl_subcompositor` globals. Every
+    /// Creates the `wl_compositor` (version 6) and `wl_subcompositor` globals. Every
     /// connection sees them (I7), so the filter is not consulted.
     pub fn new<D>(display: &DisplayHandle, role_filter: GlobalFilter) -> CompositorPart
     where
@@ -37,7 +37,7 @@ impl CompositorPart {
     {
         let _ = role_filter;
         CompositorPart {
-            state: CompositorState::new::<D>(display),
+            state: CompositorState::new_v6::<D>(display),
         }
     }
 }

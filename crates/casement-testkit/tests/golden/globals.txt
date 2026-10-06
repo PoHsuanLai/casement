@@ -2,7 +2,7 @@
 # (FixtureSpec::desktop(): pixman, no dma-buf). Frozen at P0-Z2; each delta freeze adds its
 # rows. Format: <interface> <version> <casement-wayland module> (scripts/check-protocol-coverage.sh
 # reads the third column). wl_output appears once per plugged output.
-wl_compositor 5 compositor
+wl_compositor 6 compositor
 wl_subcompositor 1 subcompositor
 wl_shm 2 shm
 wl_output 4 output

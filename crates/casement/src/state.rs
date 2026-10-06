@@ -82,6 +82,8 @@ pub struct RenderState {
     pub chrome: ChromeLayer,
     /// Whether the pointer has had its first position.
     pub pointer: PointerStart,
+    /// The surfaces told which outputs they are on.
+    pub presence: crate::core_loop::Presence,
 }
 
 /// Whether the pointer has been put where it starts: the centre of the primary output, once an
@@ -247,6 +249,7 @@ impl State {
                 covers: Vec::new(),
             },
             pointer: PointerStart::Unplaced,
+            presence: crate::core_loop::Presence::default(),
         };
         Ok(State {
             core,

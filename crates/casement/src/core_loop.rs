@@ -30,12 +30,14 @@ mod grab;
 mod idle;
 mod ime;
 mod input;
+mod presence;
 mod scene;
 mod surfaces;
 mod windows;
 
 pub(crate) use grab::start as start_grab;
 pub(crate) use idle::sync_inhibitors;
+pub use presence::Presence;
 pub(crate) use surfaces::resend_scale;
 
 /// Steps every event at the clock's now and carries out the effects ([`crate::exec::exec`]);
@@ -72,6 +74,7 @@ pub fn feed(state: &mut State, events: Vec<Event>) {
         })
         .for_each(|input| deliver::deliver(state, input));
     deliver::refocus(state);
+    presence::update(state);
 }
 
 /// The pointer has not moved but a commit may have changed what is under it (a layer's first
@@ -106,6 +109,7 @@ fn note_settings(state: &State, events: &[Event]) {
 /// present, send frame callbacks and presentation feedback at the frame's instant.
 pub fn frame(state: &mut State, output: &OutputKey) {
     windows::refresh_layers(state);
+    presence::update(state);
     let now = state.clock.now();
     let Some(plugged) = state.core.model.outputs().0.get(output) else {
         return;

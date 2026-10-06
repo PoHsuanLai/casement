@@ -478,3 +478,32 @@ cursor (not asserted).
   none fail. The 25 `LayerSurfaceLayerTest` entries stay listed: they no longer crash, they fail on
   `window_under_cursor()` (NULL or the wrong surface), a layer stacking and hit-test gap (W1).
 
+
+### P0-output-enter: wl_surface.enter and leave, preferred buffer scale
+
+- **W5**: `casement/src/core_loop/presence.rs` (new). After every `feed` and at the start of every
+  `frame`, it walks the hit-test stack (`scene::stack`: lock surfaces, layer surfaces, windows, each
+  with its popups, at the origins the stack gives) and tells each tree which outputs it is on. A root
+  is on an output when a surface of its tree has a view that overlaps the output's logical rectangle
+  (a local copy of smithay's `output_update`, which `desktop::space` keeps `pub(crate)`; it enters
+  and leaves subsurfaces one by one). A popup is on every output its parent's drawn bounding box
+  touches and on those its own touches. A surface that left the stack (unmapped, destroyed) is told
+  it left every output; an unplugged output is left by the surfaces (`apply_unplug` also calls
+  `leave_all`). State: `RenderState.presence` holds the roots told last time.
+- **Preferred buffer scale**: `wl_compositor` is now version 6 (`CompositorState::new_v6`). The same
+  pass sends each tree the scale of its home output (the one with the largest overlap) through
+  `fractional_scale::apply_scale`, which sends `wl_surface.preferred_buffer_scale` (v6) and the
+  fractional preferred scale; so every surface hears its scale, not only those with a
+  `wp_fractional_scale_v1`. `preferred_buffer_transform` stays Normal (the renderer assumes
+  `Transform::Normal`, P1 for rotated outputs).
+- **Model fact the tests lean on**: a toplevel never straddles two outputs (its rect is held inside
+  its Space's output), so a window changes output only by `set_fullscreen(output)` or by its output
+  going; a layer surface is arranged inside its output. Only a subsurface or a popup can reach over
+  a seam, and neither is tested to straddle yet.
+- **Gap**: cursor surfaces and drag icons get no enter/leave (they are not in the stack).
+- Tests: `tests/protocol/compositor.rs::outputs_of_a_surface` (map, change of output both ways,
+  unplug, layer surface on its output, popup follows its parent); each failed with the
+  `presence::update` calls removed. Test client: `LayerSurface::create_on`,
+  `Toplevel::set_fullscreen_on`, `unset_fullscreen`. wl_compositor test binds 1 to 6.
+- wlcs: `ClientSurfaceEventsTest.surface_enters_output` passes and is off the list: 298 entries
+  before, 297 after; `--phase` runs 928 tests, 597 pass, none fail.

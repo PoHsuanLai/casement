@@ -59,11 +59,11 @@ fn check(name: &str, client: &TestClient, skip: &[&str]) {
 
 const SIZE: PhysicalSize = PhysicalSize { w: 64, h: 32 };
 
-/// Wl_compositor binds at versions 1 to 5; a surface with a buffer commits; the transcript matches tests/golden/transcripts/compositor-commit.txt.
+/// Wl_compositor binds at versions 1 to 6; a surface with a buffer commits; the transcript matches tests/golden/transcripts/compositor-commit.txt.
 #[test]
 fn every_version_binds_and_a_surface_commits() {
     let (mut fixture, _) = boot();
-    for version in 1..=5 {
+    for version in 1..=6 {
         let id = fixture.connect(ConnectionRole::Public);
         fixture.pump();
         let client = fixture.client(id);
@@ -78,7 +78,7 @@ fn every_version_binds_and_a_surface_commits() {
         assert!(client.protocol_error().is_none(), "version {version}");
         // An advertised version is the ceiling: asking for the next one is refused.
         assert!(matches!(
-            client.bind::<WlCompositor, _>(6..=6, H1Data),
+            client.bind::<WlCompositor, _>(7..=7, H1Data),
             Err(ClientError::MissingGlobal(_))
         ));
     }
@@ -176,4 +176,230 @@ fn an_attach_offset_at_version_five_is_a_protocol_error() {
     surface.surface.attach(None, 1, 0);
     fixture.pump();
     assert_eq!(fault(&mut fixture, id), ("wl_surface".to_owned(), 3));
+}
+
+mod outputs_of_a_surface {
+    //! `wl_surface.enter` and `leave`: a surface is on the outputs its drawn rectangle touches.
+
+    use super::super::xdg_shell::{map_toplevel, settle};
+    use casement_core::OutputName;
+    use casement_core::geometry::PhysicalSize;
+    use casement_core::policy::ConnectionRole;
+    use casement_testclient::surface::layer::{
+        Anchor, KeyboardInteractivity, Layer, LayerAsk, LayerSurface,
+    };
+    use casement_testclient::surface::popup::{Popup, PopupSpec};
+    use casement_testclient::surface::subsurface::{BoundOutput, bind_outputs};
+    use casement_testclient::surface::toplevel::WmBase;
+    use casement_testclient::{Pattern, TestClient, shm_buffer};
+    use casement_testkit::{ClientId, Fixture, FixtureSpec};
+    use wayland_client::Proxy;
+    use wayland_client::protocol::wl_surface::WlSurface;
+
+    const TWO: [&str; 2] = [
+        "HEADLESS-1:1920x1080@60000:120:0,0",
+        "HEADLESS-2:1920x1080@60000:120:1920,0",
+    ];
+
+    /// Two outputs side by side, a client that has bound both `wl_output`s.
+    fn boot() -> (Fixture, ClientId, Vec<BoundOutput>) {
+        let mut fixture =
+            Fixture::start(FixtureSpec::desktop().with_outputs(&TWO)).expect("fixture");
+        let id = fixture.connect(ConnectionRole::Public);
+        fixture.pump();
+        let bound = bind_outputs(fixture.client(id), 4, true).expect("outputs bind");
+        fixture.pump();
+        (fixture, id, bound)
+    }
+
+    /// The names of the outputs `surface` has entered and not left, from the transcript.
+    fn on(client: &TestClient, surface: &WlSurface, bound: &[BoundOutput]) -> Vec<String> {
+        let object = format!("wl_surface#{}", surface.id().protocol_id());
+        let mut held: Vec<String> = Vec::new();
+        for line in client.transcript().0.iter().filter(|l| l.object == object) {
+            let Some(arg) = line.args.first() else {
+                continue;
+            };
+            match line.event.as_str() {
+                "enter" => held.push(arg.clone()),
+                "leave" => held.retain(|one| one != arg),
+                _ => {}
+            }
+        }
+        let mut names: Vec<String> = bound
+            .iter()
+            .filter(|one| held.contains(&format!("wl_output#{}", one.output.id().protocol_id())))
+            .filter_map(|one| one.facts(client).name)
+            .collect();
+        names.sort();
+        names
+    }
+
+    fn names(of: &[&str]) -> Vec<String> {
+        of.iter().map(|one| (*one).to_owned()).collect()
+    }
+
+    /// A mapped toplevel is on the output it is drawn on, and only that one.
+    #[test]
+    fn a_mapped_toplevel_enters_its_output() {
+        let (mut fixture, id, bound) = boot();
+        let base = WmBase::bind(fixture.client(id), 7);
+        let top = map_toplevel(&mut fixture, id, &base, (400, 300));
+        settle(&mut fixture);
+        assert_eq!(
+            on(fixture.client(id), top.wl_surface(), &bound),
+            names(&["HEADLESS-1"])
+        );
+    }
+
+    /// The bound `wl_output` of the output called `name`.
+    fn output_named<'a>(
+        fixture: &mut Fixture,
+        id: ClientId,
+        bound: &'a [BoundOutput],
+        name: &str,
+    ) -> &'a BoundOutput {
+        bound
+            .iter()
+            .find(|one| one.facts(fixture.client(id)).name.as_deref() == Some(name))
+            .expect("the output is bound")
+    }
+
+    /// A window that goes full screen on the other output enters it and leaves the first, and
+    /// back again.
+    #[test]
+    fn a_toplevel_that_changes_output_enters_and_leaves() {
+        let (mut fixture, id, bound) = boot();
+        let base = WmBase::bind(fixture.client(id), 7);
+        let top = map_toplevel(&mut fixture, id, &base, (400, 300));
+        settle(&mut fixture);
+        let second = output_named(&mut fixture, id, &bound, "HEADLESS-2")
+            .output
+            .clone();
+        top.set_fullscreen_on(&second);
+        fixture.pump();
+        settle(&mut fixture);
+        assert_eq!(
+            on(fixture.client(id), top.wl_surface(), &bound),
+            names(&["HEADLESS-2"])
+        );
+        // Leaving full screen keeps the window on the output it was on; asking for the first
+        // output again takes it back: it enters that and leaves the second.
+        top.unset_fullscreen();
+        fixture.pump();
+        settle(&mut fixture);
+        let first = output_named(&mut fixture, id, &bound, "HEADLESS-1")
+            .output
+            .clone();
+        top.set_fullscreen_on(&first);
+        fixture.pump();
+        settle(&mut fixture);
+        assert_eq!(
+            on(fixture.client(id), top.wl_surface(), &bound),
+            names(&["HEADLESS-1"])
+        );
+    }
+
+    /// A window on an output that is unplugged is told it left it.
+    #[test]
+    fn unplugging_an_output_leaves_it() {
+        let (mut fixture, id, bound) = boot();
+        let base = WmBase::bind(fixture.client(id), 7);
+        let top = map_toplevel(&mut fixture, id, &base, (400, 300));
+        let second = output_named(&mut fixture, id, &bound, "HEADLESS-2")
+            .output
+            .clone();
+        top.set_fullscreen_on(&second);
+        fixture.pump();
+        settle(&mut fixture);
+        assert_eq!(
+            on(fixture.client(id), top.wl_surface(), &bound),
+            names(&["HEADLESS-2"])
+        );
+        fixture.unplug(&OutputName::parse("HEADLESS-2").expect("a name"));
+        settle(&mut fixture);
+        assert!(
+            !on(fixture.client(id), top.wl_surface(), &bound).contains(&"HEADLESS-2".to_owned())
+        );
+    }
+
+    /// A layer surface is on the output it was made for, not on the other.
+    #[test]
+    fn a_layer_surface_is_on_its_output() {
+        let (mut fixture, id, bound) = boot();
+        let second = bound
+            .iter()
+            .find(|one| one.facts(fixture.client(id)).name.as_deref() == Some("HEADLESS-2"))
+            .expect("the second output");
+        let ask = LayerAsk {
+            level: Layer::Top,
+            namespace: "bar",
+            anchor: Anchor::Top | Anchor::Left | Anchor::Right,
+            exclusive_zone: 30,
+            keyboard: KeyboardInteractivity::None,
+            size: (0, 30),
+        };
+        let layer = LayerSurface::create_on(fixture.client(id), &ask, Some(&second.output))
+            .expect("a layer surface");
+        fixture.pump();
+        let configure = layer.configure().expect("the initial configure");
+        assert!(layer.ack(fixture.client(id)));
+        let size = PhysicalSize {
+            w: configure.width.max(ask.size.0),
+            h: configure.height.max(ask.size.1),
+        };
+        let buffer = shm_buffer(fixture.client(id), size, Pattern::Solid(0xff20_2020));
+        layer.show(fixture.client(id), &buffer);
+        fixture.pump();
+        settle(&mut fixture);
+        assert_eq!(
+            on(fixture.client(id), layer.surface(), &bound),
+            names(&["HEADLESS-2"])
+        );
+    }
+
+    /// A popup is on the outputs its parent is on, and follows it when the parent changes output.
+    #[test]
+    fn a_popup_is_on_its_parents_outputs() {
+        let (mut fixture, id, bound) = boot();
+        let base = WmBase::bind(fixture.client(id), 7);
+        let parent = map_toplevel(&mut fixture, id, &base, (400, 300));
+        let surface = fixture.client(id).create_surface().expect("a surface");
+        let popup = Popup::of(
+            fixture.client(id),
+            &base,
+            &parent,
+            surface,
+            PopupSpec::menu_at((10, 10)),
+        );
+        popup.surface.commit();
+        fixture.pump();
+        assert!(popup.ack_latest().is_some(), "the popup's configure");
+        let buffer = shm_buffer(
+            fixture.client(id),
+            PhysicalSize { w: 100, h: 50 },
+            Pattern::Solid(0xff20_2020),
+        );
+        popup.show(&buffer);
+        fixture.pump();
+        settle(&mut fixture);
+        assert_eq!(
+            on(fixture.client(id), &popup.surface, &bound),
+            names(&["HEADLESS-1"])
+        );
+        let second = output_named(&mut fixture, id, &bound, "HEADLESS-2")
+            .output
+            .clone();
+        parent.set_fullscreen_on(&second);
+        fixture.pump();
+        settle(&mut fixture);
+        assert_eq!(
+            on(fixture.client(id), parent.wl_surface(), &bound),
+            names(&["HEADLESS-2"])
+        );
+        assert_eq!(
+            on(fixture.client(id), &popup.surface, &bound),
+            names(&["HEADLESS-2"])
+        );
+    }
 }

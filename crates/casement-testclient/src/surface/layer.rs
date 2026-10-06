@@ -81,6 +81,15 @@ impl LayerSurface {
     /// Creates a surface and a layer surface for it on the compositor's choice of output, sets
     /// what `ask` says and makes the first commit (which asks for the initial configure).
     pub fn create(client: &TestClient, ask: &LayerAsk) -> Result<LayerSurface, ClientError> {
+        LayerSurface::create_on(client, ask, None)
+    }
+
+    /// As [`LayerSurface::create`], on `output` when one is named.
+    pub fn create_on(
+        client: &TestClient,
+        ask: &LayerAsk,
+        output: Option<&wayland_client::protocol::wl_output::WlOutput>,
+    ) -> Result<LayerSurface, ClientError> {
         let qh = client.qh();
         let compositor: WlCompositor = client.bind(1..=5, LayerPlain)?;
         let shell: ZwlrLayerShellV1 = client.bind(1..=5, LayerPlain)?;
@@ -88,7 +97,7 @@ impl LayerSurface {
         let log = LayerLog::default();
         let layer = shell.get_layer_surface(
             &surface,
-            None,
+            output,
             ask.level,
             ask.namespace.to_owned(),
             &qh,

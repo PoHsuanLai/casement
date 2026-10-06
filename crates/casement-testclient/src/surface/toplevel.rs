@@ -199,6 +199,16 @@ impl Toplevel {
         self.toplevel.set_fullscreen(None);
     }
 
+    /// Asks to be full screen on `output`.
+    pub fn set_fullscreen_on(&self, output: &wayland_client::protocol::wl_output::WlOutput) {
+        self.toplevel.set_fullscreen(Some(output));
+    }
+
+    /// Asks to leave full screen.
+    pub fn unset_fullscreen(&self) {
+        self.toplevel.unset_fullscreen();
+    }
+
     /// Asks to be minimised.
     pub fn set_minimized(&self) {
         self.toplevel.set_minimized();
