@@ -76,9 +76,9 @@ fn a_selection_reaches_the_focused_client() {
     assert!(saw(fixture.client(b), "wl_data_device#", "selection"));
 }
 
-/// A drag from a window drops on a layer surface (H5 exit).
-#[test]
-fn drag_and_drop_into_a_layer_surface() {
+/// A drag from a layer surface in the middle of the output, dropped on a drop zone in the
+/// corner; the fixture and the drop zone's client.
+fn drop_on_a_zone() -> (Fixture, ClientId) {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     let mouse = fixture.input().plug(
         DeviceClass::Pointer,
@@ -133,5 +133,26 @@ fn drag_and_drop_into_a_layer_surface() {
     assert!(
         saw(fixture.client(target), "wl_data_device#", "drop"),
         "the drop reached the layer surface"
+    );
+    (fixture, target)
+}
+
+/// A drag from a window drops on a layer surface (H5 exit).
+#[test]
+fn drag_and_drop_into_a_layer_surface() {
+    let (mut fixture, target) = drop_on_a_zone();
+    fixture.pump();
+    assert!(saw(fixture.client(target), "wl_data_device#", "drop"));
+}
+
+/// wl_data_device.drop: the offer introduced at enter stays the client's to read until it
+/// finishes it, so the drop is not followed by `leave` (which tells a client to destroy it).
+#[test]
+fn a_drop_is_not_followed_by_leave() {
+    let (mut fixture, target) = drop_on_a_zone();
+    fixture.pump();
+    assert!(
+        !saw(fixture.client(target), "wl_data_device#", "leave"),
+        "the offer outlives the drop"
     );
 }

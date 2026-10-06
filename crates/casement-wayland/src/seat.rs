@@ -8,15 +8,17 @@
 mod edge;
 mod focus_origin;
 mod grab;
+mod live;
 mod pointer;
 mod taken;
 mod touch;
 mod under;
 
 pub use grab::Drag;
-pub use pointer::{apply_axis, apply_gesture, apply_pointer, apply_refocus};
+pub use live::Live;
+pub use pointer::{apply_axis, apply_gesture, apply_pointer, apply_refocus, forget_dead};
 pub use taken::{PressFate, Taken};
-pub use touch::apply_touch;
+pub use touch::{apply_touch, release_dead};
 pub use under::{Candidate, surface_under};
 
 use crate::convert::serial_to;

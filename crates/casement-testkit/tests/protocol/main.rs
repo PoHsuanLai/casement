@@ -10,6 +10,7 @@ mod compositor;
 mod content_type;
 mod cursor_shape;
 mod data_device;
+mod dead_focus;
 mod dmabuf;
 mod ext_data_control;
 mod fifo;

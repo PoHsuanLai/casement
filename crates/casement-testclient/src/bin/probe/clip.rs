@@ -25,7 +25,7 @@ const MIME: &str = "text/plain";
 struct Offers {
     selection: Option<WlDataOffer>,
     drag: Option<WlDataOffer>,
-    /// The offer a `drop` arrived for (`leave` follows it at once and clears `drag`).
+    /// The offer a `drop` arrived for, until its text is read and the offer finished.
     dropped: Option<WlDataOffer>,
 }
 
@@ -225,7 +225,7 @@ impl Dispatch<WlDataDevice, DeviceData> for ClientState {
                 data.with(|offers| offers.drag = Some(offer));
             }
             wl_data_device::Event::Leave => data.with(|offers| offers.drag = None),
-            wl_data_device::Event::Drop => data.with(|offers| offers.dropped = offers.drag.clone()),
+            wl_data_device::Event::Drop => data.with(|offers| offers.dropped = offers.drag.take()),
             wl_data_device::Event::Selection { id } => data.with(|offers| offers.selection = id),
             _ => {}
         }

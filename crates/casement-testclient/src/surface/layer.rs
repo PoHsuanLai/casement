@@ -158,6 +158,14 @@ impl LayerSurface {
         &self.surface
     }
 
+    /// Destroys the `wl_surface` and then the layer surface, which outlives it for a moment.
+    pub fn destroy_surface_first(self, client: &TestClient) {
+        self.surface.destroy();
+        let _ = client.connection().flush();
+        self.layer.destroy();
+        let _ = client.connection().flush();
+    }
+
     /// Destroys the layer surface and its `wl_surface`.
     pub fn destroy(self, client: &TestClient) {
         self.layer.destroy();

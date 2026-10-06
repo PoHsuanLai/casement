@@ -67,8 +67,8 @@ fn draw_of(image: &CursorImageStatus) -> (CursorDraw, Option<WlSurface>) {
 
 impl SeatHandler for State {
     type KeyboardFocus = WlSurface;
-    type PointerFocus = WlSurface;
-    type TouchFocus = WlSurface;
+    type PointerFocus = seat::Live;
+    type TouchFocus = seat::Live;
 
     fn seat_state(&mut self) -> &mut SeatState<State> {
         &mut self.wl.seat.state

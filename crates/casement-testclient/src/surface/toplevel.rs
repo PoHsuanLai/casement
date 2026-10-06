@@ -207,9 +207,14 @@ impl Toplevel {
     /// Destroys the `xdg_toplevel`, then the `xdg_surface`, then the `wl_surface` (the order
     /// the protocol asks for).
     pub fn destroy(&self) {
+        self.destroy_roles();
+        self.surface.destroy();
+    }
+
+    /// Destroys the `xdg_toplevel` and then the `xdg_surface`, leaving the `wl_surface`.
+    pub fn destroy_roles(&self) {
         self.toplevel.destroy();
         self.xdg_surface.destroy();
-        self.surface.destroy();
     }
 
     /// The completed configures so far.

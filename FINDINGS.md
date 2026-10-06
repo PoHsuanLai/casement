@@ -445,6 +445,36 @@ an interactive resize changed the frame but never configured the client (floatin
 nothing when the rect is its own size): `core_loop::configure_size`, test
 `a_resize_configures_the_client_to_the_dragged_size`; `debug wait settled` did not step the stepped
 clock. Open: `scale-crisp` uses casement's own test client, not a quire or shell-host window (those
-are the consumer scripts'); after a drop casement sends `wl_data_device.leave` at once (the offer
-must be kept from `drop`); pointer motion while a dead locker's cover stands did not move the
+are the consumer scripts'); after a drop casement sent `wl_data_device.leave` at once (fixed by
+P0-dead-focus); pointer motion while a dead locker's cover stands did not move the
 cursor (not asserted).
+
+### P0-dead-focus: a surface that dies stops being the seat's focus
+
+- **The crash** (`State::toplevel_destroyed` -> `refocus` -> smithay `pointer.motion` -> `wl_pointer.leave`,
+  `send_event` InvalidId, wlcs `Layer/LayerSurfaceLayerTest.surface_can_be_moved_to_layer/7`) happens while
+  libwayland tears a client down: the backend has already forgotten the client, so any event that names one
+  of its objects (leave and enter carry the surface) panics. The cause is not a stale focus alone, so
+  the guard lives where the event is sent: `casement_wayland::seat::Live`, the type of `PointerFocus` and
+  `TouchFocus` (was a bare `WlSurface`), forwards every smithay target call but sends `leave` and `enter`
+  only when the surface is alive and its client is known (`Live::reachable`). The keyboard needs no guard
+  (smithay's focus-destroy hook clears it). The in-process Fixture cannot reproduce the C-level panic (a
+  `disconnect` does not run libwayland's teardown order), so the regression tests assert the visible half:
+  the seat holds no pointer focus on a surface that is gone (`CompositorHandler::destroyed` ->
+  `seat::forget_dead`), checked between the surface's death and its role's. wlcs is the proof of the
+  panic: the whole `LayerSurfaceLayerTest` group now runs to its verdicts instead of aborting the run.
+- **W6**: `seat::release_dead` lifts every touch point that went down on a dying surface (smithay sends
+  nothing to a dead surface, so the client's `wl_touch` is told directly: `up` then `frame`); the seat
+  remembers each point's surface and client from its `down`. The four
+  `sends_touch_up_on_surface_destroy` wlcs tests pass and are off the expected-failures list.
+- **Drop then leave**: smithay's `DnDGrab` sends `wl_data_device.leave` straight after `drop`. `Live`'s
+  `DndFocus` impl remembers that a validated drop was delivered and does not send that `leave`; the
+  offer stays the client's to read until it finishes it. A drag that ends without a drop still gets its
+  `leave`. The probe's workaround (a clone of the offer taken at `drop`) is gone.
+- Tests: `tests/protocol/dead_focus.rs` (toplevel, layer surface, popup, hung-up client, touch),
+  `data_device::a_drop_is_not_followed_by_leave`. Testkit: `Fixture::pointer_focus`; test client:
+  `seat::touch::Touch`, `Toplevel::destroy_roles`, `LayerSurface::destroy_surface_first`.
+- wlcs: 302 entries before, 298 after (the 4 W6 removed); `--phase` runs 927 tests, 596 pass, 331 skipped,
+  none fail. The 25 `LayerSurfaceLayerTest` entries stay listed: they no longer crash, they fail on
+  `window_under_cursor()` (NULL or the wrong surface), a layer stacking and hit-test gap (W1).
+

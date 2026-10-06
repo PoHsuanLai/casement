@@ -18,10 +18,9 @@
 # W1: layer-shell and layer-popup tests (outside the P0 core/xdg-shell/pointer/touch/subsurface
 #     subset). Symptoms: the configure does not carry the requested size, an exclusive zone does not
 #     shrink a maximised toplevel (timeout), layer ordering and keyboard interactivity differ. The
-#     LayerSurfaceLayerTest group is excluded for another reason too: destroying a toplevel the pointer
-#     is on panics inside wayland-backend (`send_event`, InvalidId: wl_pointer.leave to a dead surface,
-#     reached from casement::State::toplevel_destroyed -> core_loop::refocus) and aborts the whole run.
-#     That panic is a casement bug (P0-H4 seat/pointer) found by this lane, not fixed here.
+#     The LayerSurfaceLayerTest group no longer aborts the run (P0-dead-focus fixed the wayland-backend
+#     panic on a pointer that leaves a dead surface); its 25 remaining failures are
+#     `client.window_under_cursor()` answering NULL or the wrong surface (layer stacking and hit test).
 # W2: xdg window geometry. casement draws and hit-tests a toplevel's surface tree at the window rect's
 #     origin and ignores the xdg_surface.set_window_geometry offset (casement-render element/window.rs,
 #     casement/src/core_loop/scene.rs), so the `xdg_surface_stable_12_5_20_6` builder and the
@@ -35,8 +34,6 @@
 #     xdg_surface.configure): a wlcs-side expectation, not a casement bug.
 # W5: wl_surface.enter and leave for wl_output are never sent (casement-wayland output has no surface
 #     to output tracking). A casement gap.
-# W6: wl_touch.up is not sent when the touched surface is destroyed (touch focus is not released on
-#     destroy). A casement gap (seat/touch).
 # W7: subsurface tests on an xdg parent: input stacking ignores place_above/place_below, and sync/desync
 #     commit caching expectations differ (subsurfaces.cpp). Not diagnosed further.
 # W8: xdg popup tests (grab, done order, keyboard focus, reposition, reactive parent move). Not
@@ -50,10 +47,6 @@
 # W13: a toplevel remapped after a null-buffer commit: casement waits for a new initial configure and
 #     ack, wlcs re-attaches a buffer straight away.
 
-AllSurfaceTypes/TouchTest.sends_touch_up_on_surface_destroy/subsurface_at_x0_y0  # W6
-AllSurfaceTypes/TouchTest.sends_touch_up_on_surface_destroy/subsurface_at_x7_y12  # W6
-AllSurfaceTypes/TouchTest.sends_touch_up_on_surface_destroy/xdg_surface_stable  # W6
-AllSurfaceTypes/TouchTest.sends_touch_up_on_surface_destroy/xdg_surface_stable_12_5_20_6  # W6
 AllSurfaceTypes/TouchTest.touch_and_drag_on_surface_seen/xdg_surface_stable_12_5_20_6  # W2
 AllSurfaceTypes/TouchTest.touch_drag_outside_of_surface_and_back_not_lost/xdg_surface_stable_12_5_20_6  # W2
 AllSurfaceTypes/TouchTest.touch_on_surface_seen/subsurface_at_x7_y12  # W9

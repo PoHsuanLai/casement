@@ -57,9 +57,11 @@ impl WaylandDndGrabHandler for State {
         serial: Serial,
         type_: GrabType,
     ) {
-        let origin = seat
-            .get_pointer()
-            .and_then(|pointer| pointer.current_focus());
+        let origin = seat.get_pointer().and_then(|pointer| {
+            pointer
+                .current_focus()
+                .and_then(Into::<Option<WlSurface>>::into)
+        });
         let events =
             data_device::on_drag_start(&mut self.wl.data_device, origin.as_ref(), icon.as_ref());
         let display = self.display.clone();

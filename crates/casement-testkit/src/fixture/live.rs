@@ -92,6 +92,17 @@ impl Fixture {
         self.pump();
     }
 
+    /// The surface the seat's pointer is on now, as the compositor holds it (none when the
+    /// pointer is over nothing a client owns).
+    pub fn pointer_focus(&self) -> Option<WlSurface> {
+        self.state
+            .wl
+            .seat
+            .pointer
+            .current_focus()
+            .and_then(Into::into)
+    }
+
     /// Hands the pointer to whatever is under it now (a window that glided to its place under
     /// a still pointer has moved what is there); then pumps.
     pub fn refocus_pointer(&mut self) {

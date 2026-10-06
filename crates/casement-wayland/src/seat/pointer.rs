@@ -134,6 +134,23 @@ fn send_motion<D>(
     }
 }
 
+/// A surface died: when it holds the pointer the pointer is left over nothing (smithay sends
+/// no `leave` to a surface that is gone), until the caller's next refocus finds what is there.
+pub fn forget_dead<D>(seat: &Seat<D>, state: &mut D, dead: &WlSurface, time: Mono)
+where
+    D: SeatHandler + PointerConstraintsHandler + 'static,
+    D::PointerFocus: From<WlSurface> + Into<Option<WlSurface>> + Clone + PartialEq,
+{
+    let Some(pointer) = seat.get_pointer() else {
+        return;
+    };
+    let held: Option<WlSurface> = pointer.current_focus().and_then(Into::into);
+    if held.as_ref() == Some(dead) {
+        let location = pointer.current_location();
+        send_motion(&pointer, state, None, location, time_of(time));
+    }
+}
+
 /// Delivers a pointer motion or button.
 pub fn apply_pointer<D>(
     seat: &Seat<D>,

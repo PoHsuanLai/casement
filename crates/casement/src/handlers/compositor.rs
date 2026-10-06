@@ -6,7 +6,7 @@ use casement_core::Event;
 use casement_wayland::compositor::{self, CommitRoute};
 use casement_wayland::{
     ClientState, commit_timing, content_type, fifo, fractional_scale, layer_shell, presentation,
-    subcompositor, xdg_shell,
+    seat, subcompositor, xdg_shell,
 };
 use smithay::backend::renderer::utils::on_commit_buffer_handler;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -70,6 +70,10 @@ impl CompositorHandler for State {
     }
 
     fn destroyed(&mut self, surface: &WlSurface) {
+        let seat = self.wl.seat.seat.clone();
+        let now = self.clock.now();
+        seat::forget_dead(&seat, self, surface, now);
+        seat::release_dead(&seat, self, surface, now);
         presentation::discard_surface(&mut self.wl.presentation, surface);
         fifo::forget_surface(&mut self.wl.fifo, surface);
         commit_timing::forget_surface(&mut self.wl.commit_timing, surface);

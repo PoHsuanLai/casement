@@ -449,7 +449,8 @@ fn dismisses_popup_grab(state: &State) -> bool {
     };
     seat.pointer.is_grabbed()
         && seat.keyboard.is_grabbed()
-        && client_id(seat.pointer.current_focus()) != client_id(seat.keyboard.current_focus())
+        && client_id(seat.pointer.current_focus().and_then(Into::into))
+            != client_id(seat.keyboard.current_focus())
 }
 
 /// Routes a press on `window` through the model; whether the press is delivered to the client.
