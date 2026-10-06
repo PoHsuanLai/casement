@@ -266,13 +266,10 @@ check cover what draws without a client surface; the fixture scenes are P0-shoot
    P3-Z adds the wrapper with its effect elements.
 4. **`OutputFrame.strip` is not applied.** A `PlacedWindow` does not say which Space it is on,
    so the renderer cannot shift windows per Space; P3-Z.
-5. **Layer placement has two homes.** `crates/casement-render/src/scene/place.rs` places layer
-   surfaces from their committed layer-shell state (anchors, margins and exclusive zones:
-   exclusive surfaces first, overlay level down, then the rest inside what they leave), because
-   `output_elements` receives no layer geometry. P0-H3's
-   `casement_wayland::layer_shell::layer_area` uses the same axis rules but places in the whole
-   output and applies no zones, so the two differ for a zone-respecting surface beside a bar.
-   Closes when one `casement_core::layer` function places layers for both (P1 ask).
+5. **Layer placement has one home (closed by P0-reserve).** `casement_core::layer::LayerBook::arrange`
+   (`crates/casement-core/src/layer/arrange.rs`) arranges layer surfaces once (exclusive zones,
+   overlay down to background, then the rest inside what they leave); the renderer, the hit test
+   and the configure sizes all read it.
 6. **Named cursors are casement's own rasters** (signed-distance shapes, 16 samples a pixel,
    at the output's native scale, cached per shape and scale); no Xcursor theme is read yet.
    A locked output draws only the cursor, its lock surface and an opaque cover under it. The
