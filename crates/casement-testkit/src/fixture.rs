@@ -8,6 +8,8 @@
 //! transcript; `advance` pumps at the current instant before the first stop, then stops at
 //! every due instant, so chopping an advance differently gives the same transcript.
 
+mod live;
+
 use crate::fakes::{FakePalmrest, FakeSession};
 use crate::input::FixtureInput;
 use crate::spec::FixtureSpec;

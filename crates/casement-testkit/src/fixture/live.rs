@@ -1,0 +1,101 @@
+//! The fixture for a client the test does not drive: a program in another thread (wlcs) that
+//! owns its end of a socket pair and talks at its own pace. Such a client needs the server end
+//! adopted ([`Fixture::adopt_socket`]), a way to wait for it to speak ([`Fixture::wait`]) and
+//! the two things the model owns that a client cannot reach: which window a surface is
+//! ([`Fixture::toplevel_of`]) and where it sits ([`Fixture::place_window`]).
+
+use super::{ClientId, Fixture};
+use casement::clients;
+use casement::core_loop;
+use casement_core::ToplevelRequest;
+use casement_core::focus::TokenCheck;
+use casement_core::geometry::{LogicalPoint, LogicalRect};
+use casement_core::policy::ConnectionRole;
+use casement_core::{Event, WindowId};
+use porter_core::PeerIdentity;
+use smithay::reexports::wayland_server::Resource;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use std::os::fd::OwnedFd;
+use std::os::unix::net::UnixStream;
+use std::time::Duration;
+
+impl Fixture {
+    /// A new client of `role` whose end of the socket pair is handed to the caller, who drives
+    /// it from elsewhere: no [`TestClient`](casement_testclient::TestClient) is made, so the
+    /// fixture's pump has nothing to dispatch for it. The fixture pumps once so the compositor
+    /// has seen it arrive.
+    pub fn adopt_socket(&mut self, role: ConnectionRole) -> (ClientId, OwnedFd) {
+        let (server, client) = UnixStream::pair().expect("a socket pair for the adopted client");
+        server
+            .set_nonblocking(true)
+            .expect("a non-blocking server end");
+        let held = clients::insert_client(&mut self.state, server, role, PeerIdentity::Unproven)
+            .expect("the compositor takes the client");
+        let id = ClientId(self.next_client);
+        self.servers.insert(id, held);
+        self.next_client += 1;
+        self.pump();
+        (id, OwnedFd::from(client))
+    }
+
+    /// Blocks up to `timeout` of real time for the compositor's event loop to have something
+    /// to do (a client wrote), and does it. The virtual clock does not move: the caller
+    /// advances it.
+    pub fn wait(&mut self, timeout: Duration) {
+        self.event_loop
+            .dispatch(Some(timeout), &mut self.state)
+            .expect("the event loop dispatches");
+    }
+
+    /// The toplevel that surface object `object` of `client` is the root of, if it is one.
+    pub fn toplevel_of(&self, client: ClientId, object: u32) -> Option<WindowId> {
+        let held = self.servers.get(&client)?;
+        let surface: WlSurface = held
+            .object_from_protocol_id(&self.state.display, object)
+            .ok()?;
+        self.state
+            .wl
+            .xdg_shell
+            .toplevels
+            .iter()
+            .find(|(_, toplevel)| toplevel.wl_surface().id() == surface.id())
+            .map(|(window, _)| *window)
+    }
+
+    /// Puts `window`'s top-left corner at `at`, keeping its size, as if the person had
+    /// dragged it there (`Event::WindowDragged`); then pumps. A window the layout does not
+    /// hold is left alone.
+    pub fn place_window(&mut self, window: WindowId, at: LogicalPoint) {
+        let held = self
+            .state
+            .core
+            .arrangement
+            .windows
+            .iter()
+            .find(|target| target.window == window)
+            .map(|target| target.rect.size);
+        if let Some(size) = held {
+            let rect = LogicalRect::new(at, size);
+            core_loop::feed(&mut self.state, vec![Event::WindowDragged { window, rect }]);
+        }
+        self.pump();
+    }
+
+    /// Activates `window` as a person would with a valid token (it is keyed, shown and
+    /// configured activated); then pumps.
+    pub fn activate_window(&mut self, window: WindowId) {
+        let request = Event::ToplevelRequest {
+            window,
+            request: ToplevelRequest::Activate(TokenCheck::Valid),
+        };
+        core_loop::feed(&mut self.state, vec![request]);
+        self.pump();
+    }
+
+    /// Hands the pointer to whatever is under it now (a window that glided to its place under
+    /// a still pointer has moved what is there); then pumps.
+    pub fn refocus_pointer(&mut self) {
+        core_loop::refocus_pointer(&mut self.state);
+        self.pump();
+    }
+}

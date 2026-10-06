@@ -4,7 +4,8 @@
 //! pixel) all the way here, because wlcs' tests use fractions a 1/120 sub-pixel would round; the
 //! implementation of the seam converts at its own edge.
 
-use std::os::unix::net::UnixStream;
+use std::os::fd::OwnedFd;
+use std::sync::mpsc::Sender;
 
 /// A `wl_fixed_t`: signed 24.8 fixed point.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -42,7 +43,8 @@ pub struct Position {
     pub y: i32,
 }
 
-/// A wlcs client's connection, named by the fd number wlcs knows it by.
+/// A wlcs client's connection, named by the fd number wlcs knows it by (the number of the
+/// client end of its socket pair, which `wl_display_get_fd` reports back).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct WlcsClient(pub i32);
 
@@ -72,12 +74,11 @@ pub enum Edge {
 pub enum WlcsEvent {
     /// Stop the compositor.
     Exit,
-    /// A new client on the server end of this socket pair.
+    /// A new client: the compositor adopts the server end of a fresh socket pair and sends the
+    /// client end, and the name wlcs will know it by, back.
     NewClient {
-        /// The server end.
-        stream: UnixStream,
-        /// How wlcs names the client.
-        client: WlcsClient,
+        /// Where the client end goes.
+        reply: Sender<(WlcsClient, OwnedFd)>,
     },
     /// Place a client's toplevel at a global point.
     PositionWindow {
@@ -129,9 +130,9 @@ pub enum Flow {
     Stop,
 }
 
-/// The seam between wlcs and a compositor: one call per [`WlcsEvent`]. Today the implementation
-/// is the smithay stand-in in `stand_in`; casement's `Fixture` implements it once it can adopt a
-/// raw client socket (an interface ask in the lane report).
+/// The seam between wlcs and a compositor: one call per [`WlcsEvent`]. The implementation is
+/// [`host::Host`](crate::host::Host), casement's own `Fixture` (the real `State` on the headless
+/// backend).
 pub trait Compositor {
     /// Applies one request.
     fn apply(&mut self, event: WlcsEvent) -> Flow;

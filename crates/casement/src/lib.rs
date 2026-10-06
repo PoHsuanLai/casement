@@ -20,6 +20,8 @@ mod handlers;
 #[cfg(any(feature = "testing", feature = "debug-inject"))]
 pub mod jail_check;
 pub mod log;
+#[cfg(feature = "testing")]
+pub mod relax;
 mod state;
 pub mod time;
 

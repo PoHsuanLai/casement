@@ -34,6 +34,9 @@ impl CompositorHandler for State {
     /// surface's first configure; and watches for commit timers (smithay holds timed commits
     /// back before `commit` runs, so the barrier is seen in a pre-commit hook).
     fn new_surface(&mut self, surface: &WlSurface) {
+        // Added first, so it runs before smithay's role hooks (A37; off unless a process asks).
+        #[cfg(feature = "testing")]
+        crate::relax::install(surface);
         add_pre_commit_hook::<State, _>(surface, |state, _display, surface| {
             let events = commit_timing::on_barrier(&mut state.wl.commit_timing, surface);
             feed(state, events);
@@ -85,7 +88,21 @@ impl State {
                 };
                 match ClientState::of(&client) {
                     Some(state) => {
-                        xdg_shell::on_toplevel_commit(&mut self.wl.xdg_shell, surface, state)
+                        let mut events =
+                            xdg_shell::on_toplevel_commit(&mut self.wl.xdg_shell, surface, state);
+                        // A37: a buffer attached before the first ack (see `relax`) is the
+                        // commit that sends the initial configure; under the lenient policy
+                        // it maps the window too, as it does for the compositors wlcs was
+                        // written against. Idempotent for every other commit.
+                        #[cfg(feature = "testing")]
+                        if crate::relax::policy() == crate::relax::AckPolicy::Lenient {
+                            events.extend(xdg_shell::on_toplevel_commit(
+                                &mut self.wl.xdg_shell,
+                                surface,
+                                state,
+                            ));
+                        }
+                        events
                     }
                     None => Vec::new(),
                 }

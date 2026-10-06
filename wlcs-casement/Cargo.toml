@@ -4,7 +4,7 @@
 # P0-T-wlcs), outside the jail; run inside it.
 [package]
 name = "wlcs-casement"
-description = "wlcs integration shim: wlcs_server_integration over a smithay stand-in compositor (DummyRenderer), behind the Compositor seam casement's fixture will implement."
+description = "wlcs integration shim: wlcs_server_integration over casement's own test-kit Fixture (the real State on the headless backend), behind the Compositor seam."
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
@@ -16,18 +16,15 @@ publish = false
 [lib]
 crate-type = ["cdylib"]
 
-[features]
-# A37: the wlcs-only relaxation of "ack the initial configure before attaching a buffer"
-# (smithay refuses it; wlcs' helpers attach first). It lives in `src/stand_in/relax.rs`; the same
-# hook goes into casement's compositor handler behind casement's own `testing` feature.
-default = ["testing"]
-testing = []
-
 [dependencies]
 wlcs = "0.1"
 # The libwayland-client handles wlcs passes (ffi.rs only); the version the wlcs crate uses.
 wayland-sys = { version = "0.31.1", features = ["client", "server"] }
-smithay = { git = "https://github.com/PoHsuanLai/smithay", rev = "576cfd954b6bd5badbd5f15d1708cafc941a0522", default-features = false, features = ["wayland_frontend", "desktop", "renderer_test"] }
+# casement itself, by path: the shim drives the test kit's Fixture (headless backend, virtual
+# clock). `testing` carries A37, the ack-before-attach relaxation, off until `Host::start` asks.
+casement = { path = "../crates/casement", features = ["testing"] }
+casement-core = { path = "../crates/casement-core" }
+casement-testkit = { path = "../crates/casement-testkit" }
 
 [lints.rust]
 missing_docs = "warn"

@@ -6,6 +6,7 @@
 //! functions take the seat (a cheap handle) and the state instead of the part.
 
 mod edge;
+mod focus_origin;
 mod grab;
 mod pointer;
 mod taken;

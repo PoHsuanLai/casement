@@ -21,8 +21,9 @@ case "$tier" in
   *) echo "usage: dev/wlcs/run.sh --merge|--phase" >&2; exit 64 ;;
 esac
 
-wlcs="$root/dev/out/tools/wlcs/wlcs"
-shim="$root/dev/out/tools/libwlcs_casement.so"
+tools="${CASEMENT_TOOLS:-$root/dev/out/tools}"
+wlcs="$tools/wlcs/wlcs"
+shim="$tools/libwlcs_casement.so"
 for f in "$wlcs" "$shim"; do
   [ -x "$f" ] || [ -f "$f" ] || { echo "run.sh: $f is missing" >&2; echo "fix: run dev/wlcs/build.sh outside the jail" >&2; exit 3; }
 done

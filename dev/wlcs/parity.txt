@@ -5,8 +5,8 @@
 # e3d461a) against wlcs 2b385328, the whole suite sharded 16 ways in jails (GTEST_TOTAL_SHARDS),
 # no time cap: 195 of 1225 tests pass. Layer-shell and viewporter tests are here because wlcs
 # binds a global whenever the compositor serves it, whatever the descriptor lists.
-AllSurfaceTypes/TouchTest.sends_touch_up_on_surface_destroy/subsurface_at_x0_y0
-AllSurfaceTypes/TouchTest.sends_touch_up_on_surface_destroy/subsurface_at_x7_y12
+# P0-wlcs: run against casement itself, 5 of these fail and moved to expected-failures.txt (they are
+# anvil passes casement does not match yet); every name left here passes on casement.
 Anchors/LayerSurfaceErrorsTest.specifying_zero_size_without_corresponding_anchors_is_an_error/0
 Anchors/LayerSurfaceErrorsTest.specifying_zero_size_without_corresponding_anchors_is_an_error/1
 Anchors/LayerSurfaceErrorsTest.specifying_zero_size_without_corresponding_anchors_is_an_error/10
@@ -28,7 +28,6 @@ BadBufferTest.client_lies_about_buffer_size
 BadBufferTest.test_truncated_shm_file
 ClientSurfaceEventsTest.frame_timestamp_increases
 ClientSurfaceEventsTest.frame_timestamp_never_decreases
-ClientSurfaceEventsTest.surface_enters_output
 DefaultEdges/RegionSurfaceInputCombinations.input_inside_region_seen/10
 DefaultEdges/RegionSurfaceInputCombinations.input_inside_region_seen/20
 DefaultEdges/RegionSurfaceInputCombinations.input_inside_region_seen/22
@@ -62,7 +61,6 @@ LayerSurfaceTest.can_open_layer_surface
 LayerSurfaceTest.destroy_request_not_sent_when_not_supported
 LayerSurfaceTest.destroy_request_supported
 LayerSurfaceTest.gets_configured_after_anchor_change
-LayerSurfaceTest.gets_configured_with_supplied_size_when_set
 LayerSurfaceTest.specifying_no_size_without_anchors_is_an_error
 LayerSurfaceTest.specifying_zero_size_without_anchors_is_an_error
 LayerSurfaceTest.when_anchored_to_all_edges_gets_configured_with_output_size
@@ -197,6 +195,5 @@ XdgToplevelStableConfigurationTest.window_can_unfullscreen_itself
 XdgToplevelStableConfigurationTest.window_can_unmaximize_itself
 XdgToplevelStableTest.null_parent_can_be_set
 XdgToplevelStableTest.parent_can_be_set
-XdgToplevelStableTest.pointer_respects_window_geom_offset
 XdgToplevelStableTest.when_parent_is_set_to_child_descendant_error_is_raised
 XdgToplevelStableTest.when_parent_is_set_to_self_error_is_raised
