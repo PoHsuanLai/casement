@@ -172,3 +172,35 @@ fn a_resize_respects_the_size_limits() {
     );
     desk.button(BTN_LEFT, Edge::Release);
 }
+
+/// A resize tells the client the size it is dragged to (a configure per step), so it can draw
+/// that size: found by dev/accept/map-resize.sh, where the frame grew and the client never knew.
+#[test]
+fn a_resize_configures_the_client_to_the_dragged_size() {
+    let mut desk = desk(None);
+    let start = desk.rect();
+    let (right, bottom) = (
+        start.origin.x + i32::try_from(start.size.w).unwrap_or(0),
+        start.origin.y + i32::try_from(start.size.h).unwrap_or(0),
+    );
+    desk.pointer_to(LogicalPoint {
+        x: right - 2,
+        y: bottom - 2,
+    });
+    desk.top
+        .request_resize(&desk.seat.seat, desk.serial, ResizeEdge::BottomRight);
+    desk.fixture.pump();
+    desk.button(BTN_LEFT, Edge::Press);
+    desk.pointer_to(LogicalPoint {
+        x: right + 98,
+        y: bottom + 78,
+    });
+    desk.fixture.pump();
+    let last = desk.top.configures().last().cloned().expect("a configure");
+    assert_eq!(
+        last.size,
+        (500, 380),
+        "the client was configured to the dragged size"
+    );
+    desk.button(BTN_LEFT, Edge::Release);
+}

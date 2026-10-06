@@ -13,6 +13,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 sha=2b385328366de5db19521b9b3eef81861430d984
+# $CASEMENT_TOOLS moves the tools directory (dev/bootstrap.sh passes it); else dev/out/tools.
 tools="${CASEMENT_TOOLS:-$PWD/dev/out/tools}"
 dir="$tools/wlcs"
 mkdir -p "$tools"

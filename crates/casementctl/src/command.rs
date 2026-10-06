@@ -185,9 +185,17 @@ fn exit_code(command: Command) -> u8 {
                 64
             }
         },
-        Command::Shot { .. } => not_built(
-            "shot needs casement's ext-image-copy-capture (P1-C1), which is not built yet",
-        ),
+        Command::Shot {
+            target,
+            masked,
+            out,
+        } => {
+            let cwd = std::env::current_dir().unwrap_or_default();
+            match shot::call(&target, masked, &out, &cwd) {
+                Ok(call) => debug::run_call(call),
+                Err(why) => not_built(why),
+            }
+        }
         Command::Report => not_built("report is the user's hardware report, built in P5"),
     }
 }
@@ -315,9 +323,12 @@ mod tests {
     }
 
     #[test]
-    fn shot_and_report_are_not_built_at_p0() {
-        let shot = parse(&args("shot out.png")).expect("shot");
-        assert_eq!(exit_code(shot), COULD_NOT_RUN);
+    fn window_and_masked_shots_and_report_are_not_built_at_p0() {
+        // An output or region shot goes through Debug1 (`shot.rs`); these need P1-C1's capture.
+        for line in ["shot --window 3 out.png", "shot --masked out.png"] {
+            let shot = parse(&args(line)).expect("shot");
+            assert_eq!(exit_code(shot), COULD_NOT_RUN, "{line}");
+        }
         assert_eq!(exit_code(Command::Report), COULD_NOT_RUN);
     }
 }

@@ -6,6 +6,7 @@
 mod error;
 mod handles;
 mod inject;
+mod shot;
 mod wait;
 
 pub mod dbus;
@@ -13,4 +14,5 @@ pub mod dbus;
 pub use error::IpcError;
 pub use handles::IpcHandles;
 pub use inject::{DeviceVerb, InjectLine, InjectOrigin, parse_inject};
+pub use shot::{ShotArea, parse_shot};
 pub use wait::{WaitPredicate, parse_wait};

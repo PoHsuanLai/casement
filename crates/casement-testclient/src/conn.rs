@@ -247,6 +247,12 @@ impl TestClient {
         self.tap.relay()
     }
 
+    /// The descriptor that becomes readable when the compositor sends something, for a binary
+    /// that polls it together with other inputs (the probe's session reads stdin too).
+    pub fn wait_fd(&self) -> std::os::fd::BorrowedFd<'_> {
+        std::os::fd::AsFd::as_fd(self.tap.server())
+    }
+
     /// Stamps the fixture's virtual `now` onto events relayed from here on.
     pub fn set_now(&mut self, now: Mono) {
         self.tap.now = now;

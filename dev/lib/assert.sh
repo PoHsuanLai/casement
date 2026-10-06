@@ -33,3 +33,35 @@ assert_summary() {
   if [ "$ASSERT_SKIPPED" -gt 0 ]; then exit 2; fi
   exit 0
 }
+
+# assert_ok NAME COMMAND [ARG...]: runs the command; `PASS NAME` when it succeeds, else `FAIL NAME`
+# (with the command's own output indented under it). Returns 0 either way, like assert_eq.
+assert_ok() {
+  [ $# -ge 2 ] || { echo "usage: assert_ok NAME COMMAND [ARG...]" >&2; return 64; }
+  local name=$1 out
+  shift
+  if out=$("$@" 2>&1); then
+    ASSERT_PASSED=$((ASSERT_PASSED + 1))
+    echo "PASS $name"
+  else
+    ASSERT_FAILED=$((ASSERT_FAILED + 1))
+    echo "FAIL $name"
+    [ -z "$out" ] || printf '%s\n' "$out" | sed 's/^/    /'
+  fi
+  return 0
+}
+
+# assert_not NAME COMMAND [ARG...]: the opposite: passes when the command fails.
+assert_not() {
+  [ $# -ge 2 ] || { echo "usage: assert_not NAME COMMAND [ARG...]" >&2; return 64; }
+  local name=$1
+  shift
+  if "$@" >/dev/null 2>&1; then
+    ASSERT_FAILED=$((ASSERT_FAILED + 1))
+    echo "FAIL $name (the command succeeded: $*)"
+  else
+    ASSERT_PASSED=$((ASSERT_PASSED + 1))
+    echo "PASS $name"
+  fi
+  return 0
+}

@@ -29,6 +29,13 @@ pub enum Call {
     Scene,
     /// `Fault(verb, amount)`.
     Fault(FaultVerb, u32),
+    /// `Shot(area, path)`: casement's PNG of its last frame.
+    Shot {
+        /// Debug1's area text (`output`, `output:NAME`, `region:X,Y,W,H`).
+        area: String,
+        /// The absolute path casement writes to.
+        path: String,
+    },
 }
 
 /// How the stepped clock moves.

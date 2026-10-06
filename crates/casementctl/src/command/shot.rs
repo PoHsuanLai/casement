@@ -1,7 +1,8 @@
 //! `shot [--output NAME | --window ID | --region X,Y,W,H] [--masked] OUT.png`.
 
+use super::plan::Call;
 use super::{CommandError, Masked, ShotTarget};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn bad(message: impl Into<String>) -> CommandError {
     CommandError::BadArgument(message.into())
@@ -42,6 +43,30 @@ pub fn parse_shot(args: &[String]) -> Result<(ShotTarget, Masked, PathBuf), Comm
     Ok((target.unwrap_or(ShotTarget::Default), masked, out))
 }
 
+/// Why a shot cannot be taken yet (exit 2: could not run), or the Debug1 call that takes it.
+/// While ext-image-copy-capture (P1-C1) is not built, casement's debug object writes the PNG of
+/// an output's last frame, or of a region of it, from inside the compositor.
+pub fn call(
+    target: &ShotTarget,
+    masked: Masked,
+    out: &Path,
+    cwd: &Path,
+) -> Result<Call, &'static str> {
+    let area = match (masked, target) {
+        (Masked::Yes, _) => return Err("shot --masked needs the capture protocols (P1-C1)"),
+        (Masked::No, ShotTarget::Window(_)) => {
+            return Err("shot --window needs the capture protocols (P1-C1)");
+        }
+        (Masked::No, ShotTarget::Default) => "output".to_owned(),
+        (Masked::No, ShotTarget::Output(name)) => format!("output:{name}"),
+        (Masked::No, ShotTarget::Region { x, y, w, h }) => format!("region:{x},{y},{w},{h}"),
+    };
+    Ok(Call::Shot {
+        area,
+        path: cwd.join(out).to_string_lossy().into_owned(),
+    })
+}
+
 fn window_id(text: &str) -> Result<u64, CommandError> {
     text.parse()
         .map_err(|_| bad(format!("--window: not a window id: {text}")))
@@ -63,6 +88,48 @@ fn region(text: &str) -> Result<ShotTarget, CommandError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_shot_becomes_a_debug_call_with_an_absolute_path() {
+        let cwd = Path::new("/run/work");
+        let planned = |target, masked, out: &str| call(&target, masked, Path::new(out), cwd);
+        assert_eq!(
+            planned(ShotTarget::Default, Masked::No, "a.png"),
+            Ok(Call::Shot {
+                area: "output".to_owned(),
+                path: "/run/work/a.png".to_owned()
+            })
+        );
+        assert_eq!(
+            planned(
+                ShotTarget::Output("HEADLESS-2".into()),
+                Masked::No,
+                "/x/b.png"
+            ),
+            Ok(Call::Shot {
+                area: "output:HEADLESS-2".to_owned(),
+                path: "/x/b.png".to_owned()
+            })
+        );
+        assert_eq!(
+            planned(
+                ShotTarget::Region {
+                    x: -1,
+                    y: 2,
+                    w: 3,
+                    h: 4
+                },
+                Masked::No,
+                "c.png"
+            ),
+            Ok(Call::Shot {
+                area: "region:-1,2,3,4".to_owned(),
+                path: "/run/work/c.png".to_owned()
+            })
+        );
+        assert!(planned(ShotTarget::Window(7), Masked::No, "d.png").is_err());
+        assert!(planned(ShotTarget::Default, Masked::Yes, "e.png").is_err());
+    }
 
     fn shot(text: &str) -> Result<(ShotTarget, Masked, PathBuf), CommandError> {
         parse_shot(

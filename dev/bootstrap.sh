@@ -10,13 +10,14 @@
 #   bin/xwayland-satellite
 #                cargo install --git https://github.com/Supreeeme/xwayland-satellite at the pinned
 #                rev (it is not on crates.io, SP6). Run with `-glamor none` (A10: `off` panics it)
-#   wlcs/        wlcs and its shim, through dev/wlcs/build.sh (the P0-T-wlcs lane's script)
+#   wlcs/        wlcs and its shim, through dev/wlcs/build.sh (the P0-T-wlcs lane's script), into
+                $CASEMENT_TOOLS too: wlcs/wlcs and libwlcs_casement.so
 #   bin/cargo-fuzz   only with --fuzz
 #
-#   dev/bootstrap.sh [--build-only | --tools-only] [--release] [--fuzz] [--force]
+#   dev/bootstrap.sh [--build-only | --tools-only | --foot-only] [--release] [--fuzz] [--force]
 #
 # --build-only builds just the four casement binaries (what dev/accept.sh --build runs);
-# --tools-only the rest. Anything already present is kept unless --force. $CASEMENT_TOOLS moves
+# --tools-only the rest; --foot-only just foot (no cargo, no network beyond dnf). Anything already present is kept unless --force. $CASEMENT_TOOLS moves
 # the tools directory. Refuses inside the jail (exit 2). Exit 3: a host tool is missing.
 #
 # Owner: P0-T-dev.
@@ -30,11 +31,12 @@ source "$root/dev/lib/jail.sh"
 SATELLITE_REPO=https://github.com/Supreeeme/xwayland-satellite
 SATELLITE_REV=b5690b56d749526a05db9b9268d58bf8f700957f
 
-want_build=yes want_tools=yes profile=debug fuzz=no force=no
+want_build=yes want_tools=yes want_satellite=yes profile=debug fuzz=no force=no
 while [ $# -gt 0 ]; do
   case "$1" in
     --build-only) want_tools=no; shift ;;
     --tools-only) want_build=no; shift ;;
+    --foot-only) want_build=no; want_satellite=no; shift ;;
     --release) profile=release; shift ;;
     --fuzz) fuzz=yes; shift ;;
     --force) force=yes; shift ;;
@@ -108,7 +110,7 @@ build_wlcs() {
   if [ ! -x "$root/dev/wlcs/build.sh" ]; then echo "bootstrap: dev/wlcs/build.sh is missing: wlcs skipped" >&2; return 0; fi
   # The wlcs lane's own script; a frozen stub exits 2, which is a warning here, not a failure.
   local rc=0
-  "$root/dev/wlcs/build.sh" || rc=$?
+  CASEMENT_TOOLS="$tools" "$root/dev/wlcs/build.sh" || rc=$?
   [ "$rc" = 0 ] || echo "bootstrap: dev/wlcs/build.sh exited $rc: wlcs is not built" >&2
 }
 
@@ -120,8 +122,10 @@ install_fuzz() {
 if [ "$want_build" = yes ]; then build_casement; fi
 if [ "$want_tools" = yes ]; then
   fetch_foot
-  install_satellite
-  build_wlcs
-  if [ "$fuzz" = yes ]; then install_fuzz; fi
+  if [ "$want_satellite" = yes ]; then
+    install_satellite
+    build_wlcs
+    if [ "$fuzz" = yes ]; then install_fuzz; fi
+  fi
 fi
 echo "bootstrap: done ($tools)"

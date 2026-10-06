@@ -5,8 +5,16 @@
 //!
 //! Exit codes: 0 passed, 1 the probe failed, 2 refused or unavailable, 64 usage.
 
+#[path = "probe/clip.rs"]
+mod clip;
+#[path = "probe/command.rs"]
+mod command;
+#[path = "probe/session.rs"]
+mod session;
 #[path = "probe/shell.rs"]
 mod shell;
+#[path = "probe/surfaces.rs"]
+mod surfaces;
 
 use casement_testclient::TestClient;
 use serde_json::json;
@@ -25,6 +33,7 @@ fn main() -> ExitCode {
         Some("transcript") => transcript(),
         Some("toplevel") => shell::toplevel(&rest),
         Some("layer") => shell::layer(&rest),
+        Some("session") => session::run(),
         Some("capture") => Err(Failure::Unavailable("capture arrives with P1")),
         Some("lease") => Err(Failure::Unavailable("lease arrives with P5")),
         _ => Err(Failure::Usage),
@@ -41,7 +50,7 @@ fn main() -> ExitCode {
         }
         Err(Failure::Usage) => {
             eprintln!(
-                "usage: casement-probe globals | transcript | toplevel [--title T] [--app-id A] [--size WxH] [--hold] [--maximised] | layer [--layer L] [--namespace N] [--size WxH] [--hold] | capture | lease"
+                "usage: casement-probe globals | transcript | session | toplevel [--title T] [--app-id A] [--size WxH] [--hold] [--maximised] | layer [--layer L] [--namespace N] [--size WxH] [--hold] | capture | lease"
             );
             ExitCode::from(64)
         }

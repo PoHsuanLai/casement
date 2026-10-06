@@ -6,6 +6,8 @@
 
 mod dump;
 mod inject;
+mod png;
+mod shot;
 
 use casement::State;
 use casement::time::ClockSource;
@@ -125,6 +127,7 @@ impl Debug {
             DebugRequest::Output(verb, args) => answer(dump::output(state, &verb, &args)),
             DebugRequest::Windows => answer(DebugReply::Json(dump::windows(state))),
             DebugRequest::Scene => answer(DebugReply::Json(dump::scene(state))),
+            DebugRequest::Shot(area, path) => answer(shot::shot(state, &area, &path)),
             DebugRequest::Fault(verb, amount) => match verb.as_str() {
                 "drop-output" => answer(dump::drop_output(state, amount)),
                 "panic-after-frames" => {
@@ -207,7 +210,12 @@ impl Debug {
             answer(DebugReply::Waited(outcome.to_owned(), dump::scene(state)));
             return None;
         }
-        if matches!(predicate, WaitPredicate::Frames { .. }) && virtual_clock(state).is_ok() {
+        // Virtual time only moves when asked: a wait on frames or on motion settling walks it.
+        let walks = matches!(
+            predicate,
+            WaitPredicate::Frames { .. } | WaitPredicate::Settled
+        );
+        if walks && virtual_clock(state).is_ok() {
             walk_to_next_stop(state);
         }
         Some(Job::Wait {

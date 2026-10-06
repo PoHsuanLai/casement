@@ -72,7 +72,7 @@ pub(super) fn met(state: &State, predicate: &WaitPredicate, frames_goal: u64) ->
 }
 
 /// The outputs, in the order the model keeps them (the order `drop-output` counts in).
-fn outputs(state: &State) -> Vec<(OutputKey, OutputName, OutputConfig)> {
+pub(super) fn outputs(state: &State) -> Vec<(OutputKey, OutputName, OutputConfig)> {
     state
         .core
         .model

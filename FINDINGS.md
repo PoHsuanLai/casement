@@ -105,7 +105,7 @@ P3-CSS, three in `src/` and its ignored parity test, never built at P0-Z2).
 | `crates/casement-ipc/src/wait.rs` | parse_wait (1) | P0-T-dev | `crates/casement-ipc/src/inject.rs`, `wait.rs` tests; `crates/casementctl/src/command.rs` test; `dev/accept.sh --jobs 8` |
 | `crates/casementctl/src/command.rs` | parse, run (2) | P0-T-dev | `crates/casement-ipc/src/inject.rs`, `wait.rs` tests; `crates/casementctl/src/command.rs` test; `dev/accept.sh --jobs 8` |
 | `crates/casement-testkit/src/fixture.rs` | Fixture::session (1) | P1-D1 | P1-Z's session suite |
-| `crates/casement-testkit/src/bin/fake_logind.rs` | main (1) | P1-F2 | P1-Z's logind tests |
+| `crates/casement-testkit/src/bin/fake_logind.rs` | main: no longer a `todo!()` (P0-accept): it prints "P1-F2: not built" and exits 0, so the headless session starts without it | P1-F2 | P1-Z's logind tests |
 | `crates/casement-testkit/src/fakes/logind.rs` | FakeLogind::serve (1) | P1-F2 | P1-Z's logind tests |
 | `crates/casement-agent/src/socket.rs` | hand_out, role_for (2) | P2-Q2 | `crates/casement-agent/src/socket.rs` `only_the_shell_and_the_agent_tier_get_privileged_roles` |
 | `crates/casement-testkit/src/fixture.rs` | Fixture::palmrest (1) | P3-Z | P3-Z's palmrest tests |
@@ -434,3 +434,17 @@ two commits, one per patch, each local to its bug; patches live only there and n
 The root and `wlcs-casement` pins (and both `Cargo.lock`s) name the fork's tip `576cfd954b6bd5badbd5f15d1708cafc941a0522`. The
 `[profile.dev.package.smithay] debug-assertions = false` override is removed: smithay's debug assertions are on in
 every dev build and the fuzz box (24 cases) passes with them.
+
+### P0-accept: the seven acceptance scripts
+
+`dev/accept/*.sh` are all real (map-resize, scale-crisp, popup-grab, lock-blocks-input, ime-commit,
+drag-selection, exclusive-layer-focus; globals was already). Their client is `casement-probe session`,
+a test client driven from stdin (`probe/command.rs`); frames come from `casementctl shot`, which
+until P1-C1 asks Debug1 (`Shot`) for the PNG of the last presented frame. Found by them and fixed:
+an interactive resize changed the frame but never configured the client (floating layout asks
+nothing when the rect is its own size): `core_loop::configure_size`, test
+`a_resize_configures_the_client_to_the_dragged_size`; `debug wait settled` did not step the stepped
+clock. Open: `scale-crisp` uses casement's own test client, not a quire or shell-host window (those
+are the consumer scripts'); after a drop casement sends `wl_data_device.leave` at once (the offer
+must be kept from `drop`); pointer motion while a dead locker's cover stands did not move the
+cursor (not asserted).

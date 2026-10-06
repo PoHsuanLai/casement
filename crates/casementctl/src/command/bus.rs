@@ -82,6 +82,7 @@ async fn send(proxy: &Proxy<'_>, call: Call) -> Result<Answer, BusError> {
         Call::Output(verb, args) => Answer::Text(proxy.call("Output", &(verb, args)).await?),
         Call::Windows => Answer::Text(proxy.call("Windows", &()).await?),
         Call::Scene => Answer::Text(proxy.call("Scene", &()).await?),
+        Call::Shot { area, path } => Answer::Text(proxy.call("Shot", &(area, path)).await?),
         Call::Fault(verb, amount) => {
             proxy
                 .call::<_, _, ()>("Fault", &(verb.word(), amount))

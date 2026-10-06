@@ -32,9 +32,10 @@ fi
 
 case "$tier" in
   merge|phase)
+    tools="${CASEMENT_TOOLS:-dev/out/tools}"
     for tool in foot xwayland-satellite wlcs; do
-      [ -e "dev/out/tools/$tool" ] || [ -e "dev/out/tools/bin/$tool" ] \
-        || need "bootstrap artefact dev/out/tools/$tool is missing" "run dev/bootstrap.sh (outside the jail)"
+      [ -e "$tools/$tool" ] || [ -e "$tools/bin/$tool" ] \
+        || need "bootstrap artefact $tools/$tool is missing" "run dev/bootstrap.sh (outside the jail)"
     done ;;
 esac
 echo "preflight ok"

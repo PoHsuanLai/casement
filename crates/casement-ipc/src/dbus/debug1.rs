@@ -3,6 +3,7 @@
 //! scene dumps and fault injection for `casementctl debug`.
 
 use crate::inject::{InjectLine, parse_inject};
+use crate::shot::{ShotArea, parse_shot};
 use crate::wait::{WaitPredicate, parse_wait};
 use casement_backend::VirtualOutputSpec;
 use casement_core::OutputName;
@@ -96,6 +97,8 @@ pub enum DebugRequest {
     Scene,
     /// `Fault(verb, amount)`: `panic-after-frames`, `stall-client-ms`, `drop-output`.
     Fault(String, u32),
+    /// `Shot(area, path)`: write the last presented frame (or a region of it) as a PNG.
+    Shot(ShotArea, String),
 }
 
 /// What the event loop answered.
@@ -181,6 +184,15 @@ impl Debug1 {
     /// `Scene() -> s`: the element tree as JSON.
     async fn scene(&self) -> fdo::Result<String> {
         self.ask_json(DebugRequest::Scene).await
+    }
+
+    /// `Shot(area: s, path: s) -> s`: writes the last frame an output presented (the whole
+    /// output, or a logical region of it) as a PNG at `path` (inside the jail, which the compositor
+    /// and the caller share) and answers its size as JSON (`{"width":W,"height":H,"scale":S120}`).
+    /// A stand-in for ext-image-copy-capture until P1-C1.
+    async fn shot(&self, area: String, path: String) -> fdo::Result<String> {
+        let parsed = parse_shot(&area).map_err(|error| invalid("shot area", &error.to_string()))?;
+        self.ask_json(DebugRequest::Shot(parsed, path)).await
     }
 
     /// `Fault(verb: s, amount: u)`: `panic-after-frames N`, `stall-client-ms MS`, and

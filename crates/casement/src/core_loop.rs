@@ -269,7 +269,7 @@ pub(crate) fn relayout(state: &mut State, cause: &Cause) {
         now,
     );
     for target in &next.windows {
-        if let ConfigureNeed::Resize(size) = target.size {
+        if let Some(size) = configure_size(state, target, cause) {
             let model = &state.core.model;
             let Some(states) = model.states_of(target.window) else {
                 continue;
@@ -297,6 +297,26 @@ pub(crate) fn relayout(state: &mut State, cause: &Cause) {
         }
     }
     state.core.arrangement = next;
+}
+
+/// The size to configure `target` to: what layout asks, and for a drag also the size the person
+/// dragged the frame to when the client's committed buffer is not that yet (a floating window's
+/// frame is its own size, so layout sees nothing to ask).
+fn configure_size(
+    state: &State,
+    target: &casement_layout::WindowTarget,
+    cause: &Cause,
+) -> Option<casement_core::geometry::LogicalSize> {
+    match (target.size, cause) {
+        (ConfigureNeed::Resize(size), _) => Some(size),
+        (ConfigureNeed::Keep, Cause::Drag) => state
+            .render
+            .textures
+            .window(&target.window)
+            .filter(|entry| entry.committed != target.rect.size)
+            .map(|_| target.rect.size),
+        (ConfigureNeed::Keep, _) => None,
+    }
 }
 
 /// The frame the scene is at now (what a golden of motion reads).
