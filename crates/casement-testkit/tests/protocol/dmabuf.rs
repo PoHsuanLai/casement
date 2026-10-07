@@ -76,13 +76,15 @@ fn imported_buffers_are_tagged_with_their_node() {
     // `DrmNode::from_dev_id` types a device by reading /sys/dev/char/<major>:<minor>/device/drm,
     // which only exists in a jail run with `--fabricate-gpus` (dev/gate.sh does; a bare jail
     // does not). Without it nothing can say what the main device is, and the buffer is left
-    // untagged: smithay then skips its cross-GPU copy rather than guessing.
+    // untagged: smithay then skips its cross-GPU copy rather than guessing. On a host with a
+    // real GPU the same read succeeds and the buffer carries the real render node; what must
+    // never happen is an untyped or non-render node.
     match fabricated_gpus() {
-        0 => assert_eq!(
-            imported.node(),
-            None,
-            "no fabricated node: the main device cannot be typed, so the buffer stays untagged"
-        ),
+        0 => {
+            if let Some(node) = imported.node() {
+                assert_eq!(node.ty(), NodeType::Render, "a real node is a render node");
+            }
+        }
         _ => {
             let node = imported.node().expect("the import is tagged with a node");
             assert_eq!(node.ty(), NodeType::Render, "the main device's render node");

@@ -122,19 +122,36 @@ fn largest_shift(book: &MotionBook, t: Mono, by_us: u64) -> i32 {
         .unwrap_or(0)
 }
 
-/// The libm risk of the goldens (A25): a microsecond's shift in the clock moves a value by at
-/// most one sub-pixel, so a one-ulp difference in `exp` cannot move a golden more than that.
+/// The fastest any value may move, in sub-pixels per microsecond (about 10 000 px/s of a
+/// window edge). The Move spring's peak speed on this scene is 1.12; a jump would be orders
+/// of magnitude above, and it would not scale with the interval.
+const SPEED_CEILING: f64 = 1.25;
+
+/// The libm risk of the goldens (A25): the motion is continuous, so a shift of the clock moves
+/// a value by at most `SPEED_CEILING` sub-pixels per microsecond, rounded up once for the
+/// quantising. A one-ulp difference in `exp` is a shift of far less than a microsecond, so it
+/// cannot move a golden by more than that either. The bound is on speed, not on a fixed step,
+/// so it holds as the spring responses are retuned and still fails on a jump.
 #[test]
-fn a_microsecond_moves_no_value_by_more_than_one_sub_pixel() {
+fn a_microsecond_moves_no_value_by_more_than_the_speed_ceiling() {
     let book = entry(MotionLevel::Standard);
-    let at_instants = INSTANTS_MS
-        .iter()
-        .map(|ms| largest_shift(&book, at(*ms), 1))
-        .max();
-    let sweep = (0..800_000u64)
-        .step_by(997)
-        .map(|us| largest_shift(&book, at_us(us), 1))
-        .max();
-    assert!(at_instants <= Some(1), "golden instants: {at_instants:?}");
-    assert!(sweep <= Some(1), "sweep over 0 to 800 ms: {sweep:?}");
+    let bound = |by_us: u64| Some((by_us as f64 * SPEED_CEILING).ceil() as i32);
+    for by_us in [1, 10, 100] {
+        let at_instants = INSTANTS_MS
+            .iter()
+            .map(|ms| largest_shift(&book, at(*ms), by_us))
+            .max();
+        let sweep = (0..800_000u64)
+            .step_by(997)
+            .map(|us| largest_shift(&book, at_us(us), by_us))
+            .max();
+        assert!(
+            at_instants <= bound(by_us),
+            "{by_us} us, golden instants: {at_instants:?}"
+        );
+        assert!(
+            sweep <= bound(by_us),
+            "{by_us} us, sweep over 0 to 800 ms: {sweep:?}"
+        );
+    }
 }

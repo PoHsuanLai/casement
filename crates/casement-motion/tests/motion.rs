@@ -101,11 +101,14 @@ fn a_retarget_keeps_position_and_velocity() {
         x_at(&second, 1, t1),
         "position is continuous"
     );
-    let step = Duration::from_micros(250);
+    // Velocity is read over a step short enough that the spring's acceleration, which the
+    // retarget does change (the target moved), adds less than the 1% tolerance: the error is
+    // half the acceleration step times the step, so it shrinks with the step.
+    let step = Duration::from_micros(25);
     let before = x_at(&first, 1, t1.after(step)) - x_at(&first, 1, t1);
     let after = x_at(&second, 1, t1.after(step)) - x_at(&second, 1, t1);
     assert!(
-        before.abs() > 100,
+        before.abs() > 40,
         "the window is moving fast at t1 ({before} sub-px per step)"
     );
     let tolerance = before.abs() / 100 + 2;

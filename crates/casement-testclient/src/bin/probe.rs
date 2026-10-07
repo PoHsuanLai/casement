@@ -21,13 +21,18 @@ use serde_json::json;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
+    let mut args = std::env::args().skip(1);
+    let command = args.next();
+    let rest: Vec<String> = args.collect();
+    // A usage error is found before anything is looked at, so it reads the same inside the
+    // jail and out.
+    if let Err(Failure::Usage) = usage(command.as_deref(), &rest) {
+        return usage_exit();
+    }
     if let Some(why) = outside_the_jail() {
         println!("{}", json!({ "error": why }));
         return ExitCode::from(2);
     }
-    let mut args = std::env::args().skip(1);
-    let command = args.next();
-    let rest: Vec<String> = args.collect();
     let outcome = match command.as_deref() {
         Some("globals") => globals(),
         Some("transcript") => transcript(),
@@ -48,13 +53,26 @@ fn main() -> ExitCode {
             println!("{}", json!({ "error": why }));
             ExitCode::from(2)
         }
-        Err(Failure::Usage) => {
-            eprintln!(
-                "usage: casement-probe globals | transcript | session | toplevel [--title T] [--app-id A] [--size WxH] [--hold] [--maximised] | layer [--layer L] [--namespace N] [--size WxH] [--hold] | capture | lease"
-            );
-            ExitCode::from(64)
-        }
+        Err(Failure::Usage) => usage_exit(),
     }
+}
+
+/// Whether `command` and its flags are ones this probe has; touches nothing.
+fn usage(command: Option<&str>, rest: &[String]) -> Result<(), Failure> {
+    match command {
+        Some("toplevel") => shell::TOPLEVEL_FLAGS.check(rest),
+        Some("layer") => shell::LAYER_FLAGS.check(rest),
+        Some("globals" | "transcript" | "session" | "capture" | "lease") => Ok(()),
+        _ => Err(Failure::Usage),
+    }
+}
+
+/// The usage line, and the usage exit code.
+fn usage_exit() -> ExitCode {
+    eprintln!(
+        "usage: casement-probe globals | transcript | session | toplevel [--title T] [--app-id A] [--size WxH] [--hold] [--maximised] | layer [--layer L] [--namespace N] [--size WxH] [--hold] | capture | lease"
+    );
+    ExitCode::from(64)
 }
 
 /// Why a probe did not pass.
