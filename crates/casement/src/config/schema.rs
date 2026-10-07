@@ -15,6 +15,7 @@ pub fn schema() -> Schema {
         app: AppId("casement".to_owned()),
         file: FilePath("casement/settings.toml".to_owned()),
         version: VERSION,
+        foreign: Default::default(),
         key: [
             WindowsSection::schema(),
             SpacesSection::schema(),
