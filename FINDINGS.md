@@ -11,7 +11,7 @@ and P0-F1b-model).
 
 ### P0-Z1: the pure crates
 
-No stub is left. Ignored tests by lane: P3-Z 1 (`crates/casement-layout/tests/spread.rs`, the
+No stub is left. Ignored tests by lane: P3-Z 1 (`crates/casement-layout/tests/it/spread.rs`, the
 Mission Control spread's properties from SP8, for the P3 freeze to inherit).
 
 P0-F1-ids had no stub: ids, geometry and time are implemented at the freeze, with their
@@ -29,77 +29,77 @@ P3-CSS, three in `src/` and its ignored parity test, never built at P0-Z2).
 
 | File | Items | Lane | Proven by |
 | --- | --- | --- | --- |
-| `crates/casement-wayland/src/commit_timing.rs` | on_barrier, apply_presented (2) | P0-H1 | `crates/casement-testkit/tests/protocol/commit_timing.rs` |
-| `crates/casement-wayland/src/compositor.rs` | on_commit, on_destroyed (2) | P0-H1 | `crates/casement-testkit/tests/protocol/compositor.rs` |
-| `crates/casement-wayland/src/content_type.rs` | on_content_type (1) | P0-H1 | `crates/casement-testkit/tests/protocol/content_type.rs` |
-| `crates/casement-wayland/src/fifo.rs` | on_barrier, apply_presented (2) | P0-H1 | `crates/casement-testkit/tests/protocol/fifo.rs` |
-| `crates/casement-wayland/src/fractional_scale.rs` | on_preferred, apply_scale (2) | P0-H1 | `crates/casement-testkit/tests/protocol/fractional_scale.rs` |
-| `crates/casement-wayland/src/output.rs` | apply_plug, apply_change, apply_unplug (3) | P0-H1 | `crates/casement-testkit/tests/protocol/output.rs` |
-| `crates/casement-wayland/src/presentation.rs` | on_feedback, apply_presented (2) | P0-H1 | `crates/casement-testkit/tests/protocol/presentation.rs` |
-| `crates/casement-wayland/src/shm.rs` | on_buffer_destroyed (1) | P0-H1 | `crates/casement-testkit/tests/protocol/shm.rs` |
-| `crates/casement-wayland/src/subcompositor.rs` | on_new_subsurface (1) | P0-H1 | `crates/casement-testkit/tests/protocol/subcompositor.rs` |
-| `crates/casement/src/handlers/compositor.rs` | CompositorHandler::commit (1) | P0-H1 | `crates/casement-testkit/tests/protocol/compositor.rs` |
-| `crates/casement/src/handlers/shm.rs` | BufferHandler::buffer_destroyed (1) | P0-H1 | `crates/casement-testkit/tests/protocol/shm.rs` |
-| `crates/casement-wayland/src/quire_window.rs` | Dispatch2::request, Dispatch2::destroyed, on_get_window, on_set_first_mouse, on_set_frame, on_set_role, on_set_a11y_root, on_set_edited, on_request_placement, apply_emphasis, apply_placement (12) | P0-H2 | `crates/casement-testkit/tests/protocol/quire_window.rs` |
-| `crates/casement-wayland/src/system_bell.rs` | on_bell (1) | P0-H2 | `crates/casement-testkit/tests/protocol/system_bell.rs` |
-| `crates/casement-wayland/src/xdg_activation.rs` | on_token_request, on_activate (2) | P0-H2 | `crates/casement-testkit/tests/protocol/xdg_activation.rs` |
-| `crates/casement-wayland/src/xdg_decoration.rs` | on_decoration_mode, apply_mode (2) | P0-H2 | `crates/casement-testkit/tests/protocol/xdg_decoration.rs` |
-| `crates/casement-wayland/src/xdg_dialog.rs` | on_modal (1) | P0-H2 | `crates/casement-testkit/tests/protocol/xdg_dialog.rs` |
-| `crates/casement-wayland/src/xdg_shell.rs` | on_new_toplevel, on_toplevel_commit, on_move, on_resize, on_maximise, on_minimise, on_full_screen, on_window_menu, on_title, on_app_id, on_parent, on_limits, on_toplevel_destroyed, on_new_popup, on_popup_grab, on_reposition, on_pong, apply_configure, apply_close, apply_ping, apply_popup_done (21) | P0-H2 | `crates/casement-testkit/tests/protocol/xdg_shell.rs` |
-| `crates/casement-wayland/src/xdg_toplevel_icon.rs` | on_icon (1) | P0-H2 | `crates/casement-testkit/tests/protocol/xdg_toplevel_icon.rs` |
-| `crates/casement-wayland/src/xdg_toplevel_tag.rs` | on_tag (1) | P0-H2 | `crates/casement-testkit/tests/protocol/xdg_toplevel_tag.rs` |
-| `crates/casement/src/handlers/quire_window.rs` | QuireWindowHandler::window_of_toplevel (1) | P0-H2 | `crates/casement-testkit/tests/protocol/quire_window.rs` |
-| `crates/casement/src/handlers/system_bell.rs` | XdgSystemBellHandler::ring (1) | P0-H2 | `crates/casement-testkit/tests/protocol/system_bell.rs` |
-| `crates/casement/src/handlers/xdg_activation.rs` | XdgActivationHandler::request_activation (1) | P0-H2 | `crates/casement-testkit/tests/protocol/xdg_activation.rs` |
-| `crates/casement/src/handlers/xdg_decoration.rs` | XdgDecorationHandler::new_decoration, XdgDecorationHandler::request_mode, XdgDecorationHandler::unset_mode (3) | P0-H2 | `crates/casement-testkit/tests/protocol/xdg_decoration.rs` |
-| `crates/casement/src/handlers/xdg_shell.rs` | XdgShellHandler::new_toplevel, XdgShellHandler::new_popup, XdgShellHandler::grab, XdgShellHandler::reposition_request (4) | P0-H2 | `crates/casement-testkit/tests/protocol/xdg_shell.rs` |
-| `crates/casement-wayland/src/layer_shell.rs` | on_new_layer, on_layer_commit, on_layer_destroyed, on_layer_popup, apply_layer_configure (5) | P0-H3 | `crates/casement-testkit/tests/protocol/layer_shell.rs` |
-| `crates/casement-wayland/src/session_lock.rs` | on_lock, on_lock_surface, on_unlock, on_locker_gone, apply_locked, apply_lock_configure (6) | P0-H3 | `crates/casement-testkit/tests/protocol/session_lock.rs` |
-| `crates/casement/src/handlers/layer_shell.rs` | WlrLayerShellHandler::new_layer_surface (1) | P0-H3 | `crates/casement-testkit/tests/protocol/layer_shell.rs` |
-| `crates/casement/src/handlers/session_lock.rs` | SessionLockHandler::lock, SessionLockHandler::unlock, SessionLockHandler::new_surface (3) | P0-H3 | `crates/casement-testkit/tests/protocol/session_lock.rs` |
-| `crates/casement-wayland/src/pointer_constraints.rs` | on_constraint (1) | P0-H4 | `crates/casement-testkit/tests/protocol/pointer_constraints.rs` |
-| `crates/casement-wayland/src/seat.rs` | on_cursor_image, apply_keyboard_focus, apply_pointer, apply_key, apply_axis, apply_gesture, apply_touch (7) | P0-H4 | `crates/casement-testkit/tests/protocol/seat.rs` |
-| `crates/casement-wayland/src/serial.rs` | SerialBook::record, SerialBook::answers (2) | P0-H4 | `crates/casement-testkit/tests/protocol/seat.rs` |
-| `crates/casement-wayland/src/shortcuts_inhibit.rs` | on_inhibit (1) | P0-H4 | `crates/casement-testkit/tests/protocol/shortcuts_inhibit.rs` |
-| `crates/casement-wayland/src/data_device.rs` | on_selection, on_drag_start, on_drop, apply_selection_focus (4) | P0-H5 | `crates/casement-testkit/tests/protocol/data_device.rs` |
-| `crates/casement-wayland/src/ext_data_control.rs` | on_control_selection (1) | P0-H5 | `crates/casement-testkit/tests/protocol/ext_data_control.rs` |
-| `crates/casement-wayland/src/wlr_data_control.rs` | on_control_selection (1) | P0-H5 | `crates/casement-testkit/tests/protocol/wlr_data_control.rs` |
-| `crates/casement-wayland/src/dmabuf.rs` | on_import, apply_offer (2) | P0-H6 | `crates/casement-testkit/tests/protocol/dmabuf.rs` |
-| `crates/casement/src/handlers/dmabuf.rs` | DmabufHandler::dmabuf_imported (1) | P0-H6 | `crates/casement-testkit/tests/protocol/dmabuf.rs` |
-| `crates/casement-wayland/src/input_method.rs` | on_im_commit, on_im_popup (2) | P0-H7 | `crates/casement-testkit/tests/protocol/input_method.rs` |
-| `crates/casement-wayland/src/text_input.rs` | on_enable, on_commit_state, apply_text_focus, apply_preedit, apply_commit_string (5) | P0-H7 | `crates/casement-testkit/tests/protocol/text_input.rs` |
-| `crates/casement-wayland/src/virtual_keyboard.rs` | on_vk_key (1) | P0-H7 | `crates/casement-testkit/tests/protocol/virtual_keyboard.rs` |
-| `crates/casement/src/handlers/input_method.rs` | InputMethodHandler::new_popup, InputMethodHandler::dismiss_popup, InputMethodHandler::popup_repositioned, InputMethodHandler::parent_geometry (4) | P0-H7 | `crates/casement-testkit/tests/protocol/input_method.rs` |
-| `crates/casement-wayland/src/background_effect.rs` | on_blur_region (1) | P0-H8 | `crates/casement-testkit/tests/protocol/background_effect.rs` |
-| `crates/casement-wayland/src/foreign_toplevel_list.rs` | apply_toplevel, apply_closed (2) | P0-H8 | `crates/casement-testkit/tests/protocol/foreign_toplevel_list.rs` |
-| `crates/casement-wayland/src/idle_inhibit.rs` | on_inhibit, on_uninhibit (2) | P0-H8 | `crates/casement-testkit/tests/protocol/idle_inhibit.rs` |
-| `crates/casement-wayland/src/idle_notify.rs` | on_notification, apply_idle, apply_resumed (3) | P0-H8 | `crates/casement-testkit/tests/protocol/idle_notify.rs` |
-| `crates/casement-wayland/src/security_context.rs` | on_create_listener (1) | P0-H8 | `crates/casement-testkit/tests/protocol/security_context.rs` |
-| `crates/casement/src/handlers/idle_inhibit.rs` | IdleInhibitHandler::inhibit, IdleInhibitHandler::uninhibit (2) | P0-H8 | `crates/casement-testkit/tests/protocol/idle_inhibit.rs` |
-| `crates/casement/src/handlers/security_context.rs` | SecurityContextHandler::context_created (1) | P0-H8 | `crates/casement-testkit/tests/protocol/security_context.rs` |
-| `crates/casement-backend/src/headless/cost.rs` | RenderCostModel::cost_of (1) | P0-B-headless | `crates/casement-testkit/tests/fixture.rs`; input through `tests/protocol/seat.rs` |
-| `crates/casement-backend/src/headless/input.rs` | HeadlessInput::drain (1) | P0-B-headless | `crates/casement-testkit/tests/fixture.rs`; input through `tests/protocol/seat.rs` |
-| `crates/casement-backend/src/headless/mod.rs` | HeadlessBackend::start, HeadlessBackend::plug, HeadlessBackend::unplug, HeadlessBackend::set, HeadlessBackend::last_frame, HeadlessBackend::input (6) | P0-B-headless | `crates/casement-testkit/tests/fixture.rs`; input through `tests/protocol/seat.rs` |
-| `crates/casement-backend/src/headless/renderer.rs` | HeadlessRenderer::start (1) | P0-B-headless | `crates/casement-testkit/tests/fixture.rs`; input through `tests/protocol/seat.rs` |
-| `crates/casement-backend/src/input/virtual_events.rs` | Event::time, Event::device, KeyboardKeyEvent::key_code, KeyboardKeyEvent::state, KeyboardKeyEvent::count, PointerMotionEvent::delta_x, PointerMotionEvent::delta_y, PointerMotionEvent::delta_x_unaccel, PointerMotionEvent::delta_y_unaccel, AbsolutePositionEvent::x, AbsolutePositionEvent::y, AbsolutePositionEvent::x_transformed, AbsolutePositionEvent::y_transformed, PointerButtonEvent::button_code, PointerButtonEvent::state, PointerAxisEvent::amount, PointerAxisEvent::amount_v120, PointerAxisEvent::source, PointerAxisEvent::relative_direction, GestureBeginEvent::fingers, GestureEndEvent::cancelled, GestureSwipeUpdateEvent::delta_x, GestureSwipeUpdateEvent::delta_y, GesturePinchUpdateEvent::delta_x, GesturePinchUpdateEvent::delta_y, GesturePinchUpdateEvent::scale, GesturePinchUpdateEvent::rotation, TouchEvent::slot, SwitchToggleEvent::switch, SwitchToggleEvent::state (34) | P0-B-headless | `crates/casement-testkit/tests/fixture.rs`; input through `tests/protocol/seat.rs` |
-| `crates/casement-backend/src/input/virtual_input.rs` | VirtualInput::plug, VirtualInput::unplug, VirtualInput::push, Device::id, Device::name, Device::has_capability, Device::usb_id, Device::syspath (8) | P0-B-headless | `crates/casement-testkit/tests/fixture.rs`; input through `tests/protocol/seat.rs` |
-| `crates/casement-testkit/src/fakes/session.rs` | Session::open, Session::close, Session::change_vt, Session::is_active, Session::seat (5) | P0-B-headless | `crates/casement-testkit/tests/fixture.rs`; input through `tests/protocol/seat.rs` |
-| `crates/casement-testkit/src/fakes/udev.rs` | FakeUdev::next_event (1) | P0-B-headless | `crates/casement-testkit/tests/fixture.rs`; input through `tests/protocol/seat.rs` |
-| `crates/casement-testkit/src/fixture.rs` | Fixture::start, Fixture::connect, Fixture::client, Fixture::pump, Fixture::advance, Fixture::frames, Fixture::run_until, Fixture::shot, Fixture::scene, Fixture::model (10) | P0-B-headless | `crates/casement-testkit/tests/fixture.rs`; input through `tests/protocol/seat.rs` |
-| `crates/casement-testkit/src/input.rs` | FixtureInput::plug, FixtureInput::key, FixtureInput::pointer_to, FixtureInput::button, FixtureInput::axis, FixtureInput::swipe, FixtureInput::pinch, FixtureInput::hold, FixtureInput::touch, FixtureInput::switch (10) | P0-B-headless | `crates/casement-testkit/tests/fixture.rs`; input through `tests/protocol/seat.rs` |
-| `crates/casement-testkit/src/output.rs` | Fixture::plug, Fixture::unplug (2) | P0-B-headless | `crates/casement-testkit/tests/fixture.rs`; input through `tests/protocol/seat.rs` |
+| `crates/casement-wayland/src/commit_timing.rs` | on_barrier, apply_presented (2) | P0-H1 | `crates/casement-testkit/tests/it/protocol/commit_timing.rs` |
+| `crates/casement-wayland/src/compositor.rs` | on_commit, on_destroyed (2) | P0-H1 | `crates/casement-testkit/tests/it/protocol/compositor.rs` |
+| `crates/casement-wayland/src/content_type.rs` | on_content_type (1) | P0-H1 | `crates/casement-testkit/tests/it/protocol/content_type.rs` |
+| `crates/casement-wayland/src/fifo.rs` | on_barrier, apply_presented (2) | P0-H1 | `crates/casement-testkit/tests/it/protocol/fifo.rs` |
+| `crates/casement-wayland/src/fractional_scale.rs` | on_preferred, apply_scale (2) | P0-H1 | `crates/casement-testkit/tests/it/protocol/fractional_scale.rs` |
+| `crates/casement-wayland/src/output.rs` | apply_plug, apply_change, apply_unplug (3) | P0-H1 | `crates/casement-testkit/tests/it/protocol/output.rs` |
+| `crates/casement-wayland/src/presentation.rs` | on_feedback, apply_presented (2) | P0-H1 | `crates/casement-testkit/tests/it/protocol/presentation.rs` |
+| `crates/casement-wayland/src/shm.rs` | on_buffer_destroyed (1) | P0-H1 | `crates/casement-testkit/tests/it/protocol/shm.rs` |
+| `crates/casement-wayland/src/subcompositor.rs` | on_new_subsurface (1) | P0-H1 | `crates/casement-testkit/tests/it/protocol/subcompositor.rs` |
+| `crates/casement/src/handlers/compositor.rs` | CompositorHandler::commit (1) | P0-H1 | `crates/casement-testkit/tests/it/protocol/compositor.rs` |
+| `crates/casement/src/handlers/shm.rs` | BufferHandler::buffer_destroyed (1) | P0-H1 | `crates/casement-testkit/tests/it/protocol/shm.rs` |
+| `crates/casement-wayland/src/quire_window.rs` | Dispatch2::request, Dispatch2::destroyed, on_get_window, on_set_first_mouse, on_set_frame, on_set_role, on_set_a11y_root, on_set_edited, on_request_placement, apply_emphasis, apply_placement (12) | P0-H2 | `crates/casement-testkit/tests/it/protocol/quire_window.rs` |
+| `crates/casement-wayland/src/system_bell.rs` | on_bell (1) | P0-H2 | `crates/casement-testkit/tests/it/protocol/system_bell.rs` |
+| `crates/casement-wayland/src/xdg_activation.rs` | on_token_request, on_activate (2) | P0-H2 | `crates/casement-testkit/tests/it/protocol/xdg_activation.rs` |
+| `crates/casement-wayland/src/xdg_decoration.rs` | on_decoration_mode, apply_mode (2) | P0-H2 | `crates/casement-testkit/tests/it/protocol/xdg_decoration.rs` |
+| `crates/casement-wayland/src/xdg_dialog.rs` | on_modal (1) | P0-H2 | `crates/casement-testkit/tests/it/protocol/xdg_dialog.rs` |
+| `crates/casement-wayland/src/xdg_shell.rs` | on_new_toplevel, on_toplevel_commit, on_move, on_resize, on_maximise, on_minimise, on_full_screen, on_window_menu, on_title, on_app_id, on_parent, on_limits, on_toplevel_destroyed, on_new_popup, on_popup_grab, on_reposition, on_pong, apply_configure, apply_close, apply_ping, apply_popup_done (21) | P0-H2 | `crates/casement-testkit/tests/it/protocol/xdg_shell.rs` |
+| `crates/casement-wayland/src/xdg_toplevel_icon.rs` | on_icon (1) | P0-H2 | `crates/casement-testkit/tests/it/protocol/xdg_toplevel_icon.rs` |
+| `crates/casement-wayland/src/xdg_toplevel_tag.rs` | on_tag (1) | P0-H2 | `crates/casement-testkit/tests/it/protocol/xdg_toplevel_tag.rs` |
+| `crates/casement/src/handlers/quire_window.rs` | QuireWindowHandler::window_of_toplevel (1) | P0-H2 | `crates/casement-testkit/tests/it/protocol/quire_window.rs` |
+| `crates/casement/src/handlers/system_bell.rs` | XdgSystemBellHandler::ring (1) | P0-H2 | `crates/casement-testkit/tests/it/protocol/system_bell.rs` |
+| `crates/casement/src/handlers/xdg_activation.rs` | XdgActivationHandler::request_activation (1) | P0-H2 | `crates/casement-testkit/tests/it/protocol/xdg_activation.rs` |
+| `crates/casement/src/handlers/xdg_decoration.rs` | XdgDecorationHandler::new_decoration, XdgDecorationHandler::request_mode, XdgDecorationHandler::unset_mode (3) | P0-H2 | `crates/casement-testkit/tests/it/protocol/xdg_decoration.rs` |
+| `crates/casement/src/handlers/xdg_shell.rs` | XdgShellHandler::new_toplevel, XdgShellHandler::new_popup, XdgShellHandler::grab, XdgShellHandler::reposition_request (4) | P0-H2 | `crates/casement-testkit/tests/it/protocol/xdg_shell.rs` |
+| `crates/casement-wayland/src/layer_shell.rs` | on_new_layer, on_layer_commit, on_layer_destroyed, on_layer_popup, apply_layer_configure (5) | P0-H3 | `crates/casement-testkit/tests/it/protocol/layer_shell.rs` |
+| `crates/casement-wayland/src/session_lock.rs` | on_lock, on_lock_surface, on_unlock, on_locker_gone, apply_locked, apply_lock_configure (6) | P0-H3 | `crates/casement-testkit/tests/it/protocol/session_lock.rs` |
+| `crates/casement/src/handlers/layer_shell.rs` | WlrLayerShellHandler::new_layer_surface (1) | P0-H3 | `crates/casement-testkit/tests/it/protocol/layer_shell.rs` |
+| `crates/casement/src/handlers/session_lock.rs` | SessionLockHandler::lock, SessionLockHandler::unlock, SessionLockHandler::new_surface (3) | P0-H3 | `crates/casement-testkit/tests/it/protocol/session_lock.rs` |
+| `crates/casement-wayland/src/pointer_constraints.rs` | on_constraint (1) | P0-H4 | `crates/casement-testkit/tests/it/protocol/pointer_constraints.rs` |
+| `crates/casement-wayland/src/seat.rs` | on_cursor_image, apply_keyboard_focus, apply_pointer, apply_key, apply_axis, apply_gesture, apply_touch (7) | P0-H4 | `crates/casement-testkit/tests/it/protocol/seat.rs` |
+| `crates/casement-wayland/src/serial.rs` | SerialBook::record, SerialBook::answers (2) | P0-H4 | `crates/casement-testkit/tests/it/protocol/seat.rs` |
+| `crates/casement-wayland/src/shortcuts_inhibit.rs` | on_inhibit (1) | P0-H4 | `crates/casement-testkit/tests/it/protocol/shortcuts_inhibit.rs` |
+| `crates/casement-wayland/src/data_device.rs` | on_selection, on_drag_start, on_drop, apply_selection_focus (4) | P0-H5 | `crates/casement-testkit/tests/it/protocol/data_device.rs` |
+| `crates/casement-wayland/src/ext_data_control.rs` | on_control_selection (1) | P0-H5 | `crates/casement-testkit/tests/it/protocol/ext_data_control.rs` |
+| `crates/casement-wayland/src/wlr_data_control.rs` | on_control_selection (1) | P0-H5 | `crates/casement-testkit/tests/it/protocol/wlr_data_control.rs` |
+| `crates/casement-wayland/src/dmabuf.rs` | on_import, apply_offer (2) | P0-H6 | `crates/casement-testkit/tests/it/protocol/dmabuf.rs` |
+| `crates/casement/src/handlers/dmabuf.rs` | DmabufHandler::dmabuf_imported (1) | P0-H6 | `crates/casement-testkit/tests/it/protocol/dmabuf.rs` |
+| `crates/casement-wayland/src/input_method.rs` | on_im_commit, on_im_popup (2) | P0-H7 | `crates/casement-testkit/tests/it/protocol/input_method.rs` |
+| `crates/casement-wayland/src/text_input.rs` | on_enable, on_commit_state, apply_text_focus, apply_preedit, apply_commit_string (5) | P0-H7 | `crates/casement-testkit/tests/it/protocol/text_input.rs` |
+| `crates/casement-wayland/src/virtual_keyboard.rs` | on_vk_key (1) | P0-H7 | `crates/casement-testkit/tests/it/protocol/virtual_keyboard.rs` |
+| `crates/casement/src/handlers/input_method.rs` | InputMethodHandler::new_popup, InputMethodHandler::dismiss_popup, InputMethodHandler::popup_repositioned, InputMethodHandler::parent_geometry (4) | P0-H7 | `crates/casement-testkit/tests/it/protocol/input_method.rs` |
+| `crates/casement-wayland/src/background_effect.rs` | on_blur_region (1) | P0-H8 | `crates/casement-testkit/tests/it/protocol/background_effect.rs` |
+| `crates/casement-wayland/src/foreign_toplevel_list.rs` | apply_toplevel, apply_closed (2) | P0-H8 | `crates/casement-testkit/tests/it/protocol/foreign_toplevel_list.rs` |
+| `crates/casement-wayland/src/idle_inhibit.rs` | on_inhibit, on_uninhibit (2) | P0-H8 | `crates/casement-testkit/tests/it/protocol/idle_inhibit.rs` |
+| `crates/casement-wayland/src/idle_notify.rs` | on_notification, apply_idle, apply_resumed (3) | P0-H8 | `crates/casement-testkit/tests/it/protocol/idle_notify.rs` |
+| `crates/casement-wayland/src/security_context.rs` | on_create_listener (1) | P0-H8 | `crates/casement-testkit/tests/it/protocol/security_context.rs` |
+| `crates/casement/src/handlers/idle_inhibit.rs` | IdleInhibitHandler::inhibit, IdleInhibitHandler::uninhibit (2) | P0-H8 | `crates/casement-testkit/tests/it/protocol/idle_inhibit.rs` |
+| `crates/casement/src/handlers/security_context.rs` | SecurityContextHandler::context_created (1) | P0-H8 | `crates/casement-testkit/tests/it/protocol/security_context.rs` |
+| `crates/casement-backend/src/headless/cost.rs` | RenderCostModel::cost_of (1) | P0-B-headless | `crates/casement-testkit/tests/it/fixture.rs`; input through `tests/it/protocol/seat.rs` |
+| `crates/casement-backend/src/headless/input.rs` | HeadlessInput::drain (1) | P0-B-headless | `crates/casement-testkit/tests/it/fixture.rs`; input through `tests/it/protocol/seat.rs` |
+| `crates/casement-backend/src/headless/mod.rs` | HeadlessBackend::start, HeadlessBackend::plug, HeadlessBackend::unplug, HeadlessBackend::set, HeadlessBackend::last_frame, HeadlessBackend::input (6) | P0-B-headless | `crates/casement-testkit/tests/it/fixture.rs`; input through `tests/it/protocol/seat.rs` |
+| `crates/casement-backend/src/headless/renderer.rs` | HeadlessRenderer::start (1) | P0-B-headless | `crates/casement-testkit/tests/it/fixture.rs`; input through `tests/it/protocol/seat.rs` |
+| `crates/casement-backend/src/input/virtual_events.rs` | Event::time, Event::device, KeyboardKeyEvent::key_code, KeyboardKeyEvent::state, KeyboardKeyEvent::count, PointerMotionEvent::delta_x, PointerMotionEvent::delta_y, PointerMotionEvent::delta_x_unaccel, PointerMotionEvent::delta_y_unaccel, AbsolutePositionEvent::x, AbsolutePositionEvent::y, AbsolutePositionEvent::x_transformed, AbsolutePositionEvent::y_transformed, PointerButtonEvent::button_code, PointerButtonEvent::state, PointerAxisEvent::amount, PointerAxisEvent::amount_v120, PointerAxisEvent::source, PointerAxisEvent::relative_direction, GestureBeginEvent::fingers, GestureEndEvent::cancelled, GestureSwipeUpdateEvent::delta_x, GestureSwipeUpdateEvent::delta_y, GesturePinchUpdateEvent::delta_x, GesturePinchUpdateEvent::delta_y, GesturePinchUpdateEvent::scale, GesturePinchUpdateEvent::rotation, TouchEvent::slot, SwitchToggleEvent::switch, SwitchToggleEvent::state (34) | P0-B-headless | `crates/casement-testkit/tests/it/fixture.rs`; input through `tests/it/protocol/seat.rs` |
+| `crates/casement-backend/src/input/virtual_input.rs` | VirtualInput::plug, VirtualInput::unplug, VirtualInput::push, Device::id, Device::name, Device::has_capability, Device::usb_id, Device::syspath (8) | P0-B-headless | `crates/casement-testkit/tests/it/fixture.rs`; input through `tests/it/protocol/seat.rs` |
+| `crates/casement-testkit/src/fakes/session.rs` | Session::open, Session::close, Session::change_vt, Session::is_active, Session::seat (5) | P0-B-headless | `crates/casement-testkit/tests/it/fixture.rs`; input through `tests/it/protocol/seat.rs` |
+| `crates/casement-testkit/src/fakes/udev.rs` | FakeUdev::next_event (1) | P0-B-headless | `crates/casement-testkit/tests/it/fixture.rs`; input through `tests/it/protocol/seat.rs` |
+| `crates/casement-testkit/src/fixture.rs` | Fixture::start, Fixture::connect, Fixture::client, Fixture::pump, Fixture::advance, Fixture::frames, Fixture::run_until, Fixture::shot, Fixture::scene, Fixture::model (10) | P0-B-headless | `crates/casement-testkit/tests/it/fixture.rs`; input through `tests/it/protocol/seat.rs` |
+| `crates/casement-testkit/src/input.rs` | FixtureInput::plug, FixtureInput::key, FixtureInput::pointer_to, FixtureInput::button, FixtureInput::axis, FixtureInput::swipe, FixtureInput::pinch, FixtureInput::hold, FixtureInput::touch, FixtureInput::switch (10) | P0-B-headless | `crates/casement-testkit/tests/it/fixture.rs`; input through `tests/it/protocol/seat.rs` |
+| `crates/casement-testkit/src/output.rs` | Fixture::plug, Fixture::unplug (2) | P0-B-headless | `crates/casement-testkit/tests/it/fixture.rs`; input through `tests/it/protocol/seat.rs` |
 | `crates/casement-backend/src/winit.rs` | WinitBackend::start (1) | P0-B-loop | builds only (never run by an agent; the user's nested-winit check) |
-| `crates/casement/src/core_loop.rs` | feed, frame (2) | P0-B-loop | `crates/casement/tests/time.rs`; frames through `crates/casement-testkit/tests/fixture.rs` |
-| `crates/casement/src/display.rs` | attach_display, flush (2) | P0-B-loop | `crates/casement/tests/time.rs`; frames through `crates/casement-testkit/tests/fixture.rs` |
-| `crates/casement/src/exec.rs` | exec (1) | P0-B-loop | `crates/casement/tests/time.rs`; frames through `crates/casement-testkit/tests/fixture.rs` |
-| `crates/casement/src/main.rs` | run (1) | P0-B-loop | `crates/casement/tests/time.rs`; frames through `crates/casement-testkit/tests/fixture.rs` |
-| `crates/casement/src/time/calloop.rs` | arm (1) | P0-B-loop | `crates/casement/tests/time.rs`; frames through `crates/casement-testkit/tests/fixture.rs` |
-| `crates/casement/src/time/source.rs` | ClockSource::start, ClockSource::now (2) | P0-B-loop | `crates/casement/tests/time.rs`; frames through `crates/casement-testkit/tests/fixture.rs` |
-| `crates/casement/src/time/virtual_clock.rs` | SharedClock::update, SharedClock::advance_to, EventSource::process_events, EventSource::before_sleep (4) | P0-B-loop | `crates/casement/tests/time.rs`; frames through `crates/casement-testkit/tests/fixture.rs` |
-| `crates/casement-testclient/src/bin/probe.rs` | main (1) | P0-T-client | `crates/casement-testclient/tests/infra.rs`; `crates/casement-testkit/tests/globals.rs`; `crates/casement-testkit/tests/fuzz/main.rs` |
-| `crates/casement-testclient/src/conn.rs` | TestClient::over, TestClient::connect_env, TestClient::pump (3) | P0-T-client | `crates/casement-testclient/tests/infra.rs`; `crates/casement-testkit/tests/globals.rs`; `crates/casement-testkit/tests/fuzz/main.rs` |
-| `crates/casement-testclient/src/shm.rs` | shm_buffer (1) | P0-T-client | `crates/casement-testclient/tests/infra.rs`; `crates/casement-testkit/tests/globals.rs`; `crates/casement-testkit/tests/fuzz/main.rs` |
-| `crates/casement-testkit/src/fuzz/ops.rs` | run_ops (1) | P0-T-client | `crates/casement-testclient/tests/infra.rs`; `crates/casement-testkit/tests/globals.rs`; `crates/casement-testkit/tests/fuzz/main.rs` |
+| `crates/casement/src/core_loop.rs` | feed, frame (2) | P0-B-loop | `crates/casement/tests/it/time.rs`; frames through `crates/casement-testkit/tests/it/fixture.rs` |
+| `crates/casement/src/display.rs` | attach_display, flush (2) | P0-B-loop | `crates/casement/tests/it/time.rs`; frames through `crates/casement-testkit/tests/it/fixture.rs` |
+| `crates/casement/src/exec.rs` | exec (1) | P0-B-loop | `crates/casement/tests/it/time.rs`; frames through `crates/casement-testkit/tests/it/fixture.rs` |
+| `crates/casement/src/main.rs` | run (1) | P0-B-loop | `crates/casement/tests/it/time.rs`; frames through `crates/casement-testkit/tests/it/fixture.rs` |
+| `crates/casement/src/time/calloop.rs` | arm (1) | P0-B-loop | `crates/casement/tests/it/time.rs`; frames through `crates/casement-testkit/tests/it/fixture.rs` |
+| `crates/casement/src/time/source.rs` | ClockSource::start, ClockSource::now (2) | P0-B-loop | `crates/casement/tests/it/time.rs`; frames through `crates/casement-testkit/tests/it/fixture.rs` |
+| `crates/casement/src/time/virtual_clock.rs` | SharedClock::update, SharedClock::advance_to, EventSource::process_events, EventSource::before_sleep (4) | P0-B-loop | `crates/casement/tests/it/time.rs`; frames through `crates/casement-testkit/tests/it/fixture.rs` |
+| `crates/casement-testclient/src/bin/probe.rs` | main (1) | P0-T-client | `crates/casement-testclient/tests/infra.rs`; `crates/casement-testkit/tests/it/globals.rs`; `crates/casement-testkit/tests/fuzz/main.rs` |
+| `crates/casement-testclient/src/conn.rs` | TestClient::over, TestClient::connect_env, TestClient::pump (3) | P0-T-client | `crates/casement-testclient/tests/infra.rs`; `crates/casement-testkit/tests/it/globals.rs`; `crates/casement-testkit/tests/fuzz/main.rs` |
+| `crates/casement-testclient/src/shm.rs` | shm_buffer (1) | P0-T-client | `crates/casement-testclient/tests/infra.rs`; `crates/casement-testkit/tests/it/globals.rs`; `crates/casement-testkit/tests/fuzz/main.rs` |
+| `crates/casement-testkit/src/fuzz/ops.rs` | run_ops (1) | P0-T-client | `crates/casement-testclient/tests/infra.rs`; `crates/casement-testkit/tests/it/globals.rs`; `crates/casement-testkit/tests/fuzz/main.rs` |
 | `crates/casement-ipc/src/dbus/debug1.rs` | Debug1::inject, Debug1::wait, Debug1::clock, Debug1::output, Debug1::windows, Debug1::scene, Debug1::fault (7) | P0-T-dev | `crates/casement-ipc/src/inject.rs`, `wait.rs` tests; `crates/casementctl/src/command.rs` test; `dev/accept.sh --jobs 8` |
 | `crates/casement-ipc/src/inject.rs` | parse_inject (1) | P0-T-dev | `crates/casement-ipc/src/inject.rs`, `wait.rs` tests; `crates/casementctl/src/command.rs` test; `dev/accept.sh --jobs 8` |
 | `crates/casement-ipc/src/wait.rs` | parse_wait (1) | P0-T-dev | `crates/casement-ipc/src/inject.rs`, `wait.rs` tests; `crates/casementctl/src/command.rs` test; `dev/accept.sh --jobs 8` |
@@ -279,7 +279,7 @@ check cover what draws without a client surface; the fixture scenes are P0-shoot
 
 ## Departures in the P0-shoot fill
 
-P0-shoot wrote the fixture scenes (`crates/casement-testkit/tests/scene/`: `the_ten_base_scenes_match_their_pixman_goldens`,
+P0-shoot wrote the fixture scenes (`crates/casement-testkit/tests/it/scene/`: `the_ten_base_scenes_match_their_pixman_goldens`,
 tier P; `blur_v0_matches_its_llvmpipe_golden`, tier L), the three surface-adjunct pixel tests
 (viewporter crop, single pixel, alpha multiplier) and the fractional-scale ordering test. Real
 code the scenes found missing or wrong, fixed here:
@@ -304,7 +304,7 @@ Test-support notes: `tests/scene.rs` became `tests/scene/main.rs`; the layer-she
 session-lock client helpers (`casement-testclient/src/surface/{layer,lock}.rs`) are the P0-H3
 helpers verbatim from `~/rs-wt/p0-h3/pending/p0-h3-protocol-tests.patch` (apply that patch
 without those two files); `BlurAsk::surface()` is a new accessor so a blur region can sit on a
-toplevel's own surface; `tests/protocol/shoot.rs` holds the helper the adjunct tests share.
+toplevel's own surface; `tests/it/protocol/shoot.rs` holds the helper the adjunct tests share.
 Goldens: `tests/golden/scenes/*.png` (the ten, `blur-v0-1x`, `viewport-crop`, `alpha-multiplier`),
 all blessed once on the first real run (nothing existed to differ from); the compare is
 byte-exact for tier P and 2 per channel on at most 1000 ppm of pixels for tier L (11 §2.8).
@@ -506,7 +506,7 @@ cursor (not asserted).
   `DndFocus` impl remembers that a validated drop was delivered and does not send that `leave`; the
   offer stays the client's to read until it finishes it. A drag that ends without a drop still gets its
   `leave`. The probe's workaround (a clone of the offer taken at `drop`) is gone.
-- Tests: `tests/protocol/dead_focus.rs` (toplevel, layer surface, popup, hung-up client, touch),
+- Tests: `tests/it/protocol/dead_focus.rs` (toplevel, layer surface, popup, hung-up client, touch),
   `data_device::a_drop_is_not_followed_by_leave`. Testkit: `Fixture::pointer_focus`; test client:
   `seat::touch::Touch`, `Toplevel::destroy_roles`, `LayerSurface::destroy_surface_first`.
 - wlcs: 302 entries before, 298 after (the 4 W6 removed); `--phase` runs 927 tests, 596 pass, 331 skipped,
@@ -536,7 +536,7 @@ cursor (not asserted).
   going; a layer surface is arranged inside its output. Only a subsurface or a popup can reach over
   a seam, and neither is tested to straddle yet.
 - **Gap**: cursor surfaces and drag icons get no enter/leave (they are not in the stack).
-- Tests: `tests/protocol/compositor.rs::outputs_of_a_surface` (map, change of output both ways,
+- Tests: `tests/it/protocol/compositor.rs::outputs_of_a_surface` (map, change of output both ways,
   unplug, layer surface on its output, popup follows its parent); each failed with the
   `presence::update` calls removed. Test client: `LayerSurface::create_on`,
   `Toplevel::set_fullscreen_on`, `unset_fullscreen`. wl_compositor test binds 1 to 6.
@@ -587,9 +587,9 @@ cursor (not asserted).
   `grabbed_popup_gets_done_event_when_new_toplevel_created` still fail for another reason). The four
   `input_seen_*_after_*_unmapped_and_remapped/6,7` tests were tagged W2 but are W13 (remap after a null
   buffer; `/4,5` are the same on the other builder).
-- Tests: `tests/protocol/geometry.rs` (pointer-local at a geometry offset, drawn pixel at a geometry
+- Tests: `tests/it/protocol/geometry.rs` (pointer-local at a geometry offset, drawn pixel at a geometry
   offset, configure sizes, placement by the configured box, open maximised / full screen, a layer put by
-  hand, `set_layer` stacking, a layer popup kept inside the output), `tests/protocol/layer_keyboard.rs`,
+  hand, `set_layer` stacking, a layer popup kept inside the output), `tests/it/protocol/layer_keyboard.rs`,
   `layer/arrange_size_tests.rs`. Test kit: `Fixture::layer_of`, `Fixture::place_layer`; test client:
   `LayerSurface::set_layer`.
 
@@ -659,10 +659,10 @@ W13 8 to 0.
   nested popup took with the same serial. Nothing was pushed.
 - `dead_focus::a_popup_destroyed_under_the_pointer_gets_no_leave` (P0-dead-focus) asserted no `leave`;
   now the client is told once, at the `xdg_popup`'s destruction, and nothing follows the surface's death.
-- Tests: `tests/protocol/popup_grab.rs` (a release or the press it ended grabs; a stale, forged or
+- Tests: `tests/it/protocol/popup_grab.rs` (a release or the press it ended grabs; a stale, forged or
   foreign serial does not; a nested grab with the same serial keeps the keyboard; done when another
   window is activated; leave when a popup is destroyed under the pointer; a reactive popup follows and
   another does not; a reposition at the ack; a window in a move loses the pointer and gets it back),
-  `tests/protocol/pointer_constraints.rs` (stops at the edge; released and held again with the
+  `tests/it/protocol/pointer_constraints.rs` (stops at the edge; released and held again with the
   keyboard), `tests/relax.rs` (remap), unit tests in `serial.rs`, `xdg_shell/requests.rs`,
   `seat/hold.rs`. Each failed with the fix disabled, except the remap test (casement needed no change).

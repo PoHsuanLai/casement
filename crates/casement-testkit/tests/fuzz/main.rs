@@ -4,6 +4,8 @@
 //! (`casement_testkit::fuzz`). A failing sequence is shrunk and persisted under
 //! `tests/proptest-regressions/`, and replays first from then on.
 
+// Its own binary: the most expensive tests, tiered by `GATE_TIER`, with a `file!()`-keyed
+// persistence directory.
 use casement_core::policy::ConnectionRole;
 use casement_testkit::fuzz::{FuzzOp, FuzzRequest, ObjectRef, run_ops, strategy};
 use casement_testkit::{Fixture, FixtureSpec};

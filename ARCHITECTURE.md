@@ -153,7 +153,7 @@ P1-Z adds `Kms`, `ScanoutSurface`, `InputDevices`, `RenderNodes`.
 1. Add the variant to `Event` in `crates/casement-core/src/event.rs`, its data types beside the
    concept they belong to.
 2. Route it in `Model::step` (`crates/casement-core/src/model.rs`) to the machine that owns it.
-3. Add a row to `crates/casement-core/tests/model.rs`; `check_invariants` runs after every row.
+3. Add a row to `crates/casement-core/tests/it/model.rs`; `check_invariants` runs after every row.
 4. The edge that produces it (a handler, the backend, the clock) converts into it there.
 
 **Add an effect.**
@@ -172,7 +172,7 @@ P1-Z adds `Kms`, `ScanoutSurface`, `InputDevices`, `RenderNodes`.
    full_screen, split, spread, expose, space_row, show_desktop).
 2. If it is flex or grid, build it through `taffy_bridge` (new tree without Taffy's rounding,
    `solve`, `rect_of`); never name taffy elsewhere.
-3. Table rows in `crates/casement-layout/tests/rust_scene.rs`; anything it cannot honour goes to
+3. Table rows in `crates/casement-layout/tests/it/rust_scene.rs`; anything it cannot honour goes to
    `Arrangement::reports`.
 
 **Add a motion quantity.**
@@ -191,8 +191,8 @@ P1-Z adds `Kms`, `ScanoutSurface`, `InputDevices`, `RenderNodes`.
    `&mut self.wl.<p>.state`, callbacks converting and calling `on_*`, then `core_loop::feed`.
    `delegates.rs` needs nothing more: `delegate_dispatch2!` routes every global.
 4. A `GlobalKind` variant and its I7 row (casement-core), a `tests/golden/globals.txt` row
-   (`<interface> <version> <module>`), `crates/casement-testkit/tests/protocol/<p>.rs` with its
-   `mod` line in `tests/protocol/main.rs` (`scripts/check-protocol-coverage.sh`), a testclient
+   (`<interface> <version> <module>`), `crates/casement-testkit/tests/it/protocol/<p>.rs` with its
+   `mod` line in `tests/it/protocol/mod.rs` (`scripts/check-protocol-coverage.sh`), a testclient
    helper module, and for a private request a fuzz op.
 
 **Add a debug verb.**
@@ -222,9 +222,9 @@ its behaviour test written and ignored with that lane's id.
 ## 5. The test harness
 
 The pure crates test their functions directly: table tests per function, proptest for
-properties (T0), integration tests under each crate's `tests/` with shared builders in
-`tests/support/`. `FixedScene` (`crates/casement-layout/tests/support/fixed_scene.rs`) stands
-in for any layout.
+properties (T0), integration tests under each crate's `tests/it/` (one binary per crate: a `mod` per topic, a
+guard test that fails when a file is not included) with shared builders in `tests/it/support/`.
+`fuzz/` and `relax.rs` in the test kit stay their own binaries (cost; a process-global policy).
 
 Everything else drives the real `State` through `casement_testkit::Fixture` (CONVENTIONS
 addendum 10): the headless backend, a `Display` whose poll fd sits in calloop as a duplicate
@@ -232,8 +232,8 @@ addendum 10): the headless backend, a `Display` whose poll fd sits in calloop as
 the virtual clock as a calloop event source (A1). `pump` runs until a round moves nothing;
 `advance` stops at every timer and vblank on the way, so how an advance is chopped never shows;
 transcripts carry virtual time only; no test sleeps. Protocol tests live in
-`crates/casement-testkit/tests/protocol/<p>.rs`, one per module; scene goldens in
-`crates/casement-testkit/tests/scene/` (`main.rs`, `desk.rs`, `build.rs`) with PNGs under `tests/golden/scenes/`; the globals
+`crates/casement-testkit/tests/it/protocol/<p>.rs`, one per module; scene goldens in
+`crates/casement-testkit/tests/it/scene/` (`mod.rs`, `desk.rs`, `build.rs`) with PNGs under `tests/golden/scenes/`; the globals
 golden is `tests/golden/globals.txt`.
 
 Everything runs inside the jail (`~/desktop/harness/jail.sh`): built outside, archived with

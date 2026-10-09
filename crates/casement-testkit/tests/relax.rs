@@ -2,6 +2,7 @@
 //! with the lenient policy a buffer attached before the first ack maps the window instead of
 //! killing the client, which is what wlcs' helpers do.
 
+// Its own binary: `relax::set_policy` is process-global (A37).
 use casement::relax::{self, AckPolicy};
 use casement_core::geometry::PhysicalSize;
 use casement_core::policy::ConnectionRole;
