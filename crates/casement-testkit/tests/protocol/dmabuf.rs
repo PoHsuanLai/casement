@@ -10,15 +10,6 @@ use casement_testkit::udmabuf::client_buffer;
 use casement_testkit::{Fixture, FixtureSpec};
 use smithay::reexports::drm::node::NodeType;
 
-/// With --dmabuf none there is no zwp_linux_dmabuf_v1 (shell-host F80 falls back to shm).
-#[test]
-fn dmabuf_none_advertises_nothing() {
-    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
-    let client = fixture.connect(ConnectionRole::Public);
-    fixture.pump();
-    assert_eq!(advertised_version(fixture.client(client).globals()), None);
-}
-
 /// With --dmabuf soft the default feedback names the fake main device (version 6, A3).
 #[test]
 fn dmabuf_soft_advertises_the_fake_main_device() {

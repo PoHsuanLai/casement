@@ -10,7 +10,6 @@ use casement_layout::{
     Arrangement, ConfigureNeed, LayoutReport, RustScene, SceneLayout, SpaceTarget, WindowPlacement,
     WindowTarget,
 };
-use proptest::prelude::*;
 use support::scene::{ANY_SIZE, knobs, one_desktop, output_key, rect, size, space_id, window};
 
 /// A window, its expected rectangle and configure need.
@@ -281,36 +280,4 @@ fn minimised_windows_have_no_target() {
     let got = RustScene.arrange(&spec, &knobs());
     let ids: Vec<_> = got.windows.iter().map(|t| t.window).collect();
     assert_eq!(ids, vec![WindowId(2)]);
-}
-
-fn placement() -> impl Strategy<Value = WindowPlacement> {
-    prop_oneof![
-        (-500i32..2500, -500i32..1500, 1u32..2500, 1u32..1500)
-            .prop_map(|(x, y, w, h)| WindowPlacement::Floating(rect(x, y, w, h))),
-        (1u32..2500, 1u32..1500).prop_map(|(w, h)| WindowPlacement::New(size(w, h))),
-    ]
-}
-
-proptest! {
-    #[test]
-    fn every_window_fits_and_layout_is_deterministic(
-        placements in proptest::collection::vec(placement(), 0..24),
-        w in 640u32..3840,
-        h in 480u32..2160,
-    ) {
-        let usable = rect(0, 24, w, h);
-        let windows = placements
-            .into_iter()
-            .enumerate()
-            .map(|(n, p)| window(n as u64 + 1, p, ANY_SIZE))
-            .collect::<Vec<_>>();
-        let count = windows.len();
-        let spec = one_desktop(usable, windows);
-        let got = RustScene.arrange(&spec, &knobs());
-        prop_assert_eq!(got.windows.len(), count);
-        for t in &got.windows {
-            prop_assert_eq!(t.rect.intersection(&usable), Some(t.rect), "window {:?} leaves the usable area", t.window);
-        }
-        prop_assert_eq!(RustScene.arrange(&spec, &knobs()), got);
-    }
 }

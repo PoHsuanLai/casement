@@ -1,5 +1,4 @@
-//! spec_of reads the model: needs Model::step to build one, so it is proven once P0-F1b-model
-//! lands (P0-F1-layout writes spec_of; P0-F1b-model un-ignores this).
+//! spec_of reads the model: a Model built by Model::step is laid out as the spec says.
 
 use casement_core::app::AppKey;
 use casement_core::focus::TokenCheck;

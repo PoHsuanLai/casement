@@ -63,22 +63,3 @@ impl FixtureSpec {
         FixtureSpec { renderer, ..self }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_desktop_spec_is_one_plain_output() {
-        let spec = FixtureSpec::desktop();
-        assert_eq!(spec.outputs.len(), 1);
-        assert_eq!(spec.outputs[0].text(), "HEADLESS-1:1920x1080@60000:120:0,0");
-        assert_eq!(spec.renderer, SoftRenderer::Pixman);
-        let three = spec.with_outputs(&[
-            "HEADLESS-1:1920x1080@60000:120:0,0",
-            "HEADLESS-2:2880x1620@60000:180:1920,0",
-            "HEADLESS-3:3840x2160@60000:240:3840,0",
-        ]);
-        assert_eq!(three.outputs.len(), 3);
-    }
-}

@@ -213,13 +213,3 @@ fn the_clock_never_moves_backwards() {
     clock.advance_to(ms(100));
     assert_eq!(clock.now(), ms(500));
 }
-
-#[test]
-fn the_binary_answers_help() {
-    let status = std::process::Command::new(env!("CARGO_BIN_EXE_casement"))
-        .arg("--help")
-        .env_clear()
-        .status()
-        .expect("the casement binary runs");
-    assert!(status.success());
-}

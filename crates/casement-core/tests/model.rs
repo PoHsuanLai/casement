@@ -4,17 +4,33 @@
 
 mod support;
 
-use casement_core::focus::TokenCheck;
+use casement_core::focus::{Focus, TokenCheck};
 use casement_core::lock::{LockEvent, LockReply, LockState};
-use casement_core::space::SpaceContent;
-use casement_core::{ClientKey, Effect, Event, KeyboardTarget, WindowId};
+use casement_core::settings::CasementSettings;
+use casement_core::space::{SpaceContent, SpaceSeed};
+use casement_core::{ClientKey, Effect, Event, KeyboardTarget, Model, WindowId};
 use casement_protocols::vocab::Attention;
 use support::driver::{Op, fresh, last, map, plug, run};
-use support::{headless, proven};
+use support::{headless, ms, proven};
 
+/// A new model: invariants hold, and it is an empty, unlocked desktop that holds its settings
+/// and epoch.
 #[test]
-fn a_new_model_keeps_its_invariants() {
-    assert_eq!(fresh().check_invariants(), Ok(()));
+fn a_new_model_is_an_empty_desktop_that_keeps_its_invariants() {
+    let model = Model::new(
+        CasementSettings::defaults(),
+        ms(5),
+        SpaceSeed::from_entropy([1; 16]),
+    );
+    assert_eq!(model.check_invariants(), Ok(()), "invariants");
+    assert!(model.windows().is_empty(), "no windows");
+    assert!(model.apps().is_empty(), "no apps");
+    assert!(model.outputs().0.is_empty(), "no outputs");
+    assert_eq!(model.lock(), &LockState::Unlocked, "unlocked");
+    assert_eq!(model.focus(), &Focus::none(), "no focus");
+    assert_eq!(model.timers().next(), None, "no timers");
+    assert_eq!(model.settings(), &CasementSettings::defaults(), "settings");
+    assert_eq!(model.now(), ms(5), "epoch");
 }
 
 #[test]

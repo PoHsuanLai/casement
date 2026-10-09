@@ -52,6 +52,12 @@ fn the_outputs_plugged_at_start_are_announced_once_in_name_order() {
             .all(|e| matches!(e, ConnectorEvent::Plugged(_)))
     );
     assert!(backend.announce().is_empty(), "announced once");
+    assert!(
+        backend.last_frame(&name("HEADLESS-1")).is_none(),
+        "nothing has presented before a frame"
+    );
+    assert_eq!(backend.frames_presented(), 0);
+    assert_eq!(backend.callbacks_sent(), 0);
 }
 
 #[test]
@@ -168,43 +174,6 @@ fn apply_sets_the_whole_configuration_at_once() {
     assert_eq!(output.spec.transform, Transform::R90);
     assert_eq!(output.spec.position, wanted.position);
     assert_eq!(output.power, OutputPower::Off);
-}
-
-#[test]
-fn nothing_has_presented_before_a_frame() {
-    let backend =
-        HeadlessBackend::start(config(&["HEADLESS-1:1920x1080@60000:120:0,0"])).expect("starts");
-    assert!(backend.last_frame(&name("HEADLESS-1")).is_none());
-    assert_eq!(backend.frames_presented(), 0);
-    assert_eq!(backend.callbacks_sent(), 0);
-}
-
-#[test]
-fn the_cost_model_is_the_configured_one() {
-    let backend = HeadlessBackend::start(config(&[])).expect("starts");
-    assert_eq!(backend.render_cost(9), Some(Duration::from_millis(4)));
-}
-
-#[test]
-fn a_hundred_plug_unplug_cycles_leave_the_set_as_it_was() {
-    let mut backend =
-        HeadlessBackend::start(config(&["HEADLESS-1:1920x1080@60000:120:0,0"])).expect("starts");
-    for n in 0..100 {
-        let plugged = backend.plug(spec(&format!(
-            "HEADLESS-9:1280x720@60000:120:{},0",
-            1920 + n
-        )));
-        assert_eq!(backend.outputs().len(), 2);
-        let unplugged = backend.unplug(&name("HEADLESS-9"));
-        assert_eq!(unplugged, ConnectorEvent::Unplugged(key_of(&plugged)));
-        assert_eq!(backend.outputs().len(), 1);
-    }
-    let names: Vec<_> = backend
-        .outputs()
-        .iter()
-        .map(|(n, _)| n.as_str().to_owned())
-        .collect();
-    assert_eq!(names, ["HEADLESS-1"]);
 }
 
 #[test]

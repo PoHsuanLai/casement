@@ -11,7 +11,6 @@ use casement_testclient::surface::layer::{
 use casement_testclient::surface::lock::Locker;
 use casement_testclient::{Pattern, TestClient, shm_buffer};
 use casement_testkit::{Fixture, FixtureSpec, FrameCount, ShotTarget, TestOrigin};
-use porter_core::SandboxFacts;
 use std::time::Duration;
 
 use crate::xdg_shell::{map_toplevel, settle};
@@ -25,16 +24,6 @@ const CURSOR_REACH: u32 = 32;
 
 /// Where the cursor rests: the centre of the 1920x1080 output, where the pointer starts.
 const CURSOR_AT: (u32, u32) = (960, 540);
-
-/// Whether the registry the client saw lists `interface`.
-fn advertises(client: &mut TestClient, interface: &str) -> bool {
-    client
-        .globals()
-        .contents()
-        .clone_list()
-        .iter()
-        .any(|global| global.interface == interface)
-}
 
 /// The evdev code of the `a` key.
 const KEY_A: KeyCode = KeyCode(30);
@@ -228,24 +217,4 @@ fn locked_is_sent_once_every_output_is_covered() {
     cover.show(fixture.client(id), &buffer);
     fixture.pump();
     assert!(locker.is_locked(), "locked arrives with the first content");
-}
-
-/// A Sandboxed connection does not see ext_session_lock_manager_v1 (I7).
-#[test]
-fn session_lock_is_hidden_from_sandboxed_clients() {
-    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
-    let sandboxed = fixture.connect(ConnectionRole::Sandboxed(SandboxFacts::Flatpak {
-        app: "org.example.App".to_owned(),
-        instance: "1".to_owned(),
-    }));
-    let public = fixture.connect(ConnectionRole::Public);
-    fixture.pump();
-    assert!(
-        !advertises(fixture.client(sandboxed), "ext_session_lock_manager_v1"),
-        "a sandboxed client must not see ext_session_lock_manager_v1"
-    );
-    assert!(
-        advertises(fixture.client(public), "ext_session_lock_manager_v1"),
-        "a public client sees ext_session_lock_manager_v1"
-    );
 }

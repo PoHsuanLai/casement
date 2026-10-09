@@ -149,7 +149,8 @@ fn every_global_kind_but_dmabuf_has_a_golden_row_and_rows_are_unique() {
 fn the_default_fixture_advertises_the_golden_globals() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     let client = fixture.connect(ConnectionRole::Public);
-    let advertised: BTreeSet<(String, u32)> = fixture
+    // Sorted lists, not sets: a global advertised twice must not hide.
+    let mut advertised: Vec<(String, u32)> = fixture
         .client(client)
         .globals()
         .contents()
@@ -157,9 +158,11 @@ fn the_default_fixture_advertises_the_golden_globals() {
         .into_iter()
         .map(|global| (global.interface, global.version))
         .collect();
-    let golden: BTreeSet<(String, u32)> = rows()
+    advertised.sort();
+    let mut golden: Vec<(String, u32)> = rows()
         .into_iter()
         .map(|(interface, version, _)| (interface, version))
         .collect();
+    golden.sort();
     assert_eq!(advertised, golden);
 }

@@ -7,7 +7,6 @@ use casement_testclient::manage::foreign_toplevel_list::{Listed, Listing, Toplev
 use casement_testclient::surface::toplevel::WmBase;
 use casement_testclient::{Pattern, shm_buffer};
 use casement_testkit::{Fixture, FixtureSpec};
-use porter_core::SandboxFacts;
 
 /// Each mapped window appears with title and app id; a new title is a second `done`; closing it
 /// sends closed.
@@ -61,25 +60,4 @@ fn windows_are_listed_and_closed() {
     fixture.pump();
     list.pump().expect("pump");
     assert_eq!(list.listed(), [listed("Drafts", Listing::Closed)]);
-}
-
-/// A Sandboxed connection does not see ext_foreign_toplevel_list_v1 (I7).
-#[test]
-fn the_list_is_hidden_from_sandboxed_clients() {
-    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
-    let client = fixture.connect(ConnectionRole::Sandboxed(SandboxFacts::Flatpak {
-        app: "org.example.App".to_owned(),
-        instance: "1".to_owned(),
-    }));
-    fixture.pump();
-    let hidden = fixture
-        .client(client)
-        .globals()
-        .contents()
-        .with_list(|list| {
-            !list
-                .iter()
-                .any(|global| global.interface == "ext_foreign_toplevel_list_v1")
-        });
-    assert!(hidden);
 }

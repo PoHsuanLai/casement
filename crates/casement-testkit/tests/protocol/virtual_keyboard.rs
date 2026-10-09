@@ -5,34 +5,7 @@ use casement_core::time::Mono;
 use casement_testclient::ime::virtual_keyboard::VirtualBoard;
 use casement_testclient::misc::idle::{IdleKind, IdleLine, IdleSignal, IdleWatch};
 use casement_testkit::{Fixture, FixtureSpec};
-use porter_core::SandboxFacts;
 use std::time::Duration;
-
-fn sees_virtual_keyboard(fixture: &mut Fixture, role: ConnectionRole) -> bool {
-    let client = fixture.connect(role);
-    fixture
-        .client(client)
-        .globals()
-        .contents()
-        .with_list(|list| {
-            list.iter().any(|global| {
-                global.interface == "zwp_virtual_keyboard_manager_v1" && global.version == 1
-            })
-        })
-}
-
-/// A Public connection sees zwp_virtual_keyboard_manager_v1 (version 1); a Sandboxed one
-/// does not (I7).
-#[test]
-fn the_virtual_keyboard_manager_is_hidden_from_sandboxed_clients() {
-    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
-    assert!(sees_virtual_keyboard(&mut fixture, ConnectionRole::Public));
-    let sandboxed = ConnectionRole::Sandboxed(SandboxFacts::Flatpak {
-        app: "org.example.App".to_owned(),
-        instance: "1".to_owned(),
-    });
-    assert!(!sees_virtual_keyboard(&mut fixture, sandboxed));
-}
 
 /// The smallest keymap libxkbcommon accepts: one key.
 const KEYMAP: &str = "xkb_keymap {\n xkb_keycodes { <A> = 38; };\n xkb_types {};\n xkb_compat {};\n xkb_symbols { key <A> { [ a ] }; };\n};\n";

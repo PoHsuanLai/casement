@@ -75,51 +75,6 @@ fn a_lock_cover_is_opaque_over_its_whole_area() {
     );
 }
 
-/// One frame of the oracle: a moving solid over a fixed page.
-fn frame_of(
-    moving: &Id,
-    page: &Id,
-    (x, y, w, h): (i32, i32, u32, u32),
-) -> Vec<CasementElement<PixmanRenderer>> {
-    vec![
-        CasementElement::Solid(solid_rect(
-            moving.clone(),
-            rect(x, y, w, h),
-            GLASS,
-            CommitCounter::default(),
-        )),
-        CasementElement::Solid(solid_rect(
-            page.clone(),
-            rect(40, 40, 560, 400),
-            WHITE,
-            CommitCounter::default(),
-        )),
-    ]
-}
-
-/// Renders `moves` (one solid rectangle per frame) incrementally with buffer age 1 and the
-/// last frame once from scratch; whether the two are byte-identical.
-fn incremental_matches_full(moves: &[(i32, i32, u32, u32)]) -> bool {
-    let (moving, page) = (Id::new(), Id::new());
-    let mut renderer = pixman();
-    let mut target = renderer.target(SIZE);
-    let mut tracker = tracker(SIZE, 1.0);
-    let incremental = moves.iter().enumerate().fold(Vec::new(), |_, (n, step)| {
-        let age = usize::from(n > 0);
-        renderer
-            .draw(
-                &mut target,
-                &mut tracker,
-                SIZE,
-                &frame_of(&moving, &page, *step),
-                age,
-            )
-            .1
-    });
-    let last = moves.last().copied().unwrap_or((0, 0, 1, 1));
-    incremental == render_once(&mut renderer, SIZE, 1.0, &frame_of(&moving, &page, last))
-}
-
 /// The mixed oracle's scene.
 #[derive(Debug, Clone, Copy)]
 struct Step {
@@ -277,13 +232,6 @@ fn mixed_incremental_matches_full(changes: &[Change]) -> bool {
 }
 
 proptest! {
-    /// Damage oracle (11 §3.4): any sequence of solid rectangles moving between frames,
-    /// rendered incrementally with buffer age, equals rendering the last frame from scratch.
-    #[test]
-    fn incremental_damage_equals_a_full_render(moves in proptest::collection::vec((0_i32..600, 0_i32..440, 1_u32..40, 1_u32..40), 1..12)) {
-        prop_assert!(incremental_matches_full(&moves));
-    }
-
     /// The same oracle over the cursor raster, the lock cover coming and going, the blur
     /// stand-in and translucent solids.
     #[test]

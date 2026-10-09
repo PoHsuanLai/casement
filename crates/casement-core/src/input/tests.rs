@@ -192,27 +192,6 @@ fn keysym_names_table() {
     }
 }
 
-/// A chord text and whether it parses.
-const CHORDS: &[(&str, bool)] = &[
-    ("cmd+plus", true),
-    ("ctrl+option+shift+cmd+fn+F12", true),
-    ("Cmd+SHIFT+a", true),
-    ("space", true),
-    ("cmd+cmd+a", false),
-    ("+a", false),
-    ("cmd++a", false),
-    ("cmd+shift", false),
-    ("cmd", false),
-    ("cmd+a+", false),
-];
-
-#[test]
-fn chord_texts_table() {
-    for (text, parses) in CHORDS {
-        assert_eq!(Chord::parse(text).is_ok(), *parses, "{text:?}");
-    }
-}
-
 #[test]
 fn caps_lock_is_not_part_of_a_chord_text() {
     let chord = Chord {

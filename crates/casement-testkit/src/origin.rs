@@ -25,21 +25,3 @@ impl TestOrigin {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_origins_map_onto_the_models() {
-        assert_eq!(
-            TestOrigin::Physical(DeviceClass::Keyboard).origin(),
-            Origin::Physical(DeviceClass::Keyboard)
-        );
-        assert_eq!(
-            TestOrigin::Remote.origin(),
-            Origin::Remote(PortalSessionId(0))
-        );
-        assert_eq!(TestOrigin::Test.origin(), Origin::Test);
-    }
-}

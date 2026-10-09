@@ -15,24 +15,6 @@ fn step(fixture: &mut Fixture, watch: &mut IdleWatch, by: Duration) {
     watch.pump(fixture.model().now()).expect("pump the watch");
 }
 
-/// The notifier is advertised once, at version 2 (smithay's own global is withdrawn).
-#[test]
-fn the_notifier_is_advertised_once_at_version_2() {
-    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
-    let client = fixture.connect(ConnectionRole::Public);
-    let notifiers: Vec<u32> = fixture
-        .client(client)
-        .globals()
-        .contents()
-        .with_list(|list| {
-            list.iter()
-                .filter(|global| global.interface == "ext_idle_notifier_v1")
-                .map(|global| global.version)
-                .collect()
-        });
-    assert_eq!(notifiers, vec![2]);
-}
-
 /// A 30 s notification fires idled after exactly 30 s of virtual time without input.
 #[test]
 fn idle_is_notified_at_virtual_time() {

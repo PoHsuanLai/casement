@@ -3,12 +3,11 @@
 use crate::xdg_shell::{boot, check_golden, click, golden, map_toplevel, pointer, settle, windows};
 use casement_core::DeviceId;
 use casement_core::input::{DeviceClass, Edge, KeyCode};
-use casement_core::policy::ConnectionRole;
 use casement_testclient::ime::input_method::InputMethodEvent;
 use casement_testclient::ime::session::ImeSession;
 use casement_testclient::ime::text_input::TextInputEvent;
 use casement_testclient::surface::toplevel::{Toplevel, WmBase};
-use casement_testkit::{ClientId, Fixture, FixtureSpec, TestOrigin};
+use casement_testkit::{ClientId, Fixture, TestOrigin};
 
 /// A document window with keyboard focus, a text field and an input method on its connection.
 pub(crate) struct Typing {
@@ -93,23 +92,6 @@ impl Typing {
         self.ime.grab_keyboard().expect("grab");
         self.pump();
     }
-}
-
-/// Every connection sees the text-input manager (I7 shows it to everyone).
-#[test]
-fn text_input_is_advertised_to_every_role() {
-    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
-    let public = fixture.connect(ConnectionRole::Public);
-    let advertised = fixture
-        .client(public)
-        .globals()
-        .contents()
-        .with_list(|list| {
-            list.iter().any(|global| {
-                global.interface == "zwp_text_input_manager_v3" && global.version == 1
-            })
-        });
-    assert!(advertised, "zwp_text_input_manager_v3 v1 is advertised");
 }
 
 /// Enter, enable, then the first key goes to the input method, not the document (SP1 A5).

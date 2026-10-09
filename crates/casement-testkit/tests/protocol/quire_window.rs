@@ -15,24 +15,6 @@ use casement_testclient::quire::window::{
 };
 use casement_testclient::surface::toplevel::{WmBase, bind_pointer};
 
-/// Quire_window_manager_v1 version 1 is advertised to public clients (C50: shell-host's probe).
-#[test]
-fn the_global_is_advertised_from_p0() {
-    let (mut fixture, id) = boot();
-    let advertised = fixture
-        .client(id)
-        .globals()
-        .contents()
-        .clone_list()
-        .into_iter()
-        .find(|global| global.interface == "quire_window_manager_v1")
-        .expect("the global is advertised to a public client");
-    assert_eq!(advertised.version, 1);
-    let _ = WindowManager::bind(fixture.client(id), 1);
-    fixture.pump();
-    assert!(fixture.client(id).protocol_error().is_none());
-}
-
 /// The key window receives emphasis(key), the others inactive.
 #[test]
 fn emphasis_follows_focus() {

@@ -90,14 +90,25 @@ mod tests {
 
     #[test]
     fn a_fixed_seed_mints_a_pinned_sequence() {
-        const CASES: &[(&str, [u8; 16], [&str; 2])] = &[(
-            "zero",
-            [0; 16],
-            [
-                "s-777b4ba101e5379fe220a8397b1dcdaf",
-                "s-f7a7d58d9012ec3c6e789e6aa1b965f4",
-            ],
-        )];
+        const CASES: &[(&str, [u8; 16], [&str; 2])] = &[
+            (
+                "zero",
+                [0; 16],
+                [
+                    "s-777b4ba101e5379fe220a8397b1dcdaf",
+                    "s-f7a7d58d9012ec3c6e789e6aa1b965f4",
+                ],
+            ),
+            // The seed matters: another entropy mints another sequence.
+            (
+                "ones",
+                [1; 16],
+                [
+                    "s-9ba2b4ce878145c879982a55c613df1f",
+                    "s-5e6d2214b3ac00d741170d9119fcd900",
+                ],
+            ),
+        ];
         for (name, entropy, want) in CASES {
             let got: Vec<String> = minted(SpaceSeed::from_entropy(*entropy), 2)
                 .iter()

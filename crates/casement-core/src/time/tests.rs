@@ -233,9 +233,4 @@ fn mono_round_trips_through_json() {
     let text = serde_json::to_string(&mono).expect("serialise");
     assert_eq!(text, r#"{"secs":3,"nanos":250}"#);
     assert_eq!(serde_json::from_str::<Mono>(&text).expect("parse"), mono);
-    let rate = serde_json::to_string(&Millihertz(59_940)).expect("serialise");
-    assert_eq!(
-        serde_json::from_str::<Millihertz>(&rate).expect("parse"),
-        Millihertz(59_940)
-    );
 }

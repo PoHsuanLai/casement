@@ -35,32 +35,33 @@ fn settings_of(text: &str) -> CasementSettings {
     to_core(&load(&home).expect("load"))
 }
 
+/// Each row: where the settings come from, and that they are the defaults.
 #[test]
-fn a_missing_document_gives_the_defaults() {
-    let home = tempfile::tempdir().expect("temp dir");
-    let doc = load(&ConfigHome::At(home.path().to_path_buf())).expect("load");
-    assert_eq!(doc, CasementDoc::default());
-    assert_eq!(to_core(&doc), CasementSettings::defaults());
-}
-
-#[test]
-fn a_directory_that_does_not_exist_gives_the_defaults() {
-    let home = ConfigHome::At(Path::new("/nonexistent/casement-test-home").to_path_buf());
-    assert_eq!(
-        to_core(&load(&home).expect("load")),
-        CasementSettings::defaults()
-    );
-}
-
-#[test]
-fn an_empty_document_gives_the_defaults() {
-    assert_eq!(settings_of(""), CasementSettings::defaults());
-}
-
-#[test]
-fn the_defaults_survive_a_round_trip_through_the_document() {
-    let text = toml::to_string(&CasementDoc::default()).expect("serialises");
-    assert_eq!(settings_of(&text), CasementSettings::defaults());
+fn the_defaults_come_from() {
+    type Source = fn() -> CasementSettings;
+    const CASES: &[(&str, Source)] = &[
+        ("a missing document", || {
+            let home = tempfile::tempdir().expect("temp dir");
+            let doc = load(&ConfigHome::At(home.path().to_path_buf())).expect("load");
+            assert_eq!(
+                doc,
+                CasementDoc::default(),
+                "a missing document is the default one"
+            );
+            to_core(&doc)
+        }),
+        ("a directory that does not exist", || {
+            let home = ConfigHome::At(Path::new("/nonexistent/casement-test-home").to_path_buf());
+            to_core(&load(&home).expect("load"))
+        }),
+        ("an empty document", || settings_of("")),
+        ("the serialised default document", || {
+            settings_of(&toml::to_string(&CasementDoc::default()).expect("serialises"))
+        }),
+    ];
+    for (name, source) in CASES {
+        assert_eq!(source(), CasementSettings::defaults(), "{name}");
+    }
 }
 
 #[test]
@@ -195,10 +196,21 @@ fn the_scale_policy_follows_the_document() {
     }
 }
 
+/// Each row: what the document says about `keyboard.repeat_rate`, and the rate the model gets.
 #[test]
-fn a_key_repeat_that_would_never_fire_is_one_a_second() {
-    let settings = settings_of("[keyboard]\nrepeat_rate = 0\n");
-    assert_eq!(settings.keyboard.repeat_rate, RepeatRate(1));
+fn the_repeat_rate_follows_the_document() {
+    let cases = [
+        (
+            "a rate that would never fire is one a second",
+            0,
+            RepeatRate(1),
+        ),
+        ("a rate is kept", 30, RepeatRate(30)),
+    ];
+    for (name, rate, want) in cases {
+        let settings = settings_of(&format!("[keyboard]\nrepeat_rate = {rate}\n"));
+        assert_eq!(settings.keyboard.repeat_rate, want, "{name}");
+    }
 }
 
 #[test]
@@ -292,18 +304,6 @@ fn every_kind_of_binding_survives_the_document() {
     assert_eq!(got, want);
 }
 
-#[test]
-fn the_schema_is_written_and_reads_back() {
-    let dir = tempfile::tempdir().expect("temp dir");
-    write_schema(dir.path()).expect("schema");
-    let text = std::fs::read_to_string(dir.path().join("casement.settings.toml")).expect("written");
-    let read = ds_settings::schema::Schema::from_toml(&text).expect("parses");
-    assert!(!read.key.is_empty(), "every settings key has a row");
-    assert_eq!(read, schema());
-    assert_eq!(read.app.0, "casement");
-    assert_eq!(read.file.0, "casement/settings.toml");
-}
-
 /// A schema row for a key the document does not hold, or a document key with no row, is a
 /// settings key a person could not set or one the Settings app would draw for nothing.
 #[test]
@@ -330,8 +330,24 @@ fn the_schema_and_the_document_name_the_same_keys() {
     assert_eq!(got, want, "paths and defaults agree");
 }
 
+/// The schema is written through the library and through the binary; both read back as
+/// `schema()`.
 #[test]
-fn the_binary_writes_the_schema_and_it_reads_back() {
+fn the_schema_is_written_and_reads_back() {
+    let read_back = |dir: &Path, step: &str| {
+        let text = std::fs::read_to_string(dir.join("casement.settings.toml"))
+            .unwrap_or_else(|e| panic!("{step}: written: {e}"));
+        ds_settings::schema::Schema::from_toml(&text)
+            .unwrap_or_else(|e| panic!("{step}: parses: {e:?}"))
+    };
+    let dir = tempfile::tempdir().expect("temp dir");
+    write_schema(dir.path()).expect("schema");
+    let read = read_back(dir.path(), "write_schema");
+    assert!(!read.key.is_empty(), "every settings key has a row");
+    assert_eq!(read, schema(), "write_schema");
+    assert_eq!(read.app.0, "casement");
+    assert_eq!(read.file.0, "casement/settings.toml");
+
     let dir = tempfile::tempdir().expect("temp dir");
     let status = Command::new(env!("CARGO_BIN_EXE_casement"))
         .arg("--write-schema")
@@ -340,6 +356,16 @@ fn the_binary_writes_the_schema_and_it_reads_back() {
         .status()
         .expect("runs");
     assert!(status.success(), "--write-schema exits 0");
-    let text = std::fs::read_to_string(dir.path().join("casement.settings.toml")).expect("written");
-    assert_eq!(ds_settings::schema::Schema::from_toml(&text), Ok(schema()));
+    assert_eq!(read_back(dir.path(), "the binary"), schema(), "the binary");
+}
+
+/// The binary answers `--help` (a smoke test beside the other one that runs it).
+#[test]
+fn the_binary_answers_help() {
+    let status = Command::new(env!("CARGO_BIN_EXE_casement"))
+        .arg("--help")
+        .env_clear()
+        .status()
+        .expect("the casement binary runs");
+    assert!(status.success());
 }

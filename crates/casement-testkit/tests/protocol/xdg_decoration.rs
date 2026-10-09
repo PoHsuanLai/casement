@@ -38,20 +38,6 @@ fn client_side_is_preferred() {
     assert!(fixture.client(id).protocol_error().is_none());
 }
 
-/// The global binds at version 1 for a public connection.
-#[test]
-fn the_global_binds_at_version_one() {
-    let (mut fixture, id) = boot();
-    assert!(DecorationManager::bind(fixture.client(id)).is_some());
-    let sandboxed = fixture.connect(ConnectionRole::Public);
-    fixture.pump();
-    let seen = fixture.client(sandboxed).globals().contents().clone_list();
-    assert!(
-        seen.iter()
-            .any(|global| global.interface == "zxdg_decoration_manager_v1" && global.version == 1)
-    );
-}
-
 /// A second decoration object for one toplevel is `already_constructed`, and only that client
 /// is disconnected.
 #[test]

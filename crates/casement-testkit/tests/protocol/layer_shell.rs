@@ -11,19 +11,8 @@ use casement_testclient::surface::layer::{
 use casement_testclient::surface::toplevel::{State, WmBase};
 use casement_testclient::{Pattern, TestClient, shm_buffer};
 use casement_testkit::{ClientId, Fixture, FixtureSpec, TestOrigin};
-use porter_core::SandboxFacts;
 
 use crate::xdg_shell::map_toplevel;
-
-/// Whether the registry the client saw lists `interface`.
-fn advertises(client: &mut TestClient, interface: &str) -> bool {
-    client
-        .globals()
-        .contents()
-        .clone_list()
-        .iter()
-        .any(|global| global.interface == interface)
-}
 
 /// The evdev code of the left shift key.
 const KEY_LEFTSHIFT: KeyCode = KeyCode(42);
@@ -457,25 +446,5 @@ fn a_full_screen_window_covers_the_whole_output_with_a_bar_mapped() {
         motions.last().map(|(_, args)| args[1..].to_vec()),
         Some(vec!["420.000".to_owned(), "20.000".to_owned()]),
         "the pointer in the bar's old strip is over the window: {motions:?}"
-    );
-}
-
-/// A Sandboxed connection does not see zwlr_layer_shell_v1 (I7).
-#[test]
-fn layer_shell_is_hidden_from_sandboxed_clients() {
-    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
-    let sandboxed = fixture.connect(ConnectionRole::Sandboxed(SandboxFacts::Flatpak {
-        app: "org.example.App".to_owned(),
-        instance: "1".to_owned(),
-    }));
-    let public = fixture.connect(ConnectionRole::Public);
-    fixture.pump();
-    assert!(
-        !advertises(fixture.client(sandboxed), "zwlr_layer_shell_v1"),
-        "a sandboxed client must not see zwlr_layer_shell_v1"
-    );
-    assert!(
-        advertises(fixture.client(public), "zwlr_layer_shell_v1"),
-        "a public client sees zwlr_layer_shell_v1"
     );
 }

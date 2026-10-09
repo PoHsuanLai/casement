@@ -9,11 +9,11 @@ fn tile_margins_follow_their_setting() {
     let mut off = CasementSettings::defaults();
     off.windows.tile_margins = Enabled::Off;
     assert_eq!(LayoutKnobs::of(&off).tile_margin, 0);
-    assert!(
-        LayoutKnobs::of(&on).tile_margin > 0,
-        "margins on means a margin"
+    assert_eq!(
+        LayoutKnobs::of(&on).tile_margin,
+        8,
+        "margins on means the default margin"
     );
-    assert_eq!(LayoutKnobs::of(&on), LayoutKnobs::of(&on.clone()));
 }
 
 #[test]

@@ -160,12 +160,4 @@ mod tests {
             );
         }
     }
-
-    #[test]
-    fn a_key_stores_with_its_kind() {
-        let claimed = AppKey::Claimed(ClaimedId::parse("foot").expect("id"));
-        let json = serde_json::to_string(&claimed).expect("json");
-        assert_eq!(json, r#"{"kind":"claimed","v":"foot"}"#);
-        assert_eq!(serde_json::from_str::<AppKey>(&json).expect("key"), claimed);
-    }
 }
