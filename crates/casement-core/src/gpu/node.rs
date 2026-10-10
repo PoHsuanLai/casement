@@ -31,8 +31,29 @@ pub struct ByPathId(String);
 impl ByPathId {
     /// The id written as `text`: a PCI address `dddd:bb:ss.f` in lowercase hex.
     pub fn parse(text: &str) -> Result<ByPathId, CoreError> {
-        let _ = text;
-        todo!("P1-D4: ByPathId::parse")
+        let bytes = text.as_bytes();
+        let lower_hex = |slice: &[u8]| {
+            slice
+                .iter()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
+        };
+        // dddd:bb:ss.f
+        let well_formed = bytes.len() == 12
+            && lower_hex(&bytes[0..4])
+            && bytes[4] == b':'
+            && lower_hex(&bytes[5..7])
+            && bytes[7] == b':'
+            && lower_hex(&bytes[8..10])
+            && bytes[10] == b'.'
+            && (b'0'..=b'7').contains(&bytes[11]);
+        if well_formed {
+            Ok(ByPathId(text.to_owned()))
+        } else {
+            Err(CoreError::Malformed {
+                what: "PCI address",
+                text: text.to_owned(),
+            })
+        }
     }
 
     /// The id's text.

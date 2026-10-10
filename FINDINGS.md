@@ -817,3 +817,44 @@ the `--xwayland` flags, `VendorFact::from_pci_vendor`, `GammaTable::new`, `Outpu
   `casement/src/state.rs` and `exec.rs` (module and import names `gamma`, `workspace`, `spawn`), the doc tests (all
   `no_run`), `casement-testkit/src/fixture.rs`, `fakes/session.rs` (`TtySession` over smithay's `Session`), and
   `casement-render/src/pass/capture.rs` (the `ExportMem` bound with `R::Framebuffer<'_>`).
+
+## p1-d4: GPU detection, plan, multi-GPU import (2026-10-11)
+
+Nothing here compiled (no builds this lane).
+
+- **Plan rule** (`core/gpu/plan.rs`). Auto: of the GPUs that drive a connected monitor, the firmware's (`boot_vga`)
+  else the lowest node; with none driving a monitor the same rule over all GPUs. `gpu.render = <by-path id>` picks that
+  GPU (an id detection does not list is `PlanRefusal::UnknownGpu`, also with an empty list). Scanout stays on the GPU
+  that drives each connector. The owner's machine (AMD iGPU on the panel, NVIDIA dGPU) is a table case in
+  `casement-core/tests/it/gpu.rs`; no code names it.
+- **Feedback** (`core/gpu/feedback.rs`): a Render tranche (render GPU), then one Import tranche per other GPU that scans
+  an output out, each format-and-modifier only at its first tranche, empty tranches left out. There is **no Scanout
+  tranche yet**: it needs the KMS planes' formats, which `FormatTable` does not carry (P1-D2/D3 add them).
+- **Tagging (A5).** The linux-dmabuf protocol does not tell the server which tranche a client allocated from, so
+  `DmabufPart::source_device(format)` answers with the target of the tranche that offers the buffer's format and
+  modifier (unambiguous because `feedback_for` offers each pair once; the main device for a pair nobody offers). The
+  handler in `casement/src/handlers/dmabuf.rs` still does the `DrmNode` conversion (B6 keeps drm out of the protocol
+  crate); it was not moved into the render-node adapter. `backend::gpu::tag_node` is the same rule on the plan.
+- **Departures.** (1) `SysRenderNodes` is no longer behind the `tty` feature: it only reads files, and the test kit
+  must run it over the fabricated tree. (2) `GpuStack` gained `handles` (open render and scanout nodes; `#[non_exhaustive]`)
+  and holds no `GpuManager`: the manager is built over real devices by the frame loop (P1-D3). (3) `route_for` assumes a
+  direct-importing render GPU; `route_with(source, plan, CrossSupport)` takes the capability (`Copy`, `Refused`).
+  (4) `GpuError::NoFormats` (a recorded table nobody can load). (5) `DmabufOffer` is `#[non_exhaustive]` with
+  `tranches` and `from_feedback`; `State::new` still offers `DmabufOffer::soft()` and the tty start (P1-D1..D3) must build the
+  offer with `DmabufOffer::from_feedback(&feedback_for(plan, &format_table(..)?))`. (6) apply_offer adds every tranche
+  as a preference tranche: smithay sends the builder's "main" tranche after all preference tranches, which would put the
+  render GPU last. (7) Testkit: `FormatSet::LinearCodes`, `GpuTopology::pair/facts`, `SoftGpu::node/by_path`,
+  `SoftDevice`, `SoftApiError`; `FormatSource` is implemented for `GpuTopology`. `SoftPixman` has no `Offscreen` impl.
+- **Sysfs layout read** (`render_nodes_real.rs`): `sys/dev/char/226:<128..191>/device/{vendor,boot_vga}`,
+  `device/drm/card<N>/card<N>-<NAME>/status`, `dev/dri/by-path/pci-<addr>-render -> renderD<minor>`; a GPU without a
+  by-path link falls back to the file name of its `device` link.
+- **Counters asserted** (`tests/it/topology`): Direct is B `bind_dmabuf` 1, no `copy_texture`, no A `import_memory`,
+  A `import_dmabuf` >= 1 (SP4 saw 2; the exact figure is unexplained, so it is a lower bound); CopyOnly is B
+  `copy_texture` 1, A `import_memory` 1, B `bind_dmabuf` 0.
+- **Most likely not to compile:** `casement-backend/src/gpu/soft.rs` (the `Frame`/`Renderer` delegation against smithay
+  dc7ca68; SP4 ran e3d461a), `casement-testkit/src/gpu/soft_api.rs` (`GraphicsApi` bounds), `tests/it/topology/support.rs`
+  (generic `draw` over `MultiRenderer`), `casement-wayland/src/dmabuf.rs` (`add_preference_tranche` fold).
+- **Real hardware must check:** that `/sys/dev/char/226:N/device/drm/card*/card*-*/status` exists on the target kernel
+  (connector status is read from there, not from `/sys/class/drm`); that the by-path link set matches the `gpu.render`
+  ids Settings shows; a hybrid laptop with the NVIDIA proprietary driver (its render node may list no connectors, and
+  `boot_vga` may be 0 on both GPUs, which falls to the lowest node).

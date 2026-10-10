@@ -3,6 +3,7 @@
 
 use crate::state::State;
 use casement_wayland::dmabuf::{self, Import, MainDevice};
+use smithay::backend::allocator::Buffer;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::reexports::drm::node::DrmNode;
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier};
@@ -17,7 +18,8 @@ impl DmabufHandler for State {
         let ours = self.wl.dmabuf.global == Some(*global);
         match (ours, dmabuf::on_import(&mut self.wl.dmabuf, &mut dmabuf)) {
             (true, Import::Accepted) => {
-                tag_with_node(&dmabuf, self.wl.dmabuf.main_device());
+                let source = self.wl.dmabuf.source_device(dmabuf.format());
+                tag_with_node(&dmabuf, source);
                 if notifier.successful::<State>().is_err() {
                     tracing::debug!("a client left before its dma-buf import was answered");
                 }
@@ -27,11 +29,12 @@ impl DmabufHandler for State {
     }
 }
 
-/// Tags `dmabuf` with the render node of `device` (A5): smithay's multi-GPU renderer copies a
+/// Tags `dmabuf` with the render node of `device`, the device of the tranche that offers its
+/// format (A5): smithay's multi-GPU renderer copies a
 /// buffer only when it knows which GPU holds it, and silently skips the copy otherwise.
 /// `DrmNode::from_dev_id` reads no file, so the jail's fabricated minors (A3) type as render
 /// nodes. The type arrives through smithay's re-export: this one conversion lives here because
-/// the protocol crate may not reach drm (B6); P1-D4 moves it into the render-node adapter.
+/// the protocol crate may not reach drm (B6).
 fn tag_with_node(dmabuf: &Dmabuf, device: Option<MainDevice>) {
     let node = device.and_then(|device| match DrmNode::from_dev_id(device.0) {
         Ok(node) => Some(node),
