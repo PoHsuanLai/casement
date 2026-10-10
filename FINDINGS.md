@@ -105,7 +105,7 @@ P3-CSS, three in `src/` and its ignored parity test, never built at P0-Z2).
 | `crates/casement-ipc/src/wait.rs` | parse_wait (1) | P0-T-dev | `crates/casement-ipc/src/inject.rs`, `wait.rs` tests; `crates/casementctl/src/command.rs` test; `dev/accept.sh --jobs 8` |
 | `crates/casementctl/src/command.rs` | parse, run (2) | P0-T-dev | `crates/casement-ipc/src/inject.rs`, `wait.rs` tests; `crates/casementctl/src/command.rs` test; `dev/accept.sh --jobs 8` |
 | `crates/casement-testkit/src/fixture.rs` | Fixture::session (1) | P1-D1 | P1-Z's session suite |
-| `crates/casement-agent/src/socket.rs` | hand_out, role_for (2) | P2-Q2 | `crates/casement-agent/src/socket.rs` `only_the_shell_and_the_agent_tier_get_privileged_roles` |
+| `crates/casement-agent/src/socket.rs` | hand_out, role_for, CallerUnit::of_cgroup (3; the P2-Z freeze changed `hand_out`'s signature, see p2-z) | P2-Q2 | `crates/casement-agent/src/socket.rs` `only_the_shell_and_the_agent_tier_get_privileged_roles`, `a_hand_out_needs_the_unit_that_may_have_the_role`, `a_unit_is_read_from_the_cgroup_text` |
 | `crates/casement-testkit/src/fixture.rs` | Fixture::palmrest (1) | P3-Z | P3-Z's palmrest tests |
 
 Ignored tests by lane (P0-Z2): P0-H1 17, P0-H2 16, P0-H3 7, P0-H4 10, P0-H5 7, P0-H6 3,
@@ -118,6 +118,24 @@ Implemented at the freeze (with their tests): every `Part::new`, `WaylandStates`
 `VirtualOutputSpec::parse` and `text`; the golden comparison; `surfaceless_gles` (the one unsafe
 module); `Rgba8`; `TextureBook`; `Transcript`, `Pattern`; `FixtureSpec`, `TestOrigin`, `Env`,
 `fabricated_nodes`; `SoftPixman::new`, `FixedUdmabuf::new`; the session seam's types.
+
+### P2-Z: the private protocols, window capture, the hand-out
+
+`todo!()` by lane (33): P2-Q1 11 (8 in the protocol, 3 in the model), P2-Q2 10, P2-Q3 12. Ignored tests by lane:
+P2-Q1 9 (5 in the test kit, 4 in casement-core), P2-Q2 7 (3 in casement-agent, 4 in the test kit), P2-Q3 5. Lane ids and file sets:
+`~/rs-wt/compositor-scope/23-P2-FILL-LANES.md`.
+
+| File | Items | Lane | Proven by |
+| --- | --- | --- | --- |
+| `crates/casement-wayland/src/quire/desktop.rs` | on_bind, on_get_window_for, on_create_space, on_stop, on_app, on_window, on_space, apply_note (8) | P2-Q1 | `crates/casement-testkit/tests/it/protocol/quire_desktop.rs` (5 ignored) |
+| `crates/casement-wayland/src/quire/shell.rs` | on_set_role, on_set_minimise_target, on_clear_minimise_target, apply_note (4) | P2-Q2 | `crates/casement-testkit/tests/it/protocol/quire_shell.rs` (4 ignored) |
+| `crates/casement-agent/src/socket.rs` | (3, in the table above) | P2-Q2 | the agent crate's three ignored tests |
+| `crates/casement-ipc/src/dbus/compositor1.rs` | ProcCgroups::cgroup_of, Compositor1::connect (2) | P2-Q2 | the `Connect` row in `quire_shell.rs`; a private-bus test the lane writes beside `serve_compositor_at` |
+| `crates/casement/src/connect.rs` | answer (1) | P2-Q2 | the same |
+| `crates/casement-wayland/src/capture_source.rs` | on_toplevel_source, on_source_destroyed, on_session, on_frame_request, apply_content, apply_ready, apply_failed, apply_window_gone (8) | P2-Q3 | `crates/casement-testkit/tests/it/protocol/capture_source.rs` (4 ignored) |
+| `crates/casement/src/handlers/capture_source.rs` | constraints, new_session, serve, release (4) | P2-Q3 | the same |
+| `crates/casement-testkit/tests/it/protocol/quire_window.rs` | (no stub: `request_placement_places_the_window_and_reports_the_mark` is ignored, and `request_placement_is_stored` is replaced by it) | P2-Q3 | itself |
+| `crates/casement-core/src/model/desktop_requests.rs` | ToSpace, Assign, Space MoveTo (3) | P2-Q1 | `crates/casement-core/tests/it/quire.rs` (4 ignored, including the model's `Effect::Desktop` emission, which has no stub: nothing emits it yet) |
 
 ## Open items
 
@@ -1392,3 +1410,78 @@ Surprise: `cargo fmt -p` needs the sibling checkouts, absent in this worktree, s
   bytes only when the client is pumped. The verb pumped only the side-queue watch, so the binds never left the tap.
   Fixtures pump the client every round, which is why the in-process tests never saw it. Any probe verb built on a
   side-queue watch must pump the client too.
+
+## p2-z: the P2 delta freeze (2026-10-11)
+
+Nothing here compiled or run (the lane does not build). Plan: 20 §4.15 and §4.16 over 22. Fill lanes:
+`~/rs-wt/compositor-scope/23-P2-FILL-LANES.md`. The stubs and ignored tests are in the P2-Z table above.
+
+- **Built (implemented).** `casement-core`: `desktop` (`DesktopRequest`, `AppAsk`, `WindowAsk`, `SpaceAsk`,
+  `DesktopNote`, `DesktopRef`) and `shell` (`ShellRequest`, `ShellNote`); `Event::{Desktop, Shell}`, `Effect::{Desktop,
+  Shell}`, `CoreNote::Deferred(Deferred)`; `GlobalKind::{ToplevelCapture, QuireDesktop, QuireShell}` with their I7 rows
+  (a `Tier` beside the sandbox table); `LayerBook::role_holder`; the model's routing of both new events
+  (`model/desktop_requests.rs`, `model/shell_requests.rs`: roles, dock-local minimise targets, and every desktop ask that
+  an existing machine already carries, reached through `wlr_request`, `place`, `workspace_request`, `activation`,
+  `hide_app`, `hide_others`, `close_all_of`). `casement-wayland`: feature `quire` (A8), `quire::{desktop, shell}`
+  with the part, handler trait, global and object dispatch, the refusal of management on an agent connection
+  (`Standing`), the object makers, and `capture_source` (types, the book, `capture_size`, the part);
+  `window_of_identifier`. `casement-agent`: `Handed`, `RefuseWhy::NoSocket`. `casement-ipc`: `Compositor1` (object, types,
+  `parse_connect_role`, `ConnectRefusal::to_error`), `serve_compositor_at`, the `PeerCgroups` seam, `IpcHandles::compositor`.
+  `casement`: `connect::attach`, `CompositorBus`, `RunConfig::with_compositor_bus`, the handler files, the exec arms,
+  `AgentState::handed`, the state fields and constructor calls. The test kit: `FakeCgroups`.
+- **Departure: the two `quire` globals and the window-capture global are declared, not created.** The task wanted the
+  globals behind the filter. `quire::{desktop, shell}::GLOBAL` is a constant (`Advertised::Not`) in front of the
+  `create_global` call, which is written and type-checked; the lane flips it. Why: the typed fuzz box connects `Shell`
+  and `Agent` roles in a tenth of its clients and `bind_all` binds every advertised global, then sends requests to
+  live objects by creation order, so an advertised protocol whose requests reach a `todo!()` would panic the fuzz gate.
+  The toplevel capture global cannot be written ahead at all: smithay's `ToplevelCaptureSourceState::new_with_filter` is
+  the creation, and the public socket sees it (like output capture), so P2-Q3 adds the state field and the call
+  together. The I7 rows are in force already (`the_p2_globals_are_seen_by_the_right_connections`); `globals.txt` is
+  unchanged (the public view), and the fuzz oracle maps the three interface names to their kinds.
+- **Departure: `quire_desktop_manager_v1` is seen by `Shell` and `Agent`, not by `Shell` only.** The task brief said shell
+  only for both; 20 §4.2 (`advertised on Shell and Agent connections only`), 03 and the XML (`not_permitted` on an agent
+  connection) say the agent tier reads the desktop. `quire_shell_v1` is `Shell` only. The agent's management requests are
+  refused in the dispatch (`Standing::ReadOnly`), before any event is made.
+- **Departure: `hand_out` no longer takes a `DisplayHandle`.** `casement-agent` cannot build a client's data (its key and
+  its gone queue live in `casement-wayland`'s `ClientState`), so it makes the decision and the socket pair
+  (`Handed { role, server, client }`) and `casement::connect::answer` inserts the server end with
+  `clients::insert_client`. `CallerUnit::of_cgroup` is new: the unit comes from the peer's `/proc/<pid>/cgroup`, read by
+  casement-ipc through the `PeerCgroups` seam (fake `FakeCgroups`), because the question must reach the loop as data.
+- **Departure: `ShellNote::MinimiseTarget` carries a `WindowId`, not the identifier string.** The wire layer turns the
+  `ext_foreign_toplevel_list` identifier (`w<id>`, `window_of_identifier`) into the id; the model keys everything by
+  `WindowId`. `ShellRequest::MinimiseTarget` carries the dock `LayerKey` and the rectangle local to it; the model makes it
+  global (the dock's pin, else its anchored place) and stores it in the table P1-M2's `zwlr_foreign_toplevel`
+  `set_rectangle` already writes: whichever asked last wins (open item below).
+- **Departure: the Compositor1 method signature has no `#[zbus(header)]` yet.** The wire signature is the plan's (`s` in,
+  `h` out); the lane adds the header argument to read the sender and asks the bus for its process id.
+- **Plan facts P1 changed.** `Model::place` already carries every `PlaceTarget` (halves, quarters, centre, fill,
+  restore), so "full `quire_window` placement" is flipping `PLACEMENT_POLICY` to `Act`, sending the mark when a window's state
+  changes (`apply_placement` is written and called by nobody) and replacing `request_placement_is_stored`. The minimise table
+  (`minimise_rects`) exists. `Model::activate_app`, `hide_app`, `unhide_app`, `hide_others` and `close_all_of` exist, so only
+  `ToSpace`, `Assign` and Space `MoveTo` are stubs in the model; `ForceQuit` and `Reopen` answer `CoreNote::Deferred` (P3 and P4).
+  `Model::step` had to grow two arms; 04's wording ("`quire_toplevel`, `quire_space`") is superseded by `quire_desktop_v1` (C6).
+- **A8 is partial.** The `quire` feature gates the two new servers and their `WaylandStates` fields. `quire_window` stays
+  outside it: every app and shell-host's identity probe use it, and moving it needs a conditional field in the P0 aggregate for
+  no consumer yet. `casement` names the feature explicitly; the workspace dependency keeps the default.
+- **Open items this freeze adds.** (1) A dock's `set_minimise_target` and a window-list client's `set_rectangle` write one
+  table; the shell's target should win while a dock is bound (decide in P2-Q2). (2) `ContentStamp` needs a commit counter
+  per window surface tree: P2-Q3 counts commits in `handlers/compositor.rs` (every commit, subsurfaces included, enters
+  `CompositorHandler::commit` there) and calls `apply_content`. (3) The testclient helpers (`quire/desktop.rs`, `quire/shell.rs`, `capture/toplevel_source.rs`)
+  are still one-line stubs: each lane writes its own, on `desktop_client`'s reducers where it can (as `capture/` does).
+  (4) `Compositor1` is served on the session bus whenever `$DBUS_SESSION_BUS_ADDRESS` is set, so a casement started before
+  P2-Q2 owns the name and `Connect` never answers; harmless (nothing calls it), and a name clash only logs.
+- **Shared files touched** (outside the new modules): `casement-core` `event.rs`, `effect.rs`, `lib.rs`, `model.rs`,
+  `model/commands.rs` and `model/wlr_requests.rs` (three methods `pub(super)`), `layer/book.rs`, `policy/globals.rs`;
+  `casement-wayland` `Cargo.toml`, `lib.rs`, `states.rs`, `foreign_toplevel_list.rs`; `casement` `Cargo.toml`, `lib.rs`,
+  `main.rs`, `run.rs`, `state.rs`, `exec.rs`, `handlers/mod.rs`, `handlers/image_capture.rs` (four early returns for window
+  sources), `casement-ipc` `error.rs`, `handles.rs`, `dbus/mod.rs`; the test kit's `fakes/mod.rs`, `fuzz/oracles.rs`,
+  `tests/it/globals.rs`, `tests/it/protocol/mod.rs`, `tests/it/protocol/quire_window.rs`; `ARCHITECTURE.md`.
+- **Spots most likely not to compile.** `casement-wayland/src/quire/desktop.rs` (`Makers`' non-capturing closures coerced to
+  `fn` pointers over a generic `D`; `Output::from_resource`; `ForeignToplevelHandle::from_resource`; the borrows of
+  `DesktopParts` in the dispatch arms), `quire/shell.rs` (`post_error` on `QuireShellV1`; the `Request::SetRole` field
+  types `WEnum<ShellRole>`), `casement-ipc/src/dbus/compositor1.rs` (`#[zbus::interface]` with a `todo!()` body and the
+  `zbus::zvariant::OwnedFd` return), `casement-core/src/model/shell_requests.rs` (`Arranged::place`, the partial moves
+  out of `self`), `casement/src/handlers/image_capture.rs` (`return capture_source::new_session(self, session, window)` moves
+  `session` after `session.source()`), `casement/src/exec.rs` (the new `ShellNote` import beside `mod shell`),
+  `casement-wayland/src/capture_source.rs` (`ImageCaptureSourceHandler` as the bound of `new`), and
+  `casement/src/state.rs` (the three `::<State>` constructor bounds through the blanket `delegate_dispatch2!`).

@@ -19,15 +19,15 @@ the binaries and the test kit (P0-Z2). casement-intents joins at P4-Z, casement-
 
 | Crate | Purpose | I/O |
 | --- | --- | --- |
-| `casement-core` | the pure model: ids, geometry, time data (`Mono`, `VblankClock`, `TimerBook`, `VirtualClock`), apps, windows, Spaces, layers, the lock, focus and press routing, input origins, reach and bindings, output facts and policy, connection policy (I7), settings, `Event`, `Effect`, `Model::step`, invariants; from P1-Z the GPU plan (`gpu`), the frame scheduler's maths (`frame`) and the Space ids file's codec (`space::SpaceFile`) | none |
+| `casement-core` | the pure model: ids, geometry, time data (`Mono`, `VblankClock`, `TimerBook`, `VirtualClock`), apps, windows, Spaces, layers, the lock, focus and press routing, input origins, reach and bindings, output facts and policy, connection policy (I7), settings, `Event`, `Effect`, `Model::step`, invariants; from P1-Z the GPU plan (`gpu`), the frame scheduler's maths (`frame`) and the Space ids file's codec (`space::SpaceFile`) and, from P2-Z, the shell's and the desktop manager's requests and notes (`shell`, `desktop`) | none |
 | `casement-layout` | the `SceneLayout` seam: `SceneSpec`, `Arrangement`, `RustScene`, `spec_of(&Model)`; taffy only in `crates/casement-layout/src/taffy_bridge/` | none |
 | `casement-motion` | `MotionBook` of ds-motion spring legs, `retarget`, `sample` into an `Eq` `FrameScene` in 1/120 px | none |
 | `casement-render` | the `Compositor` renderer trait, `CasementElement`, `output_elements` (FrameScene to elements), `render_output` (damage-tracked), blur v0, the lock cover, output read-back (`pass::capture_output`, P1-Z), `golden` (feature `testing`); the workspace's one unsafe module `src/gl_raw.rs` (A17) | the GPU through smithay |
-| `casement-wayland` | one module per protocol: a `<Protocol>Part` (smithay's state plus our BTreeMap tables), `Part::new` behind the I7 filter, `on_*` (request to `Event`s), `apply_*` (effect to wire); `WaylandStates`, `GlobalFilter`, `ClientState`, `convert` | the wire |
+| `casement-wayland` | one module per protocol: a `<Protocol>Part` (smithay's state plus our BTreeMap tables), `Part::new` behind the I7 filter, `on_*` (request to `Event`s), `apply_*` (effect to wire); `WaylandStates`, `GlobalFilter`, `ClientState`, `convert`; from P2-Z `capture_source` (window capture) and, behind the feature `quire` (default on, A8), `quire::{desktop, shell}` (the private `quire_desktop_manager_v1` and `quire_shell_v1` servers) | the wire |
 | `casement-backend` | the headless backend (virtual outputs, vblank source, render-cost model, `VirtualInput: InputBackend`), winit, the session seam, the soft-GPU pieces (`SoftPixman`, `FixedUdmabuf`, A4); from P1-Z the tty seams (`tty::{Kms, KmsOpener, ScanoutSurface, TtySession, DeviceSource}`, `input::InputDevices`, `gpu::{RenderNodes, FormatSource}`), `TtyBackend` over them, and their thin real adapters (`*_real.rs`) compiled only under the features `tty` and `libinput` (off by default; A2) | devices under the features, none headless |
-| `casement-agent` | the privileged-connection hand-out (P2), agent seat, EIS, masked capture, trusted surface, kill (P4); a skeleton at P0 | sockets |
-| `casement-ipc` | the inject and wait grammars (its `casement-backend` dependency is optional, on with `debug-inject`; `serve_debug_at(address)` takes the bus address, the library reads no environment); `org.quire.Casement.Debug1` (feature `debug-inject`), `org.quire.Compositor1` (P2-Z); `shell_calls::{ShellCalls, ZbusShellCalls}`, the one place a binding's D-Bus call is made (A4); `IpcHandles` | D-Bus |
-| `casement` | lib + bin: `State` (frozen), `delegates.rs` (frozen), `handlers/<protocol>.rs`, `core_loop`, `exec`, `clients`, `display`, `time/` (the only clock), `config/` (ds-settings), `cli`, `run` (`casement::run(RunConfig) -> Result<(), RunError>`: the startup and the event loop; `main.rs` is only arguments, `$CASEMENT_LOG`, `$DBUS_SESSION_BUS_ADDRESS` and the exit code), `debug` (Debug1 in the loop, feature `debug-inject`), `jail_check` (features `testing`, `debug-inject`), `log` (takes its filter as an argument); from P1-Z `seams` (the injected `SpaceStore`, `ShellCalls` and `Spawner`), `space_store`, `spawn`, `xwayland`; its features `tty` and `libinput` (default on) turn the backend's real adapters on | everything, through the crates above |
+| `casement-agent` | the privileged-connection hand-out (`CallerUnit`, `role_for`, `hand_out`: the unit check and the socket pair; P2-Z types, P2-Q2 bodies), agent seat, EIS, masked capture, trusted surface, kill (P4) | sockets |
+| `casement-ipc` | the inject and wait grammars (its `casement-backend` dependency is optional, on with `debug-inject`; `serve_debug_at(address)` takes the bus address, the library reads no environment); `org.quire.Casement.Debug1` (feature `debug-inject`), `org.quire.Compositor1` (P2-Z: `Connect(role) -> (h)`, `serve_compositor_at`, the `PeerCgroups` seam); `shell_calls::{ShellCalls, ZbusShellCalls}`, the one place a binding's D-Bus call is made (A4); `IpcHandles` | D-Bus |
+| `casement` | lib + bin: `State` (frozen), `delegates.rs` (frozen), `handlers/<protocol>.rs`, `core_loop`, `exec`, `clients`, `display`, `time/` (the only clock), `config/` (ds-settings), `cli`, `run` (`casement::run(RunConfig) -> Result<(), RunError>`: the startup and the event loop; `main.rs` is only arguments, `$CASEMENT_LOG`, `$DBUS_SESSION_BUS_ADDRESS` and the exit code), `debug` (Debug1 in the loop, feature `debug-inject`), `jail_check` (features `testing`, `debug-inject`), `log` (takes its filter as an argument); from P1-Z `seams` (the injected `SpaceStore`, `ShellCalls` and `Spawner`), `space_store`, `spawn`, `xwayland`; from P2-Z `connect` (`Compositor1.Connect` answered in the loop: the unit check through `casement-agent`, the new client inserted with its role); its features `tty` and `libinput` (default on) turn the backend's real adapters on | everything, through the crates above |
 | `casementctl` | lib + bin: `debug` (Debug1), `shot` (P1), `report` (P5) | D-Bus, the wire |
 | `casement-testclient` | typed wayland-client helpers per protocol, `Transcript`, `Pattern`, shm buffers; bin `casement-probe`; no smithay (B9) | the wire |
 | `casement-testkit` | `Fixture` over the real `State`, `FixtureSpec`, `TestOrigin`, `FixtureInput`, fakes (session, udev, logind, palmrest, KMS, scanout, libinput settings, the Spaces file, sill's D-Bus methods, the process table), the soft GPU topology and the jail's fabricated nodes and sys tree, `Env` (goldens), typed fuzz ops; bin `fake-logind` | the jail's scratch only |
@@ -79,6 +79,12 @@ A1: `Instant::now`, `SystemTime::now`, smithay's `Clock::now` and calloop's `Tim
 | which connection sees which global (I7) | `casement-core::policy::advertised` |
 | typed settings | `casement-core::settings::CasementSettings` (the stored document: `casement::config`) |
 | the closed sets of inputs and outputs of the model | `casement-core::{Event, Effect}` |
+| what the shell asks of the desktop (apps, windows, Spaces) and what the model says back | `casement-core::desktop::{DesktopRequest, AppAsk, WindowAsk, SpaceAsk, DesktopNote, DesktopRef}` (P2-Z) |
+| what the shell says of its surfaces and what it is told | `casement-core::shell::{ShellRequest, ShellNote}` (P2-Z) |
+| who may have a `Shell` or `Agent` connection, and the socket pair | `casement-agent::{role_for, hand_out}` (the only hand-out, B14); inserted by `casement::connect` |
+| `org.quire.Compositor1` | `casement-ipc::dbus::Compositor1` (the object), answered by `casement::connect::answer` |
+| the window a foreign-toplevel identifier names | `casement_wayland::foreign_toplevel_list::{identifier_of, window_of_identifier}` |
+| a window's capture size and when it is captured | `casement_wayland::capture_source::{capture_size, ToplevelCaptureBook}` (damage gate) |
 | where windows go | `casement-layout` (`SceneLayout`, `RustScene`) |
 | how they travel there; the drawn frame | `casement-motion` (`retarget`, `sample`, `FrameScene`) |
 | the one float-to-unit step of motion | `casement_motion::quantise` |
@@ -153,6 +159,61 @@ pub trait QuireWindowHandler: 'static {
     fn window_of_toplevel(&self, toplevel: &XdgToplevel) -> Option<WindowId>;
     fn quire_window_events(&mut self, events: Vec<Event>);
 }
+```
+
+P2-Z adds the two private protocols' handler traits and the hand-out's seam, each with the
+wire glue written in the protocol's module (`Part::new`, `bind`, the dispatch of every request,
+the refusal of management on an agent connection) and its `on_*` and `apply_note` bodies frozen:
+
+```rust
+// casement-wayland::quire::desktop (feature `quire`): the root provides the part and what it reads, split
+// into disjoint borrows. `Part::new::<D>` creates the global only when `GLOBAL == Advertised::Yes`.
+pub trait QuireDesktopHandler: 'static {
+    fn quire_desktop_parts(&mut self) -> DesktopParts<'_>;          // { part, view: DesktopView { model, outputs } }
+    fn quire_desktop_events(&mut self, events: Vec<Event>);
+}
+pub fn on_bind(part: &mut QuireDesktopPart, view: &DesktopView<'_>, manager: QuireDesktopManagerV1, standing: Standing)
+    -> Result<(), WaylandFault>;
+pub fn on_get_window_for(part, view, manager: &QuireDesktopManagerV1, window: WindowId, object: QuireDesktopWindowV1)
+    -> Result<(), WaylandFault>;
+pub fn on_create_space(part, output: OutputKey) -> Vec<Event>;     pub fn on_stop(part, manager: &QuireDesktopManagerV1);
+pub fn on_app(part, app: &AppKey, ask: AppAsk) -> Vec<Event>;      pub fn on_window(part, window: WindowId, ask: WindowAsk) -> Vec<Event>;
+pub fn on_space(part, space: &SpaceId, ask: SpaceAsk) -> Vec<Event>;
+pub fn apply_note(part, view: &DesktopView<'_>, note: &DesktopNote) -> Result<(), WaylandFault>;
+pub enum Standing { Manager, ReadOnly }                           // Shell manages, Agent reads; ReadOnly is refused with not_permitted
+
+// casement-wayland::quire::shell
+pub trait QuireShellHandler: 'static {
+    fn quire_shell_part(&mut self) -> &mut QuireShellPart;
+    fn quire_shell_events(&mut self, events: Vec<Event>);
+    fn layer_of_surface(&self, client: &Client, surface: &WlSurface) -> Option<LayerKey>;
+}
+pub fn on_set_role(part, layer: Option<LayerKey>, surface: &WlSurface, role: ShellRole) -> Result<Vec<Event>, RoleRefusal>;
+pub fn on_set_minimise_target(part, dock: Option<LayerKey>, toplevel: &str, local: LogicalRect) -> Result<Vec<Event>, TargetRefusal>;
+pub fn on_clear_minimise_target(part, toplevel: &str) -> Result<Vec<Event>, TargetRefusal>;
+pub fn apply_note(part: &mut QuireShellPart, note: &ShellNote) -> Result<(), WaylandFault>;
+
+// casement-wayland::capture_source (window capture; the global is declared, not created)
+pub fn on_toplevel_source(book, window: WindowId) -> ToplevelSourceId;   pub fn on_source_destroyed(book, source);
+pub fn on_session(book, source) -> Result<ToplevelSessionId, WaylandFault>;
+pub fn on_frame_request(book, session, buffer: PhysicalSize, content: ContentStamp) -> Result<FrameVerdict, WaylandFault>;
+pub fn apply_content(book, window, content: ContentStamp) -> Vec<ToplevelCaptureRequest>;
+pub fn apply_ready(book, session, content, at: Mono) -> Result<(), WaylandFault>;
+pub fn apply_failed(book, session, why: CaptureFailure) -> Result<(), WaylandFault>;
+pub fn apply_window_gone(book, window) -> Vec<ToplevelSessionId>;
+pub fn capture_size(logical: LogicalSize, scale: Scale) -> PhysicalSize;  // implemented: round(l x s)
+
+// casement-agent: the unit check and the socket pair (the root inserts the server end)
+pub fn role_for(caller: &CallerUnit) -> Option<ConnectionRole>;          // sill.service -> Shell, cuad.service -> Agent
+pub fn hand_out(role: &ConnectionRole, caller: &CallerUnit) -> HandOut;  // Granted(Handed { role, server, client }) | Refused(RefuseWhy)
+impl CallerUnit { pub fn of_cgroup(text: &str) -> Option<CallerUnit>; }
+
+// casement-ipc (real: ProcCgroups; fake: FakeCgroups in the test kit)
+pub trait PeerCgroups: Debug + Send + Sync + 'static { fn cgroup_of(&self, pid: u32) -> Result<String, IpcError>; }
+
+// casement::connect: the loop's side of Compositor1.Connect
+pub fn attach(handle: &LoopHandle<'static, State>, calls: Channel<ConnectCall>) -> Result<(), LoopError>;
+pub fn answer(state: &mut State, ask: ConnectAsk) -> ConnectReply;
 ```
 
 P1-Z adds these seams. Every one has a thin real implementation and a fake exported by
@@ -283,7 +344,10 @@ ones, which is how the test kit's `Fixture` gets its fakes.
 
 **Declare a protocol before its lane fills it (a delta freeze).** Everything in "Add a protocol",
 except that `Part::new::<D>(display, role_filter)` creates no global and returns the empty part,
-so no client sees the protocol and `globals.txt` stays as it is. The `GlobalKind` variant (and its
+so no client sees the protocol and `globals.txt` stays as it is. (P2-Z writes the creation too and
+puts it behind a constant, `quire::{desktop, shell}::GLOBAL: Advertised`, that the lane flips;
+`ToplevelCapturePart` cannot hold smithay's state without creating the global, so its lane adds the
+field and the call together.) The `GlobalKind` variant (and its
 I7 row), the `WaylandStates` field, the `Part::new` call in `State::new`, the handler file, the
 testkit protocol test (ignored, lane-named) and its `mod` line all exist; the lane creates the
 global in `Part::new`, adds the `globals.txt` row and un-ignores the tests.
@@ -371,6 +435,10 @@ nodes (`--fabricate-gpus N`: `/sys/dev/char/226:(128+n)`, A3) for the multi-GPU 
   casement` (everything) and `cargo build -p casement-testkit` (headless only). Building the
   whole workspace at once unifies `casement`'s default features into the test kit; build the test
   kit's tests with `-p casement-testkit` for the jail.
+- Features (A8): `casement-wayland` has `quire`, on by default: the private `quire_*` servers
+  (`quire::desktop`, `quire::shell`) and their fields in `WaylandStates`. `casement` turns it on
+  explicitly; a consumer that wants the standard protocol set alone takes the crate with
+  `default-features = false`. `quire_window` stays outside the feature for now (FINDINGS, p2-z).
 - `unsafe_code = "deny"` at the workspace. The one unsafe module is
   `crates/casement-render/src/gl_raw.rs`: exactly `EGLDisplay::new` and `GlesRenderer::new`
   (A17). Another `unsafe` block there needs a reviewed interface ask showing a GL pass smithay's
