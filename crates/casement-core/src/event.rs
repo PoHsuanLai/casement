@@ -18,6 +18,7 @@ use porter_core::{ClaimedId, PeerIdentity};
 /// Something that happened, as the edge (a protocol handler, the backend, the clock) reports
 /// it.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Event {
     /// A client connected.
     ClientConnected {

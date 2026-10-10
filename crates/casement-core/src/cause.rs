@@ -6,6 +6,7 @@ use ds_motion::velocity::Velocity;
 
 /// What moved the windows, so motion can choose how they travel.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Cause {
     /// A client's own configure or commit.
     Configure,

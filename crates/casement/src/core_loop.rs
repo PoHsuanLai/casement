@@ -137,6 +137,8 @@ pub fn frame(state: &mut State, output: &OutputKey) {
     let shown = match &mut state.backend {
         BackendKind::Headless(backend) => present_headless(backend, &name, now, &source),
         BackendKind::Winit(winit) => winit.present(&source),
+        // A backend this build does not know presents nothing (BackendKind grows at P1-Z).
+        _ => Ok(None),
     };
     match shown {
         Ok(Some(seq)) => presented(state, output, &frame, config, now, seq),
@@ -335,6 +337,7 @@ pub fn announce_outputs(state: &mut State) {
     let events = match &mut state.backend {
         BackendKind::Headless(backend) => backend.announce(),
         BackendKind::Winit(winit) => winit.announce(),
+        _ => Vec::new(),
     };
     for event in events {
         connector(state, event);

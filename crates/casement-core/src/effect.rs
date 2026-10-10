@@ -14,6 +14,7 @@ use casement_protocols::vocab::{Attention, Emphasis};
 
 /// Something the model wants done.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Effect {
     /// Send a toplevel a configure.
     Configure {

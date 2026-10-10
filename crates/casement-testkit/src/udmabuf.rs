@@ -18,6 +18,7 @@ use std::os::fd::AsFd;
 
 /// Why a client dma-buf could not be made.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum UdmabufBufferError {
     /// `/dev/udmabuf` refused (not bound into the jail, or the stride is not 256-aligned).
     #[error("udmabuf: {0}")]

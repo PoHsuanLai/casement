@@ -117,6 +117,7 @@ pub struct TestClient {
 
 /// Why a test client could not connect or talk.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum ClientError {
     /// The connection failed.
     #[error("connect: {0}")]

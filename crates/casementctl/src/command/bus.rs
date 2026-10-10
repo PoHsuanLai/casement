@@ -14,6 +14,7 @@ const CALL_PATIENCE: Duration = Duration::from_secs(60);
 
 /// Why a call failed.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum BusError {
     /// `$DBUS_SESSION_BUS_ADDRESS` is not set: not started through `dev/up.sh`.
     #[error(

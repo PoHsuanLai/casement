@@ -106,6 +106,8 @@ fn apply(state: &mut State, effect: Effect) {
             );
         }
         Effect::Relayout(cause) => core_loop::relayout(state, &cause),
+        // `Effect` grows in core; one this build does not know is logged, never a panic.
+        other => tracing::warn!(?other, "an effect this build does not apply"),
     }
 }
 

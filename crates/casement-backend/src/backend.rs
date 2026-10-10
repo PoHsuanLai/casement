@@ -10,6 +10,7 @@ use std::path::PathBuf;
 
 /// The running backend. (`Tty(TtyBackend)` joins at P1-Z.)
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum BackendKind {
     /// Virtual outputs and input: every test, every agent run.
     Headless(HeadlessBackend),

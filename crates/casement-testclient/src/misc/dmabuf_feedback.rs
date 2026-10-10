@@ -67,6 +67,7 @@ impl FeedbackReport {
 
 /// Why the probe could not start.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum ProbeError {
     /// The compositor does not advertise a dma-buf global of version 4 or later.
     #[error("zwp_linux_dmabuf_v1 version 4+ is not advertised")]

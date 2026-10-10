@@ -39,6 +39,8 @@ pub(crate) fn travel_of(cause: &Cause, level: MotionLevel) -> Travel {
             | Cause::SpaceSwitch,
         ) => spring(Touch::Remote, SpringResponse::Move),
         (_, Cause::Swipe(release)) => spring(thrown_by(release.velocity), SpringResponse::Move),
+        // A cause core adds later travels like a keyboard command until it is given a row.
+        _ => spring(Touch::Remote, SpringResponse::Move),
     }
 }
 

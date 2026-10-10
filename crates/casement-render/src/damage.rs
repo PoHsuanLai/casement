@@ -30,6 +30,7 @@ pub enum RenderSync {
 
 /// Why rendering failed.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum RenderError {
     /// The renderer refused.
     #[error("renderer: {0}")]

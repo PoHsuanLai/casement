@@ -142,6 +142,7 @@ impl GlobalFilter {
 
 /// A wire-side failure: an effect named something the protocol layer no longer has.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum WaylandFault {
     /// The window is not known to this protocol module.
     #[error("unknown window {0:?}")]

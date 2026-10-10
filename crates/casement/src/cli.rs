@@ -112,6 +112,7 @@ pub enum Command {
 
 /// Why the command line was refused.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum CliError {
     /// A flag casement does not know.
     #[error("unknown argument {0}")]

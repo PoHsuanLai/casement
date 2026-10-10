@@ -87,6 +87,7 @@ pub struct SceneDump(pub serde_json::Value);
 
 /// Why a fixture could not start or a client could not join.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum FixtureError {
     /// The compositor did not start.
     #[error("start: {0}")]
@@ -285,7 +286,7 @@ impl Fixture {
     pub(crate) fn headless(&self) -> &HeadlessBackend {
         match &self.state.backend {
             BackendKind::Headless(backend) => backend,
-            BackendKind::Winit(_) => panic!("a fixture runs the headless backend"),
+            _ => panic!("a fixture runs the headless backend"),
         }
     }
 
@@ -293,7 +294,7 @@ impl Fixture {
     pub(crate) fn headless_mut(&mut self) -> &mut HeadlessBackend {
         match &mut self.state.backend {
             BackendKind::Headless(backend) => backend,
-            BackendKind::Winit(_) => panic!("a fixture runs the headless backend"),
+            _ => panic!("a fixture runs the headless backend"),
         }
     }
 
