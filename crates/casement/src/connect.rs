@@ -8,7 +8,11 @@
 //! by P2-Q2.
 
 use crate::State;
-use casement_ipc::dbus::{ConnectAsk, ConnectCall, ConnectReply};
+use crate::clients::insert_client;
+use casement_agent::{CallerUnit, HandOut, RefuseWhy, hand_out};
+use casement_ipc::dbus::{ConnectAsk, ConnectCall, ConnectRefusal, ConnectReply};
+use casement_wayland::ClientState;
+use porter_core::PeerIdentity;
 use smithay::reexports::calloop::channel::{Channel, Event};
 use smithay::reexports::calloop::{Error as LoopError, LoopHandle};
 
@@ -33,6 +37,36 @@ pub fn attach(
 /// server end of a new socket pair is inserted as a client with that role (the model hears
 /// `ClientConnected`), and the client end is the reply.
 pub fn answer(state: &mut State, ask: ConnectAsk) -> ConnectReply {
-    let _ = (state, ask);
-    todo!("P2-Q2: answer a Connect")
+    let Some(unit) = CallerUnit::of_cgroup(&ask.caller_cgroup) else {
+        return ConnectReply::Refused(ConnectRefusal::UnknownUnit);
+    };
+    let handed = match hand_out(&ask.role, &unit) {
+        HandOut::Granted(handed) => handed,
+        HandOut::Refused(why) => return ConnectReply::Refused(refusal_of(why)),
+    };
+    // The peer stays unproven until porter can prove a service (accountd's unit check).
+    let client = match insert_client(state, handed.server, handed.role, PeerIdentity::Unproven) {
+        Ok(client) => client,
+        Err(error) => {
+            tracing::warn!(%error, "a handed-out connection could not be inserted");
+            return ConnectReply::Refused(ConnectRefusal::Unavailable);
+        }
+    };
+    if let Some(data) = ClientState::of(&client) {
+        state.agent.handed.insert(data.key, unit);
+    }
+    ConnectReply::Granted(handed.client)
+}
+
+/// What the caller is told for a hand-out `hand_out` refused. A socket pair that could not be
+/// made is logged here (`casement-agent` has no logger).
+fn refusal_of(why: RefuseWhy) -> ConnectRefusal {
+    match why {
+        RefuseWhy::UnknownUnit => ConnectRefusal::UnknownUnit,
+        RefuseWhy::RoleNotAllowed => ConnectRefusal::RoleNotAllowed,
+        _ => {
+            tracing::warn!("a socket pair for a handed-out connection could not be made");
+            ConnectRefusal::Unavailable
+        }
+    }
 }

@@ -11,6 +11,7 @@ use casement_core::layer::{
     ShellRoleTag,
 };
 use casement_core::shell::{ShellNote, ShellRequest};
+use casement_core::window::WlrToplevelRequest;
 use casement_core::{Effect, Event, LayerKey, WindowId};
 use casement_protocols::vocab::ShellRole;
 
@@ -111,4 +112,53 @@ fn a_minimise_target_is_local_to_the_dock_and_stored_globally() {
         })],
     );
     assert!(cleared.model.minimise_target(WindowId(1)).is_none());
+}
+
+#[test]
+fn the_docks_target_wins_over_a_window_list_clients_while_a_dock_holds_a_role() {
+    let mail = proven("org.quire.Mail");
+    let wlr_tile = |x: i32| {
+        Op::Event(Event::WlrToplevel {
+            window: WindowId(1),
+            request: WlrToplevelRequest::MinimiseRect(rect(x, 900, 64, 64)),
+        })
+    };
+    let before_dock = run(vec![
+        plug("HEADLESS-1"),
+        map(1, &mail, TokenCheck::Missing),
+        wlr_tile(700),
+    ]);
+    assert_eq!(
+        before_dock
+            .model
+            .minimise_target(WindowId(1))
+            .map(|t| t.rect),
+        Some(rect(700, 900, 64, 64)),
+        "with no dock the window-list client's rectangle is the target"
+    );
+    let docked = run_from(
+        before_dock.model,
+        vec![
+            layer(1, ShellRoleTag::Unassigned),
+            Op::Event(Event::LayerPlaced {
+                layer: LayerKey(1),
+                at: LogicalPoint { x: 100, y: 900 },
+            }),
+            shell(ShellRequest::Role {
+                layer: LayerKey(1),
+                role: ShellRole::Dock,
+            }),
+            shell(ShellRequest::MinimiseTarget {
+                dock: LayerKey(1),
+                window: WindowId(1),
+                local: rect(10, 5, 64, 64),
+            }),
+            wlr_tile(300),
+        ],
+    );
+    assert_eq!(
+        docked.model.minimise_target(WindowId(1)).map(|t| t.rect),
+        Some(rect(110, 905, 64, 64)),
+        "the dock's tile stays the target when the window-list client asks later"
+    );
 }

@@ -18,6 +18,7 @@ use casement_core::input::{
     Keysym, Origin, Reach, Resolved, TouchStep, resolve,
 };
 use casement_core::lock::LockState;
+use casement_core::shell::ShellNote;
 use casement_core::time::{Due, Mono, TimerKey};
 use casement_core::{Effect, InputSerial, KeyboardTarget, Model};
 use casement_protocols::vocab::MacMods;
@@ -281,6 +282,15 @@ fn deliver_key(state: &mut State, seat: &Seat<State>, key: KeyDelivery) {
         Ok(None) => {}
         Err(fault) => tracing::warn!(%fault, "a key delivery failed"),
     }
+    tell_shell_modifiers(state, seat);
+}
+
+/// The keyboard's modifier set, as the shell sees it (it ignores a set it was already sent).
+fn tell_shell_modifiers(state: &mut State, seat: &Seat<State>) {
+    let mods = seat.get_keyboard().map_or(MacMods::NONE, |keyboard| {
+        mac_mods(&keyboard.modifier_state())
+    });
+    exec::shell_note(state, ShellNote::Modifiers(mods));
 }
 
 /// A binding's action. A desktop command is the model's; a D-Bus call and a program go out

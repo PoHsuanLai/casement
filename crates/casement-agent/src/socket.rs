@@ -51,24 +51,53 @@ impl CallerUnit {
     /// The unit a process runs in, from the text of its `/proc/<pid>/cgroup`: the last path
     /// component of its cgroup when that is a service unit (`.../app.slice/sill.service`).
     /// `None` for a scope, a slice or a process outside systemd.
+    ///
+    /// ```
+    /// use casement_agent::CallerUnit;
+    ///
+    /// let unit = CallerUnit::of_cgroup("0::/user.slice/app.slice/sill.service\n");
+    /// assert_eq!(unit, Some(CallerUnit("sill.service".to_owned())));
+    /// assert_eq!(CallerUnit::of_cgroup("0::/\n"), None);
+    /// ```
     pub fn of_cgroup(text: &str) -> Option<CallerUnit> {
-        let _ = text;
-        todo!("P2-Q2: CallerUnit::of_cgroup")
+        let path = text.lines().find_map(|line| line.strip_prefix("0::"))?;
+        let last = path.rsplit('/').next()?;
+        let named = last
+            .strip_suffix(".service")
+            .is_some_and(|name| !name.is_empty());
+        named.then(|| CallerUnit(last.to_owned()))
     }
 }
 
 /// Hands `caller` a connection with `role` if its unit may have it: a socket pair, the role
 /// kept with it. The caller of this function inserts the server end into the display.
 pub fn hand_out(role: &ConnectionRole, caller: &CallerUnit) -> HandOut {
-    let _ = (role, caller);
-    todo!("P2-Q2: hand_out")
+    match role_for(caller) {
+        None => HandOut::Refused(RefuseWhy::UnknownUnit),
+        Some(allowed) if allowed != *role => HandOut::Refused(RefuseWhy::RoleNotAllowed),
+        Some(allowed) => match UnixStream::pair().and_then(|pair| {
+            // The display reads the server end from its event loop: it must never block.
+            pair.0.set_nonblocking(true)?;
+            Ok(pair)
+        }) {
+            Ok((server, client)) => HandOut::Granted(Handed {
+                role: allowed,
+                server,
+                client: OwnedFd::from(client),
+            }),
+            Err(_) => HandOut::Refused(RefuseWhy::NoSocket),
+        },
+    }
 }
 
 /// The role `caller`'s unit may have: `sill.service` the shell, `cuad.service` the agent tier,
 /// anything else none.
 pub fn role_for(caller: &CallerUnit) -> Option<ConnectionRole> {
-    let _ = caller;
-    todo!("P2-Q2: role_for")
+    match caller.0.as_str() {
+        "sill.service" => Some(ConnectionRole::Shell),
+        "cuad.service" => Some(ConnectionRole::Agent),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -80,7 +109,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "P2-Q2"]
     fn only_the_shell_and_the_agent_tier_get_privileged_roles() {
         assert_eq!(role_for(&unit("sill.service")), Some(ConnectionRole::Shell));
         assert_eq!(role_for(&unit("cuad.service")), Some(ConnectionRole::Agent));
@@ -90,7 +118,6 @@ mod tests {
 
     /// (case, who asks, the role asked, what comes back)
     #[test]
-    #[ignore = "P2-Q2"]
     fn a_hand_out_needs_the_unit_that_may_have_the_role() {
         let cases = [
             (
@@ -141,7 +168,6 @@ mod tests {
 
     /// (case, the text of /proc/<pid>/cgroup, the unit)
     #[test]
-    #[ignore = "P2-Q2"]
     fn a_unit_is_read_from_the_cgroup_text() {
         let cases = [
             (

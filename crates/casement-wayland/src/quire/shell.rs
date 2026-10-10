@@ -9,13 +9,14 @@
 //! are ignored until P3-Z gives them their machines.
 
 use super::{Advertised, code_of};
+use crate::foreign_toplevel_list::window_of_identifier;
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::policy::GlobalKind;
-use casement_core::shell::ShellNote;
-use casement_core::{Event, LayerKey};
+use casement_core::shell::{ShellNote, ShellRequest};
+use casement_core::{Event, LayerKey, WindowId};
 use casement_protocols::server::quire_shell_v1::quire_shell_v1::{self, QuireShellV1};
-use casement_protocols::vocab::{ShellRole, WireCode};
+use casement_protocols::vocab::{MacMods, ShellRole, WireCode};
 use smithay::reexports::wayland_server::backend::{ClientId, GlobalId};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{
@@ -27,8 +28,8 @@ use std::collections::BTreeMap;
 /// The version casement serves.
 pub const VERSION: u32 = 1;
 
-/// Whether the global is created yet (the freeze: no; P2-Q2 flips it).
-pub const GLOBAL: Advertised = Advertised::Not;
+/// Whether the global is created yet (P2-Q2 flipped it).
+pub const GLOBAL: Advertised = Advertised::Yes;
 
 /// The surface that holds a role.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,6 +49,11 @@ pub struct QuireShellPart {
     pub bound: Vec<QuireShellV1>,
     /// The surface holding each role.
     pub roles: BTreeMap<ShellRole, RoleHolder>,
+    /// The surface each layer asked a role from, until the model's answer (`ShellNote::Role`)
+    /// says which one holds it: the note carries the layer, the wire knows the surface.
+    pub asked: BTreeMap<LayerKey, WlSurface>,
+    /// The modifier keys last sent, so a repeat of the same set sends nothing.
+    pub mods: MacMods,
 }
 
 impl QuireShellPart {
@@ -69,6 +75,8 @@ impl QuireShellPart {
             global,
             bound: Vec::new(),
             roles: BTreeMap::new(),
+            asked: BTreeMap::new(),
+            mods: MacMods::NONE,
         }
     }
 }
@@ -81,6 +89,8 @@ pub trait QuireShellHandler: 'static {
     fn quire_shell_events(&mut self, events: Vec<Event>);
     /// The layer surface `surface` is, when it is a live one of `client`.
     fn layer_of_surface(&self, client: &Client, surface: &WlSurface) -> Option<LayerKey>;
+    /// Whether the model knows the window `window` (a live toplevel).
+    fn window_known(&self, window: WindowId) -> bool;
 }
 
 /// The global's data: the filter its `can_view` asks.
@@ -176,7 +186,8 @@ where
             } => {
                 let dock = state.layer_of_surface(client, &dock);
                 let local = minimise_rect(x, y, width, height);
-                match on_set_minimise_target(state.quire_shell_part(), dock, &toplevel, local) {
+                let window = window_of_identifier(&toplevel).filter(|id| state.window_known(*id));
+                match on_set_minimise_target(state.quire_shell_part(), dock, window, local) {
                     Ok(events) => state.quire_shell_events(events),
                     Err(refusal) => refuse_target(resource, refusal),
                 }
@@ -220,29 +231,46 @@ pub fn on_set_role(
     surface: &WlSurface,
     role: ShellRole,
 ) -> Result<Vec<Event>, RoleRefusal> {
-    let _ = (part, layer, surface, role);
-    todo!("P2-Q2: on_set_role")
+    let layer = layer.ok_or(RoleRefusal::NotALayer)?;
+    let taken = part
+        .roles
+        .get(&role)
+        .is_some_and(|holder| holder.layer != layer);
+    if taken {
+        return Err(RoleRefusal::Taken);
+    }
+    part.asked.insert(layer, surface.clone());
+    Ok(vec![Event::Shell(ShellRequest::Role { layer, role })])
 }
 
-/// `set_minimise_target`: where the window `toplevel` (a `ext_foreign_toplevel_list`
-/// identifier) shrinks into, `local` to the `dock` layer surface.
+/// `set_minimise_target`: where the window `window` (the `ext_foreign_toplevel_list`
+/// identifier the client sent, turned into the model's window when the model knows it; `None`
+/// when it is no identifier or names no live window) shrinks into, `local` to the `dock`
+/// layer surface.
 pub fn on_set_minimise_target(
-    part: &mut QuireShellPart,
+    _part: &mut QuireShellPart,
     dock: Option<LayerKey>,
-    toplevel: &str,
+    window: Option<WindowId>,
     local: LogicalRect,
 ) -> Result<Vec<Event>, TargetRefusal> {
-    let _ = (part, dock, toplevel, local);
-    todo!("P2-Q2: on_set_minimise_target")
+    let dock = dock.ok_or(TargetRefusal::NotALayer)?;
+    let window = window.ok_or(TargetRefusal::UnknownToplevel)?;
+    Ok(vec![Event::Shell(ShellRequest::MinimiseTarget {
+        dock,
+        window,
+        local,
+    })])
 }
 
 /// `clear_minimise_target`: forget the target of the window `toplevel`.
 pub fn on_clear_minimise_target(
-    part: &mut QuireShellPart,
+    _part: &mut QuireShellPart,
     toplevel: &str,
 ) -> Result<Vec<Event>, TargetRefusal> {
-    let _ = (part, toplevel);
-    todo!("P2-Q2: on_clear_minimise_target")
+    let window = window_of_identifier(toplevel).ok_or(TargetRefusal::UnknownToplevel)?;
+    Ok(vec![Event::Shell(ShellRequest::ClearMinimiseTarget {
+        window,
+    })])
 }
 
 /// A bound object went away: the roles it left are not forgotten (the surfaces stay until
@@ -254,13 +282,67 @@ pub fn on_shell_gone(part: &mut QuireShellPart, shell: &QuireShellV1) {
 /// A layer surface unmapped: whatever role it held is free again.
 pub fn on_layer_gone(part: &mut QuireShellPart, layer: LayerKey) {
     part.roles.retain(|_, holder| holder.layer != layer);
+    part.asked.remove(&layer);
 }
 
 /// The model said `note`: record it (a role taken, a minimise target) or send it to the
 /// shell (`modifiers` to the role surfaces, `hot_corner`, `reveal`).
 pub fn apply_note(part: &mut QuireShellPart, note: &ShellNote) -> Result<(), WaylandFault> {
-    let _ = (part, note);
-    todo!("P2-Q2: apply_note")
+    match note {
+        ShellNote::Role(layer, role) => {
+            if let Some(surface) = part.asked.remove(layer) {
+                // A layer holds one role at a time: the one it had before is free.
+                part.roles.retain(|_, holder| holder.layer != *layer);
+                part.roles.insert(
+                    *role,
+                    RoleHolder {
+                        layer: *layer,
+                        surface,
+                    },
+                );
+            }
+        }
+        // The table lives in the model; the dock bounce that would use it is P3's.
+        ShellNote::MinimiseTarget(..) => {}
+        ShellNote::Modifiers(mods) => {
+            if part.mods != *mods {
+                part.mods = *mods;
+                send_modifiers(part, *mods);
+            }
+        }
+        ShellNote::HotCorner(corner) => {
+            if let Ok(corner) = quire_shell_v1::Corner::try_from(corner.code()) {
+                for shell in &part.bound {
+                    shell.hot_corner(corner);
+                }
+            }
+        }
+        ShellNote::Reveal(edge, shown) => {
+            let sent = quire_shell_v1::ScreenEdge::try_from(edge.code())
+                .ok()
+                .zip(quire_shell_v1::Shown::try_from(shown.code()).ok());
+            if let Some((edge, shown)) = sent {
+                for shell in &part.bound {
+                    shell.reveal(edge, shown);
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// `modifiers(surface, mods)` to the surface of every held role, on every bound object of the
+/// same client, whether or not the surface has keyboard focus.
+fn send_modifiers(part: &QuireShellPart, mods: MacMods) {
+    let wire = quire_shell_v1::MacMods::from_bits_truncate(mods.0);
+    for shell in &part.bound {
+        for holder in part.roles.values() {
+            if holder.surface.client() == shell.client() {
+                shell.modifiers(&holder.surface, wire);
+            }
+        }
+    }
 }
 
 /// A `LogicalRect` from the wire's four integers, as the dispatch builds it.

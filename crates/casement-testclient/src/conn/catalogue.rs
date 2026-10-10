@@ -97,6 +97,7 @@ fn roots() -> Vec<&'static Interface> {
         misc::zwp_input_method_v2::client::zwp_input_method_manager_v2::ZwpInputMethodManagerV2,
         misc::zwp_virtual_keyboard_v1::client::zwp_virtual_keyboard_manager_v1::ZwpVirtualKeyboardManagerV1,
         quire::quire_window_v1::quire_window_v1::QuireWindowV1,
+        quire::quire_shell_v1::quire_shell_v1::QuireShellV1,
         quire::quire_window_v1::quire_window_manager_v1::QuireWindowManagerV1,
     ]
 }
