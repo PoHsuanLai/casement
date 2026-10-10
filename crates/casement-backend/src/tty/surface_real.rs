@@ -30,7 +30,7 @@ use smithay::reexports::drm::control::crtc;
 use smithay::reexports::gbm::Device as GbmDevice;
 use smithay::utils::{Buffer, Size};
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 /// Black, opaque: what shows where no element draws.
@@ -43,7 +43,7 @@ type Compositor =
 /// The flips the device reported done, by CRTC: its event source adds, the surface takes.
 #[derive(Debug, Default)]
 pub struct Flips {
-    done: BTreeMap<crtc::Handle, u32>,
+    done: HashMap<crtc::Handle, u32>,
 }
 
 impl Flips {

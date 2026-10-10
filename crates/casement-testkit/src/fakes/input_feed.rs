@@ -106,7 +106,8 @@ impl FakeInputFeed {
 
 impl InputDevices for FakeInputFeed {
     fn apply(&mut self, device: DeviceId, settings: &DeviceSettings) -> Applied {
-        match self.world().devices.contains_key(&device) {
+        let present = self.world().devices.contains_key(&device);
+        match present {
             true => self.configured.apply(device, settings),
             false => Applied::Refused,
         }
