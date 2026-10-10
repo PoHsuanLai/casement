@@ -35,3 +35,11 @@ fn defaults_follow_the_mac_rows() {
     assert_eq!(settings.pointer.touchpad.natural_scroll, Enabled::On);
     assert_eq!(settings.pointer.mouse.natural_scroll, Enabled::Off);
 }
+
+#[test]
+fn the_default_gpu_is_automatic() {
+    assert_eq!(
+        CasementSettings::defaults().gpu.render,
+        crate::gpu::GpuChoice::Auto
+    );
+}

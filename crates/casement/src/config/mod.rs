@@ -13,8 +13,8 @@ pub use convert::to_core;
 pub use doc::{CasementDoc, load};
 pub use schema::{schema, write_schema};
 pub use sections::{
-    BindingsSection, FirstSight, KeyboardSection, OutputsSection, PointerSection, SpacesSection,
-    TouchpadSection, WindowsSection,
+    BindingsSection, FirstSight, GpuSection, KeyboardSection, OutputsSection, PointerSection,
+    SpacesSection, TouchpadSection, WindowsSection,
 };
 
 /// Why the settings could not be read or the schema written.

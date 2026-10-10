@@ -237,8 +237,16 @@ fn deliver_key(state: &mut State, seat: &Seat<State>, key: KeyDelivery) {
         && key.edge == Edge::Press;
     let bindings = state.core.model.settings().bindings.clone();
     let origin = key.origin;
-    let answer = seat::apply_key(seat, state, key, |_, mods, handle| {
+    let answer = seat::apply_key(seat, state, key, |state, mods, handle| {
         if key.edge == Edge::Release && fate == PressFate::Taken {
+            return FilterResult::Intercept(None);
+        }
+        // A VT chord is the seat's, not a binding's: it works under a lock and a shortcut
+        // inhibitor (P1-T).
+        if super::tty::vt_chord(state, &handle.modified_syms(), key.edge).is_some() {
+            if key.edge == Edge::Press {
+                state.wl.seat.taken = std::mem::take(&mut state.wl.seat.taken).take_key(key.code);
+            }
             return FilterResult::Intercept(None);
         }
         let chord = handle.raw_latin_sym_or_raw_current_sym().map(|sym| Chord {

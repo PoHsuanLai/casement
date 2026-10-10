@@ -2,7 +2,7 @@
 
 use super::ConfigError;
 use super::sections::{
-    BindingsSection, KeyboardSection, OutputsSection, PointerSection, SpacesSection,
+    BindingsSection, GpuSection, KeyboardSection, OutputsSection, PointerSection, SpacesSection,
     TouchpadSection, WindowsSection,
 };
 use crate::cli::ConfigHome;
@@ -28,6 +28,8 @@ pub struct CasementDoc {
     pub pointer: PointerSection,
     /// `touchpad.*`.
     pub touchpad: TouchpadSection,
+    /// `gpu.*`.
+    pub gpu: GpuSection,
 }
 
 impl SettingsDoc for CasementDoc {

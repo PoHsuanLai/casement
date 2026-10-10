@@ -126,7 +126,6 @@ fn the_vt_chords_map_to_vt_numbers() {
 }
 
 #[test]
-#[ignore = "P1-D2: needs the TtyDevices and FakeKms bodies"]
 fn udev_events_reach_the_backend_in_order() {
     let session = SharedSession::new(FakeSession::default());
     let udev = FakeUdev::scripted(vec![
@@ -135,6 +134,8 @@ fn udev_events_reach_the_backend_in_order() {
         DeviceEvent::Removed(card0()),
     ]);
     let mut backend = backend(&session, udev);
+    // Events before the start-up announcement are part of it, not reported twice.
+    assert!(backend.announce().is_empty());
     let notes = backend.dispatch();
     let first = notes.first();
     let last = notes.last();
@@ -149,11 +150,11 @@ fn udev_events_reach_the_backend_in_order() {
 }
 
 #[test]
-#[ignore = "P1-D2: needs the TtyDevices and FakeKms bodies"]
 fn hotplug_waits_out_a_pause() {
     let session = SharedSession::new(FakeSession::default());
     let udev = FakeUdev::scripted(vec![DeviceEvent::Added(card0())]);
     let mut backend = backend(&session, udev);
+    assert!(backend.announce().is_empty());
     session.prepare_for_sleep(SleepPhase::Starting);
     let paused = backend.dispatch();
     assert_eq!(session_notes(&paused), [SessionNote::Paused]);

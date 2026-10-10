@@ -14,11 +14,14 @@
 //! }
 //! ```
 
+use super::surface::ScanoutSurface;
 use super::udev::DevicePath;
 use crate::headless::ConnectorEvent;
 use casement_core::OutputName;
 use casement_core::gpu::FormatEntry;
-use casement_core::output::{GammaRamp, Mode, OutputPower, PhysicalMm, VrrCapability};
+use casement_core::output::{
+    GammaRamp, Mode, OutputConfig, OutputPower, PhysicalMm, VrrCapability,
+};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -140,12 +143,33 @@ pub struct CrtcFacts {
     pub id: CrtcId,
     /// Whether it can drive a variable-refresh monitor.
     pub vrr: VrrCapability,
+    /// How many steps its gamma table has per channel (`GAMMA_LUT_SIZE`; 0 when it has no gamma
+    /// table). A recorded fixture that predates the field reads as [`DEFAULT_GAMMA_SIZE`].
+    #[serde(default = "default_gamma_size")]
+    pub gamma_size: u32,
+}
+
+/// The gamma table size a CRTC is taken to have when nothing says (most hardware: 256).
+pub const DEFAULT_GAMMA_SIZE: u32 = 256;
+
+fn default_gamma_size() -> u32 {
+    DEFAULT_GAMMA_SIZE
 }
 
 impl CrtcFacts {
-    /// A CRTC.
+    /// A CRTC with a [`DEFAULT_GAMMA_SIZE`] gamma table.
     pub fn new(id: CrtcId, vrr: VrrCapability) -> CrtcFacts {
-        CrtcFacts { id, vrr }
+        CrtcFacts {
+            id,
+            vrr,
+            gamma_size: DEFAULT_GAMMA_SIZE,
+        }
+    }
+
+    /// The same with a gamma table of `gamma_size` steps.
+    #[must_use]
+    pub fn with_gamma_size(self, gamma_size: u32) -> CrtcFacts {
+        CrtcFacts { gamma_size, ..self }
     }
 }
 
@@ -322,6 +346,9 @@ pub enum KmsError {
     /// The device went away (an unplugged eGPU, a revoked session).
     #[error("device {} is gone", .0.display())]
     DeviceGone(PathBuf),
+    /// No open device drives the output of this name.
+    #[error("no device drives the output {0}")]
+    NoDriver(String),
 }
 
 /// One display device, driven atomically.
@@ -345,6 +372,22 @@ pub trait Kms: std::fmt::Debug {
     /// The connector changes since the last call (hotplug, a link retrain), as the same
     /// events the headless backend reports.
     fn events(&mut self) -> Vec<ConnectorEvent>;
+
+    /// The surface that scans `connector` out, made once a commit has lit it (P1-T: the D2 to
+    /// D3 hand-off; the real device gives up its `DrmSurface` and the vblank source). Asking
+    /// again for a connector lit by a later commit gives a fresh surface.
+    fn scanout(
+        &mut self,
+        connector: ConnectorId,
+        config: &OutputConfig,
+    ) -> Result<Box<dyn ScanoutSurface>, KmsError>;
+
+    /// The seat was lent away (a VT switch, a suspend): give up master, touch nothing until
+    /// [`resume`](Kms::resume).
+    fn pause(&mut self);
+
+    /// The seat is back: take master again. The caller then commits every output again.
+    fn resume(&mut self) -> Result<(), KmsError>;
 }
 
 /// Opens a display device. Real: asks the session for the file descriptor and wraps it; fake:

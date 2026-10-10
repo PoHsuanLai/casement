@@ -16,6 +16,7 @@ mod input;
 mod origin;
 mod output;
 mod spec;
+mod tty_world;
 pub mod udmabuf;
 pub mod writeback;
 
@@ -24,3 +25,4 @@ pub use fixture::{Advanced, ClientId, Fixture, FixtureError, FrameCount, SceneDu
 pub use input::FixtureInput;
 pub use origin::TestOrigin;
 pub use spec::FixtureSpec;
+pub use tty_world::{CARD, TtyWorld};

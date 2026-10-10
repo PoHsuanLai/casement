@@ -82,10 +82,14 @@ fn last_frame(state: &State, output: &OutputKey) -> Result<(CapturedFrame, Mono)
         .get(output)
         .map(|plugged| plugged.facts.name.clone())
         .ok_or(CaptureFailure::OutputGone)?;
-    let BackendKind::Headless(backend) = &state.backend else {
-        return Err(CaptureFailure::Renderer);
-    };
-    let presented = backend.last_frame(&name).ok_or(CaptureFailure::Renderer)?;
+    // The headless backend kept the frame it presented; a tty seat kept the shadow it drew
+    // while this output was watched (the first frame of a session waits for the next vblank).
+    let presented = match &state.backend {
+        BackendKind::Headless(backend) => backend.last_frame(&name),
+        BackendKind::Tty(tty) => tty.last_frame(&name),
+        _ => None,
+    }
+    .ok_or(CaptureFailure::Renderer)?;
     let FramePixels::Rgba(pixels) = &presented.pixels else {
         return Err(CaptureFailure::Renderer);
     };

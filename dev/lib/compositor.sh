@@ -37,6 +37,7 @@ start_compositor() {
       --clock) clock=${2:?--clock needs a value}; shift 2 ;;
       --dmabuf) dmabuf=${2:?--dmabuf needs a value}; shift 2 ;;
       --renderer) renderer=${2:?--renderer needs a value}; shift 2 ;;
+      # Anything else (e.g. --state-home DIR, to keep Space ids across a restart) goes to casement.
       *) extra+=("$1"); shift ;;
     esac
   done

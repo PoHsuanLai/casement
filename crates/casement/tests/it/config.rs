@@ -145,6 +145,23 @@ disable_while_typing = "off"
 }
 
 #[test]
+fn the_rendering_gpu_is_auto_or_a_pci_address() {
+    use casement_core::gpu::{ByPathId, GpuChoice};
+    let render = |text: &str| settings_of(text).gpu.render;
+    assert_eq!(render(""), GpuChoice::Auto);
+    assert_eq!(render("[gpu]\nrender = \"auto\"\n"), GpuChoice::Auto);
+    assert_eq!(
+        render("[gpu]\nrender = \"0000:01:00.0\"\n"),
+        GpuChoice::ByPath(ByPathId::parse("0000:01:00.0").expect("id"))
+    );
+    assert_eq!(
+        render("[gpu]\nrender = \"the big one\"\n"),
+        GpuChoice::Auto,
+        "text that is neither costs only itself"
+    );
+}
+
+#[test]
 fn a_bad_value_costs_only_its_own_key() {
     let settings = settings_of(
         r#"

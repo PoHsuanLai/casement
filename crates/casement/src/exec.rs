@@ -14,6 +14,7 @@ mod spawn;
 
 use crate::core_loop;
 use crate::state::State;
+use casement_backend::tty::Lighting;
 use casement_core::output::OutputConfig;
 use casement_core::{Cause, CoreNote, Effect, KeyboardTarget, LayerKey, OutputKey};
 use casement_core::{InputSerial, geometry::LogicalSize, lock::LockReply};
@@ -239,9 +240,15 @@ fn apply_output(state: &mut State, output: &OutputKey, config: &OutputConfig) {
         return;
     };
     let facts = plugged.facts.clone();
-    if let casement_backend::BackendKind::Headless(backend) = &mut state.backend {
-        backend.apply(&facts.name, config);
-    }
+    let now = state.clock.now();
+    let lighting = match &mut state.backend {
+        casement_backend::BackendKind::Headless(backend) => {
+            backend.apply(&facts.name, config);
+            None
+        }
+        casement_backend::BackendKind::Tty(tty) => lit_on_tty(tty, &facts.name, config, now),
+        _ => None,
+    };
     state
         .clock
         .plug_output(&state.event_loop, output.clone(), config.mode.refresh);
@@ -264,6 +271,27 @@ fn apply_output(state: &mut State, output: &OutputKey, config: &OutputConfig) {
     core_loop::resend_scale(state, output, config.scale);
     if let Some(global) = state.wl.output.outputs.get(output) {
         presentation::learn_output(&mut state.wl.presentation, output.clone(), global.clone());
+    }
+    // DPMS On: a real CRTC is lit by the next frame queued, so one is queued now (P1-T).
+    if lighting == Some(Lighting::Relit) {
+        core_loop::frame(state, output);
+    }
+}
+
+/// Puts `config` on the display `name` through the tty backend: a commit, and the scanout
+/// surface of a newly lit output. A refusal is logged and the output stays as it was.
+fn lit_on_tty(
+    tty: &mut casement_backend::TtyBackend,
+    name: &casement_core::OutputName,
+    config: &OutputConfig,
+    now: casement_core::time::Mono,
+) -> Option<Lighting> {
+    match tty.apply(name, config, now) {
+        Ok(lighting) => Some(lighting),
+        Err(error) => {
+            tracing::warn!(output = name.as_str(), %error, "an output could not be lit");
+            None
+        }
     }
 }
 

@@ -8,7 +8,7 @@
 //! plan's `feedback_for` offers each pair once, so the answer is unambiguous.
 
 use crate::states::{GlobalFilter, WaylandFault};
-use casement_core::gpu::FeedbackPlan;
+use casement_core::gpu::{FeedbackPlan, TrancheUse};
 use casement_core::policy::GlobalKind;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::{Buffer, Format, Fourcc, Modifier};
@@ -81,11 +81,23 @@ impl MainDevice {
 /// The jail's first fabricated render node, `226:128` (A3): the soft main device.
 pub const SOFT_MAIN_DEVICE: MainDevice = MainDevice::of(226, 128);
 
+/// What a tranche is for, as the feedback flags it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum OfferUse {
+    /// The device samples (composites) buffers of these formats.
+    Sampling,
+    /// A plane scans buffers of these formats out directly.
+    Scanout,
+}
+
 /// One tranche of the feedback: a device and its formats, in the order offered.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OfferTranche {
     /// The tranche's target device.
     pub device: MainDevice,
+    /// What the tranche is for.
+    pub purpose: OfferUse,
     /// Its formats and modifiers.
     pub formats: Vec<Format>,
 }
@@ -125,6 +137,10 @@ impl DmabufOffer {
             .iter()
             .map(|tranche| OfferTranche {
                 device: MainDevice::of(tranche.target.major, tranche.target.minor),
+                purpose: match tranche.purpose {
+                    TrancheUse::Scanout => OfferUse::Scanout,
+                    _ => OfferUse::Sampling,
+                },
                 formats: tranche
                     .formats
                     .iter()
@@ -154,6 +170,7 @@ impl DmabufOffer {
         if self.tranches.is_empty() {
             vec![OfferTranche {
                 device: self.main_device,
+                purpose: OfferUse::Sampling,
                 formats: self.formats.clone(),
             }]
         } else {
@@ -221,12 +238,11 @@ where
     let builder = offer.tranche_list().into_iter().fold(
         DmabufFeedbackBuilder::new(offer.main_device.0, std::iter::empty::<Format>()),
         |builder, tranche| {
-            builder.add_preference_tranche(
-                tranche.device.0,
-                TrancheFlags::Sampling,
-                tranche.formats,
-                3u32..=6,
-            )
+            let flags = match tranche.purpose {
+                OfferUse::Scanout => TrancheFlags::Scanout,
+                _ => TrancheFlags::Sampling,
+            };
+            builder.add_preference_tranche(tranche.device.0, flags, tranche.formats, 3u32..=6)
         },
     );
     let feedback = match builder.build() {
@@ -323,6 +339,37 @@ mod tests {
             modifier: Modifier::Linear,
         }];
         assert_eq!(offer.formats, main_formats, "the main device's own formats");
+    }
+
+    #[test]
+    fn a_scanout_tranche_in_the_plan_is_a_scanout_tranche_in_the_offer() {
+        use casement_core::gpu::{
+            DrmNodeId, FormatEntry, FormatTable, Fourcc as CoreFourcc, Modifier as CoreModifier,
+            RenderPlan, feedback_for,
+        };
+        use std::collections::BTreeMap;
+        let render = DrmNodeId::new(226, 128);
+        let entry = FormatEntry {
+            format: CoreFourcc(Fourcc::Xrgb8888 as u32),
+            modifier: CoreModifier(0),
+        };
+        let plan = RenderPlan::new(
+            render,
+            BTreeMap::from([(
+                casement_core::OutputName::parse("eDP-1").expect("name"),
+                render,
+            )]),
+        );
+        let table = FormatTable::new(BTreeMap::from([(render, vec![entry])]))
+            .with_scanout(BTreeMap::from([(render, vec![entry])]));
+        let offer = DmabufOffer::from_feedback(&feedback_for(&plan, &table));
+        let purposes: Vec<_> = offer.tranches.iter().map(|t| t.purpose).collect();
+        assert_eq!(purposes, [OfferUse::Scanout], "the pair is offered once");
+        assert_eq!(
+            offer.formats.len(),
+            1,
+            "the main device's formats include it"
+        );
     }
 
     #[test]

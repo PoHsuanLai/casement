@@ -4,8 +4,10 @@
 //! A frame request is answered at once from the frame the output last presented, the one
 //! scanout shows, so a capture equals the scanout byte for byte. On the headless backend that
 //! frame was already read back when it was presented (through the same `ExportMem` pass
-//! `casement_render::pass::capture_output` uses); the tty backend's read-back arrives with
-//! P1-D3's scanout and fails the frame until then (FINDINGS, p1-c1).
+//! `casement_render::pass::capture_output` uses). On a tty seat, while a capture session is open
+//! on an output, each frame is also drawn through pixman into a shadow (P1-T,
+//! `casement_backend::tty::Readback`); the first frame of a session fails until the next vblank
+//! has drawn one (FINDINGS, p1-t).
 
 mod frames;
 

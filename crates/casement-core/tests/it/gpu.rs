@@ -228,3 +228,46 @@ fn feedback_for_a_render_gpu_without_formats_is_empty_but_names_the_main_device(
     assert_eq!(feedback.main_device, render);
     assert!(feedback.tranches.is_empty());
 }
+
+#[test]
+fn feedback_offers_the_formats_a_plane_takes_first_as_a_scanout_tranche() {
+    let render = node(129);
+    let plan = RenderPlan::new(render, BTreeMap::from([(name("eDP-1"), render)]));
+    let table = FormatTable::new(BTreeMap::from([(
+        render,
+        vec![entry(ARGB, 0), entry(XRGB, 0)],
+    )]))
+    .with_scanout(BTreeMap::from([(
+        render,
+        // The plane takes XRGB linear, and a tiled layout the GPU does not draw into.
+        vec![entry(XRGB, 0), entry(XRGB, 0x0100_0000_0000_0001)],
+    )]));
+    let feedback = feedback_for(&plan, &table);
+    let shape: Vec<_> = feedback
+        .tranches
+        .iter()
+        .map(|tranche| (tranche.target, tranche.purpose, tranche.formats.clone()))
+        .collect();
+    assert_eq!(
+        shape,
+        vec![
+            (render, TrancheUse::Scanout, vec![entry(XRGB, 0)]),
+            (render, TrancheUse::Render, vec![entry(ARGB, 0)]),
+        ],
+        "a pair is offered once, at its first tranche; a plane format the GPU cannot draw is not offered"
+    );
+}
+
+#[test]
+fn feedback_has_no_scanout_tranche_for_planes_of_another_gpu() {
+    let (render, other) = (node(129), node(128));
+    let plan = RenderPlan::new(render, BTreeMap::from([(name("DP-1"), other)]));
+    let table = FormatTable::new(BTreeMap::from([
+        (render, vec![entry(ARGB, 0)]),
+        (other, vec![entry(XRGB, 0)]),
+    ]))
+    .with_scanout(BTreeMap::from([(other, vec![entry(XRGB, 0)])]));
+    let feedback = feedback_for(&plan, &table);
+    let purposes: Vec<_> = feedback.tranches.iter().map(|t| t.purpose).collect();
+    assert_eq!(purposes, vec![TrancheUse::Render, TrancheUse::Import]);
+}

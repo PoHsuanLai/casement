@@ -69,7 +69,7 @@ fn tracker_of(spec: &VirtualOutputSpec) -> OutputDamageTracker {
 }
 
 /// smithay's name for one of our transforms.
-fn transform_of(transform: CoreTransform) -> Transform {
+pub(crate) fn transform_of(transform: CoreTransform) -> Transform {
     match transform {
         CoreTransform::Normal => Transform::Normal,
         CoreTransform::R90 => Transform::_90,

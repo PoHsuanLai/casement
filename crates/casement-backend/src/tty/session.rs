@@ -1,6 +1,7 @@
 //! The tty session seam (P1-Z; filled by P1-D1): who opens devices, and when the seat is
 //! taken away and given back.
 
+use super::sleep::SleepLink;
 use super::udev::DevicePath;
 use super::vt::VtNumber;
 use crate::session::SessionFault;
@@ -29,6 +30,18 @@ pub trait TtySession: std::fmt::Debug {
 
     /// The seat changes since the last call.
     fn notes(&mut self) -> Vec<SessionNote>;
+
+    /// The backend acted on `note` (it released its devices for a `Paused`): a session that
+    /// holds a suspend open until then lets it go on. Nothing to do by default.
+    fn settled(&mut self, note: SessionNote) {
+        let _ = note;
+    }
+
+    /// The link a thread at the edge pushes logind's `PrepareForSleep` through (taken once;
+    /// none for a session that has no suspend to hear).
+    fn sleep_link(&mut self) -> Option<SleepLink> {
+        None
+    }
 }
 
 /// Whether this session holds the seat. While it is [`SeatState::Lent`] no device may be used,

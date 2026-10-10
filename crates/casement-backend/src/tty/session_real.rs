@@ -2,12 +2,15 @@
 //!
 //! libseat reports the seat changing hands through an event source; `open` inserts it into the
 //! loop, where each report is queued as a [`SessionNote`] until `notes` hands the queue out.
-//! logind's `PrepareForSleep` is not libseat's to report: a suspend reaches this adapter only as
-//! the pause logind makes of the session (see FINDINGS, p1-d1).
+//! logind's `PrepareForSleep` is not libseat's to report: a thread at the binary's edge hears it
+//! on the system bus and pushes it through this session's [`SleepLink`] (taken once with
+//! `sleep_link`); the link's ping wakes the loop, and `settled` lets the thread release logind's
+//! delay inhibitor once the backend has let go of its devices (P1-T).
 
 use super::kms::KmsError;
 use super::kms_real::FdSource;
 use super::session::{SessionNote, TtySession};
+use super::sleep::{SleepInbox, SleepLink, sleep_channel};
 use super::udev::DevicePath;
 use super::vt::VtNumber;
 use crate::session::SessionFault;
@@ -15,6 +18,7 @@ use rustix::fs::OFlags;
 use smithay::backend::session::libseat::LibSeatSession;
 use smithay::backend::session::{Event as SeatEvent, Session};
 use smithay::reexports::calloop::LoopHandle;
+use smithay::reexports::calloop::ping::make_ping;
 use std::cell::RefCell;
 use std::os::fd::OwnedFd;
 use std::rc::Rc;
@@ -24,6 +28,8 @@ use std::rc::Rc;
 pub struct RealSession {
     seat: LibSeatSession,
     pending: Rc<RefCell<Vec<SessionNote>>>,
+    sleep: SleepInbox,
+    link: Option<SleepLink>,
 }
 
 impl RealSession {
@@ -39,7 +45,23 @@ impl RealSession {
                 queue.borrow_mut().push(note_of(event));
             })
             .map_err(|error| unavailable(error.error.to_string()))?;
-        Ok(RealSession { seat, pending })
+        // The ping only wakes the loop: the notes themselves wait in the link's channel.
+        let (ping, wake) = make_ping().map_err(|error| unavailable(error.to_string()))?;
+        handle
+            .insert_source(wake, |(), _, _| {})
+            .map_err(|error| unavailable(error.error.to_string()))?;
+        let (link, sleep) = sleep_channel(move || ping.ping());
+        Ok(RealSession {
+            seat,
+            pending,
+            sleep,
+            link: Some(link),
+        })
+    }
+
+    /// A second handle on the libseat session, for the input devices to be opened through.
+    pub fn seat_handle(&self) -> LibSeatSession {
+        self.seat.clone()
     }
 
     /// The KMS seam's device opener: a second handle on this libseat session.
@@ -92,6 +114,18 @@ impl TtySession for RealSession {
     }
 
     fn notes(&mut self) -> Vec<SessionNote> {
-        std::mem::take(&mut *self.pending.borrow_mut())
+        let mut notes = std::mem::take(&mut *self.pending.borrow_mut());
+        notes.extend(self.sleep.take());
+        notes
+    }
+
+    fn settled(&mut self, note: SessionNote) {
+        if note == SessionNote::Paused {
+            self.sleep.settled();
+        }
+    }
+
+    fn sleep_link(&mut self) -> Option<SleepLink> {
+        self.link.take()
     }
 }

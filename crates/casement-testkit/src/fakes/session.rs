@@ -3,7 +3,9 @@
 
 use super::logind::manager::SleepPhase;
 use casement_backend::SessionFault;
-use casement_backend::tty::{DevicePath, SessionNote, TtySession, VtNumber};
+use casement_backend::tty::{
+    DevicePath, SessionNote, SleepInbox, SleepLink, TtySession, VtNumber, sleep_channel,
+};
 use rustix::fs::{MemfdFlags, OFlags, SeekFrom};
 use smithay::backend::session::Session;
 use std::cell::RefCell;
@@ -43,6 +45,12 @@ pub struct FakeSession {
     switched_to: Option<i32>,
     /// The seat changes not yet handed out by `notes`.
     pending: Vec<SessionNote>,
+    /// What the edge's `PrepareForSleep` thread sends, when the session was made to hear it.
+    sleep: Option<SleepInbox>,
+    /// The other end of `sleep`, until the edge takes it.
+    link: Option<SleepLink>,
+    /// The notes the backend said it had acted on, in order.
+    settled: Vec<SessionNote>,
 }
 
 impl FakeSession {
@@ -52,6 +60,23 @@ impl FakeSession {
             fixtures: fixtures.into_iter().map(|f| (f.path.clone(), f)).collect(),
             ..FakeSession::default()
         }
+    }
+
+    /// The same session, made to hear a suspend through a [`SleepLink`] (taken with
+    /// [`TtySession::sleep_link`]).
+    #[must_use]
+    pub fn with_sleep(self) -> FakeSession {
+        let (link, inbox) = sleep_channel(|| {});
+        FakeSession {
+            sleep: Some(inbox),
+            link: Some(link),
+            ..self
+        }
+    }
+
+    /// The notes the backend reported having acted on.
+    pub fn settled_notes(&self) -> &[SessionNote] {
+        &self.settled
     }
 
     /// The VT the session was last asked to switch to, if any.
@@ -121,6 +146,11 @@ impl SharedSession {
     pub fn switched_to(&self) -> Option<i32> {
         self.0.borrow().switched_to()
     }
+
+    /// The notes the backend reported having acted on.
+    pub fn settled_notes(&self) -> Vec<SessionNote> {
+        self.0.borrow().settled_notes().to_vec()
+    }
 }
 
 impl TtySession for SharedSession {
@@ -134,6 +164,14 @@ impl TtySession for SharedSession {
 
     fn notes(&mut self) -> Vec<SessionNote> {
         self.0.borrow_mut().notes()
+    }
+
+    fn settled(&mut self, note: SessionNote) {
+        self.0.borrow_mut().settled(note);
+    }
+
+    fn sleep_link(&mut self) -> Option<SleepLink> {
+        self.0.borrow_mut().sleep_link()
     }
 }
 
@@ -194,7 +232,30 @@ impl TtySession for FakeSession {
     }
 
     fn notes(&mut self) -> Vec<SessionNote> {
+        let slept = self
+            .sleep
+            .as_ref()
+            .map(SleepInbox::take)
+            .unwrap_or_default();
+        for note in slept {
+            match note {
+                SessionNote::Paused => self.set(Activity::Inactive),
+                SessionNote::Activated => self.set(Activity::Active),
+                _ => {}
+            }
+        }
         std::mem::take(&mut self.pending)
+    }
+
+    fn settled(&mut self, note: SessionNote) {
+        self.settled.push(note);
+        if let (SessionNote::Paused, Some(inbox)) = (note, &self.sleep) {
+            inbox.settled();
+        }
+    }
+
+    fn sleep_link(&mut self) -> Option<SleepLink> {
+        self.link.take()
     }
 }
 

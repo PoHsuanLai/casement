@@ -2,6 +2,7 @@
 //! the render-cost history the frame scheduler reads.
 
 use super::flip::FlipTracker;
+use super::kms::KmsError;
 use super::surface::{Presented, QueueOutcome, QueuedFrame, ScanoutSurface};
 use crate::backend::BackendError;
 use crate::headless::FrameSource;
@@ -43,9 +44,10 @@ impl Scanout {
         }
     }
 
-    /// Takes in what reached the glass since the last call; the outcomes, oldest first.
-    pub fn settle(&mut self) -> Vec<(Presented, FrameOutcome)> {
-        std::iter::from_fn(|| self.surface.presented())
+    /// Takes in what reached the glass since the last call (`now` is this look's instant on the
+    /// session clock); the outcomes, oldest first.
+    pub fn settle(&mut self, now: Mono) -> Vec<(Presented, FrameOutcome)> {
+        std::iter::from_fn(|| self.surface.presented(now))
             .map(|presented| {
                 let (flip, outcome) = self.flip.presented(presented);
                 self.flip = flip;
@@ -59,8 +61,12 @@ impl Scanout {
     }
 
     /// Draws `source` and queues it; the vblank it is for, or none while a flip is pending.
-    pub fn present(&mut self, source: &dyn FrameSource) -> Result<Option<VblankSeq>, BackendError> {
-        let _ = self.settle();
+    pub fn present(
+        &mut self,
+        source: &dyn FrameSource,
+        now: Mono,
+    ) -> Result<Option<VblankSeq>, BackendError> {
+        let _ = self.settle(now);
         if self.flip.wanted.is_some() {
             return Ok(None);
         }
@@ -72,6 +78,18 @@ impl Scanout {
             QueueOutcome::Busy => Ok(None),
             QueueOutcome::Failed(error) => Err(error.into()),
         }
+    }
+
+    /// The output goes dark: the surface stops scanning out until the next frame.
+    pub fn blank(&mut self) -> Result<(), KmsError> {
+        self.flip = FlipTracker::new();
+        self.surface.blank()
+    }
+
+    /// The seat came back: the surface forgets the screen and no flip is pending any more.
+    pub fn reset(&mut self) {
+        self.surface.reset();
+        self.flip = FlipTracker::new();
     }
 
     /// Records what the frame just drawn cost, for the next prediction.
@@ -139,15 +157,32 @@ impl ScanoutSet {
         self.outputs.get_mut(name)
     }
 
-    /// Queues a frame of `source` for `name`; none while held, unlit or a flip is pending.
+    /// Queues a frame of `source` for `name` at `now`; none while held, unlit or a flip is
+    /// pending.
     pub fn present(
         &mut self,
         name: &OutputName,
         source: &dyn FrameSource,
+        now: Mono,
     ) -> Result<Option<VblankSeq>, BackendError> {
         match (self.flow, self.outputs.get_mut(name)) {
-            (Flow::Running, Some(scanout)) => scanout.present(source),
+            (Flow::Running, Some(scanout)) => scanout.present(source, now),
             _ => Ok(None),
         }
+    }
+
+    /// The seat came back: every scanout forgets the screen.
+    pub fn reset(&mut self) {
+        self.outputs.values_mut().for_each(Scanout::reset);
+    }
+
+    /// The outputs that scan out now.
+    pub fn names(&self) -> Vec<OutputName> {
+        self.outputs.keys().cloned().collect()
+    }
+
+    /// Whether frames flow.
+    pub fn flowing(&self) -> Flow {
+        self.flow
     }
 }

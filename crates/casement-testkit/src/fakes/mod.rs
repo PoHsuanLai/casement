@@ -3,6 +3,7 @@
 //! the jail.
 
 mod input_devices;
+mod input_feed;
 pub mod kms;
 pub mod logind;
 mod palmrest;
@@ -14,6 +15,7 @@ mod spawner;
 mod udev;
 
 pub use input_devices::FakeInputDevices;
+pub use input_feed::FakeInputFeed;
 pub use kms::{
     FakeKms, FakeKmsOpener, KmsFixtureError, KmsWorld, LinkBehaviour, SyntheticTopology, edid,
     load_fixture,
@@ -23,9 +25,9 @@ pub use logind::{
     SleepPhase,
 };
 pub use palmrest::FakePalmrest;
-pub use scanout::FakeScanout;
+pub use scanout::{FakeScanout, GlassHandle, Pacing};
 pub use session::{FakeSession, SessionFixture, SharedSession};
 pub use shell_calls::FakeShellCalls;
 pub use space_store::MemorySpaceStore;
 pub use spawner::{FakeSpawner, StartedProgram};
-pub use udev::FakeUdev;
+pub use udev::{FakeUdev, SharedUdev};

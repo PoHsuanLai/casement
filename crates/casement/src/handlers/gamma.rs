@@ -21,14 +21,13 @@ impl GammaHandler for State {
         output_key_of(self, output)
     }
 
-    /// The headless backend takes 256 steps; the KMS device reports no size yet (FINDINGS,
-    /// p1-m1), so a tty output answers the same; the winit window has no gamma to drive.
+    /// The headless backend takes 256 steps; a tty output has as many as its CRTC reports
+    /// (`GAMMA_LUT_SIZE`; none for a CRTC with no table); the winit window has no gamma to drive.
     fn gamma_table_size(&self, output: &OutputKey) -> Option<GammaSize> {
-        self.core.model.outputs().0.get(output)?;
+        let name = &self.core.model.outputs().0.get(output)?.facts.name;
         match &self.backend {
-            BackendKind::Headless(_) | BackendKind::Tty(_) => {
-                u32::try_from(GAMMA_SIZE).ok().map(GammaSize)
-            }
+            BackendKind::Headless(_) => u32::try_from(GAMMA_SIZE).ok().map(GammaSize),
+            BackendKind::Tty(tty) => tty.gamma_size(name).filter(|size| *size > 0).map(GammaSize),
             _ => None,
         }
     }

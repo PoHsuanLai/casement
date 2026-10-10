@@ -77,6 +77,18 @@ pub trait ScanoutSurface: std::fmt::Debug {
     /// Queues `frame` for the next vblank.
     fn queue(&mut self, frame: QueuedFrame<'_>) -> QueueOutcome;
 
-    /// The oldest frame that reached the glass since the last call.
-    fn presented(&mut self) -> Option<Presented>;
+    /// The oldest frame that reached the glass since the last call. `now` is the session
+    /// clock's instant of this look: a device that learns of a flip without a time on the
+    /// session clock stamps it so.
+    fn presented(&mut self, now: Mono) -> Option<Presented>;
+
+    /// The output goes dark (DPMS off): stop scanning out. The next frame queued lights it
+    /// again. Nothing to do by default.
+    fn blank(&mut self) -> Result<(), KmsError> {
+        Ok(())
+    }
+
+    /// The seat came back (a VT switch back, a resume): whatever the surface remembered of the
+    /// screen is stale, so the next frame is a full one and a flip that was in flight is lost.
+    fn reset(&mut self) {}
 }

@@ -6,6 +6,8 @@
 //! source for dma-buf feedback. The pure plan is `casement_core::gpu`.
 
 mod feedback;
+#[cfg(feature = "tty")]
+mod formats_real;
 mod import;
 mod manager;
 mod render_nodes;
@@ -13,6 +15,8 @@ mod render_nodes_real;
 mod soft;
 
 pub use feedback::{FormatSource, format_table};
+#[cfg(feature = "tty")]
+pub use formats_real::RealFormats;
 pub use import::{CrossSupport, ImportRoute, route_for, route_with, tag_node};
 pub use manager::GpuStack;
 pub use render_nodes::{GpuError, GpuHandle, RenderNodes, SysRoot};

@@ -11,6 +11,7 @@ use casement_backend::{
     TtyBackend, WinitBackend,
 };
 use casement_core::geometry::LogicalPoint;
+use casement_core::gpu::GpuChoice;
 use casement_core::settings::CasementSettings;
 use casement_core::space::SpaceSeed;
 use casement_core::{IdMint, Model, OutputKey};
@@ -249,7 +250,10 @@ impl State {
                 BackendKind::Winit(WinitBackend::start(first)?)
             }
             BackendChoice::Tty => {
-                BackendKind::Tty(TtyBackend::start(tty_seams(seams.tty.take(), event_loop)?)?)
+                let seams = tty_seams(seams.tty.take(), event_loop, &settings.gpu.render)?;
+                let mut tty = TtyBackend::start(seams)?;
+                offer_dmabuf(&mut wl.dmabuf, &dh, &mut tty)?;
+                BackendKind::Tty(tty)
             }
         };
         let clock = ClockSource::start(config.clock, event_loop)?;
@@ -306,32 +310,58 @@ impl State {
     }
 }
 
+/// The dma-buf offer of a seat: the render plan's feedback (a scanout tranche, the render
+/// GPU's tranche, an import tranche for each other GPU that scans out) when the GPUs and their
+/// formats are known; else what `--dmabuf` asked for (soft in the jail, nothing by default).
+fn offer_dmabuf(
+    part: &mut dmabuf::DmabufPart,
+    display: &DisplayHandle,
+    tty: &mut TtyBackend,
+) -> Result<(), StartError> {
+    match tty.dmabuf_feedback() {
+        Ok(Some(feedback)) => {
+            let offer = dmabuf::DmabufOffer::from_feedback(&feedback);
+            dmabuf::apply_offer::<State>(part, display, &offer)?;
+        }
+        Ok(None) => {}
+        Err(error) => tracing::warn!(%error, "dma-buf feedback not offered; clients use shm"),
+    }
+    Ok(())
+}
+
 /// The seams the tty backend starts over: the injected ones (a test), else the machine's own.
 fn tty_seams(
     injected: Option<TtySeams>,
     handle: &LoopHandle<'static, State>,
+    render: &GpuChoice,
 ) -> Result<TtySeams, StartError> {
     match injected {
         Some(seams) => Ok(seams),
-        None => real_tty_seams(handle),
+        None => real_tty_seams(handle, render),
     }
 }
 
-/// The machine's seat, devices and GPUs (`gpu.render` is not a setting yet: automatic).
+/// The machine's seat, devices and GPUs; `render` is the `gpu.render` setting.
 #[cfg(feature = "tty")]
-fn real_tty_seams(handle: &LoopHandle<'static, State>) -> Result<TtySeams, StartError> {
+fn real_tty_seams(
+    handle: &LoopHandle<'static, State>,
+    render: &GpuChoice,
+) -> Result<TtySeams, StartError> {
     let root = casement_backend::gpu::SysRoot::host();
     Ok(casement_backend::tty::real_seams(
         root,
-        casement_core::gpu::GpuChoice::Auto,
+        render.clone(),
         handle,
     )?)
 }
 
 /// A build without the real adapters cannot run on a seat.
 #[cfg(not(feature = "tty"))]
-fn real_tty_seams(handle: &LoopHandle<'static, State>) -> Result<TtySeams, StartError> {
-    let _ = handle;
+fn real_tty_seams(
+    handle: &LoopHandle<'static, State>,
+    render: &GpuChoice,
+) -> Result<TtySeams, StartError> {
+    let _ = (handle, render);
     Err(StartError::NotYet(
         "this build has no tty backend (feature `tty`)",
     ))

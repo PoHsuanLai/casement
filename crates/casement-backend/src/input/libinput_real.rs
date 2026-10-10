@@ -1,89 +1,186 @@
-//! The real libinput device configuration (feature `libinput`): `InputDevices` over the input
-//! crate, a thin adapter (B7). P1-Z declares it; P1-I1 fills it.
+//! The real seat input (feature `libinput`): `InputFeed` over libinput, a thin adapter (B7).
 //!
-//! The adapter owns the libinput context for the seat and the devices it has been told about
-//! ([`RealInputDevices::track`]); the loop that dispatches libinput's events tells it as devices
-//! are added and removed. Scroll factor is not a libinput setting (libinput scrolls by the
+//! libinput opens its device nodes through the seat's session (smithay's
+//! `LibinputSessionInterface` over a handle on the libseat session), never directly: a revoked
+//! session takes its devices with it, and on a return `resume` reopens them. The context is read
+//! by smithay's `LibinputInputBackend` as an event source in the loop; each event it yields is
+//! queued, and the loop turn's `poll` converts the queue into our words ([`input_kind_of`]),
+//! stamping the poll's instant. Scroll factor is not a libinput setting (libinput scrolls by the
 //! device's own step): the compositor scales the axis event, so it is never reported as
 //! unsupported here.
 
+use super::DeviceName;
+use super::convert::input_kind_of;
 use super::devices::{Applied, DeviceSetting, DeviceSettings, InputDevices, InputError};
+use super::feed::{FedDevice, FedInput, InputFeed, PollContext};
 use casement_core::DeviceId;
+use casement_core::input::{DeviceClass, InputEvent as CoreEvent, Origin};
 use casement_core::settings::{AccelProfile, Enabled};
+use smithay::backend::input::{Event, InputEvent};
+use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface};
+use smithay::backend::session::Session;
+use smithay::reexports::calloop::LoopHandle;
 use smithay::reexports::input::{
-    self as libinput, DeviceConfigError, DeviceConfigResult, Libinput, LibinputInterface,
+    self as libinput, DeviceCapability, DeviceConfigError, DeviceConfigResult, Libinput,
 };
-use std::collections::BTreeMap;
-use std::fs::OpenOptions;
-use std::os::fd::OwnedFd;
-use std::os::unix::fs::OpenOptionsExt;
-use std::path::Path;
+use std::cell::RefCell;
+use std::collections::{BTreeMap, VecDeque};
+use std::rc::Rc;
 
-/// Opens device nodes directly. The seat's own descriptors (logind's `TakeDevice`) replace this
-/// when the tty backend hands its session over (P1-D1); until then libinput needs read access
-/// to the nodes.
-#[derive(Debug)]
-struct DirectOpen;
-
-impl LibinputInterface for DirectOpen {
-    fn open_restricted(&mut self, path: &Path, flags: i32) -> Result<OwnedFd, i32> {
-        OpenOptions::new()
-            .custom_flags(flags)
-            .read(true)
-            .write(true)
-            .open(path)
-            .map(OwnedFd::from)
-            .map_err(|error| error.raw_os_error().unwrap_or(libc_eio()))
-    }
-
-    fn close_restricted(&mut self, fd: OwnedFd) {
-        drop(fd);
-    }
-}
-
-/// `EIO`, for an error without an errno.
-const fn libc_eio() -> i32 {
-    5
-}
+/// One raw event, as libinput's backend yields it.
+type Raw = InputEvent<LibinputInputBackend>;
 
 /// libinput's devices on a seat.
-#[derive(Debug)]
-pub struct RealInputDevices {
+pub struct RealInputFeed {
     /// The seat.
     pub seat: String,
     context: Libinput,
-    devices: BTreeMap<DeviceId, libinput::Device>,
+    queue: Rc<RefCell<VecDeque<Raw>>>,
+    devices: BTreeMap<DeviceId, Known>,
+    ids: BTreeMap<String, DeviceId>,
+    next: u32,
 }
 
-impl RealInputDevices {
-    /// Opens libinput on `seat`.
-    pub fn open(seat: &str) -> Result<RealInputDevices, InputError> {
-        let mut context = Libinput::new_with_udev(DirectOpen);
+/// A device libinput reported: its handle and what kind it is.
+struct Known {
+    device: libinput::Device,
+    class: DeviceClass,
+}
+
+impl RealInputFeed {
+    /// Opens libinput on `seat`, its devices opened through `session`, and has `handle`'s loop
+    /// read its events.
+    pub fn open<D: 'static, S: Session + 'static>(
+        seat: &str,
+        session: S,
+        handle: &LoopHandle<'static, D>,
+    ) -> Result<RealInputFeed, InputError> {
+        let mut context = Libinput::new_with_udev(LibinputSessionInterface::from(session));
         context.udev_assign_seat(seat).map_err(|()| {
             InputError::Io(std::io::Error::other(format!(
                 "libinput could not take seat {seat}"
             )))
         })?;
-        Ok(RealInputDevices {
+        let queue = Rc::new(RefCell::new(VecDeque::new()));
+        let into = Rc::clone(&queue);
+        handle
+            .insert_source(
+                LibinputInputBackend::new(context.clone()),
+                move |event, _, _| into.borrow_mut().push_back(event),
+            )
+            .map_err(|error| InputError::Io(std::io::Error::other(error.error)))?;
+        Ok(RealInputFeed {
             seat: seat.to_owned(),
             context,
+            queue,
             devices: BTreeMap::new(),
+            ids: BTreeMap::new(),
+            next: 0,
         })
     }
 
-    /// The libinput context, for the loop that dispatches its events.
-    pub fn context(&mut self) -> &mut Libinput {
-        &mut self.context
+    /// The id of `device` for the rest of the run (its kernel name is stable while it is
+    /// plugged; an unplugged and replugged device is a new one).
+    fn id_of(&mut self, device: &libinput::Device) -> DeviceId {
+        let name = device.sysname().to_owned();
+        if let Some(id) = self.ids.get(&name) {
+            return *id;
+        }
+        self.next = self.next.saturating_add(1);
+        let id = DeviceId(self.next);
+        self.ids.insert(name, id);
+        id
     }
 
-    /// Remembers `device` as `id`, so settings can be applied to it.
-    pub fn track(&mut self, id: DeviceId, device: libinput::Device) {
-        self.devices.insert(id, device);
+    /// One raw event in our words, or what it said about the devices.
+    fn convert(&mut self, event: &Raw, context: &PollContext) -> Option<FedInput> {
+        match event {
+            InputEvent::DeviceAdded { device } => {
+                let id = self.id_of(device);
+                let class = class_of(device);
+                self.devices.insert(
+                    id,
+                    Known {
+                        device: device.clone(),
+                        class,
+                    },
+                );
+                Some(FedInput::Appeared(FedDevice::new(
+                    id,
+                    class,
+                    DeviceName(device.name().into_owned()),
+                )))
+            }
+            InputEvent::DeviceRemoved { device } => {
+                let id = self.ids.remove(device.sysname())?;
+                self.devices.remove(&id);
+                Some(FedInput::Gone(id))
+            }
+            other => {
+                let device = device_of(other)?;
+                let id = self.id_of(&device);
+                let class = self.devices.get(&id)?.class;
+                let kind = input_kind_of(other, context.extent)?;
+                Some(FedInput::Event(CoreEvent {
+                    origin: Origin::Physical(class),
+                    device: id,
+                    at: context.now,
+                    kind,
+                }))
+            }
+        }
     }
+}
 
-    /// Forgets the device `id` (it went away).
-    pub fn forget(&mut self, id: DeviceId) {
-        self.devices.remove(&id);
+/// The device an event came from.
+fn device_of(event: &Raw) -> Option<libinput::Device> {
+    macro_rules! from {
+        ($($variant:ident),* $(,)?) => {
+            match event {
+                $(InputEvent::$variant { event } => Some(Event::<LibinputInputBackend>::device(event)),)*
+                _ => None,
+            }
+        };
+    }
+    from!(
+        Keyboard,
+        PointerMotion,
+        PointerMotionAbsolute,
+        PointerButton,
+        PointerAxis,
+        GestureSwipeBegin,
+        GestureSwipeUpdate,
+        GestureSwipeEnd,
+        GesturePinchBegin,
+        GesturePinchUpdate,
+        GesturePinchEnd,
+        GestureHoldBegin,
+        GestureHoldEnd,
+        TouchDown,
+        TouchMotion,
+        TouchUp,
+        TouchCancel,
+        TouchFrame,
+        SwitchToggle,
+    )
+}
+
+/// What kind of device libinput describes: a keyboard wins over a pointer that rides along, a
+/// pointer that taps with fingers is a touchpad.
+fn class_of(device: &libinput::Device) -> DeviceClass {
+    let has = |capability| device.has_capability(capability);
+    if has(DeviceCapability::Keyboard) {
+        DeviceClass::Keyboard
+    } else if has(DeviceCapability::Pointer) && device.config_tap_finger_count() > 0 {
+        DeviceClass::Touchpad
+    } else if has(DeviceCapability::Pointer) {
+        DeviceClass::Pointer
+    } else if has(DeviceCapability::Touch) {
+        DeviceClass::Touch
+    } else if has(DeviceCapability::TabletTool) {
+        DeviceClass::Tablet
+    } else {
+        DeviceClass::Switch
     }
 }
 
@@ -100,11 +197,12 @@ fn skipped(result: DeviceConfigResult, setting: DeviceSetting) -> Option<DeviceS
     }
 }
 
-impl InputDevices for RealInputDevices {
+impl InputDevices for RealInputFeed {
     fn apply(&mut self, device: DeviceId, settings: &DeviceSettings) -> Applied {
-        let Some(device) = self.devices.get_mut(&device) else {
+        let Some(known) = self.devices.get_mut(&device) else {
             return Applied::Refused;
         };
+        let device = &mut known.device;
         let profile = match settings.accel {
             AccelProfile::Flat => libinput::AccelProfile::Flat,
             _ => libinput::AccelProfile::Adaptive,
@@ -135,5 +233,38 @@ impl InputDevices for RealInputDevices {
         } else {
             Applied::Partly(skipped)
         }
+    }
+}
+
+impl InputFeed for RealInputFeed {
+    fn poll(&mut self, context: &PollContext) -> Vec<FedInput> {
+        let raw: Vec<Raw> = self.queue.borrow_mut().drain(..).collect();
+        raw.iter()
+            .filter_map(|event| self.convert(event, context))
+            .collect()
+    }
+
+    fn suspend(&mut self) {
+        self.context.suspend();
+        // What was read before the seat was lent is stale.
+        self.queue.borrow_mut().clear();
+    }
+
+    fn resume(&mut self) {
+        if self.context.resume().is_err() {
+            tracing::warn!(
+                seat = self.seat,
+                "libinput did not resume after the seat came back"
+            );
+        }
+    }
+}
+
+impl std::fmt::Debug for RealInputFeed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RealInputFeed")
+            .field("seat", &self.seat)
+            .field("devices", &self.devices.len())
+            .finish_non_exhaustive()
     }
 }
