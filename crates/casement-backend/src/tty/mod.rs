@@ -17,6 +17,7 @@ mod flip;
 mod hotplug;
 mod judge;
 mod kms;
+mod scanouts;
 mod session;
 mod surface;
 mod udev;
@@ -43,6 +44,7 @@ pub use kms::{
     KmsError, KmsOpener, KmsRefusal, KmsResources, ModesetPolicy, OutputCommit, PlaneFacts,
     PlaneId, PlaneKind, VrrState,
 };
+pub use scanouts::{Flow, FrameTally, Scanout, ScanoutSet};
 pub use session::{SeatState, SessionNote, TtySession};
 pub use surface::{DirectCandidate, Presented, QueueOutcome, QueuedFrame, ScanoutSurface};
 pub use udev::{DeviceEvent, DevicePath, DeviceSource};
@@ -123,6 +125,8 @@ pub struct TtyBackend {
     pub plan: Option<RenderPlan>,
     /// Whether this session holds the seat; `present` draws nothing while it is lent.
     pub seat: SeatState,
+    /// The scanout of each lit output (`ScanoutSet::default()` at start; P1-D2 attaches).
+    pub scanouts: ScanoutSet,
 }
 
 impl TtyBackend {
@@ -144,6 +148,7 @@ impl TtyBackend {
             devices: TtyDevices::empty(),
             plan: None,
             seat: SeatState::Held,
+            scanouts: ScanoutSet::empty(),
         })
     }
 
@@ -238,8 +243,7 @@ impl TtyBackend {
         output: &OutputName,
         source: &dyn FrameSource,
     ) -> Result<Option<VblankSeq>, BackendError> {
-        let _ = (output, source);
-        todo!("P1-D3: TtyBackend::present")
+        self.scanouts.present(output, source)
     }
 }
 
