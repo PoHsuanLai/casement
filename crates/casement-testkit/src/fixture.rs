@@ -13,7 +13,7 @@ mod live;
 use crate::fakes::{FakePalmrest, FakeSession, FakeShellCalls, FakeSpawner, MemorySpaceStore};
 use crate::input::FixtureInput;
 use crate::spec::FixtureSpec;
-use casement::cli::{ClockChoice, ConfigHome, Entropy, StartConfig, StartMode};
+use casement::cli::{ClockChoice, ConfigHome, Entropy, StartConfig, StartMode, TtyMode};
 use casement::display::{self, SharedDisplay, attach_display};
 use casement::seams::Seams;
 use casement::space_store::StateHome;
@@ -169,6 +169,7 @@ impl Fixture {
             entropy: Entropy::Fixed(FIXTURE_ENTROPY),
             state_home: StateHome::Ephemeral,
             xwayland: XwaylandConfig::off(),
+            tty: TtyMode::Seat,
         };
         let space_store = spec.space_store.clone();
         let shell_calls = FakeShellCalls::new();

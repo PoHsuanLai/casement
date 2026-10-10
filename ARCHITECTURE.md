@@ -190,6 +190,15 @@ pub trait TtySession: Debug {
 }
 pub trait DeviceSource: Debug { fn present(&self) -> Vec<DevicePath>; fn next_event(&mut self) -> Option<DeviceEvent>; }
 
+// P1-V2: `TtySeams::writeback: Option<Box<dyn Writeback>>` is the vkms writeback connector, set only by
+// `--drm-node` mode (real: writeback_real.rs; fake: FakeWriteback). `--drm-node` also builds `DirectSession`
+// (a TtySession moved only by its SleepLink), `FixedNode` (the one DeviceSource) and `NoGpus` (no detection,
+// no input): direct.rs, direct_real.rs.
+pub trait Writeback: Debug {
+    fn begin(&mut self, crtc: CrtcId, size: PhysicalSize) -> Result<(), WritebackError>;
+    fn finish(&mut self) -> Result<RawCapture, WritebackError>;        // after FLIPS_TO_WAIT flips
+}
+
 // casement-backend::input (real: libinput_real.rs under feature `libinput`; fakes: FakeInputDevices,
 // FakeInputFeed). P1-T: the seat's input is one seam, `InputFeed`, held in `TtySeams::input`; its
 // events are converted once (`input_kind_of`) and the devices are opened through the session.

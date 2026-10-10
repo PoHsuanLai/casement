@@ -4,6 +4,7 @@
 //! casement [--backend headless|winit|tty] [--clock wall|stepped] [--outputs SPEC[;SPEC...]]...
 //!          [--renderer pixman|llvmpipe] [--dmabuf none|soft] [--safe] [--config-home DIR]
 //!          [--state-home DIR] [--xwayland satellite|off] [--xwayland-satellite PATH]
+//!          [--drm-node PATH [--kms-report FILE] [--writeback-raw PATH]]
 //! casement --write-schema PATH
 //! ```
 //!
@@ -11,6 +12,10 @@
 //! or given as several flags. `--safe` is pixman, no effects, one output (the session's crash
 //! guard). The defaults are the headless backend, the wall clock, pixman, no dma-buf and one
 //! 1920x1080 output at scale 1.
+//!
+//! `--drm-node`, `--kms-report` and `--writeback-raw` are the test mode of `dev/vkms/accept.sh`
+//! ([`TtyMode::Direct`]): they need `--backend tty` and each other (the last two need
+//! `--drm-node`).
 
 use crate::space_store::{StateDirs, StateHome};
 use crate::xwayland::{SatellitePath, XwaylandConfig, XwaylandMode};
@@ -49,6 +54,42 @@ pub struct StartConfig {
     pub state_home: StateHome,
     /// How X11 clients are served (A5).
     pub xwayland: XwaylandConfig,
+    /// Where the tty backend gets its seat: the real one, or the vkms test mode.
+    pub tty: TtyMode,
+}
+
+/// Where the tty backend gets its seat. (Ignored by the other backends.)
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum TtyMode {
+    /// The machine's seat: libseat, udev, every GPU and input device.
+    Seat,
+    /// `--drm-node`: one vkms node opened directly, for `dev/vkms/accept.sh`.
+    Direct(DirectTty),
+}
+
+/// The test mode on a vkms node (`--drm-node PATH`): nothing else on the machine is opened.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct DirectTty {
+    /// The DRM node, opened directly after its driver was checked to be vkms.
+    pub node: PathBuf,
+    /// `--kms-report`: the file one JSON line a second is appended to.
+    pub report: Option<PathBuf>,
+    /// `--writeback-raw`: where a frame read back through the writeback connector is written
+    /// on `SIGHUP` (and its `.meta` description).
+    pub writeback_raw: Option<PathBuf>,
+}
+
+impl DirectTty {
+    /// The test mode on `node`, with no report and no writeback.
+    pub fn new(node: PathBuf) -> DirectTty {
+        DirectTty {
+            node,
+            report: None,
+            writeback_raw: None,
+        }
+    }
 }
 
 /// The session clock.
@@ -139,6 +180,14 @@ pub enum CliError {
     /// An output spec did not parse.
     #[error("{0}")]
     Output(#[from] BackendError),
+    /// A flag that only makes sense together with another.
+    #[error("{flag} needs {needs}")]
+    Needs {
+        /// The flag.
+        flag: &'static str,
+        /// What it needs.
+        needs: &'static str,
+    },
 }
 
 /// What `args` (without the program name) ask for.
@@ -155,7 +204,11 @@ pub fn parse_args(args: &[String]) -> Result<Command, CliError> {
         entropy: Entropy::System,
         state_home: StateHome::Ephemeral,
         xwayland: XwaylandConfig::off(),
+        tty: TtyMode::Seat,
     };
+    let mut node = None;
+    let mut report = None;
+    let mut writeback_raw = None;
     let mut rest = args.iter();
     while let Some(flag) = rest.next() {
         let mut value = || {
@@ -222,6 +275,9 @@ pub fn parse_args(args: &[String]) -> Result<Command, CliError> {
             "--xwayland-satellite" => {
                 config.xwayland.satellite = SatellitePath(PathBuf::from(value()?))
             }
+            "--drm-node" => node = Some(PathBuf::from(value()?)),
+            "--kms-report" => report = Some(PathBuf::from(value()?)),
+            "--writeback-raw" => writeback_raw = Some(PathBuf::from(value()?)),
             "--outputs" => {
                 let text = value()?;
                 let specs = text
@@ -234,6 +290,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, CliError> {
             other => return Err(CliError::Unknown(other.to_owned())),
         }
     }
+    config.tty = tty_mode(config.backend, node, report, writeback_raw)?;
     if config.outputs.is_empty() {
         config
             .outputs
@@ -244,6 +301,39 @@ pub fn parse_args(args: &[String]) -> Result<Command, CliError> {
         config.outputs.truncate(1);
     }
     Ok(Command::Run(config))
+}
+
+/// The tty mode the test flags ask for: they need each other and the tty backend.
+fn tty_mode(
+    backend: BackendChoice,
+    node: Option<PathBuf>,
+    report: Option<PathBuf>,
+    writeback_raw: Option<PathBuf>,
+) -> Result<TtyMode, CliError> {
+    let Some(node) = node else {
+        return match (report, writeback_raw) {
+            (Some(_), _) => Err(CliError::Needs {
+                flag: "--kms-report",
+                needs: "--drm-node",
+            }),
+            (None, Some(_)) => Err(CliError::Needs {
+                flag: "--writeback-raw",
+                needs: "--drm-node",
+            }),
+            (None, None) => Ok(TtyMode::Seat),
+        };
+    };
+    if backend != BackendChoice::Tty {
+        return Err(CliError::Needs {
+            flag: "--drm-node",
+            needs: "--backend tty",
+        });
+    }
+    Ok(TtyMode::Direct(DirectTty {
+        node,
+        report,
+        writeback_raw,
+    }))
 }
 
 /// The value of `flag` among `words`.
@@ -259,9 +349,25 @@ fn word<T: Copy>(flag: &str, value: &str, words: &[(&str, T)]) -> Result<T, CliE
 }
 
 /// The usage text.
-pub const USAGE: &str = "usage: casement [--backend headless|winit|tty] [--clock wall|stepped] \
-[--outputs SPEC[;SPEC...]] [--renderer pixman|llvmpipe] [--dmabuf none|soft] [--safe] \
-[--config-home DIR] [--state-home DIR] [--xwayland satellite|off] [--xwayland-satellite PATH]\n       casement --write-schema DIR\n";
+pub const USAGE: &str = concat!(
+    "usage: casement [--backend headless|winit|tty] [--clock wall|stepped] ",
+    "[--outputs SPEC[;SPEC...]] [--renderer pixman|llvmpipe] [--dmabuf none|soft] [--safe] ",
+    "[--config-home DIR] [--state-home DIR] [--xwayland satellite|off] ",
+    "[--xwayland-satellite PATH]\n",
+    "       casement --write-schema DIR\n",
+    "\n",
+    "Test mode for the vkms acceptance script (dev/vkms/accept.sh). It needs --backend tty and\n",
+    "is not a general feature: it runs on one virtual (vkms) display node and opens nothing else,\n",
+    "no seat, no VT, no other GPU, no input device.\n",
+    "  --drm-node PATH       open only this DRM node, directly; refused unless its driver is vkms.\n",
+    "                        SIGUSR1 then pauses the session and SIGUSR2 activates it (a\n",
+    "                        simulated VT switch).\n",
+    "  --kms-report FILE     append one JSON line a second: flips, missed vblanks, seat held or\n",
+    "                        lent, and each output's name, mode and power (needs --drm-node).\n",
+    "  --writeback-raw PATH  on SIGHUP read one frame back through the writeback connector and\n",
+    "                        write the raw buffer to PATH and \"WIDTH HEIGHT PITCH FOURCC\" to\n",
+    "                        PATH.meta (needs --drm-node).\n",
+);
 
 #[cfg(test)]
 mod tests {
@@ -333,6 +439,56 @@ mod tests {
             parse_args(&args("--xwayland x11")),
             Err(CliError::BadValue { .. })
         ));
+    }
+
+    #[test]
+    fn the_vkms_flags_are_read_together() {
+        let config = run(
+            "--backend tty --drm-node /dev/dri/card1 --kms-report /tmp/r.jsonl --writeback-raw /tmp/w.raw",
+        );
+        assert_eq!(
+            config.tty,
+            TtyMode::Direct(DirectTty {
+                node: PathBuf::from("/dev/dri/card1"),
+                report: Some(PathBuf::from("/tmp/r.jsonl")),
+                writeback_raw: Some(PathBuf::from("/tmp/w.raw")),
+            })
+        );
+        let only_node = run("--drm-node /dev/dri/card1 --backend tty");
+        assert_eq!(
+            only_node.tty,
+            TtyMode::Direct(DirectTty::new(PathBuf::from("/dev/dri/card1")))
+        );
+        assert_eq!(run("--backend tty").tty, TtyMode::Seat);
+        assert_eq!(run("").tty, TtyMode::Seat);
+    }
+
+    #[test]
+    fn the_vkms_flags_need_each_other_and_the_tty_backend() {
+        for text in [
+            "--backend tty --kms-report /tmp/r",
+            "--backend tty --writeback-raw /tmp/w",
+            "--drm-node /dev/dri/card1",
+            "--backend winit --drm-node /dev/dri/card1",
+        ] {
+            assert!(
+                matches!(parse_args(&args(text)), Err(CliError::Needs { .. })),
+                "{text}"
+            );
+        }
+        assert!(matches!(
+            parse_args(&args("--backend tty --drm-node")),
+            Err(CliError::MissingValue(_))
+        ));
+    }
+
+    #[test]
+    fn the_usage_names_the_hooks_the_script_probes_for() {
+        for hook in ["--drm-node", "--kms-report", "--writeback-raw"] {
+            assert!(USAGE.contains(hook), "{hook}");
+        }
+        assert!(USAGE.contains("SIGUSR1") && USAGE.contains("SIGHUP"));
+        assert!(USAGE.contains("not a general feature"));
     }
 
     #[test]

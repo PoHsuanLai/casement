@@ -75,7 +75,7 @@ wayland-client = "0.31"
 wayland-backend = { version = "0.3", features = ["client_system"] }
 wayland-protocols = { version = "0.32.13", features = ["client", "staging", "unstable"] }
 calloop = "0.14"
-tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros", "net", "io-util", "process"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros", "net", "io-util", "process", "signal"] }
 rustix = { version = "1.1", default-features = false, features = ["std", "event", "fs", "net", "time", "process", "pipe"] }
 x11rb = "0.13"
 zbus = { version = "5.19", default-features = false, features = ["tokio"] }

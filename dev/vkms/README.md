@@ -85,8 +85,20 @@ hooks yet, 5 a short run.
 
 ## casement's side (what this script needs from the binary)
 
-The script talks to casement through four tty-backend options that are not part of the normal
-CLI: `--drm-node`, `--kms-report`, `--writeback-raw`, and SIGUSR1/SIGUSR2 as the simulated
-session. The contract is spelled out at the top of `accept.sh`. A casement without them makes
-the script exit 4 before it starts anything. The writeback golden has to be blessed once with
-`CASEMENT_BLESS=1` (the scene test `empty-desktop-1024x768`).
+The script talks to casement through three tty-backend options that are not part of the normal
+CLI, and two signals. `casement --help` describes them as a test mode, which the script probes
+for (exit 4 when missing). The full contract is at the top of `accept.sh`.
+
+- `--drm-node PATH` opens only that node, directly (no libseat, no logind), after the DRM version
+  ioctl named the driver `vkms`; any other driver is refused before anything is built. It opens no
+  other GPU and no input device. There is no udev monitor in this mode, so the node is looked at
+  again a few times a second to find the `hotplug1` connector connecting.
+- `--kms-report FILE` appends one JSON line a second: `flips`, `missed`, `seat` (`held`/`lent`)
+  and `outputs` (name, mode `WxH@millihertz`, power).
+- `--writeback-raw PATH` makes SIGHUP read one frame back through the vkms writeback connector
+  (a dumb buffer attached with an atomic commit; no fence, so casement lets three flips pass) and
+  write the raw buffer to `PATH`, then `WIDTH HEIGHT PITCH FOURCC` (`XR24`) to `PATH.meta`.
+- SIGUSR1 is the session paused and SIGUSR2 the session activated: the VT switch, simulated.
+
+The three flags need `--backend tty`, and the last two need `--drm-node`. The writeback golden has
+to be blessed once with `CASEMENT_BLESS=1` (the scene test `empty-desktop-1024x768`).

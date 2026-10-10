@@ -1,6 +1,6 @@
 //! The composition root's state (FROZEN: lanes never edit it; a change is an interface ask).
 
-use crate::cli::StartConfig;
+use crate::cli::{DirectTty, StartConfig, TtyMode};
 use crate::config::{self, ConfigError};
 use crate::seams::Seams;
 use crate::time::ClockSource;
@@ -250,7 +250,12 @@ impl State {
                 BackendKind::Winit(WinitBackend::start(first)?)
             }
             BackendChoice::Tty => {
-                let seams = tty_seams(seams.tty.take(), event_loop, &settings.gpu.render)?;
+                let seams = tty_seams(
+                    seams.tty.take(),
+                    event_loop,
+                    &settings.gpu.render,
+                    &config.tty,
+                )?;
                 let mut tty = TtyBackend::start(seams)?;
                 offer_dmabuf(&mut wl.dmabuf, &dh, &mut tty)?;
                 BackendKind::Tty(tty)
@@ -334,11 +339,42 @@ fn tty_seams(
     injected: Option<TtySeams>,
     handle: &LoopHandle<'static, State>,
     render: &GpuChoice,
+    mode: &TtyMode,
 ) -> Result<TtySeams, StartError> {
-    match injected {
-        Some(seams) => Ok(seams),
-        None => real_tty_seams(handle, render),
+    match (injected, mode) {
+        (Some(seams), _) => Ok(seams),
+        (None, TtyMode::Direct(direct)) => direct_tty_seams(handle, direct),
+        (None, _) => real_tty_seams(handle, render),
     }
+}
+
+/// The seams of the vkms test mode (`--drm-node`): one node, no seat, no input.
+#[cfg(feature = "tty")]
+fn direct_tty_seams(
+    handle: &LoopHandle<'static, State>,
+    direct: &DirectTty,
+) -> Result<TtySeams, StartError> {
+    let writeback = match direct.writeback_raw {
+        Some(_) => casement_backend::tty::WritebackMode::Enabled,
+        None => casement_backend::tty::WritebackMode::Disabled,
+    };
+    Ok(casement_backend::tty::direct_seams(
+        &direct.node,
+        writeback,
+        handle,
+    )?)
+}
+
+/// A build without the real adapters cannot run on a node either.
+#[cfg(not(feature = "tty"))]
+fn direct_tty_seams(
+    handle: &LoopHandle<'static, State>,
+    direct: &DirectTty,
+) -> Result<TtySeams, StartError> {
+    let _ = (handle, direct);
+    Err(StartError::NotYet(
+        "this build has no tty backend (feature `tty`)",
+    ))
 }
 
 /// The machine's seat, devices and GPUs; `render` is the `gpu.render` setting.

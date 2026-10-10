@@ -13,6 +13,7 @@ mod shell_calls;
 mod space_store;
 mod spawner;
 mod udev;
+mod writeback;
 
 pub use input_devices::FakeInputDevices;
 pub use input_feed::FakeInputFeed;
@@ -31,3 +32,4 @@ pub use shell_calls::FakeShellCalls;
 pub use space_store::MemorySpaceStore;
 pub use spawner::{FakeSpawner, StartedProgram};
 pub use udev::{FakeUdev, SharedUdev};
+pub use writeback::{FakeWriteback, WritebackWorld};

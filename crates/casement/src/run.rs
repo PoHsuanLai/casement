@@ -5,6 +5,7 @@
 #[cfg(feature = "debug-inject")]
 use crate::debug;
 use crate::display::{self, attach_display};
+use crate::test_mode::{HookError, TestHooks};
 use crate::{StartError, State, cli, clients, core_loop};
 use casement_backend::BackendKind;
 use casement_ipc::IpcError;
@@ -80,6 +81,9 @@ pub enum RunError {
     /// The client socket could not be bound.
     #[error("socket: {0}")]
     Socket(#[from] BindError),
+    /// The vkms test mode's hooks could not be attached.
+    #[error("test mode: {0}")]
+    TestMode(#[from] HookError),
     /// Debug1 could not be served.
     #[error("debug bus: {0}")]
     DebugBus(#[from] IpcError),
@@ -140,6 +144,7 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
     let handle = event_loop.handle();
     let mut display: Display<State> = Display::new()?;
     let config_home = start.config_home.clone();
+    let tty_mode = start.tty.clone();
     let xwayland_config = start.xwayland.clone();
     let mut state = State::new(start, &mut display, &handle)?;
     let display = attach_display(display, &handle)?;
@@ -165,16 +170,22 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
     let wayland = crate::xwayland::WaylandSocket(socket_name);
     crate::xwayland::attach(&mut state, &xwayland_config);
     // Held for the run: dropping it stops the thread that hears the machine go to sleep.
-    let _sleep = crate::suspend::attach(&mut state, sleep_bus);
+    // The vkms test mode has no logind: its pause and return are signals instead.
+    let _sleep = match &tty_mode {
+        cli::TtyMode::Seat => crate::suspend::attach(&mut state, sleep_bus),
+        _ => None,
+    };
+    let mut hooks = TestHooks::attach(&mut state, &tty_mode)?;
     core_loop::announce_outputs(&mut state);
     crate::keymap::attach(&mut state, &config_home)?;
     let stop = event_loop.get_signal();
     #[cfg(feature = "debug-inject")]
     let wake = Some(debug::WAITING_TURN);
     #[cfg(not(feature = "debug-inject"))]
-    let wake = Option::<std::time::Duration>::None;
+    let wake = hooks.wake();
     event_loop.run(wake, &mut state, |state| {
         core_loop::turn(state);
+        hooks.turn(state);
         crate::xwayland::turn(state, &xwayland_config, &wayland);
         #[cfg(feature = "debug-inject")]
         debug::turn(&debug, state);

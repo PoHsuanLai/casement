@@ -20,15 +20,19 @@
 # run as root); 3 the vkms device or a tool is absent (the gate convention: SKIP-VKMS);
 # 4 the casement binary lacks the hooks below; 5 a short run (CASEMENT_VKMS_IDLE_SECONDS under 600).
 #
-# casement contract (all four flags only with --backend tty; none is a general feature):
+# casement contract (the hooks need --backend tty; --kms-report and --writeback-raw need --drm-node;
+# none is a general feature, and casement --help says so):
 #   --drm-node PATH         open only this node, directly (no libseat, no logind), after checking
-#                           that its driver is vkms; the real GPU is never opened or enumerated.
+#                           that its driver is vkms; the real GPU is never opened or enumerated,
+#                           and no input device is opened. Hotplug is found by looking at the
+#                           node again a few times a second (there is no udev monitor).
 #   --kms-report FILE       once a second, append one JSON line:
 #       {"flips":N,"missed":M,"seat":"held"|"lent",
 #        "outputs":[{"name":"Virtual-1","mode":"1024x768@60000","power":"on"|"off"}]}
 #       flips and missed count since start, summed over outputs.
-#   --writeback-raw PATH    on SIGHUP, queue the next frame with a writeback job and write the
-#                           buffer to PATH and "WIDTH HEIGHT PITCH FOURCC" to PATH.meta.
+#   --writeback-raw PATH    on SIGHUP, queue a writeback job on the lit output; a few flips later
+#                           write the buffer to PATH and then "WIDTH HEIGHT PITCH FOURCC" (XR24 for
+#                           XRGB8888) to PATH.meta, so the meta file marks the raw one complete.
 #   signals                 SIGUSR1 = session Paused, SIGUSR2 = session Activated (the VT switch
 #                           simulation; no real VT is touched).
 #
@@ -183,7 +187,7 @@ fi
 wl() { env -i PATH="$PATH" XDG_RUNTIME_DIR="$scratch/run" WAYLAND_DISPLAY="$socket" "$@"; }
 
 # ---- 1 modeset ----------------------------------------------------------------------------
-if wait_for 30 "an output lit with flips" '.outputs | length >= 1 and (.[0].mode | test("^[0-9]+x[0-9]+@")) and .flips > 0'; then
+if wait_for 30 "an output lit with flips" '(.outputs | length >= 1 and (.[0].mode | test("^[0-9]+x[0-9]+@"))) and .flips > 0'; then
   out_name=$(field '.outputs[0].name'); mode=$(field '.outputs[0].mode')
   if [ "$mode" = "1024x768@60000" ]; then pass "modeset ($out_name $mode)"; else
     echo "  note: mode is $mode, the writeback golden is 1024x768@60000"; pass "modeset ($out_name $mode)"; fi

@@ -11,6 +11,7 @@ mod wait;
 
 pub mod dbus;
 pub mod shell_calls;
+pub mod signals;
 pub mod sleep;
 
 pub use error::IpcError;

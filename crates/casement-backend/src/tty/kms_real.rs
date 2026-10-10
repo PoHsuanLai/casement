@@ -379,6 +379,10 @@ fn connector_facts(
     handle: connector::Handle,
 ) -> Result<Option<ConnectorFacts>, KmsError> {
     let info = device.get_connector(handle, false)?;
+    // A writeback connector (listed once the writeback seam asked for them) is not a screen.
+    if info.interface() == connector::Interface::Writeback {
+        return Ok(None);
+    }
     let text = format!("{}-{}", info.interface().as_str(), info.interface_id());
     let Ok(name) = OutputName::parse(&text) else {
         return Ok(None);

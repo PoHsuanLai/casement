@@ -124,6 +124,8 @@ pub enum Flow {
 pub struct ScanoutSet {
     outputs: BTreeMap<OutputName, Scanout>,
     flow: Flow,
+    /// What the scanouts that went away had shown, so the totals only grow.
+    retired: FrameTally,
 }
 
 impl ScanoutSet {
@@ -139,7 +141,24 @@ impl ScanoutSet {
 
     /// `name` went dark or away.
     pub fn detach(&mut self, name: &OutputName) -> Option<Scanout> {
-        self.outputs.remove(name)
+        let gone = self.outputs.remove(name)?;
+        let tally = gone.tally();
+        self.retired = FrameTally {
+            presented: self.retired.presented.saturating_add(tally.presented),
+            missed: self.retired.missed.saturating_add(tally.missed),
+        };
+        Some(gone)
+    }
+
+    /// The frames shown and missed over the run on every output, those that went away included.
+    pub fn total(&self) -> FrameTally {
+        self.outputs
+            .values()
+            .map(Scanout::tally)
+            .fold(self.retired, |sum, tally| FrameTally {
+                presented: sum.presented.saturating_add(tally.presented),
+                missed: sum.missed.saturating_add(tally.missed),
+            })
     }
 
     /// Stops or resumes frames (a VT switch, a suspend).

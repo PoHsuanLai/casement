@@ -18,6 +18,7 @@
 
 mod connector;
 mod device;
+mod direct;
 mod flip;
 mod hotplug;
 mod judge;
@@ -25,13 +26,17 @@ mod kms;
 mod lit;
 mod offer;
 mod readback;
+mod report;
 mod scanouts;
 mod session;
 mod sleep;
 mod surface;
 mod udev;
 mod vt;
+mod writeback;
 
+#[cfg(feature = "tty")]
+mod direct_real;
 #[cfg(feature = "tty")]
 mod kms_real;
 #[cfg(feature = "tty")]
@@ -42,9 +47,14 @@ mod session_real;
 mod surface_real;
 #[cfg(feature = "tty")]
 mod udev_real;
+#[cfg(feature = "tty")]
+mod writeback_real;
 
 pub use connector::{EdidError, VrrPolicy, output_facts, parse_edid, plan_outputs, vrr_state};
 pub use device::{Announced, OpenDevice, TtyDevices};
+pub use direct::{
+    DirectSession, DriverRefusal, FixedNode, NoGpus, POLL_EVERY, VKMS_DRIVER, require_vkms,
+};
 pub use flip::FlipTracker;
 pub use hotplug::{KnownConnectors, reconcile};
 pub use judge::{Lit, judge};
@@ -56,13 +66,17 @@ pub use kms::{
 pub use lit::{Lighting, LitOutput};
 pub use offer::scanout_formats;
 pub use readback::{Readback, Watch};
+pub use report::{Due, KmsReport, REPORT_EVERY, ReportPacer, ReportedOutput};
 pub use scanouts::{Flow, FrameTally, Scanout, ScanoutSet};
 pub use session::{SeatState, SessionNote, TtySession};
 pub use sleep::{SleepInbox, SleepLink, SleepSettled, sleep_channel};
 pub use surface::{DirectCandidate, Presented, QueueOutcome, QueuedFrame, ScanoutSurface};
 pub use udev::{DeviceEvent, DevicePath, DeviceSource};
 pub use vt::{VtNumber, vt_of_keysym};
+pub use writeback::{FLIPS_TO_WAIT, RawCapture, Writeback, WritebackError, WritebackMode};
 
+#[cfg(feature = "tty")]
+pub use direct_real::direct_seams;
 #[cfg(feature = "tty")]
 pub use kms_real::{FdSource, RealKms, RealKmsOpener};
 #[cfg(feature = "tty")]
@@ -105,6 +119,9 @@ pub struct TtySeams {
     /// The seat's input devices (none: a seat with no input, as a box with only a remote
     /// session).
     pub input: Option<Box<dyn InputFeed>>,
+    /// The device's writeback connector (none: a real seat, which never reads the screen back
+    /// this way; `--drm-node` mode on vkms has one).
+    pub writeback: Option<Box<dyn Writeback>>,
 }
 
 impl TtySeams {
@@ -124,6 +141,7 @@ impl TtySeams {
             choice,
             formats: None,
             input: None,
+            writeback: None,
         }
     }
 
@@ -132,6 +150,15 @@ impl TtySeams {
     pub fn with_formats(self, formats: Box<dyn FormatSource>) -> TtySeams {
         TtySeams {
             formats: Some(formats),
+            ..self
+        }
+    }
+
+    /// The same with this writeback connector.
+    #[must_use]
+    pub fn with_writeback(self, writeback: Box<dyn Writeback>) -> TtySeams {
+        TtySeams {
+            writeback: Some(writeback),
             ..self
         }
     }
@@ -177,6 +204,8 @@ pub struct TtyBackend {
     pub vrr: VrrPolicy,
     /// How many frames were queued over the run, whatever became of the outputs.
     queued: u64,
+    /// The writeback job, when one is queued.
+    writeback_job: writeback::WritebackJob,
 }
 
 impl TtyBackend {
@@ -218,6 +247,7 @@ impl TtyBackend {
             readback: Readback::new(),
             vrr: VrrPolicy::default(),
             queued: 0,
+            writeback_job: writeback::WritebackJob::default(),
         })
     }
 

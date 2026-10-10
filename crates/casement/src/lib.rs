@@ -56,6 +56,7 @@ pub mod space_store;
 pub mod spawn;
 mod state;
 pub mod suspend;
+pub mod test_mode;
 pub mod time;
 pub mod xwayland;
 

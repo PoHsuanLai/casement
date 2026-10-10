@@ -1325,6 +1325,57 @@ Nothing here compiled or run (no builds, no vkms). User-run only (C3).
   need a turbofish), `tests/it/writeback.rs` (`assert_eq!` on `Result<GoldenOutcome, WritebackError>` needs both to be
   `PartialEq`; `GoldenOutcome` derives it).
 
+## p1-v2: the vkms hooks (2026-10-11)
+
+Nothing here compiled or run (no builds, no vkms). `dev/vkms/accept.sh` can now run end to end in principle; it is
+still user-run only (C3).
+
+- **Built.** `casement --backend tty --drm-node PATH [--kms-report FILE] [--writeback-raw PATH]`, a test mode that
+  `--help` says is one. `--drm-node` needs `--backend tty` and the other two need `--drm-node` (`CliError::Needs`).
+  `StartConfig::tty: TtyMode::{Seat, Direct(DirectTty)}`; `state.rs` picks `direct_seams` for `Direct` (the file's
+  FROZEN header notwithstanding: the same interface ask P1-T made).
+  - *Direct seams* (`casement-backend/src/tty/direct.rs`, pure; `direct_real.rs`, adapter): the node is opened once by
+    path, as the user, and `DrmDeviceFd::get_driver()` (the DRM version ioctl) must say `vkms` (`require_vkms`) or
+    startup fails before anything else is built. `DirectSession` (a `TtySession`) opens nothing and refuses VT
+    switches; its notes come only from its `SleepLink`. `FixedNode` is the one `DeviceSource`. `NoGpus` is the
+    `RenderNodes` (nothing enumerated, so no render plan and no dma-buf feedback: clients get shm). No `InputFeed`: no
+    libinput, so no other device is opened. libseat and logind are not touched; `run` skips `suspend::attach`.
+  - *Signals.* `casement-ipc/src/signals.rs`: a thread with a current-thread tokio runtime waits for SIGUSR1, SIGUSR2
+    and SIGHUP. **New feature on an existing dependency**: tokio's `signal` (workspace `Cargo.toml`); no new crate and
+    no lock change (`signal-hook-registry` is already there through tokio's `process`). calloop's `signals` needs `nix`,
+    which is not in the lock; signal-hook-registry's `register` is `unsafe`. `casement/src/test_mode.rs` maps SIGUSR1 to
+    `SleepLink::paused` and SIGUSR2 to `SleepLink::activated`, the path a suspend takes, so a simulated VT switch runs
+    the same `TtyBackend::dispatch` code as a real pause.
+  - *Hotplug.* There is no udev monitor in this mode, so `FixedNode::next_event` reports the node `Changed` once every
+    `POLL_EVERY + 1` turns of the backend and the backend reads its connectors again; the step's 15 s limit allows it.
+  - *Report.* `KmsReport` (pure value, `TtyBackend::report()`; `json_line()`); `ReportPacer` decides on the session
+    clock when a second has passed; `Hooks::turn` appends the line. `flips`/`missed` are the scanouts' tallies, and
+    `ScanoutSet::detach` now keeps a departed scanout's tally so the totals only grow. While the seat is lent the loop
+    still turns every 250 ms (`TURN`) so the `lent` line is written.
+  - *Writeback.* `Writeback` seam (`tty/writeback.rs`), `TtySeams::writeback`, `RealWriteback` (`writeback_real.rs`),
+    `FakeWriteback` (testkit). SIGHUP: `request_writeback` queues a job on the first lit output's CRTC at its mode size;
+    `take_writeback` reads it once the output has flipped `FLIPS_TO_WAIT` (3) more times; `test_mode::write_capture`
+    writes the raw bytes, then `PATH.meta` (`W H PITCH XR24`) last. The real job is one atomic commit on the writeback
+    connector (`CRTC_ID`, `WRITEBACK_FB_ID`) with an `XRGB8888` dumb buffer, read through the drm crate's safe
+    `map_dumb_buffer`, then detached; the commit is made on a duplicate of the display device's descriptor (same open
+    file, so the same DRM master). `ClientCapability::WritebackConnectors` is set only when `--writeback-raw` is given,
+    and `kms_real::connector_facts` skips writeback connectors so they never become an output. No `unsafe` added.
+- **Script fix.** The modeset `wait_for` test was `.outputs | length >= 1 and ... and .flips > 0`; the pipe binds
+  loosest, so `.flips` was read from the outputs array. Parenthesised. The header contract and README were brought in
+  line (`XR24`, meta last, hotplug by polling, the flags' dependencies).
+- **Tests (all over fakes).** `cli.rs` parse tests (flags, dependencies, usage text the script greps);
+  `report.rs` value, JSON and pacer tests; `test_mode.rs` (signals to link, files); `tests/it/tty/direct.rs` (pause and
+  activate through the link in a fake tty world, report over a lit fake output, report cadence, writeback frame bytes and
+  meta line over `FakeWriteback`, the refusals, `FixedNode` polling).
+- **Only a real vkms run proves:** the version ioctl naming `vkms`; opening the card node as the user and becoming
+  master on it; `DrmCompositor` on vkms through a GLES renderer on the card node (vkms has no render node: this needs
+  Mesa's software GBM/EGL path, and is the likeliest first failure); the writeback commit being accepted without
+  `WRITEBACK_OUT_FENCE_PTR`, and the frame being composed within three flips (no fence tells us), including whether it has
+  the cursor plane; the buffer's `XRGB8888` being on the connector's `WRITEBACK_PIXEL_FORMATS`; the commit needing
+  `ALLOW_MODESET` and working beside `DrmCompositor`'s own state; a vkms configfs status change being visible to a
+  non-forced `get_connector`; `DrmDevice::pause`/`activate` on a dup'd descriptor shared with the writeback adapter;
+  the idle step's flip rate and zero missed vblanks (flips are still timer-driven: see p1-t).
+
 ## p1-sh
 
 Added `casement --state-home DIR` (an explicit directory always wins, headless included; without it headless stays
