@@ -128,15 +128,16 @@ impl Xwayland {
     /// Starts satellite as `config` says through `spawner`, serving `sockets`, connected to
     /// the Wayland socket `wayland`. Satellite's command line is
     /// `<binary> <display> -listenfd <fd>...`, the numbers being those the program inherits.
+    /// On failure the sockets come back (boxed: they carry the restart window).
     pub fn start(
         config: &XwaylandConfig,
         spawner: &mut dyn Spawner,
         sockets: Listening,
         wayland: &WaylandSocket,
-    ) -> Result<Xwayland, (XwaylandError, Listening)> {
+    ) -> Result<Xwayland, (XwaylandError, Box<Listening>)> {
         match spawn_satellite(config, spawner, &sockets, wayland) {
             Ok(process) => Ok(Xwayland { process, sockets }),
-            Err(error) => Err((error, sockets)),
+            Err(error) => Err((error, Box::new(sockets))),
         }
     }
 
@@ -252,7 +253,7 @@ impl XwaylandState {
                 Ok(step)
             }
             Err((error, sockets)) => {
-                *self = XwaylandState::Listening(sockets);
+                *self = XwaylandState::Listening(*sockets);
                 Err(error)
             }
         }
