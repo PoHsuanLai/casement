@@ -114,6 +114,11 @@ fn fault_of(error: &zbus::Error) -> RegisterFault {
             match name {
                 _ if name.ends_with("AccessDenied") => RegisterFault::Refused,
                 _ if name.ends_with("LimitsExceeded") => RegisterFault::Later,
+                // The bus answers a call to a name nobody owns as a method error, not as the
+                // typed FDO variant: accountd is not up yet.
+                _ if name.ends_with("ServiceUnknown") || name.ends_with("NameHasNoOwner") => {
+                    RegisterFault::Later
+                }
                 _ => RegisterFault::Failed(error.to_string()),
             }
         }
