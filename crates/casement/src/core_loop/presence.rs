@@ -37,7 +37,16 @@ struct Placed {
     drawn: Rectangle<i32, Logical>,
     origin: LogicalPoint,
     /// What it hangs from: the first of its group is a popup, the last the root.
-    popup: bool,
+    kind: TreeKind,
+}
+
+/// Whether a drawn tree is the root of its group or a popup hanging from it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TreeKind {
+    /// The surface its hit's owner draws.
+    Root,
+    /// A popup of the root.
+    Popup,
 }
 
 /// Brings every surface's outputs up to date with where the stack puts it.
@@ -46,7 +55,7 @@ pub(super) fn update(state: &mut State) {
     let placed = placements(state);
     let mut roots_seen = Vec::new();
     for group in placed.chunk_by(|a, b| a.0 == b.0) {
-        let Some(root) = group.iter().find(|(_, placed)| !placed.popup) else {
+        let Some(root) = group.iter().find(|(_, placed)| placed.kind == TreeKind::Root) else {
             continue;
         };
         let home = home_of(&root.1, &outputs);
@@ -109,14 +118,14 @@ fn placements(state: &State) -> Vec<(Hit, Placed)> {
         .into_iter()
         .map(|(hit, candidate)| {
             let drawn = drawn_at(&candidate);
-            let popup = is_popup(state, &hit, &candidate);
+            let kind = kind_of(state, &hit, &candidate);
             (
                 hit,
                 Placed {
                     drawn,
                     origin: candidate.origin,
                     root: candidate.root,
-                    popup,
+                    kind,
                 },
             )
         })
@@ -125,14 +134,17 @@ fn placements(state: &State) -> Vec<(Hit, Placed)> {
 
 /// A candidate is a popup when it is not the surface its hit's owner draws: the roots are the
 /// ones a popup list hangs from.
-fn is_popup(state: &State, hit: &Hit, candidate: &Candidate) -> bool {
+fn kind_of(state: &State, hit: &Hit, candidate: &Candidate) -> TreeKind {
     let book = &state.render.textures;
     let root = match hit {
         Hit::Window(id) => book.window(id).map(|entry| &entry.root),
         Hit::Layer(key) => book.layer(key).map(|entry| &entry.root),
         Hit::Lock(output) => book.lock(output).map(|entry| &entry.root),
     };
-    root != Some(&candidate.root)
+    match root == Some(&candidate.root) {
+        true => TreeKind::Root,
+        false => TreeKind::Popup,
+    }
 }
 
 /// Where a candidate's tree is drawn, in global logical pixels.
@@ -168,7 +180,7 @@ fn tell_outputs(
     outputs: &BTreeMap<OutputKey, (Output, Rectangle<i32, Logical>)>,
 ) {
     for (key, (output, rect)) in outputs {
-        if surface.popup {
+        if surface.kind == TreeKind::Popup {
             let inherits = !surface.drawn.is_empty()
                 && (on_root.contains(&key) || touches(&surface.drawn, rect));
             for_each_surface(&surface.root, |one| {

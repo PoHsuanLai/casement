@@ -92,17 +92,28 @@ impl Drag {
     }
 }
 
-/// Which sides of the rectangle `edges` moves: (left, right, top, bottom).
-fn sides(edges: ResizeEdges) -> (bool, bool, bool, bool) {
+/// Which side of one axis a grab moves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Pull {
+    /// Neither: the extent on this axis stays.
+    Still,
+    /// The near side (left, top).
+    Near,
+    /// The far side (right, bottom).
+    Far,
+}
+
+/// Which side `edges` moves on each axis: (across, down).
+fn pulls(edges: ResizeEdges) -> (Pull, Pull) {
     match edges {
-        ResizeEdges::Top => (false, false, true, false),
-        ResizeEdges::Bottom => (false, false, false, true),
-        ResizeEdges::Left => (true, false, false, false),
-        ResizeEdges::Right => (false, true, false, false),
-        ResizeEdges::TopLeft => (true, false, true, false),
-        ResizeEdges::TopRight => (false, true, true, false),
-        ResizeEdges::BottomLeft => (true, false, false, true),
-        ResizeEdges::BottomRight => (false, true, false, true),
+        ResizeEdges::Top => (Pull::Still, Pull::Near),
+        ResizeEdges::Bottom => (Pull::Still, Pull::Far),
+        ResizeEdges::Left => (Pull::Near, Pull::Still),
+        ResizeEdges::Right => (Pull::Far, Pull::Still),
+        ResizeEdges::TopLeft => (Pull::Near, Pull::Near),
+        ResizeEdges::TopRight => (Pull::Far, Pull::Near),
+        ResizeEdges::BottomLeft => (Pull::Near, Pull::Far),
+        ResizeEdges::BottomRight => (Pull::Far, Pull::Far),
     }
 }
 
@@ -113,20 +124,18 @@ fn resized(
     by: (i32, i32),
     limits: SizeLimits,
 ) -> LogicalRect {
-    let (left, right, top, bottom) = sides(edges);
+    let (pull_across, pull_down) = pulls(edges);
     let max = |pick: fn(LogicalSize) -> u32| match limits.max {
         MaxSize::Unbounded => None,
         MaxSize::Bounded(size) => Some(pick(size)),
     };
     let across = Span {
-        near: left,
-        far: right,
+        pull: pull_across,
         least: limits.min.w,
         most: max(|size| size.w),
     };
     let down = Span {
-        near: top,
-        far: bottom,
+        pull: pull_down,
         least: limits.min.h,
         most: max(|size| size.h),
     };
@@ -138,10 +147,8 @@ fn resized(
 /// What moves on one axis and how far the window may shrink or grow along it.
 #[derive(Debug, Clone, Copy)]
 struct Span {
-    /// Whether the near side (left, top) moves.
-    near: bool,
-    /// Whether the far side (right, bottom) moves.
-    far: bool,
+    /// Which side moves.
+    pull: Pull,
     /// The least length (0: none).
     least: u32,
     /// The most length.
@@ -153,19 +160,18 @@ impl Span {
     /// `length`, with the pointer `by` further on: the sides that move follow it; the length is
     /// held between the limits (never below one); the far side stays when the near one moves.
     fn of(self, start: i32, length: u32, by: i32) -> (i32, u32) {
-        if !self.near && !self.far {
-            return (start, length);
-        }
         let end = i64::from(start) + i64::from(length);
-        let grown = i64::from(length) + if self.far { i64::from(by) } else { 0 }
-            - if self.near { i64::from(by) } else { 0 };
+        let grown = match self.pull {
+            Pull::Still => return (start, length),
+            Pull::Far => i64::from(length) + i64::from(by),
+            Pull::Near => i64::from(length) - i64::from(by),
+        };
         let floor = i64::from(self.least.max(SMALLEST));
         let ceiling = self.most.map_or(i64::MAX, i64::from).max(floor);
         let held = grown.clamp(floor, ceiling);
-        let new_start = if self.near {
-            end - held
-        } else {
-            i64::from(start)
+        let new_start = match self.pull {
+            Pull::Near => end - held,
+            Pull::Still | Pull::Far => i64::from(start),
         };
         let clamp = |v: i64| i32::try_from(v).unwrap_or(if v < 0 { i32::MIN } else { i32::MAX });
         (clamp(new_start), u32::try_from(held).unwrap_or(SMALLEST))

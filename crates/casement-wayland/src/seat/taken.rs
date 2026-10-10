@@ -42,21 +42,22 @@ impl Taken {
 
     /// `button` was released: what became of its press. The press stops being remembered.
     pub fn release_button(mut self, button: ButtonCode) -> (Taken, PressFate) {
-        let fate = fate_of(self.buttons.remove(&button));
+        let fate = fate_of(self.buttons.take(&button));
         (self, fate)
     }
 
     /// `key` was released: what became of its press. The press stops being remembered.
     pub fn release_key(mut self, key: KeyCode) -> (Taken, PressFate) {
-        let fate = fate_of(self.keys.remove(&key));
+        let fate = fate_of(self.keys.take(&key));
         (self, fate)
     }
 }
 
-fn fate_of(was_taken: bool) -> PressFate {
-    match was_taken {
-        true => PressFate::Taken,
-        false => PressFate::Delivered,
+/// What the release of a press is, given the press's entry if it was one taken.
+fn fate_of<T>(taken: Option<T>) -> PressFate {
+    match taken {
+        Some(_) => PressFate::Taken,
+        None => PressFate::Delivered,
     }
 }
 
