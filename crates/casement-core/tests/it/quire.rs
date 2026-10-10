@@ -212,7 +212,9 @@ fn a_mapped_window_and_its_app_are_published() {
     let effects = last(&mapped);
     assert!(effects.contains(&Effect::Desktop(DesktopNote::App(mail))));
     assert!(effects.contains(&Effect::Desktop(DesktopNote::Window(WindowId(1)))));
-    assert!(effects.contains(&Effect::Desktop(DesktopNote::Active)));
+    // Mapped without an activation token, the window does not take the key: nothing active
+    // changed, so nothing active is published.
+    assert!(!effects.contains(&Effect::Desktop(DesktopNote::Active)));
     let unmapped = run_from(
         mapped.model,
         vec![Op::Event(Event::ToplevelUnmapped {
@@ -239,12 +241,9 @@ fn a_step_publishes_exactly_what_changed() {
         .collect();
     assert_eq!(
         notes,
-        vec![
-            DesktopNote::App(mail),
-            DesktopNote::Window(WindowId(1)),
-            DesktopNote::Active
-        ],
-        "a Space is not named when it did not change, and the notes come in the order a client needs"
+        vec![DesktopNote::App(mail), DesktopNote::Window(WindowId(1))],
+        "a Space is not named when it did not change, the active pair is not named when the map \
+         took no key (no activation token), and the notes come in the order a client needs"
     );
 }
 
