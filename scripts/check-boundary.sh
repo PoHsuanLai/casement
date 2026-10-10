@@ -85,10 +85,13 @@ reaches_none casement-wayland "B6 casement-wayland reaches neither drm nor gbm" 
 
 # B7 the thin-adapter allow-list (11 §5.3).
 ADAPTERS='crates/casement-backend/src/tty/(kms_real|surface_real|session_real|udev_real)\.rs|crates/casement-backend/src/gpu/render_nodes_real\.rs|crates/casement-backend/src/input/libinput_real\.rs'
+# The test kit's soft GPU (the SP4 route behind the `RenderNodes` fake) names DrmNode too: test
+# support, not shipped, and not counted as adapter lines.
+SOFT_GPU='crates/casement-testkit/src/gpu/[a-z_]+\.rs|crates/casement-testkit/tests/it/topology/[a-z_]+\.rs'
 # The libinput crate is named `input`, as are casement's own `input` modules: its uses are
 # caught by the crate's own items (`input::Libinput`, `input::event::`, ...), not the bare name.
 names_only "B7 only the thin adapters name the device crates" \
-  'smithay::backend::(drm|libinput|session::libseat|udev|egl::EGLDevice)|(^|[^:[:alnum:]_])(drm|gbm|libseat)::|(^|[^:[:alnum:]_])input::(Libinput|LibinputInterface|event|Device|DeviceCapability|AccelProfile)\b' "$ADAPTERS"
+  'smithay::backend::(drm|libinput|session::libseat|udev|egl::EGLDevice)|(^|[^:[:alnum:]_])(drm|gbm|libseat)::|(^|[^:[:alnum:]_])input::(Libinput|LibinputInterface|event|Device|DeviceCapability|AccelProfile)\b' "$ADAPTERS|$SOFT_GPU"
 adapter_lines=$(find crates/casement-backend/src -type f 2>/dev/null | grep -E "^($ADAPTERS)$" | xargs -r cat | wc -l)
 echo "B7 thin adapters: $adapter_lines lines (target <= 1500)"
 
