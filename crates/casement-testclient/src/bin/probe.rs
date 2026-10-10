@@ -1,5 +1,5 @@
 //! `casement-probe`: one-shot probes against `$WAYLAND_DISPLAY` for dev scripts, JSON lines on
-//! stdout: `globals`, `toplevel`, `layer`, `transcript`; `capture` (P1) and `lease` (P5) say
+//! stdout: `globals`, `toplevel`, `layer`, `transcript`, `workspaces`; `capture` (P1) and `lease` (P5) say
 //! they are not there yet; an unknown flag is a usage error. Runs only inside the jail: it refuses (exit 2, "could not run
 //! safely") when a live session's sockets or `/dev/input` are visible.
 //!
@@ -15,6 +15,8 @@ mod session;
 mod shell;
 #[path = "probe/surfaces.rs"]
 mod surfaces;
+#[path = "probe/workspaces.rs"]
+mod workspaces;
 
 use casement_testclient::TestClient;
 use serde_json::json;
@@ -39,6 +41,7 @@ fn main() -> ExitCode {
         Some("toplevel") => shell::toplevel(&rest),
         Some("layer") => shell::layer(&rest),
         Some("session") => session::run(),
+        Some("workspaces") => workspaces::run(),
         Some("capture") => Err(Failure::Unavailable("capture arrives with P1")),
         Some("lease") => Err(Failure::Unavailable("lease arrives with P5")),
         _ => Err(Failure::Usage),
@@ -62,7 +65,7 @@ fn usage(command: Option<&str>, rest: &[String]) -> Result<(), Failure> {
     match command {
         Some("toplevel") => shell::TOPLEVEL_FLAGS.check(rest),
         Some("layer") => shell::LAYER_FLAGS.check(rest),
-        Some("globals" | "transcript" | "session" | "capture" | "lease") => Ok(()),
+        Some("globals" | "transcript" | "session" | "workspaces" | "capture" | "lease") => Ok(()),
         _ => Err(Failure::Usage),
     }
 }
@@ -70,7 +73,7 @@ fn usage(command: Option<&str>, rest: &[String]) -> Result<(), Failure> {
 /// The usage line, and the usage exit code.
 fn usage_exit() -> ExitCode {
     eprintln!(
-        "usage: casement-probe globals | transcript | session | toplevel [--title T] [--app-id A] [--size WxH] [--hold] [--maximised] | layer [--layer L] [--namespace N] [--size WxH] [--hold] | capture | lease"
+        "usage: casement-probe globals | transcript | session | workspaces | toplevel [--title T] [--app-id A] [--size WxH] [--hold] [--maximised] | layer [--layer L] [--namespace N] [--size WxH] [--hold] | capture | lease"
     );
     ExitCode::from(64)
 }
