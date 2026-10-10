@@ -57,7 +57,7 @@ impl SpaceRegistry for FakeSpaceRegistry {
             if !inner.scripted.is_empty() {
                 let fault = inner.scripted.remove(0);
                 let id = space.id.clone();
-                inner.failures.push(RegisterFailure { id, fault });
+                inner.failures.push(RegisterFailure::new(id, fault));
             }
         }
         inner.batches.push(spaces);

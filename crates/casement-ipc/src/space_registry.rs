@@ -78,6 +78,13 @@ pub struct RegisterFailure {
     pub fault: RegisterFault,
 }
 
+impl RegisterFailure {
+    /// The registration of `id` failed for `fault`.
+    pub fn new(id: SpaceId, fault: RegisterFault) -> RegisterFailure {
+        RegisterFailure { id, fault }
+    }
+}
+
 /// Why a batch could not be queued.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]

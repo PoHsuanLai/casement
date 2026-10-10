@@ -296,6 +296,8 @@ dependencies = [
  "casement-core",
  "ds-core",
  "ds-settings",
+ "porter-core",
+ "porter-dbus",
  "serde_json",
  "thiserror 2.0.21",
  "tokio",
@@ -1775,6 +1777,18 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "zeroize",
+]
+
+[[package]]
+name = "porter-dbus"
+version = "0.1.0"
+dependencies = [
+ "porter-core",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "zbus",
 ]
 
 [[package]]
