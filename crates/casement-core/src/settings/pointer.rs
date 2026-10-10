@@ -1,12 +1,16 @@
 //! Pointing-device settings (`pointer.*`, `touchpad.*`): what the libinput seam applies to
-//! each device (P1-I1). The stored keys and their conversion join the settings document in
-//! the same lane (ARCHITECTURE.md, "Add a settings key"); until then nothing reads this type.
+//! each device (P1-I1). The stored keys (`pointer.*`, `touchpad.*`) and their conversion are in
+//! `casement/src/config/`.
 
 use super::Enabled;
 use ds_core::vocab::Fraction;
+use ds_core::word::Word;
+use serde::{Deserialize, Serialize};
 
 /// The pointer acceleration curve.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Word)]
+#[serde(rename_all = "snake_case")]
+#[word(case = snake)]
 #[non_exhaustive]
 pub enum AccelProfile {
     /// Constant: the device moves the pointer in proportion.

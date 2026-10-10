@@ -817,3 +817,30 @@ the `--xwayland` flags, `VendorFact::from_pci_vendor`, `GammaTable::new`, `Outpu
   `casement/src/state.rs` and `exec.rs` (module and import names `gamma`, `workspace`, `spawn`), the doc tests (all
   `no_run`), `casement-testkit/src/fixture.rs`, `fakes/session.rs` (`TtySession` over smithay's `Session`), and
   `casement-render/src/pass/capture.rs` (the `ExportMem` bound with `R::Framebuffer<'_>`).
+
+## p1-i1: input settings, device configuration, bindings that call out (2026-10-11)
+
+Nothing here compiled (no builds this lane).
+
+- **Settings.** `CasementSettings` gained `pointer: PointerSettings`; the document gained `[pointer]` (mice and
+  trackballs) and `[touchpad]` sections (`accel`, `natural_scroll`, `tap`, `scroll_factor` per-mille, `disable_while_typing`),
+  on the Mouse & Gestures page. `AccelProfile` now derives `Serialize`, `Deserialize` and `Word`.
+- **xkb and repeat.** `SeatPart::new` already compiled the keymap from `KeyboardSettings`; `xkb_of` is the names the seat
+  compiles from. A live change of `keyboard.*` after start is not applied to the running seat (unchanged; not this lane's file).
+- **Device settings.** `device_settings` maps a class to the touchpad or mouse profile (every non-touchpad class gets the
+  mouse profile). Nothing in the loop calls `InputDevices::apply` yet: `Seams` has no input-devices slot (a shared file) and
+  the tty loop that sees libinput devices appear is P1-D1/D2's. `RealInputDevices::track` and `forget` are what that loop calls.
+- **Scroll factor** is not a libinput setting; the adapter does not report it as unsupported and the compositor must scale the
+  axis event with `DeviceSettings::scroll_factor` where it delivers it (`core_loop/deliver.rs::scroll`): not done here.
+- **Real adapter departure.** `RealInputDevices::open` opens device nodes directly (`DirectOpen`), not through logind's
+  `TakeDevice`; P1-D1's session replaces it. Real-hardware check: with the seat's real session, `apply` on a touchpad
+  changes tap, natural scroll and disable-while-typing, and a mouse answers `Partly` for tap and dwt.
+- **ZbusShellCalls.** One thread with a current-thread tokio runtime, the session bus connected on the first call, one task per
+  call, failures returned by `failures()` and logged by `exec::call`. A call carries at most four string arguments
+  (`ShellCallError::TooManyArgs`); names are validated before anything is queued. Real check: the default launcher binding
+  reaches sill once sill exports `org.quire.Sill1` (the fake accepts anything).
+- **ProcessSpawner.** `Command` with null stdin, its own process group, `spec.env` added, the `pass` descriptors' close-on-exec
+  cleared with rustix, a thread reaping the child.
+- **Bindings.** `carry_out` sends `Effect::CallBinding` and `Effect::Spawn` through `exec::exec`; the stale "not reached"
+  comment above those arms in `exec.rs` is left for the orchestrator. `exec::spawn` adds `Xwayland::env()` when satellite runs
+  (that body is P1-X1's).

@@ -6,11 +6,15 @@
 mod bindings;
 mod keyboard;
 mod outputs;
+mod pointer;
 mod spaces;
+mod touchpad;
 mod windows;
 
 pub use bindings::BindingsSection;
 pub use keyboard::KeyboardSection;
 pub use outputs::{FirstSight, OutputsSection};
+pub use pointer::PointerSection;
 pub use spaces::SpacesSection;
+pub use touchpad::TouchpadSection;
 pub use windows::WindowsSection;
