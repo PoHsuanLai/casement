@@ -1,7 +1,12 @@
 //! Which backend runs.
 
-use crate::headless::HeadlessBackend;
+use crate::headless::{HeadlessBackend, SpecError};
 use crate::winit::WinitBackend;
+use casement_render::RenderError;
+use smithay::backend::SwapBuffersError;
+use smithay::backend::renderer::gles::GlesError;
+use smithay::backend::renderer::pixman::PixmanError;
+use std::path::PathBuf;
 
 /// The running backend. (`Tty(TtyBackend)` joins at P1-Z.)
 #[derive(Debug)]
@@ -25,14 +30,53 @@ pub enum BackendChoice {
 
 /// Why a backend could not start or act.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum BackendError {
     /// An output spec did not parse.
-    #[error("bad output spec {0}")]
-    BadSpec(String),
-    /// The renderer could not start or render.
-    #[error("renderer: {0}")]
-    Renderer(String),
+    #[error("bad output spec {text}: {why}")]
+    BadSpec {
+        /// The spec as given.
+        text: String,
+        /// What was wrong with it.
+        #[source]
+        why: SpecError,
+    },
+    /// The nested window could not start.
+    #[error("window: {0}")]
+    Window(#[from] smithay::backend::winit::Error),
+    /// The nested window could not bind or swap its buffers.
+    #[error("swap buffers: {0}")]
+    Swap(#[from] SwapBuffersError),
+    /// The GLES renderer refused.
+    #[error("gles renderer: {0}")]
+    Gles(#[from] GlesError),
+    /// The pixman renderer refused.
+    #[error("pixman renderer: {0}")]
+    Pixman(#[from] PixmanError),
+    /// Drawing a frame failed.
+    #[error("render: {0}")]
+    Render(#[from] RenderError),
+    /// The dummy renderer was asked for without the `testing` feature.
+    #[error("the dummy renderer needs the `testing` feature")]
+    DummyNeedsTesting,
+    /// An output's canvas was made by another renderer than the one drawing into it.
+    #[error("an output's canvas belongs to another renderer")]
+    CanvasMismatch,
+    /// An output's mode does not fit smithay's buffer sizes.
+    #[error("a {w}x{h} output is too large")]
+    OutputTooLarge {
+        /// The mode's width.
+        w: u32,
+        /// The mode's height.
+        h: u32,
+    },
     /// A device open was refused (in the jail: anything but the fixtures and /dev/udmabuf).
-    #[error("denied open {0}")]
-    DeniedOpen(String),
+    #[error("denied open {}: {source}", path.display())]
+    DeniedOpen {
+        /// The device that was asked for.
+        path: PathBuf,
+        /// Why the open failed.
+        #[source]
+        source: std::io::Error,
+    },
 }

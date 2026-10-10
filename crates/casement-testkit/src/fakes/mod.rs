@@ -5,7 +5,7 @@ mod palmrest;
 mod session;
 mod udev;
 
-pub use logind::{FakeLogind, LogindCall};
+pub use logind::{FakeLogind, LogindCall, LogindError};
 pub use palmrest::FakePalmrest;
 pub use session::{FakeSession, SessionFixture};
 pub use udev::{FakeUdev, UdevEvent};

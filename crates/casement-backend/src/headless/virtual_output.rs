@@ -51,23 +51,53 @@ pub struct FixtureName(pub String);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct GpuId(pub u32);
 
+/// What is wrong with an output spec.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum SpecError {
+    /// The first field is not a connector name.
+    #[error("the name is not a connector name")]
+    Name,
+    /// The second field is not `WIDTHxHEIGHT@MILLIHERTZ`.
+    #[error("the mode is not WIDTHxHEIGHT@MILLIHERTZ")]
+    Mode,
+    /// The third field is not a positive scale in 120ths.
+    #[error("the scale is not a positive number of 120ths")]
+    Scale,
+    /// The fourth field is not `X,Y`.
+    #[error("the position is not X,Y")]
+    Position,
+    /// An option after the position is not one of transform, gpu, vrr or edid.
+    #[error("the option `{0}` is not understood")]
+    UnknownOption(String),
+}
+
 impl VirtualOutputSpec {
     /// The spec `text` describes (grammar in the module docs).
     pub fn parse(text: &str) -> Result<VirtualOutputSpec, BackendError> {
-        let bad = || BackendError::BadSpec(text.to_owned());
+        let bad = |why: SpecError| BackendError::BadSpec {
+            text: text.to_owned(),
+            why,
+        };
         let mut fields = text.split(':');
         let name = fields
             .next()
             .and_then(|n| OutputName::parse(n).ok())
-            .ok_or_else(bad)?;
-        let mode = fields.next().and_then(parse_mode).ok_or_else(bad)?;
+            .ok_or_else(|| bad(SpecError::Name))?;
+        let mode = fields
+            .next()
+            .and_then(parse_mode)
+            .ok_or_else(|| bad(SpecError::Mode))?;
         let scale = fields
             .next()
             .and_then(|s| s.parse::<u32>().ok())
             .filter(|n| *n > 0)
             .map(Scale)
-            .ok_or_else(bad)?;
-        let position = fields.next().and_then(parse_point).ok_or_else(bad)?;
+            .ok_or_else(|| bad(SpecError::Scale))?;
+        let position = fields
+            .next()
+            .and_then(parse_point)
+            .ok_or_else(|| bad(SpecError::Position))?;
         let base = VirtualOutputSpec {
             edid: EdidSource::Synthetic(EdidFacts {
                 make: "Casement".to_owned(),
@@ -82,7 +112,9 @@ impl VirtualOutputSpec {
             gpu: GpuId(0),
             vrr: VrrCapability::Incapable,
         };
-        fields.try_fold(base, |spec, field| with_option(spec, field).ok_or_else(bad))
+        fields.try_fold(base, |spec, field| {
+            with_option(spec, field).ok_or_else(|| bad(SpecError::UnknownOption(field.to_owned())))
+        })
     }
 
     /// The spec as text, in the grammar [`VirtualOutputSpec::parse`] reads.
@@ -240,7 +272,7 @@ mod tests {
             assert!(
                 matches!(
                     VirtualOutputSpec::parse(text),
-                    Err(BackendError::BadSpec(_))
+                    Err(BackendError::BadSpec { .. })
                 ),
                 "{text}"
             );

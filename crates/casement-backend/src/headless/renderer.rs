@@ -48,15 +48,13 @@ impl HeadlessRenderer {
             #[cfg(feature = "testing")]
             SoftRenderer::Dummy => Ok(HeadlessRenderer::Dummy(Box::default())),
             #[cfg(not(feature = "testing"))]
-            SoftRenderer::Dummy => Err(BackendError::Renderer(
-                "the dummy renderer needs the `testing` feature".to_owned(),
-            )),
+            SoftRenderer::Dummy => Err(BackendError::DummyNeedsTesting),
             SoftRenderer::Pixman => PixmanRenderer::new()
                 .map(|renderer| HeadlessRenderer::Pixman(Box::new(renderer)))
-                .map_err(|error| BackendError::Renderer(error.to_string())),
+                .map_err(BackendError::from),
             SoftRenderer::Llvmpipe => casement_render::surfaceless_gles()
                 .map(|renderer| HeadlessRenderer::Gles(Box::new(renderer)))
-                .map_err(|error| BackendError::Renderer(error.to_string())),
+                .map_err(BackendError::from),
         }
     }
 
@@ -95,7 +93,7 @@ impl HeadlessRenderer {
                 let elements = source.dummy(renderer);
                 let mut framebuffer = smithay::backend::renderer::test::DummyFramebuffer;
                 let rendered = render_output(renderer, &mut framebuffer, tracker, &elements, age.0)
-                    .map_err(|error| BackendError::Renderer(error.to_string()))?;
+                    .map_err(BackendError::from)?;
                 Ok(match rendered.damage.is_empty() {
                     true => Drawn::Unchanged,
                     false => Drawn::Nothing,
@@ -109,9 +107,7 @@ impl HeadlessRenderer {
                 let elements = source.gles(renderer);
                 draw_with(renderer, texture, tracker, &elements, age, size)
             }
-            _ => Err(BackendError::Renderer(
-                "an output's canvas belongs to another renderer".to_owned(),
-            )),
+            _ => Err(BackendError::CanvasMismatch),
         }
     }
 }
@@ -218,12 +214,12 @@ fn draw_with<R, T>(
 ) -> Result<Drawn, BackendError>
 where
     R: Compositor + Bind<T> + ExportMem,
-    <R as RendererSuper>::Error: fmt::Display,
+    <R as RendererSuper>::Error: Into<BackendError>,
     <R as RendererSuper>::TextureId: 'static,
 {
     let mut framebuffer = renderer.bind(target).map_err(renderer_fault)?;
     let rendered = render_output(renderer, &mut framebuffer, tracker, elements, age.0)
-        .map_err(|error| BackendError::Renderer(error.to_string()))?;
+        .map_err(BackendError::from)?;
     if rendered.damage.is_empty() {
         return Ok(Drawn::Unchanged);
     }
@@ -256,11 +252,13 @@ fn buffer_size(size: PhysicalSize) -> Result<Size<i32, Buffer>, BackendError> {
     fits(size.w)
         .zip(fits(size.h))
         .map(|(w, h)| Size::from((w, h)))
-        .ok_or_else(|| {
-            BackendError::Renderer(format!("a {}x{} output is too large", size.w, size.h))
+        .ok_or(BackendError::OutputTooLarge {
+            w: size.w,
+            h: size.h,
         })
 }
 
-fn renderer_fault(error: impl fmt::Display) -> BackendError {
-    BackendError::Renderer(error.to_string())
+/// A renderer's own error as ours.
+fn renderer_fault(error: impl Into<BackendError>) -> BackendError {
+    error.into()
 }

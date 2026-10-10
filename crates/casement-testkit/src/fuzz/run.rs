@@ -1,5 +1,6 @@
 //! Running a sequence of ops and checking the five oracles after each.
 
+use super::failure::{FuzzFailure, PanicSite};
 use super::host::FuzzHost;
 use super::ops::{FuzzOp, FuzzRequest, MAX_REPEAT, ObjectRef};
 use super::oracles::{self, Snapshot};
@@ -12,17 +13,21 @@ use std::time::Duration;
 
 /// Runs `ops` against `fixture`, checking the five oracles after each; the first failure's
 /// description.
-pub fn run_ops(fixture: &mut Fixture, ops: &[FuzzOp]) -> Result<(), String> {
+pub fn run_ops(fixture: &mut Fixture, ops: &[FuzzOp]) -> Result<(), FuzzFailure> {
     run_on(fixture, ops)
 }
 
 /// [`run_ops`] on any host (the runner's own tests use a hand-played compositor).
-pub fn run_on<H: FuzzHost>(host: &mut H, ops: &[FuzzOp]) -> Result<(), String> {
+pub fn run_on<H: FuzzHost>(host: &mut H, ops: &[FuzzOp]) -> Result<(), FuzzFailure> {
     let mut run = Run::start(host)?;
     for (step, op) in ops.iter().enumerate() {
         run.apply(op)
             .and_then(|()| run.check())
-            .map_err(|why| format!("op {step} ({op:?}): {why}"))?;
+            .map_err(|failure| FuzzFailure::AtOp {
+                step,
+                op: op.clone(),
+                failure: Box::new(failure),
+            })?;
     }
     Ok(())
 }
@@ -41,7 +46,7 @@ struct Run<'h, H> {
 }
 
 impl<'h, H: FuzzHost> Run<'h, H> {
-    fn start(host: &'h mut H) -> Result<Run<'h, H>, String> {
+    fn start(host: &'h mut H) -> Result<Run<'h, H>, FuzzFailure> {
         let bystander = host.connect(ConnectionRole::Public);
         oracles::alive_pump(host)?;
         let resting = oracles::snapshot(host, bystander);
@@ -53,12 +58,12 @@ impl<'h, H: FuzzHost> Run<'h, H> {
         })
     }
 
-    fn apply(&mut self, op: &FuzzOp) -> Result<(), String> {
+    fn apply(&mut self, op: &FuzzOp) -> Result<(), FuzzFailure> {
         match op {
             FuzzOp::Advance(ms) => {
                 let by = Duration::from_millis(u64::from(*ms));
                 catch_unwind(AssertUnwindSafe(|| self.host.advance(by)))
-                    .map_err(|_| "oracle 1: the compositor panicked in advance".to_owned())
+                    .map_err(|_| FuzzFailure::Panicked(PanicSite::Advance))
             }
             FuzzOp::Request {
                 role,
@@ -70,7 +75,7 @@ impl<'h, H: FuzzHost> Run<'h, H> {
                     let id = self.fuzzer(role);
                     self.send(id, *object, request);
                 }))
-                .map_err(|_| "oracle 1: the compositor panicked on a request".to_owned())?;
+                .map_err(|_| FuzzFailure::Panicked(PanicSite::Request))?;
                 oracles::alive_pump(self.host)
             }
         }
@@ -116,7 +121,7 @@ impl<'h, H: FuzzHost> Run<'h, H> {
     }
 
     /// The five oracles.
-    fn check(&mut self) -> Result<(), String> {
+    fn check(&mut self) -> Result<(), FuzzFailure> {
         oracles::invariants(self.host)?;
         oracles::bystander_ok(self.host, self.bystander, &self.resting)?;
         let known: Vec<(ClientId, ConnectionRole)> =
@@ -232,6 +237,7 @@ mod tests {
             on(sandboxed(), ObjectRef::Valid(0), "wl_compositor", 0),
         ];
         run_on(&mut Scripted::new(fault), &ops).expect_err("the oracle fires")
+            .to_string()
     }
 
     #[test]

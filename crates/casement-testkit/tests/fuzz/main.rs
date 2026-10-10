@@ -46,7 +46,7 @@ fn run_seed(seed: u8) {
     let outcome = runner.run(&strategy::ops(SEQUENCE), |ops| {
         let mut fixture = Fixture::start(FixtureSpec::desktop())
             .map_err(|error| TestCaseError::fail(format!("the fixture did not start: {error}")))?;
-        run_ops(&mut fixture, &ops).map_err(TestCaseError::fail)
+        run_ops(&mut fixture, &ops).map_err(|failure| TestCaseError::fail(failure.to_string()))
     });
     if let Err(failure) = outcome {
         panic!("seed {seed}: {failure}");

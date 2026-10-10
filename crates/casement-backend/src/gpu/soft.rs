@@ -19,6 +19,7 @@ use crate::backend::BackendError;
 use smithay::backend::allocator::udmabuf::UdmabufAllocator;
 use smithay::backend::renderer::ContextId;
 use smithay::backend::renderer::pixman::{PixmanRenderer, PixmanTexture};
+use std::path::PathBuf;
 
 /// How often each copy path ran on a soft GPU.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -46,8 +47,7 @@ pub struct SoftPixman {
 impl SoftPixman {
     /// A new soft GPU renderer with a fresh context id.
     pub fn new() -> Result<SoftPixman, BackendError> {
-        let inner =
-            PixmanRenderer::new().map_err(|error| BackendError::Renderer(error.to_string()))?;
+        let inner = PixmanRenderer::new()?;
         Ok(SoftPixman {
             inner,
             context: ContextId::new(),
@@ -73,6 +73,9 @@ impl FixedUdmabuf {
     pub fn new() -> Result<FixedUdmabuf, BackendError> {
         UdmabufAllocator::new()
             .map(|udmabuf| FixedUdmabuf { udmabuf })
-            .map_err(|error| BackendError::DeniedOpen(format!("/dev/udmabuf: {error}")))
+            .map_err(|source| BackendError::DeniedOpen {
+                path: PathBuf::from("/dev/udmabuf"),
+                source,
+            })
     }
 }

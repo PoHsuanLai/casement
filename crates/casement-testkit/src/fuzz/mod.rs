@@ -4,6 +4,7 @@
 //! offender is a documented one; a healthy bystander still roundtrips and looks the same; the
 //! model's invariants hold; privileged globals stay off connections that may not see them.
 
+mod failure;
 mod host;
 mod ops;
 mod oracles;
@@ -13,6 +14,8 @@ mod run;
 mod scripted;
 pub mod strategy;
 
+pub use failure::{FuzzFailure, PanicSite};
 pub use host::FuzzHost;
+pub use oracles::Snapshot;
 pub use ops::{FuzzOp, FuzzRequest, MAX_REPEAT, ObjectRef};
 pub use run::{run_on, run_ops};

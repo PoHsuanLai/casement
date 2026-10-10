@@ -14,7 +14,7 @@ pub use input::HeadlessInput;
 pub use output_set::{OutputSet, VirtualOutput};
 pub use renderer::{HeadlessRenderer, SoftRenderer};
 pub use vblank::VblankSource;
-pub use virtual_output::{EdidSource, FixtureName, GpuId, VirtualOutputSpec};
+pub use virtual_output::{EdidSource, FixtureName, GpuId, SpecError, VirtualOutputSpec};
 
 use crate::backend::BackendError;
 use crate::input::VirtualInput;

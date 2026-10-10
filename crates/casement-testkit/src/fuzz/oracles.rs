@@ -6,6 +6,7 @@
 //! 4. `Model::check_invariants` holds;
 //! 5. privileged globals never appear on a connection that may not see them (I7).
 
+use super::failure::{FuzzFailure, PanicSite};
 use super::host::FuzzHost;
 use crate::fixture::ClientId;
 use casement_core::policy::{Advertise, ConnectionRole, GlobalKind, advertised};
@@ -13,7 +14,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 /// What a bystander looks like when nothing has touched it.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct Snapshot {
+pub struct Snapshot {
     globals: Vec<(String, u32)>,
     objects: Vec<(u32, String)>,
 }
@@ -34,20 +35,17 @@ pub(super) fn snapshot<H: FuzzHost>(host: &mut H, id: ClientId) -> Snapshot {
 }
 
 /// Oracle 1: pumps, and says so if the compositor panicked doing it.
-pub(super) fn alive_pump<H: FuzzHost>(host: &mut H) -> Result<(), String> {
+pub(super) fn alive_pump<H: FuzzHost>(host: &mut H) -> Result<(), FuzzFailure> {
     catch_unwind(AssertUnwindSafe(|| host.pump()))
         .map(|_| ())
-        .map_err(|_| "oracle 1: the compositor panicked while pumping".to_owned())
+        .map_err(|_| FuzzFailure::Panicked(PanicSite::Pump))
 }
 
 /// Oracle 2 for one client: no protocol error, or a documented one.
-pub(super) fn documented_error<H: FuzzHost>(host: &mut H, id: ClientId) -> Result<(), String> {
+pub(super) fn documented_error<H: FuzzHost>(host: &mut H, id: ClientId) -> Result<(), FuzzFailure> {
     let client = host.client(id);
     match (client.protocol_error(), client.error_is_documented()) {
-        (Some(error), Some(false)) => Err(format!(
-            "oracle 2: client {id:?} got an undocumented protocol error: {} code {} on {}#{}: {}",
-            error.interface, error.code, error.interface, error.object, error.message
-        )),
+        (Some(error), Some(false)) => Err(FuzzFailure::UndocumentedError { client: id, error }),
         _ => Ok(()),
     }
 }
@@ -57,33 +55,28 @@ pub(super) fn bystander_ok<H: FuzzHost>(
     host: &mut H,
     id: ClientId,
     before: &Snapshot,
-) -> Result<(), String> {
-    let done = host
-        .client(id)
-        .sync()
-        .map_err(|error| format!("oracle 3: the bystander could not sync: {error}"))?;
+) -> Result<(), FuzzFailure> {
+    let done = host.client(id).sync()?;
     alive_pump(host)?;
     if let Some(error) = host.client(id).protocol_error() {
-        return Err(format!(
-            "oracle 3: the bystander got a protocol error: {error:?}"
-        ));
+        return Err(FuzzFailure::BystanderError(error));
     }
     if !done.is_done() {
-        return Err("oracle 3: the bystander's roundtrip did not complete".to_owned());
+        return Err(FuzzFailure::BystanderStalled);
     }
     let after = snapshot(host, id);
     if &after != before {
-        return Err(format!(
-            "oracle 3: the bystander's state changed: {before:?} -> {after:?}"
-        ));
+        return Err(FuzzFailure::BystanderChanged {
+            before: before.clone(),
+            after,
+        });
     }
     Ok(())
 }
 
 /// Oracle 4.
-pub(super) fn invariants<H: FuzzHost>(host: &H) -> Result<(), String> {
-    host.invariants()
-        .map_err(|broken| format!("oracle 4: an invariant broke: {broken}"))
+pub(super) fn invariants<H: FuzzHost>(host: &H) -> Result<(), FuzzFailure> {
+    host.invariants().map_err(FuzzFailure::InvariantBroke)
 }
 
 /// The privileged globals no `Public` or `Sandboxed` connection may be offered.
@@ -99,7 +92,7 @@ pub(super) fn privilege<H: FuzzHost>(
     host: &mut H,
     id: ClientId,
     role: &ConnectionRole,
-) -> Result<(), String> {
+) -> Result<(), FuzzFailure> {
     let seen: Vec<String> = host
         .client(id)
         .globals()
@@ -111,16 +104,18 @@ pub(super) fn privilege<H: FuzzHost>(
     let privileged_role = matches!(role, ConnectionRole::Shell | ConnectionRole::Agent);
     for interface in &seen {
         if !privileged_role && PRIVILEGED.contains(&interface.as_str()) {
-            return Err(format!(
-                "oracle 5: {role:?} was offered the privileged global {interface}"
-            ));
+            return Err(FuzzFailure::PrivilegedOffered {
+                role: role.clone(),
+                interface: interface.clone(),
+            });
         }
         if let Some(kind) = kind_of(interface)
             && advertised(kind, role) == Advertise::No
         {
-            return Err(format!(
-                "oracle 5: {role:?} was offered {interface}, which its role may not see"
-            ));
+            return Err(FuzzFailure::GlobalNotForRole {
+                role: role.clone(),
+                interface: interface.clone(),
+            });
         }
     }
     Ok(())

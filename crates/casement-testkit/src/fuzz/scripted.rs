@@ -4,6 +4,8 @@
 
 use super::host::FuzzHost;
 use crate::fixture::ClientId;
+use casement_core::InvariantBreak;
+use casement_core::WindowId;
 use casement_core::policy::ConnectionRole;
 use casement_testclient::{Pumped, TestClient};
 use std::collections::BTreeMap;
@@ -218,9 +220,9 @@ impl FuzzHost for Scripted {
         self.pump();
     }
 
-    fn invariants(&self) -> Result<(), String> {
+    fn invariants(&self) -> Result<(), InvariantBreak> {
         match self.fault {
-            Fault::BrokenInvariant => Err("focus stack names a window that is gone".to_owned()),
+            Fault::BrokenInvariant => Err(InvariantBreak::KeyWindowNotMapped(WindowId(1))),
             _ => Ok(()),
         }
     }

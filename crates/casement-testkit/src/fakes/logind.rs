@@ -17,13 +17,28 @@ pub enum LogindCall {
     SwitchTo(u32),
 }
 
+/// Why the fake logind could not serve.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum LogindError {
+    /// The bus at `address` could not be reached.
+    #[error("bus {address}: {source}")]
+    Bus {
+        /// The bus address.
+        address: String,
+        /// Why the connection failed.
+        #[source]
+        source: std::io::Error,
+    },
+}
+
 /// The fake logind server.
 #[derive(Debug, Default)]
 pub struct FakeLogind;
 
 impl FakeLogind {
     /// Serves on the bus at `address` until the process is stopped.
-    pub fn serve(address: &str) -> Result<FakeLogind, String> {
+    pub fn serve(address: &str) -> Result<FakeLogind, LogindError> {
         let _ = address;
         todo!("P1-F2: FakeLogind::serve")
     }

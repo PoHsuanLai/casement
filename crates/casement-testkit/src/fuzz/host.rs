@@ -2,6 +2,7 @@
 //! tests.
 
 use crate::fixture::{ClientId, Fixture};
+use casement_core::InvariantBreak;
 use casement_core::policy::ConnectionRole;
 use casement_testclient::{Pumped, TestClient};
 use std::time::Duration;
@@ -17,7 +18,7 @@ pub trait FuzzHost {
     /// Moves the clock.
     fn advance(&mut self, by: Duration);
     /// The model's invariants (oracle 4).
-    fn invariants(&self) -> Result<(), String>;
+    fn invariants(&self) -> Result<(), InvariantBreak>;
 }
 
 impl FuzzHost for Fixture {
@@ -37,9 +38,7 @@ impl FuzzHost for Fixture {
         Fixture::advance(self, by);
     }
 
-    fn invariants(&self) -> Result<(), String> {
-        self.model()
-            .check_invariants()
-            .map_err(|broken| format!("{broken:?}"))
+    fn invariants(&self) -> Result<(), InvariantBreak> {
+        self.model().check_invariants()
     }
 }
