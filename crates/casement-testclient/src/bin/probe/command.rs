@@ -9,10 +9,19 @@
 //! layer-close NAME | lock NAME | unlock NAME | close NAME
 //! copy TEXT | paste | drag NAME TEXT
 //! ime-start | ime-enable | ime-grab | ime-preedit TEXT | ime-commit TEXT
+//! shell-connect | shell-role ROLE LAYER | minimise-target TOPLEVEL X Y W H | minimise-clear TOPLEVEL
 //! sync | quit
 //! ```
+//!
+//! The shell verbs need `casement-probe` to be the shell: the scenario starts casement with
+//! `CASEMENT_DEBUG_PEER_UNITS="casement-probe=sill.service"`. ROLE is bar, dock, launcher, switcher,
+//! overview, notifications, osd, control-centre, wallpaper or widget; LAYER is a session layer name;
+//! TOPLEVEL is a window identifier (`w<id>`, as `casementctl debug windows` lists it).
+//! After `shell-connect` the session's client is the shell connection: surfaces made before it
+//! are gone, so make the layers after it. Each shell verb answers one `probe: {json}` note.
 
 use casement_testclient::Pattern;
+use casement_testclient::quire::shell::ShellRole;
 use casement_testclient::surface::layer::{Anchor, KeyboardInteractivity, Layer};
 use casement_testclient::surface::toplevel::ResizeEdge;
 
@@ -105,6 +114,10 @@ pub(crate) enum Command {
     ImeGrab,
     ImePreedit(String),
     ImeCommit(String),
+    ShellConnect,
+    ShellRole(ShellRole, String),
+    MinimiseTarget(String, (i32, i32), Size),
+    MinimiseClear(String),
     Sync,
     Quit,
 }
@@ -238,6 +251,24 @@ fn point(text: &str) -> Result<(i32, i32), String> {
     Ok((x.parse().map_err(|_| bad())?, y.parse().map_err(|_| bad())?))
 }
 
+fn shell_role(text: &str) -> Result<ShellRole, String> {
+    [
+        ("bar", ShellRole::Bar),
+        ("dock", ShellRole::Dock),
+        ("launcher", ShellRole::Launcher),
+        ("switcher", ShellRole::Switcher),
+        ("overview", ShellRole::Overview),
+        ("notifications", ShellRole::Notifications),
+        ("osd", ShellRole::Osd),
+        ("control-centre", ShellRole::ControlCentre),
+        ("wallpaper", ShellRole::Wallpaper),
+        ("widget", ShellRole::Widget),
+    ]
+    .into_iter()
+    .find_map(|(word, role)| (word == text).then_some(role))
+    .ok_or_else(|| format!("not a shell role: {text}"))
+}
+
 /// The command `line` says.
 pub(crate) fn parse(line: &str) -> Result<Command, String> {
     let line = line.trim();
@@ -306,6 +337,32 @@ pub(crate) fn parse(line: &str) -> Result<Command, String> {
         "ime-grab" => Ok(Command::ImeGrab),
         "ime-preedit" if !rest.is_empty() => Ok(Command::ImePreedit(rest.to_owned())),
         "ime-commit" if !rest.is_empty() => Ok(Command::ImeCommit(rest.to_owned())),
+        "shell-connect" => Ok(Command::ShellConnect),
+        "shell-role" => match words.bare.as_slice() {
+            [role, layer] => Ok(Command::ShellRole(shell_role(role)?, (*layer).to_owned())),
+            _ => Err("shell-role needs ROLE and LAYER".to_owned()),
+        },
+        "minimise-target" => match words.bare.as_slice() {
+            [toplevel, x, y, w, h] => {
+                let bad = |what: &str, text: &str| format!("not a {what}: {text}");
+                let number =
+                    |what: &str, text: &str| text.parse::<i32>().map_err(|_| bad(what, text));
+                let extent = |what: &str, text: &str| match text.parse::<u32>() {
+                    Ok(n @ 1..) => Ok(n),
+                    _ => Err(bad(what, text)),
+                };
+                Ok(Command::MinimiseTarget(
+                    (*toplevel).to_owned(),
+                    (number("x", x)?, number("y", y)?),
+                    Size {
+                        w: extent("width", w)?,
+                        h: extent("height", h)?,
+                    },
+                ))
+            }
+            _ => Err("minimise-target needs TOPLEVEL X Y W H".to_owned()),
+        },
+        "minimise-clear" => Ok(Command::MinimiseClear(named()?)),
         "sync" => Ok(Command::Sync),
         "quit" => Ok(Command::Quit),
         "" => Err("empty command".to_owned()),
@@ -367,6 +424,12 @@ mod tests {
             "layer l anchor=middle",
             "copy",
             "drag w",
+            "shell-role dock",
+            "shell-role sideboard l",
+            "minimise-target w1 0 0 10",
+            "minimise-target w1 0 0 0 10",
+            "minimise-target w1 a 0 10 10",
+            "minimise-clear",
         ] {
             assert!(parse(line).is_err(), "{line:?}");
         }
@@ -402,5 +465,26 @@ mod tests {
         assert!(popup.grab);
         assert_eq!(popup.at, (5, -6));
         assert_eq!(popup.size, Size { w: 30, h: 40 });
+    }
+
+    #[test]
+    fn the_shell_verbs_parse_their_words() {
+        assert!(matches!(parse("shell-connect"), Ok(Command::ShellConnect)));
+        assert!(matches!(
+            parse("shell-role dock d"),
+            Ok(Command::ShellRole(ShellRole::Dock, layer)) if layer == "d"
+        ));
+        assert!(matches!(
+            parse("shell-role control-centre c"),
+            Ok(Command::ShellRole(ShellRole::ControlCentre, _))
+        ));
+        assert!(matches!(
+            parse("minimise-target w3 -4 600 64  48"),
+            Ok(Command::MinimiseTarget(id, (-4, 600), Size { w: 64, h: 48 })) if id == "w3"
+        ));
+        assert!(matches!(
+            parse("minimise-clear w3"),
+            Ok(Command::MinimiseClear(id)) if id == "w3"
+        ));
     }
 }

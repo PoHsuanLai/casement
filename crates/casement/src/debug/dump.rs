@@ -128,7 +128,8 @@ fn outputs_json(state: &State) -> String {
 }
 
 /// Every window in the shape KWin's window list gave the consumer scripts: `class` (the app
-/// id), `caption`, `frame` and `buffer` as `[x, y, w, h]`, `maximize`, `fullscreen`, `active`.
+/// id), `caption`, `frame` and `buffer` as `[x, y, w, h]`, `maximize`, `fullscreen`, `active`, plus `identifier` (`w<id>`, the name the
+/// shell protocol takes) and `minimise_target` (`[x, y, w, h]` global, or `null` when none is set).
 pub(super) fn windows(state: &State) -> String {
     let model = &state.core.model;
     let rows: Vec<String> = model
@@ -167,8 +168,24 @@ pub(super) fn windows(state: &State) -> String {
                 casement_core::window::WindowState::FullScreen { .. }
             );
             let active = model.focus().key == Some(window.id);
+            let minimise_target = model.minimise_target(window.id).map_or_else(
+                || "null".to_owned(),
+                |target| {
+                    let rect = target.rect;
+                    format!(
+                        "{:?}",
+                        [
+                            i64::from(rect.origin.x),
+                            i64::from(rect.origin.y),
+                            i64::from(rect.size.w),
+                            i64::from(rect.size.h),
+                        ]
+                    )
+                },
+            );
             format!(
-                "{{\"class\":{},\"caption\":{},\"frame\":{:?},\"buffer\":{:?},\"maximize\":{},\"fullscreen\":{},\"active\":{}}}",
+                "{{\"identifier\":\"w{}\",\"class\":{},\"caption\":{},\"frame\":{:?},\"buffer\":{:?},\"maximize\":{},\"fullscreen\":{},\"active\":{},\"minimise_target\":{}}}",
+                window.id.0,
                 quoted(window.claimed_id.as_str()),
                 quoted(&window.title.0),
                 frame,
@@ -176,6 +193,7 @@ pub(super) fn windows(state: &State) -> String {
                 maximize,
                 fullscreen,
                 active,
+                minimise_target,
             )
         })
         .collect();

@@ -6,6 +6,7 @@
 use crate::Failure;
 use crate::clip::Clip;
 use crate::command::{Command, parse};
+use crate::shellrole::{self, Shell};
 use crate::surfaces::Surfaces;
 use casement_core::time::Mono;
 use casement_testclient::ime::session::ImeSession;
@@ -31,6 +32,7 @@ struct Session {
     surfaces: Surfaces,
     clip: Clip,
     ime: Option<ImeSession>,
+    shell: Option<Shell>,
     turns: u32,
     printed: usize,
     syncs: Vec<SyncDone>,
@@ -44,7 +46,11 @@ fn note(text: &str) {
 
 impl Session {
     fn start() -> Result<Session, Failure> {
-        let mut client = TestClient::connect_env()?;
+        Session::over(TestClient::connect_env()?)
+    }
+
+    /// A session on `client`, which has had its first roundtrip.
+    fn over(mut client: TestClient) -> Result<Session, Failure> {
         let base = WmBase::bind(&mut client, 6);
         let keyboard = Keyboard::bind(&client)?;
         let pointer = Pointer::bind(&client)?;
@@ -57,6 +63,7 @@ impl Session {
             surfaces: Surfaces::default(),
             clip,
             ime: None,
+            shell: None,
             turns: 0,
             printed: 0,
             syncs: Vec::new(),
@@ -75,6 +82,32 @@ impl Session {
         self.ime
             .as_mut()
             .ok_or_else(|| "run ime-start first".to_owned())
+    }
+
+    fn shell(&mut self) -> Result<&mut Shell, String> {
+        self.shell
+            .as_mut()
+            .ok_or_else(|| "run shell-connect first".to_owned())
+    }
+
+    /// Makes the session the shell: a new connection from `Compositor1.Connect("shell")`
+    /// replaces the client, and every surface made before it goes with the old one.
+    fn shell_connect(&mut self) -> Result<serde_json::Value, String> {
+        let (client, shell) = shellrole::connect()?;
+        let mut next = Session::over(client).map_err(|why| match why {
+            Failure::Probe(text) => text,
+            _ => "the shell connection could not be used".to_owned(),
+        })?;
+        next.commands = self.commands;
+        next.shell = Some(shell);
+        *self = next;
+        Ok(serde_json::json!({ "shell": "connected" }))
+    }
+
+    /// The JSON note of a shell verb: its answer, or `{"error": ...}`.
+    fn shell_note(answer: Result<serde_json::Value, String>) -> Vec<String> {
+        let json = answer.unwrap_or_else(|why| serde_json::json!({ "error": why }));
+        vec![json.to_string()]
     }
 
     /// Runs one command; the notes it produced.
@@ -134,6 +167,26 @@ impl Session {
                 let ime = self.ime()?;
                 ime.commit_string(&text).map_err(|e| e.to_string())?;
                 ime.commit_batch().map_err(|e| e.to_string())?;
+            }
+            Command::ShellConnect => return Ok(Session::shell_note(self.shell_connect())),
+            Command::ShellRole(role, layer) => {
+                let answer = self.surfaces.layer_surface(&layer).and_then(|surface| {
+                    self.shell
+                        .as_mut()
+                        .ok_or_else(|| "run shell-connect first".to_owned())
+                        .map(|shell| shell.role(role, &surface))
+                });
+                return Ok(Session::shell_note(answer));
+            }
+            Command::MinimiseTarget(toplevel, at, size) => {
+                let answer = self
+                    .shell()
+                    .and_then(|shell| shell.target(&toplevel, at, (size.w, size.h)));
+                return Ok(Session::shell_note(answer));
+            }
+            Command::MinimiseClear(toplevel) => {
+                let answer = self.shell().map(|shell| shell.clear(&toplevel));
+                return Ok(Session::shell_note(answer));
             }
             Command::Sync => self
                 .syncs

@@ -274,6 +274,17 @@ impl Surfaces {
         Ok(())
     }
 
+    /// The `wl_surface` of layer surface `name`, to give a shell role.
+    pub(crate) fn layer_surface(
+        &self,
+        name: &str,
+    ) -> Result<wayland_client::protocol::wl_surface::WlSurface, String> {
+        self.layers
+            .get(name)
+            .map(|layer| layer.layer.surface().clone())
+            .ok_or_else(|| missing("layer", name))
+    }
+
     pub(crate) fn layer_close(&mut self, client: &TestClient, name: &str) -> Result<(), String> {
         self.layers
             .remove(name)

@@ -1418,6 +1418,27 @@ Surprise: `cargo fmt -p` needs the sibling checkouts, absent in this worktree, s
   Fixtures pump the client every round, which is why the in-process tests never saw it. Any probe verb built on a
   side-queue watch must pump the client too.
 
+## probe-shell: shell-role verbs in the probe session (2026-10-11)
+
+Nothing here compiled or run (the lane does not build).
+
+- **Verbs** (`casement-probe session`, one `probe: {json}` note each; a failure is `{"error": "..."}`):
+  `shell-connect` calls `org.quire.Compositor1.Connect("shell")` on `$DBUS_SESSION_BUS_ADDRESS`, runs the first roundtrip on the
+  returned fd and makes it the session's client (surfaces made earlier go with the old connection; the session rebinds
+  its seat, wm_base and clipboard on the new one); `shell-role ROLE LAYER` (bar, dock, launcher, switcher, overview,
+  notifications, osd, control-centre, wallpaper, widget) calls `set_role` on a layer surface made after `shell-connect`;
+  `minimise-target TOPLEVEL X Y W H` sets the target local to the surface that last got the dock role;
+  `minimise-clear TOPLEVEL` clears it. TOPLEVEL is a window identifier (`w<id>`): the session cannot map its own toplevel
+  names to identifiers (they are on another connection), so read the identifier from `casementctl debug windows`.
+- **Environment.** The scenario starts casement with `CASEMENT_DEBUG_PEER_UNITS="casement-probe=sill.service"` (see
+  debug-role; comm is cut to 15 bytes and `casement-probe` is 14), so the jailed probe's unit reads as `sill.service`.
+- **Dependency.** `casement-testclient` gained `zbus` and `tokio` (the bus call, on a throwaway current-thread runtime);
+  `Cargo.lock` was edited by hand. B9 (no smithay) is unaffected.
+- **Debug windows.** `casementctl debug windows` rows gained `identifier` (`w<id>`) and `minimise_target` (`[x, y, w, h]`
+  global, or `null`), so a scenario can assert the stored rectangle.
+- Every verb pumps nothing itself: the session loop pumps the client each turn, so requests leave the tap on the next
+  turn (wait for the `done N` note, then for the next turn, before asserting on `debug windows`).
+
 ## p2-z: the P2 delta freeze (2026-10-11)
 
 Nothing here compiled or run (the lane does not build). Plan: 20 §4.15 and §4.16 over 22. Fill lanes:

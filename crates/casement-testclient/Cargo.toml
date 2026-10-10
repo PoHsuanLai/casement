@@ -33,6 +33,9 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 x11rb = { workspace = true }
+# The probe's `shell-connect` asks org.quire.Compositor1 for the shell connection.
+zbus = { workspace = true }
+tokio = { workspace = true }
 
 [dev-dependencies]
 # The infrastructure tests run against the real compositor (a dev-dependency cycle cargo
