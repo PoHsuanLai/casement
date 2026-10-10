@@ -1167,3 +1167,11 @@ Nothing here compiled (no builds this lane).
   (connector status is read from there, not from `/sys/class/drm`); that the by-path link set matches the `gpu.render`
   ids Settings shows; a hybrid laptop with the NVIDIA proprietary driver (its render node may list no connectors, and
   `boot_vga` may be 0 on both GPUs, which falls to the lowest node).
+
+## smithay fork 9c8f762a (2026-10-11)
+
+The typed fuzz box (seed 8, once P1-C1's globals shifted object ids) panicked smithay: `wl_subsurface.place_above`
+or `place_below` with the sub-surface itself as the reference removed it from its parent's list and inserted past
+the end. The protocol makes that reference a `bad_surface` error; the fork's `PrivateSurfaceData::reorder` now
+refuses it (branch `casement`, 9c8f762a on dc7ca684). An upstream PR waits for the owner's word (upstream PRs on
+hold).

@@ -104,7 +104,7 @@ taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "4863877b9cab21645b
 # backend_winit backend_egl backend_drm backend_gbm backend_libinput backend_udev
 # backend_session_libseat backend_libei backend_vulkan use_system_lib; renderer_test only
 # under the `testing` feature; xwayland off until the Q-C5 gate.
-smithay = { git = "https://github.com/PoHsuanLai/smithay", rev = "dc7ca684e0a75b2c889718e5e97cc49bc94760ba", default-features = false }
+smithay = { git = "https://github.com/PoHsuanLai/smithay", rev = "9c8f762a13700d974395a180db051ac8daa4c539", default-features = false }
 # The client side of the test kit: the protocol extensions smithay serves from these crates.
 wayland-protocols-wlr = { version = "0.3.12", features = ["client"] }
 wayland-protocols-misc = { version = "0.3.12", features = ["client"] }
