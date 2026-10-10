@@ -57,6 +57,14 @@ pub fn identifier_of(window: WindowId) -> String {
     format!("w{}", window.0)
 }
 
+/// The window an identifier names: the inverse of [`identifier_of`] (`None` for text casement
+/// did not make). The desktop and shell protocols name windows by it across connections.
+pub fn window_of_identifier(identifier: &str) -> Option<WindowId> {
+    let digits = identifier.strip_prefix('w')?;
+    let plain = !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit());
+    plain.then(|| digits.parse().ok().map(WindowId)).flatten()
+}
+
 /// Lists `window` (or sends its changed title and app id; nothing is sent when neither
 /// changed). A title the protocol cannot carry (the text is app-authored) goes out as given.
 pub fn apply_toplevel(
@@ -111,5 +119,27 @@ mod tests {
         assert_ne!(a, b);
         let longest = identifier_of(WindowId(u64::MAX));
         assert!(longest.len() <= 32 && longest.is_ascii());
+    }
+
+    #[test]
+    fn an_identifier_names_its_window_and_only_its_own() {
+        for id in [0, 7, u64::MAX] {
+            assert_eq!(
+                window_of_identifier(&identifier_of(WindowId(id))),
+                Some(WindowId(id))
+            );
+        }
+        for text in [
+            "",
+            "w",
+            "7",
+            "x7",
+            "w-7",
+            "w7 ",
+            "w+7",
+            "w99999999999999999999",
+        ] {
+            assert_eq!(window_of_identifier(text), None, "{text:?}");
+        }
     }
 }

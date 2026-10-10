@@ -1,15 +1,17 @@
 //! The frozen aggregate of every protocol's sub-state, and the global filter (I7).
 
 use crate::client::{ClientMint, ClientState};
+#[cfg(feature = "quire")]
+use crate::quire;
 use crate::{
-    alpha_modifier, background_effect, commit_timing, compositor, content_type, cursor_shape,
-    data_device, dmabuf, ext_data_control, fifo, foreign_toplevel_list, fractional_scale, gamma,
-    idle_inhibit, idle_notify, image_capture, input_method, layer_shell, output, output_management,
-    output_power, pointer_constraints, pointer_gestures, presentation, primary_selection,
-    quire_window, relative_pointer, seat, security_context, session_lock, shm, shortcuts_inhibit,
-    single_pixel, subcompositor, system_bell, tablet, text_input, viewporter, virtual_keyboard,
-    wlr_data_control, wlr_toplevel, workspace, xdg_activation, xdg_decoration, xdg_dialog,
-    xdg_foreign, xdg_shell, xdg_toplevel_icon, xdg_toplevel_tag,
+    alpha_modifier, background_effect, capture_source, commit_timing, compositor, content_type,
+    cursor_shape, data_device, dmabuf, ext_data_control, fifo, foreign_toplevel_list,
+    fractional_scale, gamma, idle_inhibit, idle_notify, image_capture, input_method, layer_shell,
+    output, output_management, output_power, pointer_constraints, pointer_gestures, presentation,
+    primary_selection, quire_window, relative_pointer, seat, security_context, session_lock, shm,
+    shortcuts_inhibit, single_pixel, subcompositor, system_bell, tablet, text_input, viewporter,
+    virtual_keyboard, wlr_data_control, wlr_toplevel, workspace, xdg_activation, xdg_decoration,
+    xdg_dialog, xdg_foreign, xdg_shell, xdg_toplevel_icon, xdg_toplevel_tag,
 };
 use casement_core::WindowId;
 use casement_core::policy::{Advertise, ConnectionRole, GlobalKind};
@@ -123,6 +125,16 @@ pub struct WaylandStates<D: SeatHandler + 'static> {
     /// `ext_output_image_capture_source_manager_v1`, `ext_image_copy_capture_manager_v1`
     /// (declared at P1-Z, advertised by P1-C1).
     pub image_capture: image_capture::ImageCapturePart,
+    /// `ext_foreign_toplevel_image_capture_source_manager_v1` (declared at P2-Z, advertised by
+    /// P2-Q3).
+    pub capture_source: capture_source::ToplevelCapturePart,
+    /// `quire_desktop_manager_v1` (declared at P2-Z, advertised by P2-Q1; shell and agent
+    /// connections only).
+    #[cfg(feature = "quire")]
+    pub quire_desktop: quire::desktop::QuireDesktopPart,
+    /// `quire_shell_v1` (declared at P2-Z, advertised by P2-Q2; shell connections only).
+    #[cfg(feature = "quire")]
+    pub quire_shell: quire::shell::QuireShellPart,
 }
 
 /// Which globals a connection sees: wraps `casement_core::policy::advertised` (I7). Copied into

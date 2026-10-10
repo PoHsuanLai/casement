@@ -28,6 +28,7 @@ pub mod states;
 
 pub mod alpha_modifier;
 pub mod background_effect;
+pub mod capture_source;
 pub mod commit_timing;
 pub mod compositor;
 pub mod content_type;
@@ -51,6 +52,8 @@ pub mod pointer_constraints;
 pub mod pointer_gestures;
 pub mod presentation;
 pub mod primary_selection;
+#[cfg(feature = "quire")]
+pub mod quire;
 pub mod quire_window;
 pub mod relative_pointer;
 pub mod seat;

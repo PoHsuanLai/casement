@@ -10,4 +10,7 @@ pub enum IpcError {
     /// The bus refused.
     #[error("bus: {0}")]
     Bus(String),
+    /// A `Connect` call named a role that is not `shell` or `agent`.
+    #[error("not a connection role: {0:?}")]
+    BadRole(String),
 }

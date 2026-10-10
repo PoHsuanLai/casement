@@ -19,3 +19,10 @@ tracing = { workspace = true }
 
 [lints]
 workspace = true
+
+[features]
+# The private `quire_*` servers (`quire_desktop_manager_v1`, `quire_shell_v1`; A8): a consumer that
+# wants the standard protocol set alone takes the crate with `default-features = false`. The
+# composition root needs them.
+default = ["quire"]
+quire = []
