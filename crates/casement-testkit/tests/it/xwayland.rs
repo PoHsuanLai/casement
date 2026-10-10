@@ -1,32 +1,220 @@
-//! X11 clients through xwayland-satellite (P1-X1), with the fixture's `FakeSpawner`. The real
-//! satellite runs in `dev/accept/xwayland-*.sh`.
+//! X11 clients through xwayland-satellite (P1-X1), with the fixture's `FakeSpawner`: the
+//! sockets, the on-demand start, the restart. The real satellite runs in
+//! `dev/accept/xwayland-*.sh`.
 
-use casement::xwayland::{Xwayland, XwaylandConfig};
+use casement::spawn::{SpawnError, SpawnSpec, Spawned, Spawner};
+use casement::xwayland::{
+    ServeStep, WaylandSocket, X11Dir, XwaylandConfig, XwaylandError, XwaylandState,
+};
 use casement_testkit::fakes::FakeSpawner;
+use rustix::net::{self, AddressFamily, SocketAddrUnix, SocketType};
+use std::os::unix::net::UnixStream;
+use tempfile::TempDir;
 
-/// Satellite is started with the listening sockets and the configured binary.
+const SATELLITE: &str = "/opt/satellite";
+
+fn wayland() -> WaylandSocket {
+    WaylandSocket("wayland-7".to_owned())
+}
+
+/// A state listening on a fresh directory, and the directory (kept alive by the caller).
+fn listening() -> (XwaylandState, XwaylandConfig, TempDir) {
+    let dir = TempDir::new().expect("tempdir");
+    let config = XwaylandConfig::satellite(SATELLITE);
+    let state = XwaylandState::bind(&config, &X11Dir(dir.path().to_owned())).expect("bound");
+    (state, config, dir)
+}
+
+/// The display of a listening state (`:N`).
+fn display_of(state: &XwaylandState) -> String {
+    let env = state.env();
+    assert_eq!(env.len(), 1, "one variable: {env:?}");
+    assert_eq!(env[0].name, "DISPLAY");
+    env[0].value.clone()
+}
+
+/// The path socket of `display` in `dir`.
+fn path_of(dir: &TempDir, display: &str) -> std::path::PathBuf {
+    dir.path()
+        .join(format!("X{}", display.trim_start_matches(':')))
+}
+
+/// A spawner that cannot start anything.
+#[derive(Debug)]
+struct Refusing;
+
+impl Spawner for Refusing {
+    fn spawn(&mut self, _spec: SpawnSpec) -> Result<Spawned, SpawnError> {
+        Err(SpawnError::Empty)
+    }
+}
+
+/// Binding exports `DISPLAY` at once and starts nothing; no client, no satellite.
 #[test]
-#[ignore = "P1-X1"]
-fn satellite_starts_with_its_listen_sockets() {
+fn sockets_are_held_and_display_is_exported_before_satellite_runs() {
+    let (mut state, config, dir) = listening();
+    let display = display_of(&state);
+    assert!(display.starts_with(':'));
+    assert!(path_of(&dir, &display).exists(), "the path socket is bound");
     let mut spawner = FakeSpawner::new();
-    let config = XwaylandConfig::satellite("/opt/satellite");
-    let _running = Xwayland::start(&config, &mut spawner);
-    todo!("P1-X1: one spawn, argv[0] is the configured path, the sockets are passed");
+    let step = state
+        .serve(&config, &mut spawner, &wayland())
+        .expect("served");
+    assert_eq!(step, ServeStep::Idle);
+    assert!(spawner.started().is_empty(), "no client has connected");
 }
 
-/// Off starts nothing and exports no `DISPLAY`.
+/// The first connection starts satellite once: argv is the configured path, the display and a
+/// `-listenfd` per socket, and it inherits those descriptors and the Wayland socket's name.
 #[test]
-#[ignore = "P1-X1"]
+fn satellite_starts_with_its_listen_sockets() {
+    let (mut state, config, dir) = listening();
+    let display = display_of(&state);
+    let _client = UnixStream::connect(path_of(&dir, &display)).expect("connected");
+    let mut spawner = FakeSpawner::new();
+    let step = state
+        .serve(&config, &mut spawner, &wayland())
+        .expect("served");
+    assert!(matches!(step, ServeStep::Started(_)));
+    let started = spawner.started();
+    assert_eq!(started.len(), 1);
+    let argv = &started[0].argv.0;
+    assert_eq!(argv[0], SATELLITE);
+    assert_eq!(argv[1], display);
+    let flags: Vec<&str> = argv[2..].iter().step_by(2).map(String::as_str).collect();
+    assert_eq!(
+        flags,
+        ["-listenfd", "-listenfd"],
+        "path and abstract socket"
+    );
+    assert!(
+        argv[3..]
+            .iter()
+            .step_by(2)
+            .all(|n| n.parse::<i32>().is_ok())
+    );
+    assert_eq!(started[0].passed_fds, 2);
+    assert!(
+        started[0]
+            .env
+            .iter()
+            .any(|v| v.name == "WAYLAND_DISPLAY" && v.value == "wayland-7")
+    );
+    assert_eq!(display_of(&state), display, "DISPLAY stays while it runs");
+}
+
+/// A client on the abstract socket (what libxcb tries first) starts it too, and a second
+/// connection while satellite runs starts nothing more.
+#[test]
+fn the_abstract_socket_starts_it_and_a_running_satellite_is_left_alone() {
+    let (mut state, config, dir) = listening();
+    let display = display_of(&state);
+    let path = path_of(&dir, &display);
+    let fd = net::socket(AddressFamily::UNIX, SocketType::STREAM, None).expect("socket");
+    let address = SocketAddrUnix::new_abstract_name(path.to_str().expect("utf-8").as_bytes())
+        .expect("address");
+    net::connect(&fd, &address).expect("connected to the abstract socket");
+    let mut spawner = FakeSpawner::new();
+    assert!(matches!(
+        state.serve(&config, &mut spawner, &wayland()),
+        Ok(ServeStep::Started(_))
+    ));
+    let _second = UnixStream::connect(&path).expect("connected");
+    assert_eq!(
+        state
+            .serve(&config, &mut spawner, &wayland())
+            .expect("served"),
+        ServeStep::Idle
+    );
+    assert_eq!(spawner.started().len(), 1);
+}
+
+/// Off starts nothing, binds nothing and exports no `DISPLAY`.
+#[test]
 fn off_starts_nothing() {
-    let spawner = FakeSpawner::new();
+    let dir = TempDir::new().expect("tempdir");
+    let config = XwaylandConfig::off();
+    let mut state = XwaylandState::bind(&config, &X11Dir(dir.path().to_owned())).expect("off");
+    let mut spawner = FakeSpawner::new();
+    let step = state
+        .serve(&config, &mut spawner, &wayland())
+        .expect("served");
+    assert_eq!(step, ServeStep::Idle);
     assert!(spawner.started().is_empty());
-    todo!("P1-X1: Xwayland::start with XwaylandConfig::off() makes no spawn");
+    assert!(state.env().is_empty());
+    assert_eq!(std::fs::read_dir(dir.path()).expect("dir").count(), 0);
 }
 
-/// An X11 window is a Wayland window whose app id is its `WM_CLASS`; its facts (override-redirect,
-/// scale on two outputs, activation) are the suite's rows.
+/// When satellite exits the sockets stay, and the next client starts it again.
 #[test]
-#[ignore = "P1-X1"]
-fn an_x11_window_takes_its_wm_class_as_its_app_id() {
-    todo!("P1-X1: the XWayland suite against casement-x11probe");
+fn a_client_after_satellite_exited_starts_it_again() {
+    let (mut state, config, dir) = listening();
+    let display = display_of(&state);
+    let path = path_of(&dir, &display);
+    let mut spawner = FakeSpawner::new();
+    let _first = UnixStream::connect(&path).expect("connected");
+    state
+        .serve(&config, &mut spawner, &wayland())
+        .expect("served");
+    state.satellite_exited();
+    assert_eq!(display_of(&state), display, "the display survives the exit");
+    assert!(path.exists());
+    // The first connection was never accepted (the fake started nothing): it still waits, so a
+    // restart is due at once.
+    assert!(matches!(
+        state.serve(&config, &mut spawner, &wayland()),
+        Ok(ServeStep::Started(_))
+    ));
+    assert_eq!(spawner.started().len(), 2);
+}
+
+/// A failed start reports why, keeps the sockets, and a later turn starts it.
+#[test]
+fn a_failed_start_keeps_the_sockets_and_is_retried() {
+    let (mut state, config, dir) = listening();
+    let display = display_of(&state);
+    let _client = UnixStream::connect(path_of(&dir, &display)).expect("connected");
+    let error = state
+        .serve(&config, &mut Refusing, &wayland())
+        .expect_err("the start fails");
+    assert!(matches!(error, XwaylandError::Spawn(_)), "{error}");
+    assert_eq!(display_of(&state), display);
+    let mut spawner = FakeSpawner::new();
+    assert!(matches!(
+        state.serve(&config, &mut spawner, &wayland()),
+        Ok(ServeStep::Started(_))
+    ));
+}
+
+/// Two instances in one directory take different displays, and dropping one frees its socket.
+#[test]
+fn displays_are_distinct_and_released_on_drop() {
+    let dir = TempDir::new().expect("tempdir");
+    let config = XwaylandConfig::satellite(SATELLITE);
+    let x11 = X11Dir(dir.path().to_owned());
+    let first = XwaylandState::bind(&config, &x11).expect("first");
+    let second = XwaylandState::bind(&config, &x11).expect("second");
+    let (a, b) = (display_of(&first), display_of(&second));
+    assert_ne!(a, b);
+    drop(first);
+    assert!(!path_of(&dir, &a).exists());
+    assert!(path_of(&dir, &b).exists());
+}
+
+/// The acceptance scripts of the suite exist (they run in the jail, never in the gate): one
+/// per row of the definition of done.
+#[test]
+fn the_acceptance_scripts_of_the_suite_exist() {
+    let accept = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../dev/accept");
+    for name in [
+        "app-id",
+        "input",
+        "override-redirect",
+        "clipboard",
+        "scale",
+        "activation",
+    ] {
+        let script = accept.join(format!("xwayland-{name}.sh"));
+        assert!(script.is_file(), "{} is missing", script.display());
+    }
 }

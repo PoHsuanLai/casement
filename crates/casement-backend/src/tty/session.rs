@@ -30,3 +30,35 @@ pub trait TtySession: std::fmt::Debug {
     /// The seat changes since the last call.
     fn notes(&mut self) -> Vec<SessionNote>;
 }
+
+/// Whether this session holds the seat. While it is [`SeatState::Lent`] no device may be used,
+/// no frame is drawn and hotplug waits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[non_exhaustive]
+pub enum SeatState {
+    /// This session is on the screen.
+    #[default]
+    Held,
+    /// Another VT, or a suspend, has the seat.
+    Lent,
+}
+
+impl SeatState {
+    /// The state after `note`, from `self`.
+    ///
+    /// ```
+    /// use casement_backend::tty::{SeatState, SessionNote};
+    ///
+    /// assert_eq!(SeatState::Held.after(SessionNote::Paused), SeatState::Lent);
+    /// assert_eq!(SeatState::Lent.after(SessionNote::Activated), SeatState::Held);
+    /// assert_eq!(SeatState::Lent.after(SessionNote::VtSwitch(2)), SeatState::Lent);
+    /// ```
+    #[must_use]
+    pub fn after(self, note: SessionNote) -> SeatState {
+        match note {
+            SessionNote::Paused => SeatState::Lent,
+            SessionNote::Activated => SeatState::Held,
+            _ => self,
+        }
+    }
+}

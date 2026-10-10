@@ -6,6 +6,7 @@
 
 use crate::space_store::{EphemeralSpaceStore, FileSpaceStore, SpaceStore, StateHome};
 use crate::spawn::{ProcessSpawner, Spawner};
+use casement_backend::tty::TtySeams;
 use casement_ipc::shell_calls::{ShellCalls, ZbusShellCalls};
 
 /// The injected seams.
@@ -18,6 +19,8 @@ pub struct Seams {
     pub shell_calls: Box<dyn ShellCalls>,
     /// How a program is started.
     pub spawner: Box<dyn Spawner>,
+    /// The tty backend's seams, when they are injected (a test); none builds the real ones.
+    pub tty: Option<TtySeams>,
 }
 
 impl Seams {
@@ -31,6 +34,16 @@ impl Seams {
             space_store,
             shell_calls,
             spawner,
+            tty: None,
+        }
+    }
+
+    /// The same with the tty backend's seams injected (the FakeKms suite).
+    #[must_use]
+    pub fn with_tty(self, tty: TtySeams) -> Seams {
+        Seams {
+            tty: Some(tty),
+            ..self
         }
     }
 

@@ -1,6 +1,6 @@
 //! Which GPU renders and which scans each output out.
 
-use super::{ByPathId, DrmNodeId, GpuChoice, GpuFacts};
+use super::{BootVga, ByPathId, DrmNodeId, GpuChoice, GpuFacts};
 use crate::ids::OutputName;
 use std::collections::BTreeMap;
 
@@ -38,6 +38,31 @@ pub enum PlanRefusal {
 /// The plan for `facts` under `choice`. The GPU driving the outputs wins; among several, the
 /// firmware's display GPU; the setting overrides both.
 pub fn plan_for(facts: &[GpuFacts], choice: &GpuChoice) -> Result<RenderPlan, PlanRefusal> {
-    let _ = (facts, choice);
-    todo!("P1-D4: plan_for")
+    let render = match choice {
+        GpuChoice::Auto => automatic(facts).ok_or(PlanRefusal::NoGpu)?,
+        GpuChoice::ByPath(id) => facts
+            .iter()
+            .find(|gpu| &gpu.by_path == id)
+            .map(|gpu| gpu.node)
+            .ok_or_else(|| PlanRefusal::UnknownGpu(id.clone()))?,
+    };
+    let scanout = facts
+        .iter()
+        .flat_map(|gpu| gpu.drives.iter().map(|name| (name.clone(), gpu.node)))
+        .collect();
+    Ok(RenderPlan::new(render, scanout))
+}
+
+/// The GPU that renders when the setting does not say: of the GPUs driving a monitor the
+/// firmware's display GPU, else the lowest node; with none driving one, the same rule over all.
+fn automatic(facts: &[GpuFacts]) -> Option<DrmNodeId> {
+    let driving: Vec<&GpuFacts> = facts.iter().filter(|gpu| !gpu.drives.is_empty()).collect();
+    let pool: Vec<&GpuFacts> = if driving.is_empty() {
+        facts.iter().collect()
+    } else {
+        driving
+    };
+    pool.into_iter()
+        .min_by_key(|gpu| (gpu.boot_vga != BootVga::Primary, gpu.node))
+        .map(|gpu| gpu.node)
 }

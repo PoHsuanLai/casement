@@ -2,7 +2,8 @@
 
 use super::ConfigError;
 use super::sections::{
-    BindingsSection, KeyboardSection, OutputsSection, SpacesSection, WindowsSection,
+    BindingsSection, KeyboardSection, OutputsSection, PointerSection, SpacesSection,
+    TouchpadSection, WindowsSection,
 };
 use crate::cli::ConfigHome;
 use ds_settings::{AppName, ConfigRoot, FileName, Format, SettingsDoc, Store};
@@ -23,6 +24,10 @@ pub struct CasementDoc {
     pub bindings: BindingsSection,
     /// `outputs.*`.
     pub outputs: OutputsSection,
+    /// `pointer.*` (mice and trackballs).
+    pub pointer: PointerSection,
+    /// `touchpad.*`.
+    pub touchpad: TouchpadSection,
 }
 
 impl SettingsDoc for CasementDoc {

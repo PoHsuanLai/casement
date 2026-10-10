@@ -11,10 +11,12 @@ use casement_core::input::{
 };
 use casement_core::output::ScalePolicy;
 use casement_core::settings::{
-    CasementSettings, Enabled, FirstClick, MinimiseEffect, RepeatRate, TitleDoubleClick,
+    AccelProfile, CasementSettings, Enabled, FirstClick, MinimiseEffect, RepeatRate,
+    TitleDoubleClick,
 };
 use casement_protocols::vocab::PlaceTarget;
 use ds_core::geometry::scale::Scale;
+use ds_core::vocab::Fraction;
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::Command;
@@ -113,6 +115,33 @@ fixed_scale = 150
     assert_eq!(settings.keyboard.repeat_delay, Duration::from_millis(250));
     assert_eq!(settings.keyboard.repeat_rate, RepeatRate(30));
     assert_eq!(settings.outputs.first_sight, ScalePolicy::Fixed(Scale(180)));
+}
+
+#[test]
+fn the_pointer_and_touchpad_keys_reach_the_model() {
+    let settings = settings_of(
+        r#"
+[pointer]
+accel = "flat"
+natural_scroll = "on"
+scroll_factor = 2000
+
+[touchpad]
+tap = "off"
+disable_while_typing = "off"
+"#,
+    );
+    let defaults = CasementSettings::defaults();
+    assert_eq!(settings.pointer.mouse.accel, AccelProfile::Flat);
+    assert_eq!(settings.pointer.mouse.natural_scroll, Enabled::On);
+    assert_eq!(settings.pointer.mouse.scroll_factor, Fraction(2000));
+    assert_eq!(settings.pointer.mouse.tap, defaults.pointer.mouse.tap);
+    assert_eq!(settings.pointer.touchpad.tap, Enabled::Off);
+    assert_eq!(settings.pointer.touchpad.disable_while_typing, Enabled::Off);
+    assert_eq!(
+        settings.pointer.touchpad.natural_scroll,
+        defaults.pointer.touchpad.natural_scroll
+    );
 }
 
 #[test]

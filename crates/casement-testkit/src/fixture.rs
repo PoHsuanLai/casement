@@ -52,6 +52,9 @@ pub struct Fixture {
     shell_calls: FakeShellCalls,
     /// The programs the compositor started (a clone of the one it holds).
     spawner: FakeSpawner,
+    /// The session the headless backend never opens a device through: the fixture holds it so a
+    /// suite can drive a seat change against the same clock (a tty backend takes its own).
+    session: FakeSession,
 }
 
 impl std::fmt::Debug for Fixture {
@@ -171,6 +174,7 @@ impl Fixture {
             space_store,
             shell_calls,
             spawner,
+            session: FakeSession::default(),
         };
         fixture.pump();
         Ok(fixture)
@@ -398,9 +402,9 @@ impl Fixture {
         todo!("P3-Z: Fixture::palmrest")
     }
 
-    /// The fake session (bodies at P1).
+    /// The fake session the fixture holds (the headless backend opens no device through it).
     pub fn session(&mut self) -> &mut FakeSession {
-        todo!("P1-D1: Fixture::session")
+        &mut self.session
     }
 
     /// The last frames' element tree, with what a leak would leave behind: the outputs the
