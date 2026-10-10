@@ -23,7 +23,12 @@
 //! calls.call(&toggle).expect("sent");
 //! ```
 
+mod worker;
+
 use casement_core::input::DbusCall;
+use worker::{MOST_ARGS, Worker};
+use zbus::names::{BusName, InterfaceName, MemberName};
+use zbus::zvariant::ObjectPath;
 
 /// Why a call could not be made.
 #[derive(Debug, thiserror::Error)]
@@ -37,6 +42,17 @@ pub enum ShellCallError {
         /// The text as given.
         text: String,
     },
+    /// The call carries more string arguments than a binding may pass.
+    #[error("a binding's call passes at most {most} arguments, this one has {given}")]
+    TooManyArgs {
+        /// The most allowed.
+        most: usize,
+        /// How many the call has.
+        given: usize,
+    },
+    /// The thread that makes the calls could not be started or has stopped.
+    #[error("the shell-call thread: {0}")]
+    Thread(std::io::Error),
     /// The session bus refused.
     #[error("bus: {0}")]
     Bus(#[from] zbus::Error),
@@ -64,7 +80,7 @@ pub trait ShellCalls: std::fmt::Debug {
 /// The real implementation over zbus on the session bus, connected on first use.
 #[derive(Debug, Default)]
 pub struct ZbusShellCalls {
-    failed: Vec<FailedCall>,
+    worker: Option<Worker>,
 }
 
 impl ZbusShellCalls {
@@ -74,13 +90,88 @@ impl ZbusShellCalls {
     }
 }
 
+/// Checks the names in `call` the way the bus will, before anything is queued.
+fn checked(call: &DbusCall) -> Result<(), ShellCallError> {
+    let bad = |what: &'static str, text: &str| ShellCallError::BadName {
+        what,
+        text: text.to_owned(),
+    };
+    BusName::try_from(call.service.as_str()).map_err(|_| bad("service", &call.service))?;
+    ObjectPath::try_from(call.path.as_str()).map_err(|_| bad("path", &call.path))?;
+    InterfaceName::try_from(call.interface.as_str())
+        .map_err(|_| bad("interface", &call.interface))?;
+    MemberName::try_from(call.method.as_str()).map_err(|_| bad("method", &call.method))?;
+    match call.args.len() {
+        given if given > MOST_ARGS => Err(ShellCallError::TooManyArgs {
+            most: MOST_ARGS,
+            given,
+        }),
+        _ => Ok(()),
+    }
+}
+
 impl ShellCalls for ZbusShellCalls {
     fn call(&mut self, call: &DbusCall) -> Result<(), ShellCallError> {
-        let _ = call;
-        todo!("P1-I1: ZbusShellCalls::call")
+        checked(call)?;
+        if self.worker.is_none() {
+            self.worker = Some(Worker::start().map_err(ShellCallError::Thread)?);
+        }
+        let Some(worker) = &self.worker else {
+            return Ok(());
+        };
+        worker.send(call.clone()).map_err(|_| {
+            self.worker = None;
+            ShellCallError::Thread(std::io::Error::other("the thread has stopped"))
+        })
     }
 
     fn failures(&mut self) -> Vec<FailedCall> {
-        std::mem::take(&mut self.failed)
+        self.worker
+            .as_ref()
+            .map(Worker::failures)
+            .unwrap_or_default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn call(service: &str, path: &str, interface: &str, method: &str) -> DbusCall {
+        DbusCall {
+            service: service.to_owned(),
+            path: path.to_owned(),
+            interface: interface.to_owned(),
+            method: method.to_owned(),
+            args: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_name_that_is_not_d_bus_is_refused_before_anything_is_queued() {
+        let mut calls = ZbusShellCalls::lazy();
+        for (case, bad, what) in [
+            ("service", call("nodots", "/a", "org.a.B", "M"), "service"),
+            ("path", call("org.a.B", "a", "org.a.B", "M"), "path"),
+            ("interface", call("org.a.B", "/a", "x", "M"), "interface"),
+            ("method", call("org.a.B", "/a", "org.a.B", "1 2"), "method"),
+        ] {
+            match calls.call(&bad) {
+                Err(ShellCallError::BadName { what: got, .. }) => assert_eq!(got, what, "{case}"),
+                other => panic!("{case}: {other:?}"),
+            }
+        }
+        assert!(calls.worker.is_none(), "nothing started a thread");
+    }
+
+    #[test]
+    fn too_many_arguments_are_refused() {
+        let mut calls = ZbusShellCalls::lazy();
+        let mut many = call("org.a.B", "/a", "org.a.B", "M");
+        many.args = vec!["x".to_owned(); MOST_ARGS + 1];
+        assert!(matches!(
+            calls.call(&many),
+            Err(ShellCallError::TooManyArgs { .. })
+        ));
     }
 }

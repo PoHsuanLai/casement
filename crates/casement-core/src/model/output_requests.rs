@@ -1,24 +1,40 @@
 //! Output requests from clients: a changed configuration (output management, output power)
-//! and gamma control. P1-M1 fills both.
+//! and gamma control.
 
 use super::Model;
 use super::moved::Moved;
+use crate::effect::{CoreNote, Effect};
 use crate::ids::OutputKey;
-use crate::output::{GammaRamp, OutputChangeSet};
+use crate::output::{GammaRamp, OutputChangeSet, OutputRefusal, resolve_change};
 
 impl Model {
     /// A client asked to change `output`: checked against its facts with
     /// `output::resolve_change`, then `Effect::ApplyOutput` with the new configuration (and an
-    /// arrangement redraw), or a note when it was refused.
+    /// arrangement redraw), or a note when it was refused. A request that changes nothing
+    /// moves nothing.
     pub(super) fn request_output(self, output: OutputKey, change: OutputChangeSet) -> Moved {
-        let _ = (self, output, change);
-        todo!("P1-M1: Model::request_output")
+        let Some(plugged) = self.outputs.0.get(&output).cloned() else {
+            let refusal = OutputRefusal::UnknownOutput(output);
+            return Moved::of(self).with(Effect::Note(CoreNote::RefusedOutput(refusal)));
+        };
+        match resolve_change(&plugged.facts, &plugged.config, &change) {
+            Err(refusal) => Moved::of(self).with(Effect::Note(CoreNote::RefusedOutput(refusal))),
+            Ok(config) if config == plugged.config => Moved::of(self),
+            Ok(config) => Moved::of(self)
+                .with(Effect::ApplyOutput {
+                    output: output.clone(),
+                    config,
+                })
+                .then(|model| model.configure_output(&output, config)),
+        }
     }
 
     /// A client set `output`'s gamma: `Effect::SetGamma` for a plugged output, nothing for
     /// one that is gone.
     pub(super) fn set_gamma(self, output: OutputKey, ramp: GammaRamp) -> Moved {
-        let _ = (self, output, ramp);
-        todo!("P1-M1: Model::set_gamma")
+        match self.outputs.0.contains_key(&output) {
+            true => Moved::of(self).with(Effect::SetGamma(output, ramp)),
+            false => Moved::of(self),
+        }
     }
 }

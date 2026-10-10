@@ -61,6 +61,10 @@ pub(super) fn is_documented(interface: &str, code: u32) -> Option<bool> {
         ("xdg_wm_dialog_v1", wayland_protocols::xdg::dialog::v1::client::xdg_wm_dialog_v1::Error),
         ("xdg_toplevel_icon_v1", wayland_protocols::xdg::toplevel_icon::v1::client::xdg_toplevel_icon_v1::Error),
         ("zxdg_toplevel_decoration_v1", wayland_protocols::xdg::decoration::zv1::client::zxdg_toplevel_decoration_v1::Error),
+        // get_toplevel_decoration on a toplevel that has one is refused on the manager with the
+        // decoration's own codes (already_constructed, orphaned), as smithay and wlroots post it;
+        // the manager has no error enum of its own.
+        ("zxdg_decoration_manager_v1", wayland_protocols::xdg::decoration::zv1::client::zxdg_toplevel_decoration_v1::Error),
         ("zxdg_exporter_v2", wayland_protocols::xdg::foreign::zv2::client::zxdg_exporter_v2::Error),
         ("zxdg_imported_v2", wayland_protocols::xdg::foreign::zv2::client::zxdg_imported_v2::Error),
         ("zwp_keyboard_shortcuts_inhibit_manager_v1", wayland_protocols::wp::keyboard_shortcuts_inhibit::zv1::client::zwp_keyboard_shortcuts_inhibit_manager_v1::Error),
@@ -70,6 +74,10 @@ pub(super) fn is_documented(interface: &str, code: u32) -> Option<bool> {
         ("zwlr_layer_surface_v1", wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::Error),
         ("zwlr_data_control_device_v1", wayland_protocols_wlr::data_control::v1::client::zwlr_data_control_device_v1::Error),
         ("zwlr_data_control_source_v1", wayland_protocols_wlr::data_control::v1::client::zwlr_data_control_source_v1::Error),
+        ("zwlr_output_configuration_v1", wayland_protocols_wlr::output_management::v1::client::zwlr_output_configuration_v1::Error),
+        ("zwlr_output_configuration_head_v1", wayland_protocols_wlr::output_management::v1::client::zwlr_output_configuration_head_v1::Error),
+        ("zwlr_output_power_v1", wayland_protocols_wlr::output_power_management::v1::client::zwlr_output_power_v1::Error),
+        ("zwlr_gamma_control_v1", wayland_protocols_wlr::gamma_control::v1::client::zwlr_gamma_control_v1::Error),
         ("zwp_virtual_keyboard_v1", wayland_protocols_misc::zwp_virtual_keyboard_v1::client::zwp_virtual_keyboard_v1::Error),
         ("zwp_virtual_keyboard_manager_v1", wayland_protocols_misc::zwp_virtual_keyboard_v1::client::zwp_virtual_keyboard_manager_v1::Error),
         ("quire_window_manager_v1", casement_protocols::client::quire_window_v1::quire_window_manager_v1::Error),

@@ -3,6 +3,7 @@
 //! takes. What every test and every jailed run uses (11 §2).
 
 mod cost;
+mod gamma;
 mod input;
 mod output_set;
 mod renderer;
@@ -10,6 +11,7 @@ mod vblank;
 mod virtual_output;
 
 pub use cost::RenderCostModel;
+pub use gamma::GAMMA_SIZE;
 pub use input::HeadlessInput;
 pub use output_set::{OutputSet, VirtualOutput};
 pub use renderer::{HeadlessRenderer, SoftRenderer};

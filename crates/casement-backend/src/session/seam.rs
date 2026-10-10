@@ -8,8 +8,6 @@ pub enum SessionSeam {
     None,
     /// A fake over fixtures (tests only): any open outside its fixtures is `DeniedOpen`.
     Fake(Box<dyn Session<Error = SessionFault>>),
-    /// libseat (P1-Z fills it from `tty/session_real.rs`).
-    Libseat(LibseatSlot),
 }
 
 impl std::fmt::Debug for SessionSeam {
@@ -17,14 +15,9 @@ impl std::fmt::Debug for SessionSeam {
         match self {
             SessionSeam::None => f.write_str("SessionSeam::None"),
             SessionSeam::Fake(session) => write!(f, "SessionSeam::Fake(seat {})", session.seat()),
-            SessionSeam::Libseat(slot) => write!(f, "SessionSeam::Libseat({slot:?})"),
         }
     }
 }
-
-/// The libseat session's place (P1-Z).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct LibseatSlot;
 
 /// Why a session refused.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -36,13 +29,16 @@ pub enum SessionFault {
     /// The session is not active (another VT has it).
     #[error("inactive")]
     Inactive,
+    /// The seat could not be opened or was lost (libseat, udev); the text is the adapter's.
+    #[error("seat unavailable: {0}")]
+    Unavailable(String),
 }
 
 impl AsErrno for SessionFault {
     fn as_errno(&self) -> Option<i32> {
         match self {
             SessionFault::DeniedOpen(_) => Some(rustix::io::Errno::ACCESS.raw_os_error()),
-            SessionFault::Inactive => None,
+            SessionFault::Inactive | SessionFault::Unavailable(_) => None,
         }
     }
 }
