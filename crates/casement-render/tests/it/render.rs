@@ -130,11 +130,13 @@ fn change() -> impl Strategy<Value = Change> {
     ]
 }
 
-/// Ids that live across the frames of one oracle run.
+/// Ids, and the texture book that remembers the cursor raster and the cover, living across the
+/// frames of one oracle run (as `State::textures` does in the compositor).
 struct Ids {
     solid: Id,
     page: Id,
     blur: Id,
+    book: TextureBook,
 }
 
 /// One frame of the mixed oracle: the cursor and the lock cover from `output_elements`, then
@@ -171,7 +173,7 @@ fn mixed(
         &frame,
         &view,
         &LayerDraw::default(),
-        &TextureBook::empty(),
+        &ids.book,
         &chrome,
         renderer,
     );
@@ -208,6 +210,7 @@ fn mixed_incremental_matches_full(changes: &[Change]) -> bool {
         solid: Id::new(),
         page: Id::new(),
         blur: Id::new(),
+        book: TextureBook::empty(),
     };
     let mut renderer = pixman();
     let mut target = renderer.target(SIZE);
@@ -246,6 +249,7 @@ fn an_unchanged_frame_damages_nothing() {
         solid: Id::new(),
         page: Id::new(),
         blur: Id::new(),
+        book: TextureBook::empty(),
     };
     let still = Step {
         solid: (10, 10, 50, 50),
