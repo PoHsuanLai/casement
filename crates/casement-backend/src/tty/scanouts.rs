@@ -1,0 +1,153 @@
+//! The scanout of every lit output (P1-D3): a surface, its pending flip, its vblank clock and
+//! the render-cost history the frame scheduler reads.
+
+use super::flip::FlipTracker;
+use super::surface::{Presented, QueueOutcome, QueuedFrame, ScanoutSurface};
+use crate::backend::BackendError;
+use crate::headless::FrameSource;
+use casement_core::OutputName;
+use casement_core::frame::{Deadline, FrameOutcome, RenderHistory, next_deadline, predict};
+use casement_core::time::{Mono, VblankClock, VblankSeq};
+use std::collections::BTreeMap;
+use std::time::Duration;
+
+/// How many frames an output has shown and how many were late.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub struct FrameTally {
+    /// Frames that reached the glass.
+    pub presented: u64,
+    /// Of those, frames that missed the vblank they were made for.
+    pub missed: u64,
+}
+
+/// One output's scanout.
+#[derive(Debug)]
+pub struct Scanout {
+    surface: Box<dyn ScanoutSurface>,
+    clock: VblankClock,
+    flip: FlipTracker,
+    history: RenderHistory,
+    tally: FrameTally,
+}
+
+impl Scanout {
+    /// A scanout over `surface`, whose vblanks follow `clock`.
+    pub fn new(surface: Box<dyn ScanoutSurface>, clock: VblankClock) -> Scanout {
+        Scanout {
+            surface,
+            clock,
+            flip: FlipTracker::new(),
+            history: RenderHistory::empty(),
+            tally: FrameTally::default(),
+        }
+    }
+
+    /// Takes in what reached the glass since the last call; the outcomes, oldest first.
+    pub fn settle(&mut self) -> Vec<(Presented, FrameOutcome)> {
+        std::iter::from_fn(|| self.surface.presented())
+            .map(|presented| {
+                let (flip, outcome) = self.flip.presented(presented);
+                self.flip = flip;
+                self.tally.presented = self.tally.presented.saturating_add(1);
+                if matches!(outcome, FrameOutcome::Missed { .. }) {
+                    self.tally.missed = self.tally.missed.saturating_add(1);
+                }
+                (presented, outcome)
+            })
+            .collect()
+    }
+
+    /// Draws `source` and queues it; the vblank it is for, or none while a flip is pending.
+    pub fn present(&mut self, source: &dyn FrameSource) -> Result<Option<VblankSeq>, BackendError> {
+        let _ = self.settle();
+        if self.flip.wanted.is_some() {
+            return Ok(None);
+        }
+        match self.surface.queue(QueuedFrame::Draw(source)) {
+            QueueOutcome::Queued(wanted) => {
+                self.flip = self.flip.queued(wanted);
+                Ok(Some(wanted))
+            }
+            QueueOutcome::Busy => Ok(None),
+            QueueOutcome::Failed(error) => Err(error.into()),
+        }
+    }
+
+    /// Records what the frame just drawn cost, for the next prediction.
+    pub fn record_cost(&mut self, cost: Duration) {
+        self.history = std::mem::take(&mut self.history).with(cost);
+    }
+
+    /// When to start the next frame, given `now` and `slack`.
+    pub fn deadline(&self, now: Mono, slack: Duration) -> Deadline {
+        next_deadline(&self.clock, predict(&self.history), now, slack)
+    }
+
+    /// The frames shown and missed so far.
+    pub fn tally(&self) -> FrameTally {
+        self.tally
+    }
+}
+
+/// Whether frames flow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum Flow {
+    /// The seat is ours: frames are queued.
+    #[default]
+    Running,
+    /// Another session holds the seat: nothing is queued.
+    Held,
+}
+
+/// Every output's scanout.
+#[derive(Debug, Default)]
+pub struct ScanoutSet {
+    outputs: BTreeMap<OutputName, Scanout>,
+    flow: Flow,
+}
+
+impl ScanoutSet {
+    /// No output lit.
+    pub fn empty() -> ScanoutSet {
+        ScanoutSet::default()
+    }
+
+    /// `name` is lit and scans out through `scanout`.
+    pub fn attach(&mut self, name: OutputName, scanout: Scanout) {
+        self.outputs.insert(name, scanout);
+    }
+
+    /// `name` went dark or away.
+    pub fn detach(&mut self, name: &OutputName) -> Option<Scanout> {
+        self.outputs.remove(name)
+    }
+
+    /// Stops or resumes frames (a VT switch, a suspend).
+    pub fn flow(&mut self, flow: Flow) {
+        self.flow = flow;
+    }
+
+    /// The scanout of `name`.
+    pub fn get(&self, name: &OutputName) -> Option<&Scanout> {
+        self.outputs.get(name)
+    }
+
+    /// The scanout of `name`, mutably.
+    pub fn get_mut(&mut self, name: &OutputName) -> Option<&mut Scanout> {
+        self.outputs.get_mut(name)
+    }
+
+    /// Queues a frame of `source` for `name`; none while held, unlit or a flip is pending.
+    pub fn present(
+        &mut self,
+        name: &OutputName,
+        source: &dyn FrameSource,
+    ) -> Result<Option<VblankSeq>, BackendError> {
+        match (self.flow, self.outputs.get_mut(name)) {
+            (Flow::Running, Some(scanout)) => scanout.present(source),
+            _ => Ok(None),
+        }
+    }
+}

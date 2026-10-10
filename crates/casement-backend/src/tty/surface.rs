@@ -2,7 +2,7 @@
 //! it reached the glass.
 
 use super::kms::KmsError;
-use crate::headless::FramePixels;
+use crate::headless::{FramePixels, FrameSource};
 use casement_core::WindowId;
 use casement_core::time::{Mono, VblankSeq};
 
@@ -22,21 +22,32 @@ impl DirectCandidate {
 }
 
 /// What to put on the glass.
-#[derive(Debug)]
 #[non_exhaustive]
-pub enum QueuedFrame {
+pub enum QueuedFrame<'a> {
     /// A frame already rendered.
     Rendered(FramePixels),
+    /// A scene the surface draws itself, with the renderer its device uses.
+    Draw(&'a dyn FrameSource),
     /// A client buffer for direct scanout (the surface falls back to compositing it).
     Direct(DirectCandidate),
+}
+
+impl std::fmt::Debug for QueuedFrame<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            QueuedFrame::Rendered(pixels) => f.debug_tuple("Rendered").field(pixels).finish(),
+            QueuedFrame::Draw(_) => f.write_str("Draw(..)"),
+            QueuedFrame::Direct(candidate) => f.debug_tuple("Direct").field(candidate).finish(),
+        }
+    }
 }
 
 /// What queueing a frame did.
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum QueueOutcome {
-    /// Queued; `presented` will report it.
-    Queued,
+    /// Queued for this vblank; `presented` will report it.
+    Queued(VblankSeq),
     /// A flip is still pending; try at the next vblank.
     Busy,
     /// The device refused.
@@ -64,7 +75,7 @@ impl Presented {
 /// `casement_testkit::fakes::FakeScanout`.
 pub trait ScanoutSurface: std::fmt::Debug {
     /// Queues `frame` for the next vblank.
-    fn queue(&mut self, frame: QueuedFrame) -> QueueOutcome;
+    fn queue(&mut self, frame: QueuedFrame<'_>) -> QueueOutcome;
 
     /// The oldest frame that reached the glass since the last call.
     fn presented(&mut self) -> Option<Presented>;

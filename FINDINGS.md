@@ -817,3 +817,30 @@ the `--xwayland` flags, `VendorFact::from_pci_vendor`, `GammaTable::new`, `Outpu
   `casement/src/state.rs` and `exec.rs` (module and import names `gamma`, `workspace`, `spawn`), the doc tests (all
   `no_run`), `casement-testkit/src/fixture.rs`, `fakes/session.rs` (`TtySession` over smithay's `Session`), and
   `casement-render/src/pass/capture.rs` (the `ExportMem` bound with `R::Framebuffer<'_>`).
+
+## p1-d3: frame scheduler, presentation feedback, scanout surface, cursor plane (2026-10-11)
+
+Nothing here compiled (no builds this lane).
+
+- **Scheduler** (`casement-core/src/frame/`): `predict` is the worst of the last 8 render costs (8 ms when empty): a
+  missed vblank costs more than rendering a little early. `next_deadline` takes the first vblank after `now` whose
+  `vblank - (predicted + slack) >= now`, looking at most 600 vblanks ahead. `judge` counts `presented - wanted`
+  vblanks (early is on time).
+- **Cursor plane policy: hardware when the output has a cursor plane and the logical cursor size scaled to physical
+  pixels (rounded up) fits the plane's largest size; composited otherwise.** No downscaling to fit. The real
+  compositor (smithay `DrmCompositor`) promotes or composites the cursor element itself; `cursor_plane_for` is what
+  casement uses to pick the cursor image size and to report the choice. A hardware run must check: plane size caps
+  (`DRM_CAP_CURSOR_WIDTH/HEIGHT`) are read into `CursorPlaneCaps` by P1-D2's `kms_real`, the pointer stays one frame
+  fresh when it moves with no other damage, and VRR panels do not stutter with the cursor on a plane.
+- **Seam changes** (`tty/surface.rs`): `QueuedFrame<'a>` gained `Draw(&dyn FrameSource)` (the surface draws with the
+  renderer its device uses; manual `Debug`), and `QueueOutcome::Queued` now carries the `VblankSeq` the frame is for
+  (only the surface knows the next vblank, and `present` has no clock). New `tty/scanouts.rs`: `Scanout` (surface,
+  `FlipTracker`, `VblankClock`, `RenderHistory`, `FrameTally`) and `ScanoutSet` (per output, `Flow::{Running,Held}`).
+  `TtyBackend` gained a `scanouts: ScanoutSet` field: P1-D1's `start` must build it with `ScanoutSet::empty()`, P1-D2
+  attaches a `Scanout` per lit output and calls `flow(Flow::Held)` on `SessionNote::Paused`, `Running` on activate.
+- **`RealScanout`** now owns a `DrmCompositor<GbmAllocator, GbmFramebufferExporter, (), DrmDeviceFd>` and a
+  `GlesRenderer`; the DRM event source (loop side, D1/D2) calls `flip_done(seq, at)` on each vblank event. Its
+  constructor signature is a guess against the pinned smithay; the render node should come from the GPU manager (D4) so
+  multi-GPU can swap the renderer. Hardware check: `Draw` falls back to compositing when direct scanout is refused.
+- **Test drive**: `tests/it/tty/scanout.rs` runs 36,000 virtual frames at 60 Hz (cost 1 ms: zero misses) and a
+  scripted 25 ms frame every 40 (exactly one miss per slow frame; two in a row miss once).
