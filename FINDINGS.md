@@ -839,3 +839,41 @@ the `--xwayland` flags, `VendorFact::from_pci_vendor`, `GammaTable::new`, `Outpu
   `manager.rs`/`session.rs` (interface-macro signatures: sync methods returning `()` and tuples with `bool`, properties
   with `name = "VTNr"`), `inhibit.rs` (`Errno::AGAIN` comparison, `AsyncFd::new` on an `OwnedFd`), the test helper
   `next_signal` (`Pin<Box<MessageStream>>` as a `Stream`). Real hardware: nothing; no real logind is touched.
+## p1-d2: KMS, hotplug, modes (2026-10-11)
+
+Nothing here compiled (no builds this lane). `todo!()` left for D2: none.
+
+- **Departure: no `DrmCompositor` in `kms_real.rs`.** A `DrmCompositor` needs a renderer, an allocator and a framebuffer
+  exporter, which the device-level `Kms` seam has not got and the scanout lane (P1-D3, `surface_real.rs`) owns.
+  `RealKms` holds smithay's `DrmDevice` (opened with `disable_connectors = false`, so the console handover does not
+  flicker) and one `DrmSurface` per lit connector; D3 takes it with `RealKms::take_surface` and builds the compositor,
+  and takes the vblank source with `take_notifier`. Both are reachable only on a `RealKms`, not through `Box<dyn Kms>`:
+  D3 either adds an `as_any`-style accessor to `Kms` or builds the surface where it opens the device.
+- **`Kms::test` cannot be a kernel `TEST_ONLY`** before a framebuffer exists. Both the fake and the real device judge a
+  commit by the pure `tty::judge` (attached connector, free CRTC the connector can use, a listed mode, variable refresh
+  only where monitor and CRTC both support it, a mode or CRTC change is a modeset). The kernel's own test happens when D3
+  queues the first frame. `KmsRefusal::ModesetForbidden` was added for a forbidden modeset.
+- **DPMS:** `Off` clears the surface; `On` only records the intent and the next queued frame lights the output, so D3
+  must queue a frame after `On` (and `output_power` in M1 should ask for one).
+- **`RealKmsOpener::new(Box<dyn FdSource>)`** replaces `Default`: the opener needs descriptors from the session, so D1's
+  `real_seams` must implement `FdSource` over its `RealSession` (a shared handle) and build the opener with it.
+- **Announcement.** `TtyDevices` holds an `Announced` state: until `announce()` runs, `added`, `changed` and `removed`
+  return no events (the announcement reports every connector known at that moment, once). D1's `start` may therefore call
+  `added` and drop the events; a device added later reports its plugs from `added`. If D1's `dispatch` tests expect
+  events before the announcement they must call `announce()` first.
+- **EDID.** `parse_edid` reads the base block only: make is the PNP id, model the 0xFC name (else the product code in hex),
+  serial the 0xFF text (else the nonzero numeric serial). CTA extension blocks are not read. An unreadable EDID is an
+  anonymous display (`Unknown`/`Unknown`, keyed `connector:<name>`).
+- **Variable refresh policy** is `VrrPolicy {Off, WhenCapable}` and `vrr_state`: on only when asked and when both the
+  connector (`vrr_capable`) and the CRTC (`VRR_ENABLED` exists) are capable. Where `gpu`/settings hold the user's choice
+  is open: nothing reads a setting yet, `plan_outputs` takes the policy as an argument.
+- **Fixtures.** `fixtures/kms/*.json` are hand-written in the recorded shape (no recording was possible in the jail);
+  replace them with `dev/hw/smoke.sh` output (raw sysfs and `drm_info`, converted by a lane) when the owner has run it.
+- **Real-hardware checks** for the owner: `RealKms::open` takes master on a free VT; `resources()` reads names such as
+  `eDP-1`, modes with plausible millihertz (`clock * 1e6 / (htotal * vtotal)`), the EDID blob, `vrr_capable`;
+  a commit creates a surface and lights nothing until D3 queues a frame; `set_gamma` resamples a table to the CRTC's
+  gamma size; unplugging a monitor yields one `Unplugged`.
+- **Unverified (no builds).** Most likely not to compile: `kms_real.rs` (the drm-rs and smithay paths:
+  `smithay::reexports::drm::control::{ResourceHandle, ModeTypeFlags, PlaneType}`, `DeviceFd::from(OwnedFd)`,
+  `handles.filter_crtcs`, `plane.formats` field types, `u32::from(handle)`), `hotplug.rs` (`Option::is_none_or`, needs
+  Rust 1.82), `fakes/kms/fake.rs` (guard borrows in `retrain`), `tests/it/tty/kms.rs` (`Option::is_none_or`).

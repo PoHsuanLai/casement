@@ -15,6 +15,7 @@ mod connector;
 mod device;
 mod flip;
 mod hotplug;
+mod judge;
 mod kms;
 mod session;
 mod surface;
@@ -32,10 +33,11 @@ mod surface_real;
 #[cfg(feature = "tty")]
 mod udev_real;
 
-pub use connector::{EdidError, output_facts, parse_edid};
-pub use device::{OpenDevice, TtyDevices};
+pub use connector::{EdidError, VrrPolicy, output_facts, parse_edid, plan_outputs, vrr_state};
+pub use device::{Announced, OpenDevice, TtyDevices};
 pub use flip::FlipTracker;
 pub use hotplug::{KnownConnectors, reconcile};
+pub use judge::{Lit, judge};
 pub use kms::{
     CommitVerdict, ConnectorFacts, ConnectorId, ConnectorStatus, CrtcFacts, CrtcId, Kms, KmsCommit,
     KmsError, KmsOpener, KmsRefusal, KmsResources, ModesetPolicy, OutputCommit, PlaneFacts,
@@ -47,7 +49,7 @@ pub use udev::{DeviceEvent, DevicePath, DeviceSource};
 pub use vt::{VtNumber, vt_of_keysym};
 
 #[cfg(feature = "tty")]
-pub use kms_real::{RealKms, RealKmsOpener};
+pub use kms_real::{FdSource, RealKms, RealKmsOpener};
 #[cfg(feature = "tty")]
 pub use real::real_seams;
 #[cfg(feature = "tty")]
@@ -129,7 +131,7 @@ impl TtyBackend {
 
     /// The connector events of the devices present at start, once (then none).
     pub fn announce(&mut self) -> Vec<ConnectorEvent> {
-        todo!("P1-D2: TtyBackend::announce")
+        self.devices.announce()
     }
 
     /// Reads the seat and device events that arrived: a VT switch pauses, hotplug reconciles.

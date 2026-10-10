@@ -14,7 +14,10 @@ mod spawner;
 mod udev;
 
 pub use input_devices::FakeInputDevices;
-pub use kms::{FakeKms, FakeKmsOpener, KmsWorld, SyntheticTopology};
+pub use kms::{
+    FakeKms, FakeKmsOpener, KmsFixtureError, KmsWorld, LinkBehaviour, SyntheticTopology,
+    load_fixture,
+};
 pub use logind::{
     FakeLogind, IdleHint, LogindCall, LogindError, PauseKind, PrivateBus, PrivateBusError,
     SleepPhase,
