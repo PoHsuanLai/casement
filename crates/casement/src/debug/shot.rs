@@ -1,7 +1,7 @@
 //! `Shot`: the last frame an output presented, or a region of it, written as a PNG.
 
 use super::png::encode_rgba;
-use casement::State;
+use crate::State;
 use casement_backend::{BackendKind, FramePixels};
 use casement_core::geometry::LogicalRect;
 use casement_ipc::ShotArea;

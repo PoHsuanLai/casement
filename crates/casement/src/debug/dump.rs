@@ -2,7 +2,7 @@
 //! wait predicates, and the output and fault verbs that change the outputs. JSON is written by
 //! hand (a few fixed shapes, escaped strings): casement's own dependencies carry no JSON crate.
 
-use casement::{State, core_loop};
+use crate::{State, core_loop};
 use casement_backend::{BackendKind, VirtualOutputSpec};
 use casement_core::geometry::{LogicalPoint, Transform};
 use casement_core::output::{Mode, OutputConfig, OutputPower};

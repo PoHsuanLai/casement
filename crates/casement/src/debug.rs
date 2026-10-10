@@ -9,13 +9,13 @@ mod inject;
 mod png;
 mod shot;
 
-use casement::State;
-use casement::time::ClockSource;
+use crate::State;
+use crate::time::ClockSource;
 use casement_core::time::Mono;
 use casement_ipc::dbus::{DebugCall, DebugReply, DebugRequest};
 use casement_ipc::{InjectLine, WaitPredicate};
 use inject::Injector;
-use smithay::reexports::calloop::LoopHandle;
+use smithay::reexports::calloop::{Error as LoopError, LoopHandle};
 use smithay::reexports::calloop::channel::{Channel, Event};
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -65,7 +65,7 @@ pub type Shared = Rc<RefCell<Debug>>;
 pub fn attach(
     handle: &LoopHandle<'static, State>,
     calls: Channel<DebugCall>,
-) -> Result<Shared, String> {
+) -> Result<Shared, LoopError> {
     let shared: Shared = Rc::new(RefCell::new(Debug {
         jobs: VecDeque::new(),
         injector: Injector::default(),
@@ -77,7 +77,7 @@ pub fn attach(
                 owner.borrow_mut().receive(state, call);
             }
         })
-        .map_err(|error| error.to_string())?;
+        .map_err(LoopError::from)?;
     Ok(shared)
 }
 

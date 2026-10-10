@@ -2,7 +2,7 @@
 //! virtual devices (plugged when a line first needs one) and delivered by the core loop at
 //! once, so a script's order is the order the clients see.
 
-use casement::{State, core_loop};
+use crate::{State, core_loop};
 use casement_backend::{BackendKind, DeviceName, DeviceSpec};
 use casement_core::DeviceId;
 use casement_core::input::{

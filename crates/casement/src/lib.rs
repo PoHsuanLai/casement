@@ -13,6 +13,8 @@ pub mod cli;
 pub mod clients;
 pub mod config;
 pub mod core_loop;
+#[cfg(feature = "debug-inject")]
+mod debug;
 mod delegates;
 pub mod display;
 pub mod exec;
@@ -23,7 +25,9 @@ pub mod keymap;
 pub mod log;
 #[cfg(feature = "testing")]
 pub mod relax;
+mod run;
 mod state;
 pub mod time;
 
+pub use run::{DebugBus, RunConfig, RunError, run};
 pub use state::{AgentState, CoreState, IpcState, RenderState, StartError, State};
