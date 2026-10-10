@@ -7,7 +7,7 @@
 //! is offered. Nothing here opens a device or reads `/sys`: hardware values come from
 //! detection plus an override, never this machine (CONVENTIONS addendum 9).
 //!
-//! ```no_run
+//! ```
 //! use casement_core::gpu::{GpuChoice, plan_for};
 //!
 //! let plan = plan_for(&[], &GpuChoice::Auto);
