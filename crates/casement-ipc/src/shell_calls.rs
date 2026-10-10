@@ -9,7 +9,7 @@
 //! the loop logs.
 //!
 //! ```no_run
-//! //! use casement_core::input::DbusCall;
+//! use casement_core::input::DbusCall;
 //! use casement_ipc::shell_calls::{ShellCalls, ZbusShellCalls};
 //!
 //! let mut calls = ZbusShellCalls::lazy();
