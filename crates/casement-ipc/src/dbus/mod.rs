@@ -7,7 +7,7 @@ mod debug1;
 mod serve;
 
 #[cfg(feature = "debug-inject")]
-pub use serve::{serve_debug, serve_debug_at};
+pub use serve::serve_debug_at;
 
 #[cfg(feature = "debug-inject")]
 pub use debug1::{Debug1, DebugCall, DebugReply, DebugRequest, OBJECT_PATH};

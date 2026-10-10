@@ -10,7 +10,9 @@ publish.workspace = true
 
 [dependencies]
 casement-core = { workspace = true }
-casement-backend = { workspace = true }
+# Only `VirtualOutputSpec` for the Debug1 object: a release build links neither the backend nor
+# smithay.
+casement-backend = { workspace = true, optional = true }
 # `Fraction`, the pinch scale in the inject grammar.
 ds-core = { workspace = true }
 ds-settings = { workspace = true }
@@ -24,7 +26,7 @@ xkbcommon = { workspace = true }
 
 [features]
 # org.quire.Casement.Debug1 on the private bus (B10): never in a release build.
-debug-inject = ["casement-backend/debug-inject"]
+debug-inject = ["dep:casement-backend", "casement-backend/debug-inject"]
 
 [lints]
 workspace = true

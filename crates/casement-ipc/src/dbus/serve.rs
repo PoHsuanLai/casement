@@ -8,20 +8,10 @@ use calloop::channel::{Channel, channel};
 use std::sync::mpsc;
 use zbus::Connection;
 
-/// The environment variable that names the bus (the jail's private one).
-const BUS_ADDRESS_VAR: &str = "DBUS_SESSION_BUS_ADDRESS";
-
-/// Starts serving Debug1 on the bus `$DBUS_SESSION_BUS_ADDRESS` names. The channel carries the
-/// calls for the event loop to answer; the connection is casement's handle on the bus (keep it,
-/// or the name is released when the last clone goes). The thread behind it lives as long as the
-/// process.
-pub fn serve_debug() -> Result<(Channel<DebugCall>, Connection), IpcError> {
-    let address = std::env::var(BUS_ADDRESS_VAR)
-        .map_err(|_| IpcError::Bus(format!("{BUS_ADDRESS_VAR} is not set")))?;
-    serve_debug_at(&address)
-}
-
-/// `serve_debug` on the bus at `address`.
+/// Starts serving Debug1 on the bus at `address` (the jail's private one; the caller reads it
+/// from its environment). The channel carries the calls for the event loop to answer; the
+/// connection is casement's handle on the bus (keep it, or the name is released when the last
+/// clone goes). The thread behind it lives as long as the process.
 pub fn serve_debug_at(address: &str) -> Result<(Channel<DebugCall>, Connection), IpcError> {
     let (calls, channel) = channel::<DebugCall>();
     let (ready, started) = mpsc::channel::<Result<Connection, IpcError>>();
