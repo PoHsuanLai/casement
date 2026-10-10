@@ -67,8 +67,8 @@ pub(super) fn bystander_ok<H: FuzzHost>(
     let after = snapshot(host, id);
     if &after != before {
         return Err(FuzzFailure::BystanderChanged {
-            before: before.clone(),
-            after,
+            before: Box::new(before.clone()),
+            after: Box::new(after),
         });
     }
     Ok(())

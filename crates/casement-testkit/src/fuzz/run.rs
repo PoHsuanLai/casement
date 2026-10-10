@@ -25,7 +25,7 @@ pub fn run_on<H: FuzzHost>(host: &mut H, ops: &[FuzzOp]) -> Result<(), FuzzFailu
             .and_then(|()| run.check())
             .map_err(|failure| FuzzFailure::AtOp {
                 step,
-                op: op.clone(),
+                op: Box::new(op.clone()),
                 failure: Box::new(failure),
             })?;
     }

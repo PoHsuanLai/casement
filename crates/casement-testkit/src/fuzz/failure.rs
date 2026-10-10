@@ -59,9 +59,9 @@ pub enum FuzzFailure {
     #[error("oracle 3: the bystander's state changed: {before:?} -> {after:?}")]
     BystanderChanged {
         /// How it looked before.
-        before: Snapshot,
+        before: Box<Snapshot>,
         /// How it looks now.
-        after: Snapshot,
+        after: Box<Snapshot>,
     },
     /// Oracle 4: the model's invariants do not hold.
     #[error("oracle 4: an invariant broke: {0:?}")]
@@ -88,7 +88,7 @@ pub enum FuzzFailure {
         /// The op's place in the sequence.
         step: usize,
         /// The op.
-        op: FuzzOp,
+        op: Box<FuzzOp>,
         /// The oracle that fired.
         failure: Box<FuzzFailure>,
     },
