@@ -8,19 +8,23 @@
 //! jail (`casement/src/jail_check.rs`).
 
 mod config;
+mod convert;
 mod device_spec;
 mod devices;
+mod feed;
 mod virtual_events;
 mod virtual_input;
 
 #[cfg(feature = "libinput")]
 mod libinput_real;
 
-pub use config::{device_settings, xkb_of};
+pub use config::{device_settings, scaled_scroll, xkb_of};
+pub use convert::input_kind_of;
 pub use device_spec::{DeviceName, DeviceSpec};
 pub use devices::{AccelProfile, Applied, DeviceSetting, DeviceSettings, InputDevices, InputError};
+pub use feed::{FedDevice, FedInput, InputFeed, PollContext};
 #[cfg(feature = "libinput")]
-pub use libinput_real::RealInputDevices;
+pub use libinput_real::RealInputFeed;
 pub use virtual_events::{
     EventStamp, VirtualAxis, VirtualButton, VirtualGestureBegin, VirtualGestureEnd, VirtualKey,
     VirtualMotion, VirtualMotionTo, VirtualPinchUpdate, VirtualSwipeUpdate, VirtualSwitch,

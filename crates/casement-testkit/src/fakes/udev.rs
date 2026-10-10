@@ -2,7 +2,9 @@
 //! `casement_backend::tty::DeviceSource`.
 
 use casement_backend::tty::{DeviceEvent, DevicePath, DeviceSource};
+use std::cell::RefCell;
 use std::collections::VecDeque;
+use std::rc::Rc;
 
 /// A scripted udev.
 #[derive(Debug, Default)]
@@ -39,6 +41,45 @@ impl DeviceSource for FakeUdev {
 
     fn next_event(&mut self) -> Option<DeviceEvent> {
         self.script.pop_front()
+    }
+}
+
+/// A [`FakeUdev`] a backend and a test both hold: the backend takes one clone as its
+/// `DeviceSource`, the test scripts hotplug through another.
+///
+/// ```
+/// use casement_backend::tty::{DeviceEvent, DevicePath, DeviceSource};
+/// use casement_testkit::fakes::{FakeUdev, SharedUdev};
+/// use std::path::PathBuf;
+///
+/// let udev = SharedUdev::new(FakeUdev::default());
+/// let mut for_the_backend = udev.clone();
+/// let card = DevicePath(PathBuf::from("/dev/dri/card0"));
+/// udev.push(DeviceEvent::Added(card.clone()));
+/// assert_eq!(for_the_backend.next_event(), Some(DeviceEvent::Added(card)));
+/// ```
+#[derive(Debug, Clone)]
+pub struct SharedUdev(Rc<RefCell<FakeUdev>>);
+
+impl SharedUdev {
+    /// Shares `udev`.
+    pub fn new(udev: FakeUdev) -> SharedUdev {
+        SharedUdev(Rc::new(RefCell::new(udev)))
+    }
+
+    /// Queues one more event.
+    pub fn push(&self, event: DeviceEvent) {
+        self.0.borrow_mut().push(event);
+    }
+}
+
+impl DeviceSource for SharedUdev {
+    fn present(&self) -> Vec<DevicePath> {
+        self.0.borrow().present()
+    }
+
+    fn next_event(&mut self) -> Option<DeviceEvent> {
+        self.0.borrow_mut().next_event()
     }
 }
 

@@ -1,12 +1,13 @@
 //! `FakeKms`: `Kms` over a shared world a test scripts.
 
+use super::super::scanout::{FakeScanout, GlassHandle};
 use super::topology::SyntheticTopology;
 use casement_backend::headless::ConnectorEvent;
 use casement_backend::tty::{
     CommitVerdict, ConnectorFacts, ConnectorId, ConnectorStatus, DevicePath, Kms, KmsCommit,
-    KmsError, KmsOpener, KmsRefusal, KmsResources, Lit, judge, output_facts,
+    KmsError, KmsOpener, KmsRefusal, KmsResources, Lit, ScanoutSurface, judge, output_facts,
 };
-use casement_core::output::{GammaRamp, Mode, OutputPower};
+use casement_core::output::{GammaRamp, Mode, OutputConfig, OutputPower};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
@@ -41,6 +42,12 @@ pub struct KmsWorld {
     pub link: LinkBehaviour,
     /// The modes a retraining link has dropped, by connector.
     pub dropped: BTreeMap<ConnectorId, Mode>,
+    /// The scanout surface last handed out for each connector (P1-T).
+    pub glass: BTreeMap<ConnectorId, GlassHandle>,
+    /// How many times the seat was lent away (`pause`).
+    pub pauses: u32,
+    /// How many times it came back (`resume`).
+    pub resumes: u32,
 }
 
 /// A fake display device.
@@ -114,6 +121,17 @@ impl FakeKms {
     /// The commits applied so far.
     pub fn commits(&self) -> Vec<KmsCommit> {
         self.world().commits.clone()
+    }
+
+    /// The scanout surface last handed out for `connector`.
+    pub fn glass(&self, connector: ConnectorId) -> Option<GlassHandle> {
+        self.world().glass.get(&connector).cloned()
+    }
+
+    /// How many times the seat was lent away and how many times it came back.
+    pub fn seat_changes(&self) -> (u32, u32) {
+        let world = self.world();
+        (world.pauses, world.resumes)
     }
 
     /// The power `connector` was last given.
@@ -210,6 +228,30 @@ impl Kms for FakeKms {
 
     fn events(&mut self) -> Vec<ConnectorEvent> {
         std::mem::take(&mut self.world().pending)
+    }
+
+    fn scanout(
+        &mut self,
+        connector: ConnectorId,
+        config: &OutputConfig,
+    ) -> Result<Box<dyn ScanoutSurface>, KmsError> {
+        let _ = config;
+        let mut world = self.world();
+        if !world.lit.contains_key(&connector) {
+            return Err(KmsError::UnknownConnector(connector));
+        }
+        let glass = GlassHandle::new(FakeScanout::following());
+        world.glass.insert(connector, glass.clone());
+        Ok(Box::new(glass))
+    }
+
+    fn pause(&mut self) {
+        self.world().pauses += 1;
+    }
+
+    fn resume(&mut self) -> Result<(), KmsError> {
+        self.world().resumes += 1;
+        Ok(())
     }
 }
 

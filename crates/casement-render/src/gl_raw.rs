@@ -8,7 +8,7 @@
 #![allow(unsafe_code)]
 
 use crate::damage::RenderError;
-use smithay::backend::egl::native::EGLSurfacelessDisplay;
+use smithay::backend::egl::native::{EGLNativeDisplay, EGLSurfacelessDisplay};
 use smithay::backend::egl::{EGLContext, EGLDisplay};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
@@ -18,12 +18,20 @@ use smithay::wayland::shm::{BufferAccessError, BufferData, with_buffer_contents_
 /// this is Mesa's llvmpipe (the jail pins the Mesa EGL vendor), the headless backend's
 /// `SoftRenderer::Llvmpipe` and the tier-L goldens' renderer (SP2).
 pub fn surfaceless_gles() -> Result<GlesRenderer, RenderError> {
+    gles_on(EGLSurfacelessDisplay)
+}
+
+/// A GLES renderer on the EGL display of `native` (a GBM device of a KMS node: the tty
+/// backend's renderer for the outputs that device scans out, P1-T). The same two constructors
+/// as [`surfaceless_gles`], over any native display, so this module still owns exactly two
+/// `unsafe` calls.
+pub fn gles_on<N: EGLNativeDisplay + 'static>(native: N) -> Result<GlesRenderer, RenderError> {
     // SAFETY: `EGLDisplay::new` is unsafe because a display obtained elsewhere through
     // `eglGetPlatformDisplay` with the same parameters could be terminated behind smithay's
     // back. Nothing in casement creates an EGL display except this function, and casement links
     // no other EGL user, so smithay's instance tracking holds.
-    let display = unsafe { EGLDisplay::new(EGLSurfacelessDisplay) }
-        .map_err(|error| RenderError::Renderer(format!("EGL surfaceless display: {error}")))?;
+    let display = unsafe { EGLDisplay::new(native) }
+        .map_err(|error| RenderError::Renderer(format!("EGL display: {error}")))?;
     let context = EGLContext::new(&display)
         .map_err(|error| RenderError::Renderer(format!("EGL context: {error}")))?;
     // SAFETY: `GlesRenderer::new` is undefined behaviour if the context is current on another

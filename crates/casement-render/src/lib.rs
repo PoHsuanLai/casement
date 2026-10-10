@@ -37,6 +37,6 @@ pub use element::{
     layer_elements, popup_elements, popup_surfaces, solid_rect, surface_origin,
     surface_origin_logical, window_elements,
 };
-pub use gl_raw::surfaceless_gles;
+pub use gl_raw::{gles_on, surfaceless_gles};
 pub use scene::{ChromeLayer, CursorDraw, CursorShape, LayerDraw, OutputView, output_elements};
 pub use texture_book::{SurfaceEntry, TextureBook};

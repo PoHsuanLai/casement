@@ -5,15 +5,16 @@
 use super::action::ActionWords;
 use super::doc::CasementDoc;
 use super::sections::{
-    BindingsSection, FirstSight, KeyboardSection, OutputsSection, PointerSection, SpacesSection,
-    TouchpadSection, WindowsSection,
+    BindingsSection, FirstSight, GpuSection, KeyboardSection, OutputsSection, PointerSection,
+    SpacesSection, TouchpadSection, WindowsSection,
 };
 use casement_core::CoreError;
+use casement_core::gpu::{ByPathId, GpuChoice};
 use casement_core::input::{Binding, Bindings, Chord};
 use casement_core::output::ScalePolicy;
 use casement_core::settings::{
-    CasementSettings, KeyboardSettings, OutputSettings, PointerProfile, PointerSettings,
-    RepeatRate, SpaceSettings, WindowSettings, XkbNames,
+    CasementSettings, GpuSettings, KeyboardSettings, OutputSettings, PointerProfile,
+    PointerSettings, RepeatRate, SpaceSettings, WindowSettings, XkbNames,
 };
 use ds_core::geometry::scale::Scale;
 use ds_settings::{Count, Ms};
@@ -31,6 +32,7 @@ pub fn to_core(doc: &CasementDoc) -> CasementSettings {
         bindings: bindings(&doc.bindings),
         outputs: outputs(&doc.outputs),
         pointer: pointer(&doc.pointer, &doc.touchpad),
+        gpu: gpu(&doc.gpu),
     }
 }
 
@@ -204,6 +206,36 @@ pub(super) fn touchpad_doc(core: &PointerProfile) -> TouchpadSection {
         disable_while_typing: core.disable_while_typing,
     }
 }
+
+/// `gpu.render`: `auto`, or a PCI address. Text that is neither (a typo) is logged and renders
+/// as `auto`, so a bad key costs only itself and the machine still starts.
+fn gpu(doc: &GpuSection) -> GpuSettings {
+    let text = doc.render.trim();
+    let render = if text.is_empty() || text.eq_ignore_ascii_case(AUTO) {
+        GpuChoice::Auto
+    } else {
+        match ByPathId::parse(text) {
+            Ok(id) => GpuChoice::ByPath(id),
+            Err(error) => {
+                tracing::warn!(%error, "gpu.render is neither `auto` nor a PCI address; using auto");
+                GpuChoice::Auto
+            }
+        }
+    };
+    GpuSettings::new(render)
+}
+
+pub(super) fn gpu_doc(core: &GpuSettings) -> GpuSection {
+    GpuSection {
+        render: match &core.render {
+            GpuChoice::ByPath(id) => id.as_str().to_owned(),
+            _ => AUTO.to_owned(),
+        },
+    }
+}
+
+/// What `gpu.render` says for the automatic choice.
+const AUTO: &str = "auto";
 
 fn duration(ms: Ms) -> Duration {
     Duration::from_millis(u64::from(ms.0))

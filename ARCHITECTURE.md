@@ -169,21 +169,36 @@ pub trait Kms: Debug {
     fn set_power(&mut self, connector: ConnectorId, power: OutputPower) -> Result<(), KmsError>;
     fn set_gamma(&mut self, connector: ConnectorId, ramp: &GammaRamp) -> Result<(), KmsError>;
     fn events(&mut self) -> Vec<ConnectorEvent>;
+    fn scanout(&mut self, connector: ConnectorId, config: &OutputConfig)   // P1-T: the D2 to D3 hand-off
+        -> Result<Box<dyn ScanoutSurface>, KmsError>;
+    fn pause(&mut self);                                              // the seat was lent away
+    fn resume(&mut self) -> Result<(), KmsError>;
 }
 pub trait KmsOpener: Debug { fn open(&mut self, path: &DevicePath) -> Result<Box<dyn Kms>, KmsError>; }
 pub trait ScanoutSurface: Debug {
     fn queue(&mut self, frame: QueuedFrame) -> QueueOutcome;
-    fn presented(&mut self) -> Option<Presented>;
+    fn presented(&mut self, now: Mono) -> Option<Presented>;
+    fn blank(&mut self) -> Result<(), KmsError> { Ok(()) }            // DPMS off
+    fn reset(&mut self) {}                                            // the seat came back
 }
 pub trait TtySession: Debug {
     fn open_device(&mut self, path: &DevicePath) -> Result<OwnedFd, SessionFault>;
     fn switch_vt(&mut self, vt: VtNumber) -> Result<(), SessionFault>;
     fn notes(&mut self) -> Vec<SessionNote>;
+    fn settled(&mut self, note: SessionNote) {}                       // P1-T: the backend acted on it
+    fn sleep_link(&mut self) -> Option<SleepLink> { None }            // P1-T: PrepareForSleep reaches us
 }
 pub trait DeviceSource: Debug { fn present(&self) -> Vec<DevicePath>; fn next_event(&mut self) -> Option<DeviceEvent>; }
 
-// casement-backend::input (real: libinput_real.rs under feature `libinput`; fake: FakeInputDevices)
+// casement-backend::input (real: libinput_real.rs under feature `libinput`; fakes: FakeInputDevices,
+// FakeInputFeed). P1-T: the seat's input is one seam, `InputFeed`, held in `TtySeams::input`; its
+// events are converted once (`input_kind_of`) and the devices are opened through the session.
 pub trait InputDevices: Debug { fn apply(&mut self, device: DeviceId, settings: &DeviceSettings) -> Applied; }
+pub trait InputFeed: InputDevices {
+    fn poll(&mut self, context: &PollContext) -> Vec<FedInput>;
+    fn suspend(&mut self);
+    fn resume(&mut self);
+}
 
 // casement-backend::gpu (real: render_nodes_real.rs under feature `tty`, reading an injected SysRoot;
 // fake: the same adapter over FabricatedSysRoot's tree, SoftGraphicsApi for the renderers)

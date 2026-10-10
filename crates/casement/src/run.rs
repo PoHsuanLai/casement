@@ -8,6 +8,7 @@ use crate::display::{self, attach_display};
 use crate::{StartError, State, cli, clients, core_loop};
 use casement_backend::BackendKind;
 use casement_ipc::IpcError;
+use casement_ipc::sleep::SleepBus;
 use porter_core::PeerIdentity;
 use smithay::reexports::calloop::{Error as LoopError, EventLoop};
 use smithay::reexports::wayland_server::backend::InitError;
@@ -36,6 +37,8 @@ pub struct RunConfig {
     pub start: cli::StartConfig,
     /// Where Debug1 is served.
     pub debug_bus: DebugBus,
+    /// Which bus login1 is heard on (a tty seat hears the machine go to sleep there).
+    pub sleep_bus: SleepBus,
 }
 
 impl RunConfig {
@@ -44,6 +47,7 @@ impl RunConfig {
         RunConfig {
             start,
             debug_bus: DebugBus::Unset,
+            sleep_bus: SleepBus::System,
         }
     }
 
@@ -51,6 +55,12 @@ impl RunConfig {
     #[must_use]
     pub fn with_debug_bus(self, debug_bus: DebugBus) -> RunConfig {
         RunConfig { debug_bus, ..self }
+    }
+
+    /// The same run hearing login1 on `sleep_bus`.
+    #[must_use]
+    pub fn with_sleep_bus(self, sleep_bus: SleepBus) -> RunConfig {
+        RunConfig { sleep_bus, ..self }
     }
 }
 
@@ -121,7 +131,11 @@ fn attach_debug(
 /// what is ready, drains queued input into the model, reads the nested window if there is
 /// one, answers the debug object, and flushes every client.
 fn serve(config: RunConfig) -> Result<(), RunError> {
-    let RunConfig { start, debug_bus } = config;
+    let RunConfig {
+        start,
+        debug_bus,
+        sleep_bus,
+    } = config;
     let mut event_loop: EventLoop<'static, State> = EventLoop::try_new()?;
     let handle = event_loop.handle();
     let mut display: Display<State> = Display::new()?;
@@ -150,6 +164,8 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
     let _ = debug_bus;
     let wayland = crate::xwayland::WaylandSocket(socket_name);
     crate::xwayland::attach(&mut state, &xwayland_config);
+    // Held for the run: dropping it stops the thread that hears the machine go to sleep.
+    let _sleep = crate::suspend::attach(&mut state, sleep_bus);
     core_loop::announce_outputs(&mut state);
     crate::keymap::attach(&mut state, &config_home)?;
     let stop = event_loop.get_signal();

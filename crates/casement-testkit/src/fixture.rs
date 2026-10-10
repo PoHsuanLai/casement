@@ -20,12 +20,14 @@ use casement::space_store::StateHome;
 use casement::time::{ClockSource, SharedClock};
 use casement::xwayland::XwaylandConfig;
 use casement::{State, clients, core_loop};
-use casement_backend::{BackendChoice, BackendKind, FramePixels, HeadlessBackend};
+use casement_backend::tty::TtySeams;
+use casement_backend::{BackendChoice, BackendKind, FramePixels, HeadlessBackend, TtyBackend};
 use casement_core::geometry::LogicalRect;
 use casement_core::policy::ConnectionRole;
 use casement_core::time::{Mono, Stop, TimerKey};
 use casement_core::{Event, Model, OutputName, WindowId};
 use casement_testclient::{ClientError, Pumped, TestClient};
+use casement_wayland::dmabuf::DmabufOffer;
 use porter_core::PeerIdentity;
 use smithay::reexports::calloop::EventLoop;
 use smithay::reexports::wayland_server::{Client, Display};
@@ -128,15 +130,37 @@ struct Tally {
 impl Fixture {
     /// casement as `spec` describes it, pumped until it is quiet: outputs plugged, no client.
     pub fn start(spec: FixtureSpec) -> Result<Fixture, FixtureError> {
+        Fixture::start_on(spec, BackendChoice::Headless, None)
+    }
+
+    /// casement on the tty backend over `seams` (the fakes of a [`TtyWorld`](crate::TtyWorld)),
+    /// pumped until it is quiet: the outputs the fake devices report are plugged, no client.
+    /// `spec`'s outputs and renderer are the headless backend's and are ignored; its settings,
+    /// space store and ack policy apply. The helpers that plug virtual outputs and inject
+    /// virtual input are headless only: a tty seat's outputs come from its KMS fake and its
+    /// input from its [`FakeInputFeed`](crate::fakes::FakeInputFeed).
+    pub fn start_tty(spec: FixtureSpec, seams: TtySeams) -> Result<Fixture, FixtureError> {
+        Fixture::start_on(spec, BackendChoice::Tty, Some(seams))
+    }
+
+    fn start_on(
+        spec: FixtureSpec,
+        backend: BackendChoice,
+        tty: Option<TtySeams>,
+    ) -> Result<Fixture, FixtureError> {
         let event_loop: EventLoop<'static, State> =
             EventLoop::try_new().map_err(|error| FixtureError::Loop(error.to_string()))?;
         let handle = event_loop.handle();
         let mut display: Display<State> =
             Display::new().map_err(|error| FixtureError::Loop(error.to_string()))?;
+        let outputs = match backend {
+            BackendChoice::Tty => Vec::new(),
+            _ => spec.outputs,
+        };
         let config = StartConfig {
-            backend: BackendChoice::Headless,
+            backend,
             clock: ClockChoice::Virtual,
-            outputs: spec.outputs,
+            outputs,
             renderer: spec.renderer,
             dmabuf: spec.dmabuf,
             cost: spec.cost,
@@ -154,6 +178,10 @@ impl Fixture {
             Box::new(shell_calls.clone()),
             Box::new(spawner.clone()),
         );
+        let seams = match tty {
+            Some(tty) => seams.with_tty(tty),
+            None => seams,
+        };
         let mut state = State::with_seams(config, seams, &mut display, &handle)?;
         state.ack_policy = spec.ack_policy;
         let display = attach_display(display, &handle)?;
@@ -364,21 +392,36 @@ impl Fixture {
         &mut self.state
     }
 
-    /// The counters now.
+    /// The counters now (on a tty seat: frames queued, and no frame callback counter).
     fn tally(&self) -> Tally {
-        let backend = self.headless();
-        Tally {
-            frames: backend.frames_presented(),
-            callbacks: backend.callbacks_sent(),
+        match &self.state.backend {
+            BackendKind::Tty(tty) => Tally {
+                frames: tty.frames_queued(),
+                callbacks: 0,
+            },
+            _ => {
+                let backend = self.headless();
+                Tally {
+                    frames: backend.frames_presented(),
+                    callbacks: backend.callbacks_sent(),
+                }
+            }
         }
     }
 
     /// Frames `output` has presented.
     fn presented(&self, output: &OutputName) -> u64 {
-        self.headless()
-            .outputs()
-            .get(output)
-            .map_or(0, |output| output.presented)
+        match &self.state.backend {
+            BackendKind::Tty(tty) => tty
+                .scanouts
+                .get(output)
+                .map_or(0, |scanout| scanout.tally().presented),
+            _ => self
+                .headless()
+                .outputs()
+                .get(output)
+                .map_or(0, |output| output.presented),
+        }
     }
 
     /// What happened since `start`.
@@ -441,6 +484,19 @@ impl Fixture {
     /// The model.
     pub fn model(&self) -> &Model {
         &self.state.core.model
+    }
+
+    /// The dma-buf offer the compositor made (none until a main device is offered).
+    pub fn dmabuf_offer(&self) -> Option<&DmabufOffer> {
+        self.state.wl.dmabuf.offered.as_ref()
+    }
+
+    /// The tty backend, on a fixture started with [`start_tty`](Fixture::start_tty).
+    pub fn tty(&self) -> &TtyBackend {
+        match &self.state.backend {
+            BackendKind::Tty(tty) => tty,
+            _ => panic!("this fixture runs the headless backend"),
+        }
     }
 }
 

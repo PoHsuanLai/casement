@@ -129,6 +129,7 @@ pub fn frame(state: &mut State, output: &OutputKey) {
         mode: config.mode.size,
     };
     let layers = layers_on(&state.core.model, output);
+    let capture = tty::capture_watch(&state.wl.image_capture.book, output);
     let source = SceneSource {
         frame: &frame,
         view: &view,
@@ -139,7 +140,7 @@ pub fn frame(state: &mut State, output: &OutputKey) {
     let shown = match &mut state.backend {
         BackendKind::Headless(backend) => present_headless(backend, &name, now, &source),
         BackendKind::Winit(winit) => winit.present(&source),
-        BackendKind::Tty(tty) => tty.present(&name, &source),
+        BackendKind::Tty(seat) => tty::present(seat, &name, &config, capture, now, &source),
         // A backend this build does not know presents nothing.
         _ => Ok(None),
     };

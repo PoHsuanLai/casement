@@ -6,6 +6,7 @@ mod adopt;
 mod bindings;
 mod fixture;
 mod globals;
+mod input_convert;
 mod logind;
 mod protocol;
 mod scene;

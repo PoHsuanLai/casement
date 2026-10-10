@@ -1168,6 +1168,123 @@ Nothing here compiled (no builds this lane).
   ids Settings shows; a hybrid laptop with the NVIDIA proprietary driver (its render node may list no connectors, and
   `boot_vga` may be 0 on both GPUs, which falls to the lowest node).
 
+## p1-t: tty integration (2026-10-11)
+
+Nothing here compiled (no builds this lane). P1-T joins what D1 to D4, I1, M1 and C1 each left loose, so that
+`casement --backend tty` is one path. The definition of done is `tests/it/tty/integration.rs`: the real `State` over
+`TtyWorld`'s fakes (session, udev, KMS, input, GPUs) starts with two outputs, presents frames, switches VT away and
+back, hotplugs, goes dark and lit (DPMS), loads a gamma ramp, captures an output, takes input and suspends and resumes
+through the fake logind on a private bus.
+
+### What landed, by item
+
+- **Input.** `input::InputFeed` (a seam beside `InputDevices`) is the seat's input: `poll(&PollContext)` returns
+  `FedInput::{Appeared, Gone, Event}`, `suspend`/`resume` follow the seat. It lives in **`TtySeams::input`, not in
+  `casement::Seams`**: the real feed needs the libseat handle `real_seams` builds, so the slot sits with the session it
+  must share. `RealInputFeed` opens libinput through smithay's `LibinputSessionInterface` over a libseat handle (never
+  direct opens), reads it as an event source and queues raw events; `poll` converts them with `input_kind_of`, one
+  generic conversion over smithay's input traits (round-tripped against the virtual backend in
+  `tests/it/input_convert.rs`). `core_loop::tty::input` configures a pointer or touchpad that appeared with the stored
+  profile (`device_settings`, then `InputDevices::apply`) and feeds events to the model. A `Ctrl+Alt+Fn` chord is
+  `XF86Switch_VT_n` after xkb: `deliver_key`'s filter asks `tty::vt_chord` first (before the lock, a shortcut inhibitor
+  and the bindings), which calls `TtyBackend::request_vt` and takes the press (its release is swallowed too).
+  `modified_syms()` is what is read, because the chord's raw symbol is `F3`. The **scroll factor** (I1's open item) is
+  applied where the tty loop takes the event in (`scaled_scroll`, per profile by the event's origin class).
+- **Suspend.** `casement_ipc::sleep::SleepWatch` is a thread (current-thread tokio runtime, like `ZbusShellCalls`) that
+  subscribes to `PrepareForSleep` on the system bus (or the private bus a test gives) and holds a `sleep` delay
+  inhibitor while awake. `casement::suspend::watch` joins it to the session's `SleepLink` (`tty::sleep_channel`): on
+  `true` it sends `Paused` and **waits (2 s at most) until the backend acted on it** (`TtySession::settled`, called by
+  `dispatch` after the devices were paused), then releases the inhibitor; on `false` it sends `Activated` and takes the
+  inhibitor again. `RunConfig::sleep_bus` (`SleepBus::System` by default) names the bus; `run` attaches it for a tty
+  backend. Tested against `FakeLogind` (the inhibitor is released only after the pause was acted on).
+- **GPU.** `TtyBackend::start` detects the GPUs and makes the plan (`plan_for`; a machine with none logs and has no
+  plan), and opens the display devices udev reports present (D2 had left that to nobody: `announce` only reported
+  devices already open). `TtyBackend::dmabuf_feedback` builds the format table from `TtySeams::formats` (a
+  `FormatSource`; real: `RealFormats`, a GLES renderer on each render node) and `feedback_for`; `State::with_seams`
+  offers `DmabufOffer::from_feedback` for a tty backend and keeps the soft offer only when there is no feedback.
+  `FormatTable` gained `scanout` (the primary planes' formats per GPU, from `scanout_formats`) and `feedback_for`
+  puts a **Scanout tranche first** for the render GPU's own planes: planes' formats that the GPU also samples, each
+  pair once. A plane of another GPU makes no Scanout tranche (it is the `Import` tranche's copy). `OfferTranche` gained
+  `purpose` and `apply_offer` sets `TrancheFlags::Scanout` for it.
+- **KMS and scanout.** `Kms` gained `scanout(connector, &OutputConfig)`, `pause` and `resume`; `ScanoutSurface` gained
+  `blank` and `reset`, and `presented(now)` (a surface that learns of a flip without a time on the session clock stamps
+  it so). `TtyBackend::apply` is `exec::apply_output`'s tty arm: DPMS off blanks the scanout; otherwise one commit
+  (modeset allowed) on the CRTC the output is lit on or the first free one, and a surface whenever the mode, scale or
+  transform changed (the old scanout is dropped first: a device keeps one surface per connector). `Lighting::Relit`
+  (DPMS On) makes `exec` queue a frame at once. `dispatch` follows the seat: `Flow::Held` and `Kms::pause` on `Paused`;
+  `Kms::resume`, `ScanoutSet::reset` and `Flow::Running` on `Activated`, then the loop re-applies every output. An
+  unplugged connector's scanout, lighting and capture shadow are pruned. `CrtcFacts::gamma_size` (serde default 256, so
+  old fixtures read) is `GAMMA_LUT_SIZE`; `handlers/gamma.rs` answers the CRTC's size.
+- **Capture on KMS.** `tty::Readback`: while a capture session is open on an output, each frame queued is drawn again
+  through pixman into a headless-backend shadow output of the same mode, scale and transform
+  (`TtyBackend::last_frame`); with no session nothing is drawn. `core_loop::frame` turns it on from the capture book
+  (`CaptureBook::sessions`). The first frame request of a session fails (`unknown`) until one vblank has drawn a frame.
+- **`gpu.render`.** `GpuSettings` in core, `GpuSection` (`gpu.render`, `auto` or a PCI address, Appearance page,
+  advanced) in the document, conversion in `config/convert.rs`, rows in `tests/it/config.rs` and core's settings tests.
+  A value that is neither is logged and renders as `auto`. `State::new` passes it to `real_seams`. It takes effect at
+  the next login.
+
+### Departures
+
+- **Frames are timer-driven, not vblank-driven.** The loop still draws at the virtual or wall clock's vblank timers
+  (`ClockSource::plug_output`) and `present` queues when no flip is pending; a flip completing (`DrmEvent::VBlank`) is
+  noted for the next tick. `Scanout::deadline` (the scheduler) is not used by the loop. The real surface counts vblanks
+  itself (`RealScanout::next`), not the kernel's sequence, so a missed vblank is **not measured on hardware** (the fake
+  presents on time by construction; the scheduler is covered by the D3 virtual-clock suite).
+- **One GLES renderer per KMS device**, shared by its outputs, made with `casement_render::gles_on(gbm)`. The cross-GPU
+  copy (render GPU draws, another scans out) is not wired to real devices: a second GPU's outputs are drawn by that
+  GPU. `gles_on` generalizes `surfaceless_gles`'s two `unsafe` calls over any native display; **no new `unsafe` block**,
+  but the signature of the one unsafe module changed.
+- **`RealKmsOpener<D>` is generic** over the loop's data type and inserts each device's `DrmDeviceNotifier` into the
+  loop itself (`RealKms::open(fd, &handle)`); `take_notifier` and `take_surface` are gone (the hand-off is
+  `Kms::scanout`). `RealInputDevices` became `RealInputFeed` (it opens through the session).
+- **Event time.** libinput's timestamps are on the kernel's clock; the feed stamps each event with the poll's `now`.
+- **Absolute devices** (touch, tablet in mouse mode) are placed over the union of the outputs (`PollContext::extent`),
+  not over a chosen output. A mapping per device is open.
+- **Not re-applied after a sleep or VT return:** gamma ramps (the CRTC's table may be lost), VRR beyond the commit.
+- **`SettingsChanged` is not re-applied to devices already present**; a profile change reaches a device at the next plug.
+- **Hotplug of a second GPU** does not make a new dma-buf offer (the offer is made once at start).
+- **Direct scanout of client buffers** is left on (`NodeFilter::All` in the framebuffer exporter), as D3 expected.
+- **Real adapters list.** `scripts/check-boundary.sh` ADAPTERS gained `tty/real.rs` (it names libseat for the input
+  handle) and `gpu/formats_real.rs`.
+
+### Only a real login proves
+
+- `Ctrl+Alt+F3` switches and `Ctrl+Alt+F1` returns with the displays lit and input back (libseat pause/enable order
+  against `Kms::pause`/`resume`, `DrmDevice::activate(false)`, `DrmCompositor::reset_state`, libinput `suspend`/`resume`
+  reopening through the session). The default xkb layout must carry `srvr_ctrl(fkey2vt)`; the integration test asserts
+  the chord switches on the jail's xkb data.
+- Suspend and wake on the owner's laptop: the delay inhibitor is held, released after the pause, retaken; the panel is
+  lit and the seat held after the wake.
+- A real `DrmCompositor::new` with `OutputModeSource::Static`, `NodeFilter::All`, the `[Xrgb8888, Argb8888]` colour
+  formats and the renderer's dma-buf render formats; the first frame queued lights the CRTC; `blank` (`clear`) darkens it
+  and the next frame lights it; two outputs on one device share one renderer.
+- `RealFormats` (a GLES renderer on `renderD*` through GBM) and the Scanout tranche's formats as clients see them
+  (`weston-simple-dmabuf-feedback` or the testclient's feedback helper).
+- `gamma_length` from `get_crtc` on the owner's panel and monitor; a ramp loads.
+- libinput: classes (`class_of`), the touchpad profile taking effect, `Partly` for a mouse, absolute placement.
+- A capture on KMS: a pixman shadow of a 4K scene each vblank is slow; check the cost, and that a client dma-buf the
+  pixman renderer cannot import is simply missing from the capture.
+- Hybrid GPUs: the plan, the Scanout tranche (render GPU only), the second GPU's outputs drawn by that GPU.
+
+### Shared files touched
+
+`state.rs` (the tty arm: settings choice, dmabuf offer), `exec.rs` (the tty arm of `apply_output`), `run.rs`
+(`RunConfig::sleep_bus`, `suspend::attach`), `core_loop.rs` (the tty arm of `frame`), `core_loop/deliver.rs` (the VT
+chord in the key filter), `lib.rs` (`suspend`), `ARCHITECTURE.md` (seam signatures), `scripts/check-boundary.sh`,
+`FINDINGS.md`. No `Cargo.toml` or `Cargo.lock` changed; `tokio`'s `sync` feature (workspace) is used by
+`casement-ipc::sleep`.
+
+### Spots most likely not to compile
+
+`casement-backend/src/tty/{kms_real,surface_real}.rs` (`DrmCompositor::new`'s argument types: `Size<u32, Buffer>` for
+the cursor size, `Some(gbm)`; `OutputModeSource::Static`; `DrmEvent` arms; `gbm::Device::new(DrmDeviceFd)`),
+`input/libinput_real.rs` (`Event::<LibinputInputBackend>::device`, `LibinputInputBackend::new(context.clone())`,
+`insert_source` error type), `gpu/formats_real.rs` (`ImportDma::dmabuf_formats().iter()` items, `Format::code as u32`),
+`input/convert.rs` (the generic helpers' bounds: `placed::<B, _>`), `casement-ipc/src/sleep.rs` (`MatchRule` builder
+errors, `Message::body().deserialize`, `tokio::select!` with `&mut oneshot::Receiver`), `core_loop/deliver.rs` (the
+filter closure now takes `state`), `casement-testkit/tests/it/tty/integration.rs` (client helper signatures).
+
 ## smithay fork 9c8f762a (2026-10-11)
 
 The typed fuzz box (seed 8, once P1-C1's globals shifted object ids) panicked smithay: `wl_subsurface.place_above`

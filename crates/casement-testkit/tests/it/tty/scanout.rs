@@ -43,8 +43,8 @@ impl ScanoutSurface for Shared {
     fn queue(&mut self, frame: QueuedFrame<'_>) -> QueueOutcome {
         self.0.borrow_mut().queue(frame)
     }
-    fn presented(&mut self) -> Option<Presented> {
-        self.0.borrow_mut().presented()
+    fn presented(&mut self, now: Mono) -> Option<Presented> {
+        self.0.borrow_mut().presented(now)
     }
 }
 
@@ -83,12 +83,12 @@ fn run(frames: u64, cost: &RenderCostModel) -> (u64, u64) {
             fake.script.push_back(Presented::new(shown, shown_at));
         }
         scanout.record_cost(spent);
-        let queued = set.present(&output(), &Empty).expect("present");
+        let queued = set.present(&output(), &Empty, now).expect("present");
         assert_eq!(queued, Some(wanted), "frame {n}");
         now = shown_at;
     }
     let tally = set.get_mut(&output()).map(|scanout| {
-        let _ = scanout.settle();
+        let _ = scanout.settle(now);
         scanout.tally()
     });
     let tally = tally.expect("lit");
@@ -136,7 +136,7 @@ fn a_busy_surface_defers_the_frame_to_the_next_vblank() {
     ));
     assert!(matches!(fake.queue(frame()), QueueOutcome::Busy));
     assert_eq!(fake.queued, 1);
-    assert!(fake.presented().is_some());
+    assert!(fake.presented(Mono(ms(17))).is_some());
     fake.vblank = VblankSeq(1);
     assert!(matches!(
         fake.queue(frame()),
@@ -150,11 +150,14 @@ fn a_busy_surface_defers_the_frame_to_the_next_vblank() {
     let mut set = ScanoutSet::empty();
     set.attach(output(), Scanout::new(Box::new(shared.clone()), clock()));
     assert_eq!(
-        set.present(&output(), &Empty).expect("first"),
+        set.present(&output(), &Empty, Mono(ms(0))).expect("first"),
         Some(VblankSeq(0))
     );
     shared.0.borrow_mut().script.clear();
-    assert_eq!(set.present(&output(), &Empty).expect("second"), None);
+    assert_eq!(
+        set.present(&output(), &Empty, Mono(ms(1))).expect("second"),
+        None
+    );
     assert_eq!(shared.0.borrow().queued, 1);
 }
 

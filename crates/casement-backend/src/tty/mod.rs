@@ -1,5 +1,5 @@
-//! The tty backend (P1-Z declares it; P1-D1 to D3 fill it): casement on a real seat, over
-//! injected seams.
+//! The tty backend (P1-Z declares it; P1-D1 to D3 fill it; P1-T joins the lanes): casement on a
+//! real seat, over injected seams.
 //!
 //! * [`TtySession`], [`DeviceSource`], [`KmsOpener`], [`Kms`] and [`ScanoutSurface`] are the
 //!   seams. Each has a thin real adapter (`*_real.rs`, compiled only under feature `tty`) and a
@@ -7,6 +7,11 @@
 //!   [`TtyBackend`] runs in the jail with no device at all.
 //! * [`TtyDevices`] holds the open display devices; `hotplug::reconcile` turns what a device
 //!   reports into the same [`ConnectorEvent`]s the headless backend gives.
+//! * [`TtyBackend::apply`] lights an output (a commit, then the device's scanout surface joins the
+//!   [`ScanoutSet`]); [`TtyBackend::present`] queues a frame; [`TtyBackend::dispatch`] hears the
+//!   seat and hotplug; [`TtyBackend::poll_input`] reads the seat's input devices;
+//!   [`TtyBackend::dmabuf_feedback`] is what clients are offered; a suspend arrives through a
+//!   [`SleepLink`].
 //! * The pure scheduler maths and GPU plan are in `casement_core::{frame, gpu}`.
 //!
 //! The adapters are the only files that name the device crates (row B7).
@@ -17,8 +22,12 @@ mod flip;
 mod hotplug;
 mod judge;
 mod kms;
+mod lit;
+mod offer;
+mod readback;
 mod scanouts;
 mod session;
+mod sleep;
 mod surface;
 mod udev;
 mod vt;
@@ -40,12 +49,16 @@ pub use flip::FlipTracker;
 pub use hotplug::{KnownConnectors, reconcile};
 pub use judge::{Lit, judge};
 pub use kms::{
-    CommitVerdict, ConnectorFacts, ConnectorId, ConnectorStatus, CrtcFacts, CrtcId, Kms, KmsCommit,
-    KmsError, KmsOpener, KmsRefusal, KmsResources, ModesetPolicy, OutputCommit, PlaneFacts,
-    PlaneId, PlaneKind, VrrState,
+    CommitVerdict, ConnectorFacts, ConnectorId, ConnectorStatus, CrtcFacts, CrtcId,
+    DEFAULT_GAMMA_SIZE, Kms, KmsCommit, KmsError, KmsOpener, KmsRefusal, KmsResources,
+    ModesetPolicy, OutputCommit, PlaneFacts, PlaneId, PlaneKind, VrrState,
 };
+pub use lit::{Lighting, LitOutput};
+pub use offer::scanout_formats;
+pub use readback::{Readback, Watch};
 pub use scanouts::{Flow, FrameTally, Scanout, ScanoutSet};
 pub use session::{SeatState, SessionNote, TtySession};
+pub use sleep::{SleepInbox, SleepLink, SleepSettled, sleep_channel};
 pub use surface::{DirectCandidate, Presented, QueueOutcome, QueuedFrame, ScanoutSurface};
 pub use udev::{DeviceEvent, DevicePath, DeviceSource};
 pub use vt::{VtNumber, vt_of_keysym};
@@ -62,12 +75,15 @@ pub use surface_real::RealScanout;
 pub use udev_real::RealUdev;
 
 use crate::backend::BackendError;
-use crate::gpu::RenderNodes;
-use crate::headless::{ConnectorEvent, FrameSource};
-use casement_core::OutputName;
-use casement_core::gpu::{GpuChoice, RenderPlan};
+use crate::gpu::{FormatSource, RenderNodes};
+use crate::headless::{ConnectorEvent, FrameSource, PresentedFrame};
+use crate::input::{Applied, DeviceSettings, FedInput, InputFeed, PollContext};
+use casement_core::gpu::{GpuChoice, RenderPlan, plan_for};
 use casement_core::input::Keysym;
-use casement_core::time::VblankSeq;
+use casement_core::output::{OutputConfig, OutputPower};
+use casement_core::time::{Mono, VblankSeq};
+use casement_core::{DeviceId, OutputName};
+use std::collections::BTreeMap;
 
 /// Everything the tty backend is injected with.
 #[derive(Debug)]
@@ -83,10 +99,16 @@ pub struct TtySeams {
     pub nodes: Box<dyn RenderNodes>,
     /// The `gpu.render` setting.
     pub choice: GpuChoice,
+    /// The formats each render node draws into, for the dma-buf offer (none: the caller offers
+    /// no real feedback).
+    pub formats: Option<Box<dyn FormatSource>>,
+    /// The seat's input devices (none: a seat with no input, as a box with only a remote
+    /// session).
+    pub input: Option<Box<dyn InputFeed>>,
 }
 
 impl TtySeams {
-    /// The seams.
+    /// The seams, with no format source and no input.
     pub fn new(
         session: Box<dyn TtySession>,
         udev: Box<dyn DeviceSource>,
@@ -100,6 +122,26 @@ impl TtySeams {
             opener,
             nodes,
             choice,
+            formats: None,
+            input: None,
+        }
+    }
+
+    /// The same with this format source for the dma-buf offer.
+    #[must_use]
+    pub fn with_formats(self, formats: Box<dyn FormatSource>) -> TtySeams {
+        TtySeams {
+            formats: Some(formats),
+            ..self
+        }
+    }
+
+    /// The same with these input devices.
+    #[must_use]
+    pub fn with_input(self, input: Box<dyn InputFeed>) -> TtySeams {
+        TtySeams {
+            input: Some(input),
+            ..self
         }
     }
 }
@@ -121,34 +163,61 @@ pub struct TtyBackend {
     pub seams: TtySeams,
     /// The display devices it holds.
     pub devices: TtyDevices,
-    /// The render plan, once the GPUs are known.
+    /// The render plan, when the GPUs were found.
     pub plan: Option<RenderPlan>,
     /// Whether this session holds the seat; `present` draws nothing while it is lent.
     pub seat: SeatState,
-    /// The scanout of each lit output (`ScanoutSet::default()` at start; P1-D2 attaches).
+    /// The scanout of each lit output.
     pub scanouts: ScanoutSet,
+    /// Where each lit output is lit (device, connector, CRTC, mode).
+    pub lit: BTreeMap<OutputName, LitOutput>,
+    /// The capture shadows, drawn only while a capture is open on the output.
+    pub readback: Readback,
+    /// Whether to ask for variable refresh where monitor and CRTC can do it.
+    pub vrr: VrrPolicy,
+    /// How many frames were queued over the run, whatever became of the outputs.
+    queued: u64,
 }
 
 impl TtyBackend {
-    /// Takes the injected seams and holds the seat. The devices present are opened by
-    /// [`announce`](Self::announce), and the render plan is made from the GPUs once they are known
-    /// (P1-D4), so a start touches no device.
+    /// Takes the injected seams and holds the seat: detects the GPUs and makes the render plan
+    /// (none when no GPU was found: the caller offers no real dma-buf feedback), and opens the
+    /// display devices udev reports present. Their connectors are announced by
+    /// [`announce`](Self::announce), once the loop is up. A device that cannot be opened is
+    /// logged and left out.
     ///
     /// ```no_run
     /// use casement_backend::tty::{TtyBackend, TtySeams};
     ///
     /// fn up(seams: TtySeams) {
     ///     let backend = TtyBackend::start(seams).expect("start");
-    ///     assert!(backend.devices.devices.is_empty());
+    ///     let _ = (&backend.plan, &backend.devices);
     /// }
     /// ```
-    pub fn start(seams: TtySeams) -> Result<TtyBackend, BackendError> {
+    pub fn start(mut seams: TtySeams) -> Result<TtyBackend, BackendError> {
+        let plan = match plan_for(&seams.nodes.nodes(), &seams.choice) {
+            Ok(plan) => Some(plan),
+            Err(refusal) => {
+                tracing::warn!(%refusal, "no render plan; dma-buf feedback is not offered");
+                None
+            }
+        };
+        let mut devices = TtyDevices::empty();
+        for path in seams.udev.present() {
+            if let Err(error) = devices.added(path.clone(), &mut *seams.opener) {
+                tracing::warn!(path = %path.as_path().display(), %error, "a display device did not open");
+            }
+        }
         Ok(TtyBackend {
             seams,
-            devices: TtyDevices::empty(),
-            plan: None,
+            devices,
+            plan,
             seat: SeatState::Held,
             scanouts: ScanoutSet::empty(),
+            lit: BTreeMap::new(),
+            readback: Readback::new(),
+            vrr: VrrPolicy::default(),
+            queued: 0,
         })
     }
 
@@ -166,10 +235,17 @@ impl TtyBackend {
         for note in self.seams.session.notes() {
             self.seat = self.seat.after(note);
             match note {
-                SessionNote::Activated => returned = true,
-                SessionNote::Paused => returned = false,
+                SessionNote::Activated => {
+                    returned = true;
+                    self.resumed();
+                }
+                SessionNote::Paused => {
+                    returned = false;
+                    self.paused();
+                }
                 SessionNote::VtSwitch(vt) => self.ask_for_vt(VtNumber(vt)),
             }
+            self.seams.session.settled(note);
             notes.push(TtyNote::Session(note));
         }
         if self.seat == SeatState::Held {
@@ -177,8 +253,36 @@ impl TtyBackend {
                 notes.extend(self.reread_devices());
             }
             notes.extend(self.read_device_events());
+            self.prune();
         }
         notes
+    }
+
+    /// The seat was lent away: no frame is queued, the devices give up master, input stops.
+    fn paused(&mut self) {
+        self.scanouts.flow(Flow::Held);
+        self.devices
+            .devices
+            .values_mut()
+            .for_each(|device| device.kms.pause());
+        if let Some(input) = &mut self.seams.input {
+            input.suspend();
+        }
+    }
+
+    /// The seat is back: the devices take master, every surface forgets the screen, frames
+    /// flow, input reads again. The loop commits every output again (`Effect::ApplyOutput`).
+    fn resumed(&mut self) {
+        for (path, device) in &mut self.devices.devices {
+            if let Err(error) = device.kms.resume() {
+                tracing::warn!(path = %path.as_path().display(), %error, "a device did not resume");
+            }
+        }
+        self.scanouts.reset();
+        self.scanouts.flow(Flow::Running);
+        if let Some(input) = &mut self.seams.input {
+            input.resume();
+        }
     }
 
     /// Asks the session for the VT `sym` names (a `Ctrl+Alt+Fn` chord, after xkb); the VT asked
@@ -235,14 +339,68 @@ impl TtyBackend {
         notes
     }
 
-    /// Draws `source` for `output` and queues it for the next vblank; the number of the frame
-    /// queued (none while the seat is paused or a flip is pending).
+    /// Draws `source` for `output` and queues it for the next vblank (`now` is the session
+    /// clock's instant); the number of the frame queued (none while the seat is paused, the
+    /// output is dark or a flip is pending). While a capture is open on the output the frame is
+    /// also drawn into its shadow.
     pub fn present(
         &mut self,
         output: &OutputName,
         source: &dyn FrameSource,
+        now: Mono,
     ) -> Result<Option<VblankSeq>, BackendError> {
-        self.scanouts.present(output, source)
+        let dark = self
+            .lit
+            .get(output)
+            .is_some_and(|lit| lit.power() == OutputPower::Off);
+        if self.seat == SeatState::Lent || dark {
+            return Ok(None);
+        }
+        let shown = self.scanouts.present(output, source, now)?;
+        if let Some(seq) = shown {
+            self.queued = self.queued.saturating_add(1);
+            self.readback.draw(output, seq, now, source)?;
+        }
+        Ok(shown)
+    }
+
+    /// How many frames were queued over the run, on every output.
+    pub fn frames_queued(&self) -> u64 {
+        self.queued
+    }
+
+    /// Starts or stops keeping a read-back of what `output` shows, which has `config` (a
+    /// capture session was opened or closed on it).
+    pub fn watch(
+        &mut self,
+        output: &OutputName,
+        config: &OutputConfig,
+        watch: Watch,
+    ) -> Result<(), BackendError> {
+        self.readback.watch(output, config, watch)
+    }
+
+    /// The frame `output` last showed, read back; none unless the output is watched and has
+    /// shown a frame since.
+    pub fn last_frame(&self, output: &OutputName) -> Option<&PresentedFrame> {
+        self.readback.last_frame(output)
+    }
+
+    /// What the seat's input devices reported since the last call: nothing while the seat is
+    /// lent, or when the seat has no input.
+    pub fn poll_input(&mut self, context: &PollContext) -> Vec<FedInput> {
+        match (self.seat, &mut self.seams.input) {
+            (SeatState::Held, Some(input)) => input.poll(context),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Configures the input device `device` (it appeared, or the settings changed).
+    pub fn configure_device(&mut self, device: DeviceId, settings: &DeviceSettings) -> Applied {
+        match &mut self.seams.input {
+            Some(input) => input.apply(device, settings),
+            None => Applied::Refused,
+        }
     }
 }
 

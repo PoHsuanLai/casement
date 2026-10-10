@@ -2,12 +2,15 @@
 //! Nothing else in the workspace names the device crates.
 //!
 //! The device is opened without disabling its connectors, so a handover from the boot console
-//! does not flicker. A commit lights outputs by creating or re-aiming a `DrmSurface` per
-//! connector, which the scanout adapter (`surface_real.rs`, P1-D3) takes with
-//! [`RealKms::take_surface`] and wraps in a `DrmCompositor`, the thing that owns buffers and
-//! the kernel's own atomic test. This file checks a commit by the pure rules in
-//! [`judge`](super::judge) and does the modeset bookkeeping; it cannot `TEST_ONLY` a commit
-//! that has no framebuffer yet.
+//! does not flicker. A commit lights outputs by creating a `DrmSurface` per connector, which
+//! [`Kms::scanout`] hands to the scanout adapter (`surface_real.rs`) to wrap in a
+//! `DrmCompositor`, the thing that owns buffers and the kernel's own atomic test; the device's
+//! vblank source is inserted into the event loop at open and fills the [`Flips`] the surfaces
+//! read. This file checks a commit by the pure rules in [`judge`](super::judge) and does the
+//! modeset bookkeeping; it cannot `TEST_ONLY` a commit that has no framebuffer yet. A commit
+//! for a connector whose surface is out (re-applied after a VT switch) changes nothing: the
+//! compositor that owns the surface keeps its mode, and a new mode is a new surface (the
+//! backend drops the old one first).
 
 use super::hotplug::{KnownConnectors, reconcile};
 use super::judge::{Lit, judge};
@@ -16,23 +19,30 @@ use super::kms::{
     KmsError, KmsOpener, KmsRefusal, KmsResources, OutputCommit, PlaneFacts, PlaneId, PlaneKind,
     VrrState,
 };
+use super::surface::ScanoutSurface;
+use super::surface_real::{Flips, RealScanout};
 use super::udev::DevicePath;
 use crate::headless::ConnectorEvent;
 use casement_core::OutputName;
 use casement_core::geometry::PhysicalSize;
 use casement_core::gpu::{FormatEntry, Fourcc, Modifier};
 use casement_core::output::{
-    GammaRamp, Mode, ModePreference, OutputPower, PhysicalMm, VrrCapability,
+    GammaRamp, Mode, ModePreference, OutputConfig, OutputPower, PhysicalMm, VrrCapability,
 };
 use casement_core::time::Millihertz;
-use smithay::backend::drm::{DrmDevice, DrmDeviceFd, DrmDeviceNotifier, DrmSurface};
+use smithay::backend::drm::{DrmDevice, DrmDeviceFd, DrmEvent, DrmSurface};
+use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::reexports::calloop::LoopHandle;
 use smithay::reexports::drm::control::{
     self, Device as ControlDevice, ModeTypeFlags, PlaneType, ResourceHandle, connector, crtc,
 };
+use smithay::reexports::gbm::Device as GbmDevice;
 use smithay::utils::DeviceFd;
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::io;
 use std::os::fd::OwnedFd;
+use std::rc::{Rc, Weak};
 
 /// Where a device's file descriptor comes from: the seat session (logind or seatd), which alone
 /// may open a DRM node without root. `session_real.rs` provides the implementation.
@@ -45,8 +55,14 @@ pub trait FdSource: std::fmt::Debug {
 #[derive(Debug)]
 pub struct RealKms {
     device: DrmDevice,
-    notifier: Option<DrmDeviceNotifier>,
+    gbm: GbmDevice<DrmDeviceFd>,
+    flips: Rc<RefCell<Flips>>,
+    /// The device's renderer, made for the first scanout and shared by the rest.
+    renderer: Option<Rc<RefCell<GlesRenderer>>>,
+    /// The surfaces lit and not yet handed to a scanout.
     surfaces: BTreeMap<ConnectorId, DrmSurface>,
+    /// The connectors whose surface is out with a scanout (gone when the scanout is dropped).
+    out: BTreeMap<ConnectorId, Weak<()>>,
     lit: Lit,
     power: BTreeMap<ConnectorId, OutputPower>,
     known: KnownConnectors,
@@ -58,16 +74,34 @@ fn io_error(error: impl std::error::Error + Send + Sync + 'static) -> KmsError {
 }
 
 impl RealKms {
-    /// Wraps the device behind `fd`: reads its resources and takes master.
-    pub fn open(fd: OwnedFd) -> Result<RealKms, KmsError> {
+    /// Wraps the device behind `fd`: reads its resources, takes master, and has `handle`'s loop
+    /// read the device's vblank events.
+    pub fn open<D: 'static>(
+        fd: OwnedFd,
+        handle: &LoopHandle<'static, D>,
+    ) -> Result<RealKms, KmsError> {
         let fd = DrmDeviceFd::new(DeviceFd::from(fd));
-        let (device, notifier) = DrmDevice::new(fd, false).map_err(io_error)?;
+        let (device, notifier) = DrmDevice::new(fd.clone(), false).map_err(io_error)?;
+        let gbm = GbmDevice::new(fd)?;
+        let flips = Rc::new(RefCell::new(Flips::default()));
+        let into = Rc::clone(&flips);
+        handle
+            .insert_source(notifier, move |event, _, _| match event {
+                DrmEvent::VBlank(crtc) => into.borrow_mut().done(crtc),
+                DrmEvent::Error(error) => {
+                    tracing::warn!(%error, "the display device reported an error")
+                }
+            })
+            .map_err(|error| io_error(error.error))?;
         let last = probe(&device)?;
         let known = reconcile(&KnownConnectors::default(), &last).0;
         Ok(RealKms {
             device,
-            notifier: Some(notifier),
+            gbm,
+            flips,
+            renderer: None,
             surfaces: BTreeMap::new(),
+            out: BTreeMap::new(),
             lit: Lit::new(),
             power: BTreeMap::new(),
             known,
@@ -75,15 +109,23 @@ impl RealKms {
         })
     }
 
-    /// The event source of the device's vblanks and page flips, once (the scanout adapter
-    /// inserts it into the loop).
-    pub fn take_notifier(&mut self) -> Option<DrmDeviceNotifier> {
-        self.notifier.take()
+    /// The device's GLES renderer, made on first use.
+    fn renderer(&mut self) -> Result<Rc<RefCell<GlesRenderer>>, KmsError> {
+        if let Some(renderer) = &self.renderer {
+            return Ok(Rc::clone(renderer));
+        }
+        let renderer = casement_render::gles_on(self.gbm.clone())
+            .map_err(|error| KmsError::Io(io::Error::other(error.to_string())))?;
+        let shared = Rc::new(RefCell::new(renderer));
+        self.renderer = Some(Rc::clone(&shared));
+        Ok(shared)
     }
 
-    /// The surface lit on `connector` by the last commit, for the scanout adapter to drive.
-    pub fn take_surface(&mut self, connector: ConnectorId) -> Option<DrmSurface> {
-        self.surfaces.remove(&connector)
+    /// Whether the surface of `connector` is out with a live scanout.
+    fn is_out(&self, connector: ConnectorId) -> bool {
+        self.out
+            .get(&connector)
+            .is_some_and(|claim| claim.strong_count() > 0)
     }
 
     fn connector_handle(&self, id: ConnectorId) -> Option<connector::Handle> {
@@ -124,6 +166,11 @@ impl RealKms {
         let raw = self
             .raw_mode(connector, &output.mode)
             .ok_or(KmsRefusal::Mode)?;
+        if self.is_out(output.connector) {
+            // The compositor that owns the surface keeps its mode; a new mode arrives as a new
+            // surface, after the backend dropped the old scanout.
+            return Ok(());
+        }
         if let Some(surface) = self.surfaces.get(&output.connector) {
             surface.use_mode(raw).map_err(io_error)?;
             surface.set_connectors(&[connector]).map_err(io_error)?;
@@ -177,8 +224,9 @@ impl Kms for RealKms {
         {
             return Err(KmsError::UnknownConnector(connector));
         }
-        // Off clears the surface (CRTC inactive); the surface comes back on the next frame the
-        // scanout adapter queues, so On only records the intent.
+        // Off clears a surface still in hand (CRTC inactive); one out with a scanout is
+        // cleared by the scanout (`ScanoutSurface::blank`). The surface comes back on the next
+        // frame the scanout queues, so On only records the intent.
         if let (OutputPower::Off, Some(surface)) = (power, self.surfaces.get(&connector)) {
             surface.clear().map_err(io_error)?;
         }
@@ -205,6 +253,39 @@ impl Kms for RealKms {
         self.known = known;
         self.last = now;
         events
+    }
+
+    fn scanout(
+        &mut self,
+        connector: ConnectorId,
+        config: &OutputConfig,
+    ) -> Result<Box<dyn ScanoutSurface>, KmsError> {
+        let surface = self
+            .surfaces
+            .remove(&connector)
+            .ok_or(KmsError::UnknownConnector(connector))?;
+        let renderer = self.renderer()?;
+        let claim = Rc::new(());
+        self.out.insert(connector, Rc::downgrade(&claim));
+        let scanout = RealScanout::open(
+            connector,
+            surface,
+            &self.gbm,
+            renderer,
+            self.device.cursor_size(),
+            Rc::clone(&self.flips),
+            claim,
+            config,
+        )?;
+        Ok(Box::new(scanout))
+    }
+
+    fn pause(&mut self) {
+        self.device.pause();
+    }
+
+    fn resume(&mut self) -> Result<(), KmsError> {
+        self.device.activate(false).map_err(io_error)
     }
 }
 
@@ -276,7 +357,8 @@ fn probe(device: &DrmDevice) -> Result<KmsResources, KmsError> {
         .iter()
         .map(|h| {
             let vrr = property(device, *h, "VRR_ENABLED").is_some();
-            CrtcFacts::new(CrtcId(u32::from(*h)), capability(vrr))
+            let gamma = device.get_crtc(*h).map_or(0, |info| info.gamma_length());
+            CrtcFacts::new(CrtcId(u32::from(*h)), capability(vrr)).with_gamma_size(gamma)
         })
         .collect();
     let connectors = handles
@@ -359,22 +441,31 @@ fn planes(device: &DrmDevice, crtcs: &[crtc::Handle]) -> Result<Vec<PlaneFacts>,
     Ok(found.into_values().collect())
 }
 
-/// Opens devices through a session (`session_real.rs` hands the descriptors).
-#[derive(Debug)]
-pub struct RealKmsOpener {
+/// Opens devices through a session (`session_real.rs` hands the descriptors), each with its
+/// vblank source in `handle`'s loop.
+pub struct RealKmsOpener<D: 'static> {
     fds: Box<dyn FdSource>,
+    handle: LoopHandle<'static, D>,
 }
 
-impl RealKmsOpener {
-    /// An opener that gets descriptors from `fds`.
-    pub fn new(fds: Box<dyn FdSource>) -> RealKmsOpener {
-        RealKmsOpener { fds }
+impl<D: 'static> RealKmsOpener<D> {
+    /// An opener that gets descriptors from `fds` and has `handle`'s loop read each device.
+    pub fn new(fds: Box<dyn FdSource>, handle: LoopHandle<'static, D>) -> RealKmsOpener<D> {
+        RealKmsOpener { fds, handle }
     }
 }
 
-impl KmsOpener for RealKmsOpener {
+impl<D: 'static> std::fmt::Debug for RealKmsOpener<D> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RealKmsOpener")
+            .field("fds", &self.fds)
+            .finish_non_exhaustive()
+    }
+}
+
+impl<D: 'static> KmsOpener for RealKmsOpener<D> {
     fn open(&mut self, path: &DevicePath) -> Result<Box<dyn Kms>, KmsError> {
         let fd = self.fds.fd(path)?;
-        Ok(Box::new(RealKms::open(fd)?))
+        Ok(Box::new(RealKms::open(fd, &self.handle)?))
     }
 }
