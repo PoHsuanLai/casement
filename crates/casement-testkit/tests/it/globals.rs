@@ -71,6 +71,13 @@ fn module_of(kind: GlobalKind) -> &'static str {
         GlobalKind::ForeignToplevelList => "foreign_toplevel_list",
         GlobalKind::SecurityContext => "security_context",
         GlobalKind::BackgroundEffect => "background_effect",
+        // P1 globals: declared, not advertised yet, so not in KINDS or the golden.
+        GlobalKind::OutputManagement => "output_management",
+        GlobalKind::OutputPower => "output_power",
+        GlobalKind::Gamma => "gamma",
+        GlobalKind::WlrToplevel => "wlr_toplevel",
+        GlobalKind::Workspace => "workspace",
+        GlobalKind::ImageCapture => "image_capture",
     }
 }
 

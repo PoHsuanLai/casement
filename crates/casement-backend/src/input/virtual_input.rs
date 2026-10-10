@@ -1,17 +1,20 @@
 //! The virtual input backend.
 
 use super::device_spec::DeviceSpec;
+#[cfg(any(feature = "testing", feature = "debug-inject"))]
+use super::virtual_events::EventStamp;
 use super::virtual_events::{
-    EventStamp, VirtualAxis, VirtualButton, VirtualGestureBegin, VirtualGestureEnd, VirtualKey,
-    VirtualMotion, VirtualMotionTo, VirtualPinchUpdate, VirtualSwipeUpdate, VirtualSwitch,
-    VirtualTouch,
+    VirtualAxis, VirtualButton, VirtualGestureBegin, VirtualGestureEnd, VirtualKey, VirtualMotion,
+    VirtualMotionTo, VirtualPinchUpdate, VirtualSwipeUpdate, VirtualSwitch, VirtualTouch,
 };
 use casement_core::DeviceId;
 use casement_core::input::DeviceClass;
 #[cfg(any(feature = "testing", feature = "debug-inject"))]
 use casement_core::input::{Edge, GestureStep, InputKind, KeyCode, TouchStep};
 use smithay::backend::input::{Device, DeviceCapability, InputBackend, InputEvent, UnusedEvent};
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+#[cfg(any(feature = "testing", feature = "debug-inject"))]
+use std::collections::BTreeSet;
+use std::collections::{BTreeMap, VecDeque};
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 

@@ -109,6 +109,8 @@ impl State {
                 };
                 match ClientState::of(&client) {
                     Some(state) => {
+                        // Only the testing build extends the events (A37 below).
+                        #[cfg_attr(not(feature = "testing"), allow(unused_mut))]
                         let mut events =
                             xdg_shell::on_toplevel_commit(&mut self.wl.xdg_shell, surface, state);
                         // A37: a buffer attached before the first ack (see `relax`) is the

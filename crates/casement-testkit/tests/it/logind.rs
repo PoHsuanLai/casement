@@ -6,7 +6,7 @@ use casement_testkit::fakes::{FakeLogind, LogindCall};
 #[ignore = "P1-F2"]
 fn an_inhibitor_is_held_until_its_pipe_closes() {
     let _ = LogindCall::Inhibit(String::new());
-    let _ = FakeLogind::default();
+    let _ = FakeLogind;
     todo!("P1-F2: Inhibit returns a pipe; closing it records InhibitReleased");
 }
 

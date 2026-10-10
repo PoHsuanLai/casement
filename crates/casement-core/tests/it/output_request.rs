@@ -48,10 +48,8 @@ fn a_mode_the_display_does_not_offer_is_refused() {
     );
     let config = current(&facts);
     let odd = mode(1234, 567, 60_000, ModePreference::Other);
-    let want = OutputChangeSet {
-        mode: Some(odd),
-        ..OutputChangeSet::none()
-    };
+    let mut want = OutputChangeSet::none();
+    want.mode = Some(odd);
     assert_eq!(
         resolve_change(&facts, &config, &want),
         Err(OutputRefusal::ModeNotOffered(odd))
