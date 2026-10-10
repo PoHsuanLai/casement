@@ -9,6 +9,17 @@
 //! never deeper (`convert`).
 //!
 //! Nothing here names a device backend (row B6).
+//!
+//! ```
+//! use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
+//! use casement_wayland::convert::{rect_of, rect_to};
+//!
+//! let rect = LogicalRect::new(
+//!     LogicalPoint { x: 10, y: 20 },
+//!     LogicalSize { w: 300, h: 200 },
+//! );
+//! assert_eq!(rect_of(rect_to(rect)), rect);
+//! ```
 
 pub mod client;
 pub mod convert;

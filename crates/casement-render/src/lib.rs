@@ -7,6 +7,15 @@
 //! smithay's `DummyRenderer` and [`golden`], the golden-image comparison the test kit uses.
 //!
 //! Nothing here names a device backend (row B4): no DRM, udev, session or libinput.
+//!
+//! ```
+//! use casement_core::WindowId;
+//! use casement_render::TextureBook;
+//!
+//! let book = TextureBook::empty();
+//! assert!(book.window(&WindowId(1)).is_none());
+//! assert!(book.cursor().is_none());
+//! ```
 
 mod compositor;
 mod damage;

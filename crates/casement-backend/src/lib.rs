@@ -7,6 +7,15 @@
 //! that name the device crates (row B7).
 //!
 //! Nothing here names `casement_wayland` or a `smithay::wayland` module but dmabuf (row B5).
+//!
+//! ```
+//! use casement_backend::{BackendError, VirtualOutputSpec};
+//!
+//! let spec = VirtualOutputSpec::parse("HEADLESS-1:1920x1080@60000:120:0,0").unwrap();
+//! assert_eq!(spec.mode.size.w, 1920);
+//! let refused = VirtualOutputSpec::parse("nonsense");
+//! assert!(matches!(refused, Err(BackendError::BadSpec { .. })));
+//! ```
 
 mod backend;
 pub mod gpu;

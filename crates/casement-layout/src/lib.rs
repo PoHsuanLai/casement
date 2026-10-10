@@ -5,6 +5,15 @@
 //! [`RustScene`] is the production layout: arithmetic for floating and cascading windows, and
 //! Taffy (behind `taffy_bridge`, the only module naming it) where a layout really is flex or
 //! grid (Split View, Exposé, from P3).
+//!
+//! ```
+//! use casement_core::settings::CasementSettings;
+//! use casement_layout::{Arrangement, LayoutKnobs, RustScene, SceneLayout, SceneSpec};
+//!
+//! let knobs = LayoutKnobs::of(&CasementSettings::defaults());
+//! let arrangement = RustScene.arrange(&SceneSpec { outputs: Vec::new() }, &knobs);
+//! assert_eq!(arrangement, Arrangement::default());
+//! ```
 
 mod arrangement;
 mod knobs;

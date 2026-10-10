@@ -4,6 +4,21 @@
 //! [`Effect`]s the composition root carries out. Nothing here reads a clock, a device, a socket
 //! or the environment: time is a [`time::Mono`] argument, hardware arrives as facts
 //! ([`output::OutputFacts`]), and randomness as a seed ([`space::SpaceSeed`]).
+//!
+//! ```
+//! use casement_core::settings::CasementSettings;
+//! use casement_core::space::SpaceSeed;
+//! use casement_core::time::Mono;
+//! use casement_core::{Event, Model};
+//! use std::time::Duration;
+//!
+//! let epoch = Mono(Duration::ZERO);
+//! let seed = SpaceSeed::from_entropy([7; 16]);
+//! let model = Model::new(CasementSettings::defaults(), epoch, seed);
+//! let event = Event::SettingsChanged(Box::new(CasementSettings::defaults()));
+//! let (model, _effects) = model.step(event, epoch);
+//! assert_eq!(model.check_invariants(), Ok(()));
+//! ```
 
 mod cause;
 mod effect;

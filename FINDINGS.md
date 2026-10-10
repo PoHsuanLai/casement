@@ -92,7 +92,7 @@ P3-CSS, three in `src/` and its ignored parity test, never built at P0-Z2).
 | `crates/casement/src/core_loop.rs` | feed, frame (2) | P0-B-loop | `crates/casement/tests/it/time.rs`; frames through `crates/casement-testkit/tests/it/fixture.rs` |
 | `crates/casement/src/display.rs` | attach_display, flush (2) | P0-B-loop | `crates/casement/tests/it/time.rs`; frames through `crates/casement-testkit/tests/it/fixture.rs` |
 | `crates/casement/src/exec.rs` | exec (1) | P0-B-loop | `crates/casement/tests/it/time.rs`; frames through `crates/casement-testkit/tests/it/fixture.rs` |
-| `crates/casement/src/main.rs` | run (1) | P0-B-loop | `crates/casement/tests/it/time.rs`; frames through `crates/casement-testkit/tests/it/fixture.rs` |
+| `crates/casement/src/run.rs` | run (1) | P0-B-loop | `crates/casement/tests/it/time.rs`; frames through `crates/casement-testkit/tests/it/fixture.rs` |
 | `crates/casement/src/time/calloop.rs` | arm (1) | P0-B-loop | `crates/casement/tests/it/time.rs`; frames through `crates/casement-testkit/tests/it/fixture.rs` |
 | `crates/casement/src/time/source.rs` | ClockSource::start, ClockSource::now (2) | P0-B-loop | `crates/casement/tests/it/time.rs`; frames through `crates/casement-testkit/tests/it/fixture.rs` |
 | `crates/casement/src/time/virtual_clock.rs` | SharedClock::update, SharedClock::advance_to, EventSource::process_events, EventSource::before_sleep (4) | P0-B-loop | `crates/casement/tests/it/time.rs`; frames through `crates/casement-testkit/tests/it/fixture.rs` |
@@ -381,7 +381,7 @@ byte-exact for tier P and 2 per channel on at most 1000 ppm of pixels for tier L
   each its document spelling; the serde derives stay for the model's own stores.
 - **casement takes a `toml` dev-dependency** (P0-F1-output): `tests/config.rs` writes and reads
   documents through it.
-- **`serve_debug` takes Debug1's name with replacement off** (P0-debug-dbus): a second casement
+- **`serve_debug_at` takes Debug1's name with replacement off** (P0-debug-dbus): a second casement
   on the same bus fails with `IpcError::Bus` and the first keeps the name. The bus thread is
   not joinable: it lives as long as the process.
 
@@ -705,3 +705,30 @@ W13 8 to 0.
 - Unverified (no builds this lane): the new test has not run. If it fails, the dead-surface check is not
   reached at the disconnect (look at the order of `ClientState::disconnected` and the object clean-up in
   wayland-backend), and the fix is to call `sync_inhibitors` from `exec::resync_keyboard`'s caller in `turn`.
+
+## c18: library shape, Step L (2026-10-11)
+- F4: `casement::run(RunConfig) -> Result<(), RunError>` holds the startup and the loop; `RunError` is typed
+  (`StartError`, `calloop::Error`, wayland `InitError`, `BindError`, `IpcError`, `JailRefusal`) and maps to the exit
+  code with `RunError::exit_code` (5 for a jail breach). The Debug1 server (`debug.rs`) moved into the lib behind
+  `debug-inject`. `main.rs` reads `CASEMENT_LOG` and `DBUS_SESSION_BUS_ADDRESS` and nothing else.
+- F3: `serve_debug` is gone (callers use `serve_debug_at`); `log::init(filter)` takes the filter.
+- F2: `casement-ipc`'s `casement-backend` is optional and comes with `debug-inject`.
+- F1, F9: `BackendError` has typed sources (`SpecError`, smithay's window, swap, gles and pixman errors,
+  `RenderError`, `DeniedOpen { path, source }`); the test kit returns `FuzzFailure` (one variant per oracle) and
+  `LogindError`.
+- F5: `#[non_exhaustive]` on `Event`, `Effect`, `Cause`, `BackendKind` and every public error enum. In-repo matches
+  from other crates gained a fallback arm (`exec::apply`, `cause_travel`, `core_loop` present and announce, the
+  fixture's backend accessors). Not marked: structs (the config and spec structs are built by literal across crates;
+  they get constructors first) and closed vocabularies.
+- F6: the cursor rasters and the lock cover's id live in `TextureBook` (`draw_cache.rs`); the A37 ack policy is
+  `State::ack_policy` set from `FixtureSpec::with_ack_policy`, so `relax.rs` has no static.
+- F8: `Pull` (grab resize sides), `TreeKind` (presence), `Visibility` (layout) and `fate_of(Option<_>)` replace the
+  listed bools. `convert::toggle_of(bool)` stays: it is the one place a smithay `bool` becomes `Toggle`
+  (CONVENTIONS 3), and `DndGrabHandler::dropped(_validated: bool)` is smithay's own signature.
+- F12, F13: crate docs with a doc test on core, layout, motion, render, backend and wayland; the `casement` lib doc
+  says how to embed the compositor.
+- Raster `expect`s: they sat in `raster.rs`'s `#[cfg(test)]` module, not on a library path; they are checked
+  conversions now anyway.
+- Unverified (no builds this lane): none of this has compiled. First places to look: `run.rs` (the `cfg` arms and the
+  `#[from]` set), `casement-backend/src/backend.rs` (the `#[from]` error types' paths) and `headless/renderer.rs`
+  (`Into<BackendError>` bound on `draw_with`), `casement-testkit/src/fuzz/*`.

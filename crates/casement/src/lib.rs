@@ -8,6 +8,31 @@
 //! converts its arguments and calls `casement_wayland::<p>::on_<request>` → `Vec<Event>` →
 //! [`core_loop::feed`] → `Model::step` → `Vec<Effect>` → [`exec::exec`] →
 //! `casement_wayland::<p>::apply_<effect>`, the backend or the renderer.
+//!
+//! # Embedding the compositor
+//!
+//! [`run`] is the whole startup: it builds the event loop and the Wayland display, makes the
+//! [`State`] with [`State::new`], listens for clients and drives the loop until it is asked to
+//! stop, so a second binary or a harness calls it with a [`RunConfig`] and gets what the
+//! `casement` binary gets. A host that wants its own loop does what `run` does: make a
+//! `calloop` event loop and a `Display<State>`, call `State::new(config, &mut display, &handle)`,
+//! attach the display ([`display::attach_display`]) and call [`core_loop::turn`] once per
+//! loop turn. `State` is the one type smithay dispatches into, so the host builds with the union
+//! of smithay features this crate lists in its manifest (`wayland_frontend`, `desktop`, the
+//! renderers, the backends it starts and `use_system_lib`); the pure crates under it
+//! (`casement-core`, `-layout`, `-motion`) need none of them.
+//!
+//! ```
+//! use casement::RunConfig;
+//! use casement::cli::{self, Command};
+//!
+//! let Ok(Command::Run(start)) = cli::parse_args(&[]) else {
+//!     panic!("no arguments start the compositor");
+//! };
+//! let config = RunConfig::new(start);
+//! // Compiled, not called: `run` blocks until the compositor is asked to stop.
+//! let _serve = move || casement::run(config);
+//! ```
 
 pub mod cli;
 pub mod clients;

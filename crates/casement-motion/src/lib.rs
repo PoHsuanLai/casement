@@ -4,6 +4,14 @@
 //!
 //! Floats live only inside the legs and the sampling arithmetic; [`quantise`] is the one step
 //! back to integer units, so a frame is `Eq` data and a motion golden is text.
+//!
+//! ```
+//! use casement_core::time::Mono;
+//! use casement_motion::MotionBook;
+//! use std::time::Duration;
+//!
+//! assert!(!MotionBook::empty().is_moving(Mono(Duration::ZERO)));
+//! ```
 
 mod book;
 mod cause_travel;

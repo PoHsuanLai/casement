@@ -26,8 +26,8 @@ the binaries and the test kit (P0-Z2). casement-intents joins at P4-Z, casement-
 | `casement-wayland` | one module per protocol: a `<Protocol>Part` (smithay's state plus our BTreeMap tables), `Part::new` behind the I7 filter, `on_*` (request to `Event`s), `apply_*` (effect to wire); `WaylandStates`, `GlobalFilter`, `ClientState`, `convert` | the wire |
 | `casement-backend` | the headless backend (virtual outputs, vblank source, render-cost model, `VirtualInput: InputBackend`), winit, the session seam, the soft-GPU pieces (`SoftPixman`, `FixedUdmabuf`, A4); the tty seams and their thin adapters from P1-Z | devices (P1), none headless |
 | `casement-agent` | the privileged-connection hand-out (P2), agent seat, EIS, masked capture, trusted surface, kill (P4); a skeleton at P0 | sockets |
-| `casement-ipc` | the inject and wait grammars; `org.quire.Casement.Debug1` (feature `debug-inject`), `org.quire.Compositor1` (P2-Z); `IpcHandles` | D-Bus |
-| `casement` | lib + bin: `State` (frozen), `delegates.rs` (frozen), `handlers/<protocol>.rs`, `core_loop`, `exec`, `clients`, `display`, `time/` (the only clock), `config/` (ds-settings), `cli`, `jail_check` (features `testing`, `debug-inject`), `log` | everything, through the crates above |
+| `casement-ipc` | the inject and wait grammars (its `casement-backend` dependency is optional, on with `debug-inject`; `serve_debug_at(address)` takes the bus address, the library reads no environment); `org.quire.Casement.Debug1` (feature `debug-inject`), `org.quire.Compositor1` (P2-Z); `IpcHandles` | D-Bus |
+| `casement` | lib + bin: `State` (frozen), `delegates.rs` (frozen), `handlers/<protocol>.rs`, `core_loop`, `exec`, `clients`, `display`, `time/` (the only clock), `config/` (ds-settings), `cli`, `run` (`casement::run(RunConfig) -> Result<(), RunError>`: the startup and the event loop; `main.rs` is only arguments, `$CASEMENT_LOG`, `$DBUS_SESSION_BUS_ADDRESS` and the exit code), `debug` (Debug1 in the loop, feature `debug-inject`), `jail_check` (features `testing`, `debug-inject`), `log` (takes its filter as an argument) | everything, through the crates above |
 | `casementctl` | lib + bin: `debug` (Debug1), `shot` (P1), `report` (P5) | D-Bus, the wire |
 | `casement-testclient` | typed wayland-client helpers per protocol, `Transcript`, `Pattern`, shm buffers; bin `casement-probe`; no smithay (B9) | the wire |
 | `casement-testkit` | `Fixture` over the real `State`, `FixtureSpec`, `TestOrigin`, `FixtureInput`, fakes (session, udev, logind, palmrest), the soft GPU topology and the jail's fabricated nodes, `Env` (goldens), typed fuzz ops; bin `fake-logind` | the jail's scratch only |
@@ -224,7 +224,7 @@ its behaviour test written and ignored with that lane's id.
 The pure crates test their functions directly: table tests per function, proptest for
 properties (T0), integration tests under each crate's `tests/it/` (one binary per crate: a `mod` per topic, a
 guard test that fails when a file is not included) with shared builders in `tests/it/support/`.
-`fuzz/` and `relax.rs` in the test kit stay their own binaries (cost; a process-global policy).
+`fuzz/` and `relax.rs` in the test kit stay their own binaries (cost). The ack policy is no longer process-global: it is `State::ack_policy` (`testing` only), set from `FixtureSpec::with_ack_policy`.
 
 Everything else drives the real `State` through `casement_testkit::Fixture` (CONVENTIONS
 addendum 10): the headless backend, a `Display` whose poll fd sits in calloop as a duplicate
