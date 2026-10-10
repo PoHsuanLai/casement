@@ -1385,3 +1385,10 @@ a pure function in `casement/src/main.rs` over (flag, backend, env). `State::new
 `Seams::real(&config.state_home)` for every backend, so headless needed no wiring to save and load `spaces.toml`.
 Surprise: `cargo fmt -p` needs the sibling checkouts, absent in this worktree, so the files were formatted with
 `rustfmt --edition 2024`; nothing was compiled by the lane.
+
+## p1-sh follow-up: the probe's tap (2026-10-11)
+
+- `casement-probe workspaces` timed out in the desktop scenario: a `TestClient` talks through its tap, which relays
+  bytes only when the client is pumped. The verb pumped only the side-queue watch, so the binds never left the tap.
+  Fixtures pump the client every round, which is why the in-process tests never saw it. Any probe verb built on a
+  side-queue watch must pump the client too.

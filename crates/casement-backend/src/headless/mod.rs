@@ -13,6 +13,7 @@ mod virtual_output;
 pub use cost::RenderCostModel;
 pub use gamma::GAMMA_SIZE;
 pub use input::HeadlessInput;
+#[cfg(feature = "tty")]
 pub(crate) use output_set::transform_of;
 pub use output_set::{OutputSet, VirtualOutput};
 pub use renderer::{HeadlessRenderer, SoftRenderer};

@@ -74,6 +74,7 @@ fn scene(spaces: usize, per_space: usize, mix: bool) -> SceneSpec {
     SceneSpec {
         outputs: vec![OutputSpec {
             output: key,
+            full: rect(0, 0, 1920, 1080),
             usable: rect(0, 24, 1920, 1056),
             scale: Scale::ONE,
             mode: SceneMode::Desktop {
