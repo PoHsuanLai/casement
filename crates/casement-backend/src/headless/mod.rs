@@ -195,6 +195,18 @@ impl HeadlessBackend {
             .and_then(|output| output.last.as_ref())
     }
 
+    /// Draws `source` alone into a fresh image of `size` at `scale` and reads it back: a window's
+    /// pixels without whatever overlaps it, on or off any screen (window capture).
+    pub fn render_offscreen(
+        &mut self,
+        size: PhysicalSize,
+        scale: Scale,
+        source: &dyn FrameSource,
+    ) -> Result<RgbaFrame, BackendError> {
+        let bytes = self.renderer.offscreen(size, scale, source)?;
+        Ok(RgbaFrame { size, bytes })
+    }
+
     /// The virtual input devices.
     pub fn input(&mut self) -> &mut VirtualInput {
         &mut self.input

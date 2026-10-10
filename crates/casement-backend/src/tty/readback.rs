@@ -14,11 +14,13 @@
 use crate::backend::BackendError;
 use crate::headless::{
     DmabufMode, EdidSource, FrameSource, GpuId, HeadlessBackend, HeadlessConfig, PresentedFrame,
-    RenderCostModel, SoftRenderer, VirtualOutputSpec,
+    RenderCostModel, RgbaFrame, SoftRenderer, VirtualOutputSpec,
 };
 use casement_core::OutputName;
+use casement_core::geometry::PhysicalSize;
 use casement_core::output::{EdidFacts, EdidSerial, OutputConfig, VrrCapability};
 use casement_core::time::{Mono, VblankSeq};
+use ds_core::geometry::scale::Scale;
 use std::collections::BTreeMap;
 
 /// Whether a capture is open on an output.
@@ -72,6 +74,14 @@ impl Readback {
         if self.watched.get(output) == Some(config) {
             return Ok(());
         }
+        let shadow = self.started()?;
+        let _ = shadow.plug(spec_of(output, config));
+        self.watched.insert(output.clone(), *config);
+        Ok(())
+    }
+
+    /// The shadow renderer, started if it was not.
+    fn started(&mut self) -> Result<&mut HeadlessBackend, BackendError> {
         if self.shadow.is_none() {
             self.shadow = Some(HeadlessBackend::start(HeadlessConfig {
                 outputs: Vec::new(),
@@ -80,11 +90,18 @@ impl Readback {
                 cost: RenderCostModel::Fixed(std::time::Duration::ZERO),
             })?);
         }
-        if let Some(shadow) = &mut self.shadow {
-            let _ = shadow.plug(spec_of(output, config));
-        }
-        self.watched.insert(output.clone(), *config);
-        Ok(())
+        self.shadow.as_mut().ok_or(BackendError::CanvasMismatch)
+    }
+
+    /// Draws `source` alone into a fresh image of `size` at `scale` through the software
+    /// renderer and reads it back (window capture: no output needs to be watched).
+    pub fn render_offscreen(
+        &mut self,
+        size: PhysicalSize,
+        scale: Scale,
+        source: &dyn FrameSource,
+    ) -> Result<RgbaFrame, BackendError> {
+        self.started()?.render_offscreen(size, scale, source)
     }
 
     /// Draws `source` into the shadow of `output` as the frame shown at `seq`; nothing when the

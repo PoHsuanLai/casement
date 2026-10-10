@@ -61,36 +61,6 @@ fn a_second_get_window_is_already_constructed() {
     assert_eq!(error.code, ManagerError::AlreadyConstructed as u32);
 }
 
-/// Request_placement with a press serial is stored in the model, not acted on at P0.
-#[test]
-fn request_placement_is_stored() {
-    let (mut fixture, id) = boot();
-    let base = WmBase::bind(fixture.client(id), 7);
-    let manager = WindowManager::bind(fixture.client(id), 1);
-    let pointer_log = bind_pointer(fixture.client(id));
-    fixture.pump();
-    let top = map_toplevel(&mut fixture, id, &base, (400, 300));
-    let ext = manager.window(fixture.client(id), &top);
-    let window = windows(&fixture)[0];
-    let device = pointer(&mut fixture);
-    click(&mut fixture, device, window);
-    click(&mut fixture, device, window);
-    let serial = pointer_log.last_press().expect("a press was delivered");
-    let before = fixture.model().windows()[&window].state.clone();
-    ext.request_placement(PlaceTarget::Left, serial);
-    ext.request_placement(PlaceTarget::Fill, serial.wrapping_add(1000));
-    fixture.pump();
-    assert!(
-        fixture.client(id).protocol_error().is_none(),
-        "a bad serial is ignored, not an error"
-    );
-    assert_eq!(
-        fixture.model().windows()[&window].state,
-        before,
-        "P0 does not act on placement"
-    );
-}
-
 /// `dialog` and `shell` are not roles a client may ask for (`bad_role`); a role it may ask for
 /// reaches the model.
 #[test]
@@ -203,9 +173,8 @@ fn the_creation_transcript_matches_its_golden() {
 
 /// From P2 a proven `request_placement` is acted on: the window is placed, its model state
 /// changes and the object is told its new placement mark. A bad serial is still ignored.
-/// (P2-Q3 replaces `request_placement_is_stored`, which pins the P0 behaviour, with this.)
+/// (This replaced `request_placement_is_stored`, which pinned the P0 behaviour.)
 #[test]
-#[ignore = "P2-Q3: flip quire_window::PLACEMENT_POLICY to Act and send the mark on a state change"]
 fn request_placement_places_the_window_and_reports_the_mark() {
     let (mut fixture, id) = boot();
     let base = WmBase::bind(fixture.client(id), 7);

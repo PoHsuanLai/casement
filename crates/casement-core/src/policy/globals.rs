@@ -120,8 +120,8 @@ pub enum GlobalKind {
     /// `ext_output_image_capture_source_manager_v1` and `ext_image_copy_capture_manager_v1`
     /// (P1-Z; advertised by P1-C1).
     ImageCapture,
-    /// `ext_foreign_toplevel_image_capture_source_manager_v1` (P2-Z: declared, not advertised
-    /// until P2-Q3, because a public client sees it and a request would reach a `todo!()`).
+    /// `ext_foreign_toplevel_image_capture_source_manager_v1` (P2-Q3: window capture; a public
+    /// client sees it, a sandbox does not).
     ToplevelCapture,
     /// `quire_desktop_manager_v1`: the desktop model of apps, windows and Spaces (P2-Z; the
     /// shell manages through it, an agent reads it).

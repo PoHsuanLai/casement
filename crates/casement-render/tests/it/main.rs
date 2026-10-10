@@ -7,6 +7,7 @@ mod render;
 mod scenes;
 #[cfg(feature = "testing")]
 mod support;
+mod window_pass;
 
 /// Test files that run in their own process and stay their own binary (a comment in each says why).
 const STANDALONE: &[&str] = &[];

@@ -9,7 +9,9 @@
 use super::FrameSource;
 use crate::backend::BackendError;
 use casement_core::geometry::PhysicalSize;
+use casement_render::pass::render_window;
 use casement_render::{CasementElement, Compositor, render_output};
+use ds_core::geometry::scale::Scale;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
@@ -108,6 +110,48 @@ impl HeadlessRenderer {
                 draw_with(renderer, texture, tracker, &elements, age, size)
             }
             _ => Err(BackendError::CanvasMismatch),
+        }
+    }
+}
+
+impl HeadlessRenderer {
+    /// Draws `source`'s elements alone into a fresh image of `size` at `scale` and reads it
+    /// back (rows top to bottom, RGBA, transparent where nothing draws): a window's pixels
+    /// without whatever overlaps it. The dummy renderer draws nothing and reads back zeros.
+    pub(super) fn offscreen(
+        &mut self,
+        size: PhysicalSize,
+        scale: Scale,
+        source: &dyn FrameSource,
+    ) -> Result<Vec<u8>, BackendError> {
+        let buffer = buffer_size(size)?;
+        match self {
+            #[cfg(feature = "testing")]
+            HeadlessRenderer::Dummy(_) => {
+                let length = usize::try_from(size.w)
+                    .unwrap_or(0)
+                    .saturating_mul(usize::try_from(size.h).unwrap_or(0))
+                    .saturating_mul(4);
+                Ok(vec![0; length])
+            }
+            HeadlessRenderer::Pixman(renderer) => {
+                let renderer = renderer.as_mut();
+                let mut image = renderer
+                    .create_buffer(Fourcc::Abgr8888, buffer)
+                    .map_err(renderer_fault)?;
+                let elements = source.pixman(renderer);
+                render_window(renderer, &mut image, &elements, size, scale)
+                    .map_err(BackendError::from)
+            }
+            HeadlessRenderer::Gles(renderer) => {
+                let renderer = renderer.as_mut();
+                let mut texture: GlesTexture = renderer
+                    .create_buffer(Fourcc::Abgr8888, buffer)
+                    .map_err(renderer_fault)?;
+                let elements = source.gles(renderer);
+                render_window(renderer, &mut texture, &elements, size, scale)
+                    .map_err(BackendError::from)
+            }
         }
     }
 }

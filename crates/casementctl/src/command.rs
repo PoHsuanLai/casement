@@ -329,11 +329,10 @@ mod tests {
     }
 
     #[test]
-    fn window_and_masked_shots_and_report_are_not_built_yet() {
-        // A named output is captured over the wire (`capture.rs`), the default output and a
-        // region go through Debug1 (`shot.rs`); a window needs P2's toplevel sources and a masked
-        // shot P4's mask pass.
-        for line in ["shot --window 3 out.png", "shot --masked out.png"] {
+    fn masked_shots_and_report_are_not_built_yet() {
+        // A named output is captured over the wire (`capture.rs`), the default output, a region
+        // and a window go through Debug1 (`shot.rs`); a masked shot needs P4's mask pass.
+        for line in ["shot --masked out.png"] {
             let shot = parse(&args(line)).expect("shot");
             assert_eq!(exit_code(shot), COULD_NOT_RUN, "{line}");
         }

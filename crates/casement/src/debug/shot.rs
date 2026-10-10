@@ -1,8 +1,11 @@
-//! `Shot`: the last frame an output presented, or a region of it, written as a PNG.
+//! `Shot`: the last frame an output presented, a region of it, or one window drawn alone,
+//! written as a PNG.
 
 use super::png::encode_rgba;
 use crate::State;
+use crate::handlers::capture_source::window_rgba;
 use casement_backend::{BackendKind, FramePixels};
+use casement_core::WindowId;
 use casement_core::geometry::LogicalRect;
 use casement_ipc::ShotArea;
 use casement_ipc::dbus::DebugReply;
@@ -11,7 +14,31 @@ use casement_ipc::dbus::DebugReply;
 const PER_UNIT: i64 = 120;
 
 /// Writes the shot `area` names to `path`; answers its size, or why it could not be taken.
-pub(super) fn shot(state: &State, area: &ShotArea, path: &str) -> DebugReply {
+pub(super) fn shot(state: &mut State, area: &ShotArea, path: &str) -> DebugReply {
+    match area {
+        ShotArea::Window(window) => window_shot(state, *window, path),
+        _ => output_shot(state, area, path),
+    }
+}
+
+/// One window drawn alone (what window capture sends a client), written as a PNG: the window
+/// without whatever overlaps it, at the scale of its output.
+fn window_shot(state: &mut State, window: WindowId, path: &str) -> DebugReply {
+    let Ok(drawn) = window_rgba(state, window) else {
+        return DebugReply::Refused(format!("window {} is not on a screen", window.0));
+    };
+    let (w, h) = (drawn.size.w, drawn.size.h);
+    match std::fs::write(path, encode_rgba(w, h, &drawn.bytes)) {
+        Ok(()) => DebugReply::Json(format!(
+            "{{\"window\":{},\"width\":{w},\"height\":{h}}}",
+            window.0
+        )),
+        Err(error) => DebugReply::Refused(format!("writing {path}: {error}")),
+    }
+}
+
+/// An output's last frame, or a region of it.
+fn output_shot(state: &State, area: &ShotArea, path: &str) -> DebugReply {
     let outputs = super::dump::outputs(state);
     let chosen = match area {
         ShotArea::Output(Some(name)) => outputs.iter().find(|(_, found, _)| found == name),
@@ -19,6 +46,7 @@ pub(super) fn shot(state: &State, area: &ShotArea, path: &str) -> DebugReply {
         ShotArea::Region(rect) => outputs
             .iter()
             .find(|(_, _, config)| config.logical_rect().contains(rect.origin)),
+        ShotArea::Window(_) => None,
     };
     let Some((_, name, config)) = chosen else {
         return DebugReply::Refused(format!("shot {area:?}: no such output"));
@@ -42,7 +70,7 @@ pub(super) fn shot(state: &State, area: &ShotArea, path: &str) -> DebugReply {
             let cut = cut(&pixels.bytes, pixels.size.w as usize, (x0, y0, w, h));
             (x0, y0, w, h, cut)
         }
-        ShotArea::Output(_) => (
+        ShotArea::Output(_) | ShotArea::Window(_) => (
             0,
             0,
             pixels.size.w as usize,

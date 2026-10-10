@@ -84,6 +84,7 @@ fn apply(state: &mut State, effect: Effect) {
                 &mut state.wl.wlr_toplevel,
                 window,
             ));
+            publish::end_window_captures(state, window);
         }
         Effect::SendClose { window } => {
             log(xdg_shell::apply_close(&mut state.wl.xdg_shell, window));

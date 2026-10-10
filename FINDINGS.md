@@ -121,8 +121,8 @@ module); `Rgba8`; `TextureBook`; `Transcript`, `Pattern`; `FixtureSpec`, `TestOr
 
 ### P2-Z: the private protocols, window capture, the hand-out
 
-`todo!()` by lane (33): P2-Q1 11 (8 in the protocol, 3 in the model), P2-Q2 10, P2-Q3 12. Ignored tests by lane:
-P2-Q1 9 (5 in the test kit, 4 in casement-core), P2-Q2 7 (3 in casement-agent, 4 in the test kit), P2-Q3 5. Lane ids and file sets:
+`todo!()` by lane (21 now; P2-Q3 filled its 12): P2-Q1 11 (8 in the protocol, 3 in the model), P2-Q2 10. Ignored tests by lane:
+P2-Q1 9 (5 in the test kit, 4 in casement-core), P2-Q2 7 (3 in casement-agent, 4 in the test kit); P2-Q3's 5 are un-ignored. Lane ids and file sets:
 `~/rs-wt/compositor-scope/23-P2-FILL-LANES.md`.
 
 | File | Items | Lane | Proven by |
@@ -132,9 +132,6 @@ P2-Q1 9 (5 in the test kit, 4 in casement-core), P2-Q2 7 (3 in casement-agent, 4
 | `crates/casement-agent/src/socket.rs` | (3, in the table above) | P2-Q2 | the agent crate's three ignored tests |
 | `crates/casement-ipc/src/dbus/compositor1.rs` | ProcCgroups::cgroup_of, Compositor1::connect (2) | P2-Q2 | the `Connect` row in `quire_shell.rs`; a private-bus test the lane writes beside `serve_compositor_at` |
 | `crates/casement/src/connect.rs` | answer (1) | P2-Q2 | the same |
-| `crates/casement-wayland/src/capture_source.rs` | on_toplevel_source, on_source_destroyed, on_session, on_frame_request, apply_content, apply_ready, apply_failed, apply_window_gone (8) | P2-Q3 | `crates/casement-testkit/tests/it/protocol/capture_source.rs` (4 ignored) |
-| `crates/casement/src/handlers/capture_source.rs` | constraints, new_session, serve, release (4) | P2-Q3 | the same |
-| `crates/casement-testkit/tests/it/protocol/quire_window.rs` | (no stub: `request_placement_places_the_window_and_reports_the_mark` is ignored, and `request_placement_is_stored` is replaced by it) | P2-Q3 | itself |
 | `crates/casement-core/src/model/desktop_requests.rs` | ToSpace, Assign, Space MoveTo (3; the shell's model tests are in `model_shell.rs`, P2-Q2's) | P2-Q1 | `crates/casement-core/tests/it/quire.rs` (4 ignored, including the model's `Effect::Desktop` emission, which has no stub: nothing emits it yet) |
 
 ## Open items
@@ -1485,3 +1482,66 @@ Nothing here compiled or run (the lane does not build). Plan: 20 §4.15 and §4.
   `session` after `session.source()`), `casement/src/exec.rs` (the new `ShellNote` import beside `mod shell`),
   `casement-wayland/src/capture_source.rs` (`ImageCaptureSourceHandler` as the bound of `new`), and
   `casement/src/state.rs` (the three `::<State>` constructor bounds through the blanket `delegate_dispatch2!`).
+
+## p2-q3: window capture and full placement (2026-10-11)
+
+Nothing here compiled or run (the lane does not build). `ext_foreign_toplevel_image_capture_source_manager_v1`
+is advertised at version 1 to every non-sandboxed connection (`globals.txt` row, the sandbox `HIDDEN` table, the
+I7 table in casement-core's `input.rs`, the globals test's `KINDS`, the test client's catalogue line).
+`quire_window`'s `PLACEMENT_POLICY` is `Act`. Re-run the fuzz seeds that failed before: the catalogue line adds an
+interface, which shifts the typed fuzz box's object ids (as P1-C1's globals did).
+
+### The decision: an offscreen pass, not a crop of the output's last frame
+
+A window's capture is its surface tree drawn alone into a fresh image the size of its content
+(`casement_render::pass::{window_tree, render_window}`), read back like `capture_output` reads a framebuffer.
+Cropping the output's last frame is wrong in three cases the brief names and right in none that matters: a
+window under another window shows the other window's pixels; a window off the screen (or partly) has no pixels
+in the frame; and an output at 1.5x shows the window at the output's scale, but a crop cannot honour any other
+size. The offscreen draw is right for all three by construction (the test
+`an_overlapped_window_is_captured_whole` pins the first). The cost is a second draw of one window per delivered
+frame, paid only when the damage gate lets a frame through (a static window pays none). The image is transparent
+where the window draws nothing, so a translucent window or a rounded client corner keeps its alpha.
+The backend owns the renderer, so `HeadlessBackend::render_offscreen` and `TtyBackend::render_offscreen` (the
+latter through the capture shadow's pixman renderer, started on the first call) run the pass; the casement
+crate only builds the elements (`handlers/capture_source/render.rs`). No golden image was written (a golden needs
+a run); `casement-render/tests/it/window_pass.rs` pins the pass on pixman with solid elements instead.
+
+### Departures
+
+- **Capture size is the window's committed size.** The content is `TextureBook::window(..).committed`: the
+  declared window geometry, else the bounding box of the tree, at the scale of the output the window is on (its
+  Space's output, or its home). It is not the layout rectangle.
+- **A scale change is announced lazily.** A window that changes size is told its sessions' new constraints at its
+  commit (and a held frame fails with `buffer_constraints`); an output that changes scale has no commit, so the
+  session learns at the next frame request, which fails with `buffer_constraints` and carries the new
+  `buffer_size`. The brief wanted the announce "again when the scale changes"; a proactive announce needs a hook
+  in the output-change path (`core_loop`), which is outside this lane.
+- **Source destruction is not forwarded.** `handlers/image_capture.rs::source_destroyed` only knows output
+  sources, so a destroyed window source stays in `ToplevelCaptureBook::sources` until its window closes (a
+  session made from it already works). Interface ask: forward a `ToplevelSourceId` in that handler to
+  `capture_source::on_source_destroyed` (three lines in a file this lane may not edit).
+- **A mark change inside one tile state is not published.** `placement` is sent from `publish_toplevel`, whose
+  trigger (`model/published.rs::Listing`) compares `WindowStateKind`; Left to Right (both `Tiled`) changes no
+  field, so the object is not told. Interface ask (P2-Q1's file): add `mark: PlacementMark` to `Listing`.
+  `apply_placement` keeps the last mark it sent and sends only on a change.
+- **`shot --window ID` has no end-to-end test.** `ShotArea::Window` (grammar `window:ID`), the planner and the
+  debug object's `window_shot` are covered by the grammar table and the planner test; the debug object needs a
+  private bus, so the pixels are proved through the same `window_rgba` by the capture tests.
+- **Shared files touched:** `casement/src/exec.rs` (one line in `UnlistWindow`), `handlers/mod.rs`
+  (`pub(crate) mod capture_source`), `handlers/compositor.rs` (one hook), `casement-ipc/src/shot.rs`,
+  `casement-backend` (`headless/{mod,renderer}.rs`, `tty/{mod,readback}.rs`: the offscreen entry),
+  `casementctl/src/command{,/shot}.rs`, `casement-testclient` (`conn/catalogue.rs`,
+  `manage/foreign_toplevel_list.rs::handle_of`), `casement-core/tests/it/input.rs`.
+- **The test client is its own session.** `WindowCapture` does not use `OutputCapture`: `desktop_client`'s reducer
+  ends a capture at its first frame and ignores events after a failure, and these tests take many frames and
+  watch the constraints change.
+
+### Spots a real build checks first
+
+`casement-render/src/pass/window.rs` (`render_window`'s bounds with `Bind<T> + ExportMem`, `tracker.render_output`
+over `&[CasementElement<R>]` without `Routed`), `casement-backend/src/headless/renderer.rs::offscreen` (the pixman
+image type inferred from `create_buffer`, as `canvas` does), `casement/src/handlers/capture_source.rs` and
+`.../render.rs` (smithay's `ToplevelCaptureSourceHandler`, `ForeignToplevelHandle::identifier`, the borrows in
+`serve` and `committed`), `casement-wayland/src/capture_source.rs` (`new_with_filter` with the concrete closure),
+`casement-testclient/src/capture/toplevel_source{,/wire}.rs` (wayland-client signatures, `u32::from(Format)`).

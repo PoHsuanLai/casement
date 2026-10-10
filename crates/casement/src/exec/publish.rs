@@ -1,12 +1,12 @@
 //! Publishing the desktop's state to protocol clients, and keeping the Spaces across a restart
-//! (P1-Z; filled by P1-M2).
+//! (P1-Z; filled by P1-M2; P2-Q3 adds the placement mark).
 
 use super::log;
 use crate::space_store::save_spaces;
 use crate::state::State;
 use casement_core::window::{SpacePlace, Window};
 use casement_core::{Model, OutputKey, WindowId};
-use casement_wayland::{wlr_toplevel, workspace};
+use casement_wayland::{capture_source, quire_window, wlr_toplevel, workspace};
 use smithay::output::Output;
 
 /// Writes the Spaces file through `state.seams.space_store` (`Model::space_file`). A failure is
@@ -41,6 +41,13 @@ pub(super) fn publish_toplevel(state: &mut State, window: WindowId) {
         held,
         &on,
     ));
+    // The same trigger tells an extended window where it now sits (a no-op when the mark did
+    // not change).
+    log(quire_window::apply_placement(
+        &mut state.wl.quire_window,
+        window,
+        held.state.mark(),
+    ));
 }
 
 /// The output `window` is on: its Space's, or its home when it is on every Space.
@@ -49,4 +56,11 @@ fn output_of(model: &Model, window: &Window) -> Option<OutputKey> {
         SpacePlace::On(id) => model.spaces().get(id).map(|space| space.output.clone()),
         SpacePlace::AllSpaces => window.home.clone(),
     }
+}
+
+/// `window` closed: the capture sessions on it end (each client is told `stopped`).
+pub(super) fn end_window_captures(state: &mut State, window: WindowId) {
+    let gone = capture_source::apply_window_gone(&mut state.wl.capture_source.book, window);
+    state.wl.capture_source.stop(&gone);
+    state.wl.image_capture.copy.cleanup();
 }

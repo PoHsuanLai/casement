@@ -278,6 +278,7 @@ const HIDDEN_FROM_SANDBOXES: &[GlobalKind] = &[
     GlobalKind::SecurityContext,
     GlobalKind::LayerShell,
     GlobalKind::SessionLock,
+    GlobalKind::ToplevelCapture,
 ];
 
 #[test]
@@ -301,6 +302,7 @@ fn the_i7_table() {
         GlobalKind::SecurityContext,
         GlobalKind::LayerShell,
         GlobalKind::SessionLock,
+        GlobalKind::ToplevelCapture,
     ];
     for global in every {
         for role in [

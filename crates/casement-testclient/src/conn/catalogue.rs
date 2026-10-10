@@ -86,6 +86,7 @@ fn roots() -> Vec<&'static Interface> {
         ext::data_control::v1::client::ext_data_control_manager_v1::ExtDataControlManagerV1,
         ext::idle_notify::v1::client::ext_idle_notifier_v1::ExtIdleNotifierV1,
         ext::foreign_toplevel_list::v1::client::ext_foreign_toplevel_list_v1::ExtForeignToplevelListV1,
+        ext::image_capture_source::v1::client::ext_foreign_toplevel_image_capture_source_manager_v1::ExtForeignToplevelImageCaptureSourceManagerV1,
         ext::background_effect::v1::client::ext_background_effect_manager_v1::ExtBackgroundEffectManagerV1,
         ext::workspace::v1::client::ext_workspace_manager_v1::ExtWorkspaceManagerV1,
         wlr::layer_shell::v1::client::zwlr_layer_shell_v1::ZwlrLayerShellV1,
