@@ -81,7 +81,7 @@ fn rig_with(writeback: Option<FakeWriteback>) -> Rig {
         None => seams,
     };
     let mut backend = TtyBackend::start(seams).expect("start");
-    let panel = kms.resources().connectors[0].clone();
+    let panel = SyntheticTopology::LaptopPanel.resources().connectors[0].clone();
     let mode = panel.modes[0];
     assert_eq!(backend.announce().len(), 1, "the one panel is announced");
     Rig {
@@ -172,7 +172,7 @@ fn the_edge_pauses_and_activates_the_session_like_a_vt_switch() {
 fn the_fixed_node_reports_itself_changed_once_in_a_while_for_hotplug() {
     let card = DevicePath(PathBuf::from("/dev/dri/card1"));
     let mut node = FixedNode::new(card.clone());
-    assert_eq!(node.present(), [card.clone()]);
+    assert_eq!(node.present(), std::slice::from_ref(&card));
     let period = usize::from(POLL_EVERY) + 1;
     let mut changed = 0;
     for turn in 1..=period * 3 {
