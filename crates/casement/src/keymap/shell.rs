@@ -23,30 +23,6 @@ type Row = (StandardAction, Does);
 /// with one meaning each): see [`shell_action`].
 const ROWS: &[Row] = &[
     (
-        StandardAction::Close,
-        Does::Itself(DesktopCommand::CloseKey),
-    ),
-    (
-        StandardAction::Minimize,
-        Does::Itself(DesktopCommand::MinimiseKey),
-    ),
-    (
-        StandardAction::FullScreen,
-        Does::Itself(DesktopCommand::ToggleFullScreenKey),
-    ),
-    (
-        StandardAction::Hide,
-        Does::Itself(DesktopCommand::HideActive),
-    ),
-    (
-        StandardAction::HideOthers,
-        Does::Itself(DesktopCommand::HideOthers),
-    ),
-    (
-        StandardAction::Quit,
-        Does::Itself(DesktopCommand::QuitActive),
-    ),
-    (
         StandardAction::ForceQuit,
         Does::Itself(DesktopCommand::ForceQuitPanel),
     ),
@@ -177,20 +153,6 @@ mod tests {
     fn the_conventions_of_our_desktop_bind_the_shell() {
         let bindings = bindings_of(&Keymap::conventional(OURS));
         let cases: Vec<(&str, &str, Option<BindingAction>)> = vec![
-            ("close", "cmd+w", itself(DesktopCommand::CloseKey)),
-            ("minimise", "cmd+m", itself(DesktopCommand::MinimiseKey)),
-            (
-                "full screen",
-                "ctrl+cmd+f",
-                itself(DesktopCommand::ToggleFullScreenKey),
-            ),
-            ("hide", "cmd+h", itself(DesktopCommand::HideActive)),
-            (
-                "hide others",
-                "option+cmd+h",
-                itself(DesktopCommand::HideOthers),
-            ),
-            ("quit", "cmd+q", itself(DesktopCommand::QuitActive)),
             (
                 "force quit",
                 "option+cmd+Escape",
@@ -220,6 +182,12 @@ mod tests {
             ("shot tools", "shift+cmd+5", sill(&["screenshot", "area"])),
             ("log out", "shift+cmd+q", sill(&["power-menu", "open"])),
             ("copy is an app's", "cmd+c", None),
+            ("close is the app's menu", "cmd+w", None),
+            ("minimise is the app's menu", "cmd+m", None),
+            ("full screen is the app's menu", "ctrl+cmd+f", None),
+            ("hide is the app's menu", "cmd+h", None),
+            ("hide others is the app's menu", "option+cmd+h", None),
+            ("quit is the app's menu", "cmd+q", None),
             ("the input language is fcitx's", "ctrl+space", None),
             ("an unbound chord", "cmd+F13", None),
         ];
@@ -262,36 +230,36 @@ mod tests {
 
     #[test]
     fn the_persons_keymap_moves_a_binding() {
-        let (overrides, bad) = Overrides::parse("close = Primary+Shift+W\n");
+        let (overrides, bad) = Overrides::parse("launcher = Ctrl+Alt+Space\n");
         assert!(bad.is_empty());
         let (keymap, refused) = Keymap::conventional(OURS).with_overrides(&overrides);
         assert!(refused.is_empty());
         let bindings = bindings_of(&keymap);
         assert_eq!(
-            what(&bindings, "shift+cmd+w"),
-            itself(DesktopCommand::CloseKey)
+            what(&bindings, "ctrl+option+space"),
+            sill(&["launcher", "toggle"])
         );
-        assert_eq!(what(&bindings, "cmd+w"), None);
+        assert_eq!(what(&bindings, "cmd+space"), None);
     }
 
     #[test]
     fn the_persons_unbinding_removes_a_binding() {
-        let (overrides, _) = Overrides::parse("minimize = none\n");
+        let (overrides, _) = Overrides::parse("space-left = none\n");
         let (keymap, _) = Keymap::conventional(OURS).with_overrides(&overrides);
-        assert_eq!(what(&bindings_of(&keymap), "cmd+m"), None);
+        assert_eq!(what(&bindings_of(&keymap), "ctrl+Left"), None);
     }
 
     #[test]
     fn the_documents_own_bindings_win_a_shared_chord() {
         let own = Bindings(vec![Binding {
-            chord: Chord::parse("cmd+w").expect("a chord"),
+            chord: Chord::parse("cmd+space").expect("a chord"),
             action: BindingAction::Desktop(DesktopCommand::HideActive),
         }]);
         let merged = merge(&own, &bindings_of(&Keymap::conventional(OURS)));
         assert_eq!(
             casement_core::input::resolve(
                 &merged,
-                &Chord::parse("cmd+w").expect("a chord"),
+                &Chord::parse("cmd+space").expect("a chord"),
                 &casement_core::input::Origin::Test,
             ),
             casement_core::input::Resolved::Action(BindingAction::Desktop(

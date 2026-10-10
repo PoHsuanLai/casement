@@ -117,7 +117,7 @@ fn apply(state: &mut State, live: &Live) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use casement_core::input::{BindingAction, Chord, DesktopCommand};
+    use casement_core::input::{Argv, BindingAction, Chord};
 
     fn what(bindings: &Bindings, chord: &str) -> Option<BindingAction> {
         let chord = Chord::parse(chord).expect("a chord");
@@ -128,8 +128,10 @@ mod tests {
             .map(|binding| binding.action.clone())
     }
 
-    fn close() -> Option<BindingAction> {
-        Some(BindingAction::Desktop(DesktopCommand::CloseKey))
+    fn launcher() -> Option<BindingAction> {
+        Some(BindingAction::Spawn(Argv(
+            ["sill", "launcher", "toggle"].map(str::to_owned).to_vec(),
+        )))
     }
 
     #[test]
@@ -137,24 +139,24 @@ mod tests {
         let home = tempfile::tempdir().expect("a scratch directory");
         let (bindings, problems) = load_bindings(&source_for(&ConfigHome::At(home.path().into())));
         assert_eq!(problems, Vec::<String>::new());
-        assert_eq!(what(&bindings, "cmd+w"), close());
+        assert_eq!(what(&bindings, "cmd+space"), launcher());
     }
 
     #[test]
     fn the_persons_file_comes_after_the_conventions_and_the_machines_file() {
         let home = tempfile::tempdir().expect("a scratch directory");
         for (dir, text) in [
-            (MACHINE_DIR, "close = Primary+Shift+W\n"),
-            (PERSON_DIR, "close = Ctrl+Shift+Primary+W\n"),
+            (MACHINE_DIR, "launcher = Primary+Shift+Space\n"),
+            (PERSON_DIR, "launcher = Ctrl+Shift+Primary+Space\n"),
         ] {
             let dir = home.path().join(dir);
             std::fs::create_dir_all(&dir).expect("a directory");
             std::fs::write(dir.join(FILE), text).expect("a keymap file");
         }
         let (bindings, _) = load_bindings(&source_for(&ConfigHome::At(home.path().into())));
-        assert_eq!(what(&bindings, "ctrl+shift+cmd+w"), close());
-        assert_eq!(what(&bindings, "shift+cmd+w"), None);
-        assert_eq!(what(&bindings, "cmd+w"), None);
+        assert_eq!(what(&bindings, "ctrl+shift+cmd+space"), launcher());
+        assert_eq!(what(&bindings, "shift+cmd+space"), None);
+        assert_eq!(what(&bindings, "cmd+space"), None);
     }
 
     #[test]
@@ -162,9 +164,13 @@ mod tests {
         let home = tempfile::tempdir().expect("a scratch directory");
         let dir = home.path().join(PERSON_DIR);
         std::fs::create_dir_all(&dir).expect("a directory");
-        std::fs::write(dir.join(FILE), "nonsense\nclose = Ctrl+Shift+Primary+W\n").expect("a file");
+        std::fs::write(
+            dir.join(FILE),
+            "nonsense\nlauncher = Ctrl+Shift+Primary+Space\n",
+        )
+        .expect("a file");
         let (bindings, problems) = load_bindings(&source_for(&ConfigHome::At(home.path().into())));
         assert_eq!(problems.len(), 1);
-        assert_eq!(what(&bindings, "ctrl+shift+cmd+w"), close());
+        assert_eq!(what(&bindings, "ctrl+shift+cmd+space"), launcher());
     }
 }

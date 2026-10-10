@@ -195,7 +195,6 @@ fn command() -> impl Strategy<Value = DesktopCommand> {
     prop_oneof![
         Just(DesktopCommand::CloseKey),
         Just(DesktopCommand::MinimiseKey),
-        Just(DesktopCommand::ToggleFullScreenKey),
         Just(DesktopCommand::HideActive),
         Just(DesktopCommand::HideOthers),
         Just(DesktopCommand::QuitActive),

@@ -9,7 +9,6 @@ use super::Model;
 use super::moved::Moved;
 use crate::app::{AppKey, AppVisibility};
 use crate::effect::Effect;
-use crate::event::ToplevelRequest;
 use crate::focus::{FocusIn, Press};
 use crate::ids::WindowId;
 use crate::input::{DesktopCommand, InputTarget, InputUse, Origin, Reach, ReachFacts, reach};
@@ -17,7 +16,7 @@ use crate::lock::LockState;
 use crate::settings::Enabled;
 use crate::time::Mono;
 use crate::window::{SpacePlace, Window, WindowState};
-use casement_protocols::vocab::{ActorKind, Toggle};
+use casement_protocols::vocab::ActorKind;
 
 impl Model {
     /// Whether an input from `origin` may reach `target` for `use_` now (the lock, the agent,
@@ -123,22 +122,6 @@ impl Model {
             },
             DesktopCommand::MinimiseKey => match key {
                 Some(window) => self.minimise(&window),
-                None => Moved::of(self),
-            },
-            DesktopCommand::ToggleFullScreenKey => match key {
-                Some(window) => {
-                    let toggle = match window.state {
-                        WindowState::FullScreen { .. } => Toggle::Off,
-                        _ => Toggle::On,
-                    };
-                    self.request(
-                        window.id,
-                        ToplevelRequest::FullScreen {
-                            toggle,
-                            output: None,
-                        },
-                    )
-                }
                 None => Moved::of(self),
             },
             DesktopCommand::HideActive => match active {

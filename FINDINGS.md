@@ -673,7 +673,7 @@ W13 8 to 0.
   `casement::keymap::attach` (called from `main.rs` after the outputs are announced) loads
   `KeycapSource::load_reporting(Linux/Ours)` (chordkit conventions, the desktop's own bindings, the machine
   keymap, the person's keymap), maps each standard action the compositor carries out (`keymap/shell.rs`
-  `ROWS`: close, minimise, full screen, hide, hide others, quit, force quit, Space left/right/1-9,
+  `ROWS`: force quit, Space left/right/1-9,
   and sill's launcher, switcher, screenshots and power menu as `sill ...` spawns) to a `BindingAction`, converts
   each chord (`keymap/chord.rs`: Super is Command, Alt is Option; chordkit's `+` and `?` become shifted `=` and
   `/`) and appends the result after the document's own bindings. No `dist/casement/bindings.toml` ships:
@@ -682,15 +682,15 @@ W13 8 to 0.
   handler recomputes the bindings and feeds `Event::SettingsChanged` only when they differ. The watch lives in
   the handler's closure. Under `ConfigHome::At(dir)` (tests, the jail) the source reads only inside `dir`
   (`keycap/keymap` for the person, `keycap-machine/keymap` for the machine, a socket path that does not exist).
-- **New command** `DesktopCommand::ToggleFullScreenKey` (word `toggle_full_screen_key`): the key window enters or
-  leaves full screen through the model's own `ToplevelRequest::FullScreen`.
 - **Known gaps**: `Spawn` and `Call` bindings are still only logged by `carry_out` ("from P2"), so the launcher,
   switcher, screenshot and power-menu chords resolve and are swallowed but do nothing yet. LockScreen,
   MissionControl, AppWindows, NextWindow, NextInputSource and EmojiAndSymbols have no casement or sill command
   and are not bound. `ScreenshotTools` runs `sill screenshot area` (dist/cosmic's Screenshot).
-- **Risk**: Close, Minimise, Hide, Quit and Full screen are app actions on a Mac; binding them in the compositor takes
-  Cmd+W, Cmd+M, Cmd+H, Cmd+Q and Ctrl+Cmd+F from apps that use them for something narrower (a tab). They are
-  one `ROWS` line each if the owner wants the apps to keep them.
+- **Mac semantics (follow-up)**: Cmd+W, Cmd+M, Cmd+H, Cmd+Opt+H, Cmd+Q and Ctrl+Cmd+F are app menu commands on macOS,
+  not window-server ones, so the focused app must receive them. Close, Minimise, Hide, HideOthers, Quit and FullScreen
+  are not in `ROWS` (a test asserts none of those chords is bound), and `DesktopCommand::ToggleFullScreenKey`, added
+  for full screen and used by nothing else, is dropped. ForceQuit (Cmd+Opt+Esc, system-level), Space switching and
+  the sill hand-offs stay.
 - **Dependencies**: `chordkit` (rev ba094c62) and `keycap-client` (rev 95f41dc4) are git dependencies of the
   workspace and of `casement`; `Cargo.lock` must be regenerated (`cargo metadata`) with network access.
 - A Caps Lock that is on adds `CAPS_LOCK` to the chord `deliver_key` builds, so no binding matches while it is on

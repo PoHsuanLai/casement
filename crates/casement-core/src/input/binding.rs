@@ -44,8 +44,6 @@ pub enum DesktopCommand {
     CloseKey,
     /// Minimise the key window.
     MinimiseKey,
-    /// Take the key window full screen, or back out of it.
-    ToggleFullScreenKey,
     /// Hide the active app.
     HideActive,
     /// Hide every app but the active one.

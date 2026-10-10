@@ -4,7 +4,7 @@
 //! ```text
 //! ["spawn", "foot", "--title", "x"]                       a program and its arguments
 //! ["call", SERVICE, PATH, INTERFACE, METHOD, ARG...]      a session-bus method call
-//! ["desktop", "close_key"]                                 close_key, minimise_key, toggle_full_screen_key, hide_active,
+//! ["desktop", "close_key"]                                 close_key, minimise_key, hide_active,
 //!                                                          hide_others, quit_active, force_quit_panel
 //! ["desktop", "switch_space", "next"]                      previous, next or the Space's number
 //! ["desktop", "place", "left"]                             a `PlaceTarget` word
@@ -36,13 +36,9 @@ const PLACE_TARGETS: [(&str, PlaceTarget); 11] = [
 ];
 
 /// The unit commands and the word each is written as.
-const UNIT_COMMANDS: [(&str, DesktopCommand); 7] = [
+const UNIT_COMMANDS: [(&str, DesktopCommand); 6] = [
     ("close_key", DesktopCommand::CloseKey),
     ("minimise_key", DesktopCommand::MinimiseKey),
-    (
-        "toggle_full_screen_key",
-        DesktopCommand::ToggleFullScreenKey,
-    ),
     ("hide_active", DesktopCommand::HideActive),
     ("hide_others", DesktopCommand::HideOthers),
     ("quit_active", DesktopCommand::QuitActive),
