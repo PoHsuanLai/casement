@@ -200,3 +200,44 @@ fn the_creation_transcript_matches_its_golden() {
     let text = lines_of(&mut fixture, id, &["quire_window_v1#"]);
     check_golden(&golden("quire_window-create.txt"), &text).expect("the creation flow");
 }
+
+/// From P2 a proven `request_placement` is acted on: the window is placed, its model state
+/// changes and the object is told its new placement mark. A bad serial is still ignored.
+/// (P2-Q3 replaces `request_placement_is_stored`, which pins the P0 behaviour, with this.)
+#[test]
+#[ignore = "P2-Q3: flip quire_window::PLACEMENT_POLICY to Act and send the mark on a state change"]
+fn request_placement_places_the_window_and_reports_the_mark() {
+    let (mut fixture, id) = boot();
+    let base = WmBase::bind(fixture.client(id), 7);
+    let manager = WindowManager::bind(fixture.client(id), 1);
+    let pointer_log = bind_pointer(fixture.client(id));
+    fixture.pump();
+    let top = map_toplevel(&mut fixture, id, &base, (400, 300));
+    let ext = manager.window(fixture.client(id), &top);
+    let window = windows(&fixture)[0];
+    let device = pointer(&mut fixture);
+    click(&mut fixture, device, window);
+    click(&mut fixture, device, window);
+    let serial = pointer_log.last_press().expect("a press was delivered");
+    let before = fixture.model().windows()[&window].state.clone();
+    ext.request_placement(PlaceTarget::Left, serial.wrapping_add(1000));
+    fixture.pump();
+    assert_eq!(
+        fixture.model().windows()[&window].state,
+        before,
+        "a serial that answers no press places nothing"
+    );
+    ext.request_placement(PlaceTarget::Left, serial);
+    fixture.pump();
+    let placed = fixture.model().windows()[&window].state.clone();
+    assert_ne!(placed, before, "the window was placed");
+    assert_eq!(
+        placed.mark(),
+        casement_protocols::vocab::PlacementMark::Left,
+        "on the left half"
+    );
+    assert_eq!(ext.placement(), Some(PlacementMark::Left));
+    ext.request_placement(PlaceTarget::Restore, serial);
+    fixture.pump();
+    assert_eq!(ext.placement(), Some(PlacementMark::Free));
+}

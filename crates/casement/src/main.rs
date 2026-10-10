@@ -2,7 +2,7 @@
 
 use casement::cli::{self, Command};
 use casement::space_store::{StateDirs, StateHome};
-use casement::{DebugBus, RunConfig};
+use casement::{CompositorBus, DebugBus, RunConfig};
 use casement_backend::BackendChoice;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -61,11 +61,14 @@ fn main() -> ExitCode {
             start.state_home =
                 state_home(start.state_home.clone(), start.backend, &StateEnv::read());
             // Debug1 lives on the jail's private bus, which the jail's scripts name here.
-            let debug_bus = match std::env::var("DBUS_SESSION_BUS_ADDRESS") {
-                Ok(address) => DebugBus::At(address),
-                Err(_) => DebugBus::Unset,
-            };
-            match casement::run(RunConfig::new(start).with_debug_bus(debug_bus)) {
+            let session_bus = std::env::var("DBUS_SESSION_BUS_ADDRESS").ok();
+            let debug_bus = session_bus.clone().map_or(DebugBus::Unset, DebugBus::At);
+            // Compositor1, which hands the shell its connection, lives on the session bus.
+            let compositor_bus = session_bus.map_or(CompositorBus::Unset, CompositorBus::At);
+            let config = RunConfig::new(start)
+                .with_debug_bus(debug_bus)
+                .with_compositor_bus(compositor_bus);
+            match casement::run(config) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(error) => {
                     eprintln!("casement: {error}");

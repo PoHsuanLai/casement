@@ -176,6 +176,11 @@ fn kind_of(interface: &str) -> Option<GlobalKind> {
         "ext_output_image_capture_source_manager_v1" | "ext_image_copy_capture_manager_v1" => {
             GlobalKind::ImageCapture
         }
+        // P2-Z: the desktop and shell protocols (the shell and agent connections only) and
+        // the toplevel capture source (declared; P2-Q3 advertises it).
+        "quire_desktop_manager_v1" => GlobalKind::QuireDesktop,
+        "quire_shell_v1" => GlobalKind::QuireShell,
+        "ext_foreign_toplevel_image_capture_source_manager_v1" => GlobalKind::ToplevelCapture,
         _ => return None,
     })
 }

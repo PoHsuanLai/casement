@@ -20,13 +20,13 @@ use casement_motion::MotionBook;
 use casement_render::{ChromeLayer, CursorDraw, CursorShape, TextureBook};
 use casement_wayland::{
     ClientMint, GlobalFilter, WaylandFault, WaylandStates, alpha_modifier, background_effect,
-    commit_timing, compositor, content_type, cursor_shape, data_device, dmabuf, ext_data_control,
-    fifo, foreign_toplevel_list, fractional_scale, gamma, idle_inhibit, idle_notify, image_capture,
-    input_method, layer_shell, output, output_management, output_power, pointer_constraints,
-    pointer_gestures, presentation, primary_selection, quire_window, relative_pointer, seat,
-    security_context, session_lock, shm, shortcuts_inhibit, single_pixel, subcompositor,
-    system_bell, tablet, text_input, viewporter, virtual_keyboard, wlr_data_control, wlr_toplevel,
-    workspace, xdg_activation, xdg_decoration, xdg_dialog, xdg_foreign, xdg_shell,
+    capture_source, commit_timing, compositor, content_type, cursor_shape, data_device, dmabuf,
+    ext_data_control, fifo, foreign_toplevel_list, fractional_scale, gamma, idle_inhibit,
+    idle_notify, image_capture, input_method, layer_shell, output, output_management, output_power,
+    pointer_constraints, pointer_gestures, presentation, primary_selection, quire, quire_window,
+    relative_pointer, seat, security_context, session_lock, shm, shortcuts_inhibit, single_pixel,
+    subcompositor, system_bell, tablet, text_input, viewporter, virtual_keyboard, wlr_data_control,
+    wlr_toplevel, workspace, xdg_activation, xdg_decoration, xdg_dialog, xdg_foreign, xdg_shell,
     xdg_toplevel_icon, xdg_toplevel_tag,
 };
 use smithay::backend::renderer::damage::OutputDamageTracker;
@@ -108,9 +108,14 @@ pub enum PointerStart {
     Placed,
 }
 
-/// The agent edge's state (P2-Z and P4-Z give it fields).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct AgentState;
+/// The agent edge's state (P2-Z: who was handed a privileged connection; P4-Z adds the seat,
+/// the leases and the kill chord).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct AgentState {
+    /// The unit each privileged client was handed its connection as (`connect::answer`), so a
+    /// later phase can say who holds the shell's and the agent tier's connections.
+    pub handed: BTreeMap<casement_core::ClientKey, casement_agent::CallerUnit>,
+}
 
 /// The D-Bus servers' handles (owned by `casement-ipc`, so their lanes change them there).
 #[derive(Debug)]
@@ -228,6 +233,10 @@ impl State {
             wlr_toplevel: wlr_toplevel::WlrToplevelPart::new::<State>(&dh, filter),
             workspace: workspace::WorkspacePart::new::<State>(&dh, filter),
             image_capture: image_capture::ImageCapturePart::new::<State>(&dh, filter),
+            // P2-Z declares these three; P2-Q1, P2-Q2 and P2-Q3 create their globals.
+            capture_source: capture_source::ToplevelCapturePart::new::<State>(&dh, filter),
+            quire_desktop: quire::desktop::QuireDesktopPart::new::<State>(&dh, filter),
+            quire_shell: quire::shell::QuireShellPart::new::<State>(&dh, filter),
         };
         if config.dmabuf == DmabufMode::Soft {
             dmabuf::apply_offer::<State>(&mut wl.dmabuf, &dh, &dmabuf::DmabufOffer::soft())?;
@@ -295,7 +304,7 @@ impl State {
             wl,
             backend,
             render,
-            agent: AgentState,
+            agent: AgentState::default(),
             ipc: IpcState {
                 handles: casement_ipc::IpcHandles::none(),
             },

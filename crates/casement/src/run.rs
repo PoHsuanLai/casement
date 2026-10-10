@@ -30,6 +30,17 @@ pub enum DebugBus {
     At(String),
 }
 
+/// Where `org.quire.Compositor1` is served (P2-Z; the shell and the agent tier ask it for their
+/// connections).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
+pub enum CompositorBus {
+    /// No bus address was given: no hand-out is offered.
+    #[default]
+    Unset,
+    /// The session bus at this address.
+    At(String),
+}
+
 /// What [`run`] needs: how casement starts, and where the debug bus is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -40,6 +51,8 @@ pub struct RunConfig {
     pub debug_bus: DebugBus,
     /// Which bus login1 is heard on (a tty seat hears the machine go to sleep there).
     pub sleep_bus: SleepBus,
+    /// Where `org.quire.Compositor1` is served.
+    pub compositor_bus: CompositorBus,
 }
 
 impl RunConfig {
@@ -49,6 +62,7 @@ impl RunConfig {
             start,
             debug_bus: DebugBus::Unset,
             sleep_bus: SleepBus::System,
+            compositor_bus: CompositorBus::Unset,
         }
     }
 
@@ -56,6 +70,15 @@ impl RunConfig {
     #[must_use]
     pub fn with_debug_bus(self, debug_bus: DebugBus) -> RunConfig {
         RunConfig { debug_bus, ..self }
+    }
+
+    /// The same run serving `org.quire.Compositor1` on `compositor_bus`.
+    #[must_use]
+    pub fn with_compositor_bus(self, compositor_bus: CompositorBus) -> RunConfig {
+        RunConfig {
+            compositor_bus,
+            ..self
+        }
     }
 
     /// The same run hearing login1 on `sleep_bus`.
@@ -131,6 +154,30 @@ fn attach_debug(
     Ok(debug::attach(handle, calls)?)
 }
 
+/// Starts serving `org.quire.Compositor1` on the session bus. A bus that cannot be reached, or a
+/// name another casement holds, is logged and the compositor runs without a hand-out: the shell
+/// then has no way to get its connection, and nothing else is lost.
+fn attach_compositor(
+    state: &mut State,
+    handle: &smithay::reexports::calloop::LoopHandle<'static, State>,
+    bus: &CompositorBus,
+) -> Result<(), RunError> {
+    let CompositorBus::At(address) = bus else {
+        return Ok(());
+    };
+    let cgroups = std::sync::Arc::new(casement_ipc::dbus::ProcCgroups);
+    match casement_ipc::dbus::serve_compositor_at(address, cgroups) {
+        Ok((calls, connection)) => {
+            state.ipc.handles.compositor = Some(connection);
+            crate::connect::attach(handle, calls)?;
+        }
+        Err(error) => {
+            tracing::warn!(%error, "org.quire.Compositor1 is not served: no connection can be handed out");
+        }
+    }
+    Ok(())
+}
+
 /// Starts the compositor, listens for clients, and runs the event loop: a turn dispatches
 /// what is ready, drains queued input into the model, reads the nested window if there is
 /// one, answers the debug object, and flushes every client.
@@ -139,6 +186,7 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
         start,
         debug_bus,
         sleep_bus,
+        compositor_bus,
     } = config;
     let mut event_loop: EventLoop<'static, State> = EventLoop::try_new()?;
     let handle = event_loop.handle();
@@ -167,6 +215,7 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
     let debug = attach_debug(&mut state, &handle, &debug_bus)?;
     #[cfg(not(feature = "debug-inject"))]
     let _ = debug_bus;
+    attach_compositor(&mut state, &handle, &compositor_bus)?;
     let wayland = crate::xwayland::WaylandSocket(socket_name);
     crate::xwayland::attach(&mut state, &xwayland_config);
     // Held for the run: dropping it stops the thread that hears the machine go to sleep.

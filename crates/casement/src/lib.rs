@@ -37,6 +37,7 @@
 pub mod cli;
 pub mod clients;
 pub mod config;
+pub mod connect;
 pub mod core_loop;
 #[cfg(feature = "debug-inject")]
 mod debug;
@@ -60,5 +61,5 @@ pub mod test_mode;
 pub mod time;
 pub mod xwayland;
 
-pub use run::{DebugBus, RunConfig, RunError, run};
+pub use run::{CompositorBus, DebugBus, RunConfig, RunError, run};
 pub use state::{AgentState, CoreState, IpcState, RenderState, StartError, State};

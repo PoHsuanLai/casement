@@ -1,7 +1,8 @@
 //! The fakes: what stands in for the session, udev, logind, KMS, scanout, libinput's
-//! configuration, the Spaces file, sill's D-Bus methods, the process table and palmrest inside
-//! the jail.
+//! configuration, the Spaces file, sill's D-Bus methods, the process table, the control groups
+//! of bus peers and palmrest inside the jail.
 
+mod cgroups;
 mod input_devices;
 mod input_feed;
 pub mod kms;
@@ -15,6 +16,7 @@ mod spawner;
 mod udev;
 mod writeback;
 
+pub use cgroups::FakeCgroups;
 pub use input_devices::FakeInputDevices;
 pub use input_feed::FakeInputFeed;
 pub use kms::{

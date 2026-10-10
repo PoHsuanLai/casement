@@ -5,6 +5,7 @@
 
 mod alpha_modifier;
 mod background_effect;
+mod capture_source;
 mod commit_timing;
 mod compositor;
 mod content_type;
@@ -33,6 +34,8 @@ mod popup_grab;
 mod popup_input;
 mod presentation;
 mod primary_selection;
+mod quire_desktop;
+mod quire_shell;
 mod quire_window;
 mod relative_pointer;
 mod sandbox;

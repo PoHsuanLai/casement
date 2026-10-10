@@ -78,6 +78,11 @@ fn module_of(kind: GlobalKind) -> &'static str {
         GlobalKind::WlrToplevel => "wlr_toplevel",
         GlobalKind::Workspace => "workspace",
         GlobalKind::ImageCapture => "image_capture",
+        // P2-Z: the toplevel capture source is declared, not advertised; the two quire
+        // protocols are never on the public socket, so the public golden has no row for them.
+        GlobalKind::ToplevelCapture => "capture_source",
+        GlobalKind::QuireDesktop => "quire_desktop",
+        GlobalKind::QuireShell => "quire_shell",
     }
 }
 

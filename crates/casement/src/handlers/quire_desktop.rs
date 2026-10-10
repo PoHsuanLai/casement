@@ -1,0 +1,23 @@
+//! `quire_desktop_manager_v1` (P2-Z; filled by P2-Q1): the wire glue lives in
+//! `casement_wayland::quire::desktop`; this implements what it asks of the state.
+
+use crate::core_loop;
+use crate::state::State;
+use casement_core::Event;
+use casement_wayland::quire::desktop::{DesktopParts, DesktopView, QuireDesktopHandler};
+
+impl QuireDesktopHandler for State {
+    fn quire_desktop_parts(&mut self) -> DesktopParts<'_> {
+        DesktopParts {
+            part: &mut self.wl.quire_desktop,
+            view: DesktopView {
+                model: &self.core.model,
+                outputs: &self.wl.output.outputs,
+            },
+        }
+    }
+
+    fn quire_desktop_events(&mut self, events: Vec<Event>) {
+        core_loop::feed(self, events);
+    }
+}

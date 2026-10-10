@@ -8,14 +8,17 @@
 //! no connection until the client table exists), `Bell` and `Attention` (P3).
 
 mod call;
+mod desktop;
 mod gamma;
 mod publish;
+mod shell;
 mod spawn;
 
 use crate::core_loop;
 use crate::state::State;
 use casement_backend::tty::Lighting;
 use casement_core::output::OutputConfig;
+use casement_core::shell::ShellNote;
 use casement_core::{Cause, CoreNote, Effect, KeyboardTarget, LayerKey, OutputKey};
 use casement_core::{InputSerial, geometry::LogicalSize, lock::LockReply};
 use casement_wayland::output::OutputWire;
@@ -126,9 +129,19 @@ fn apply(state: &mut State, effect: Effect) {
         Effect::PersistSpaces => publish::persist_spaces(state),
         Effect::PublishWorkspaces => publish::publish_workspaces(state),
         Effect::PublishToplevel(window) => publish::publish_toplevel(state, window),
+        // P2-Z's effects: the model emits none of them until P2-Q1, and a shell note only when
+        // the shell's protocol is advertised (P2-Q2), so these arms are not reached before then.
+        Effect::Desktop(note) => desktop::publish(state, note),
+        Effect::Shell(note) => shell::note(state, note),
         // `Effect` grows in core; one this build does not know is logged, never a panic.
         other => tracing::warn!(?other, "an effect this build does not apply"),
     }
+}
+
+/// Tells the shell something the edge saw and the model did not (the real modifier keys): the
+/// same path an `Effect::Shell` takes.
+pub fn shell_note(state: &mut State, note: ShellNote) {
+    shell::note(state, note);
 }
 
 /// Logs a protocol module's failure: the loop degrades, it does not stop.
@@ -150,6 +163,9 @@ fn note_of(note: &CoreNote) {
         }
         CoreNote::RefusedOutput(refusal) => {
             tracing::debug!(%refusal, "an output change was refused");
+        }
+        CoreNote::Deferred(ask) => {
+            tracing::debug!(?ask, "a desktop request waits for its machine");
         }
     }
 }

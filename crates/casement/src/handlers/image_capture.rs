@@ -11,8 +11,10 @@
 
 mod frames;
 
+use super::capture_source;
 use crate::state::State;
 use casement_core::OutputKey;
+use casement_wayland::capture_source::{ToplevelSessionId, ToplevelSourceId};
 use casement_wayland::image_capture::{self, CaptureSessionId, CaptureSourceId};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_shm::Format;
@@ -59,6 +61,9 @@ impl ImageCopyCaptureHandler for State {
     }
 
     fn capture_constraints(&mut self, source: &ImageCaptureSource) -> Option<BufferConstraints> {
+        if let Some(window) = source.user_data().get::<ToplevelSourceId>().copied() {
+            return capture_source::constraints(self, window);
+        }
         let id = source.user_data().get::<CaptureSourceId>()?;
         let output = self.wl.image_capture.book.sources.get(id)?.clone();
         constraints_of(self, &output)
@@ -66,6 +71,9 @@ impl ImageCopyCaptureHandler for State {
 
     fn new_session(&mut self, session: Session) {
         let source = session.source();
+        if let Some(window) = source.user_data().get::<ToplevelSourceId>().copied() {
+            return capture_source::new_session(self, session, window);
+        }
         let Some(source) = source.user_data().get::<CaptureSourceId>().copied() else {
             return;
         };
@@ -80,10 +88,16 @@ impl ImageCopyCaptureHandler for State {
     }
 
     fn frame(&mut self, session: &SessionRef, frame: Frame) {
+        if let Some(id) = session.user_data().get::<ToplevelSessionId>().copied() {
+            return capture_source::serve(self, session, frame, id);
+        }
         frames::serve(self, session, frame);
     }
 
     fn session_destroyed(&mut self, session: SessionRef) {
+        if let Some(id) = session.user_data().get::<ToplevelSessionId>().copied() {
+            return capture_source::release(self, id);
+        }
         if let Some(id) = session.user_data().get::<CaptureSessionId>() {
             self.wl.image_capture.release(*id);
         }
