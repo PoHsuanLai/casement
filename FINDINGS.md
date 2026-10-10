@@ -1292,3 +1292,13 @@ or `place_below` with the sub-surface itself as the reference removed it from it
 the end. The protocol makes that reference a `bad_surface` error; the fork's `PrivateSurfaceData::reorder` now
 refuses it (branch `casement`, 9c8f762a on dc7ca684). An upstream PR waits for the owner's word (upstream PRs on
 hold).
+
+## p1-sh
+
+Added `casement --state-home DIR` (an explicit directory always wins, headless included; without it headless stays
+ephemeral and the others use `$XDG_STATE_HOME/casement`, else `$HOME/.local/state/casement`) and
+`casement-probe workspaces` (one JSON line per workspace: `id`, `name`, `group`, `active`). The placement decision is
+a pure function in `casement/src/main.rs` over (flag, backend, env). `State::new` builds its store from
+`Seams::real(&config.state_home)` for every backend, so headless needed no wiring to save and load `spaces.toml`.
+Surprise: `cargo fmt -p` needs the sibling checkouts, absent in this worktree, so the files were formatted with
+`rustfmt --edition 2024`; nothing was compiled by the lane.

@@ -1,21 +1,41 @@
 //! The `casement` binary: arguments, the environment and an exit code around [`casement::run`].
 
-use casement::cli::{self, Command, StartConfig};
+use casement::cli::{self, Command};
 use casement::space_store::{StateDirs, StateHome};
 use casement::{DebugBus, RunConfig};
 use casement_backend::BackendChoice;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-/// Where state files go: `$XDG_STATE_HOME/casement`, else `$HOME/.local/state/casement`. The
-/// headless backend keeps none (its runs are throwaway), and a missing home keeps none either.
-fn state_home(start: &StartConfig) -> StateHome {
-    if start.backend == BackendChoice::Headless {
+/// The environment values state placement reads.
+struct StateEnv {
+    xdg_state_home: Option<PathBuf>,
+    home: Option<PathBuf>,
+}
+
+impl StateEnv {
+    fn read() -> StateEnv {
+        StateEnv {
+            xdg_state_home: std::env::var_os("XDG_STATE_HOME").map(PathBuf::from),
+            home: std::env::var_os("HOME").map(PathBuf::from),
+        }
+    }
+}
+
+/// Where state files go. An explicit `--state-home DIR` (`flag` is `At`) always wins, for any
+/// backend. Otherwise the headless backend keeps none (its runs are throwaway), and the others
+/// use `$XDG_STATE_HOME/casement`, else `$HOME/.local/state/casement`; a missing home keeps none.
+fn state_home(flag: StateHome, backend: BackendChoice, env: &StateEnv) -> StateHome {
+    if matches!(flag, StateHome::At(_)) {
+        return flag;
+    }
+    if backend == BackendChoice::Headless {
         return StateHome::Ephemeral;
     }
-    let base = std::env::var_os("XDG_STATE_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/state")));
+    let base = env
+        .xdg_state_home
+        .clone()
+        .or_else(|| env.home.as_ref().map(|home| home.join(".local/state")));
     base.map_or(StateHome::Ephemeral, |base| {
         StateHome::At(StateDirs::at(base.join("casement")))
     })
@@ -38,7 +58,8 @@ fn main() -> ExitCode {
             }
         },
         Ok(Command::Run(mut start)) => {
-            start.state_home = state_home(&start);
+            start.state_home =
+                state_home(start.state_home.clone(), start.backend, &StateEnv::read());
             // Debug1 lives on the jail's private bus, which the jail's scripts name here.
             let debug_bus = match std::env::var("DBUS_SESSION_BUS_ADDRESS") {
                 Ok(address) => DebugBus::At(address),
@@ -55,6 +76,73 @@ fn main() -> ExitCode {
         Err(error) => {
             eprintln!("casement: {error}\n{}", cli::USAGE);
             ExitCode::from(64)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn at(dir: &str) -> StateHome {
+        StateHome::At(StateDirs::at(PathBuf::from(dir)))
+    }
+
+    fn env(xdg: Option<&str>, home: Option<&str>) -> StateEnv {
+        StateEnv {
+            xdg_state_home: xdg.map(PathBuf::from),
+            home: home.map(PathBuf::from),
+        }
+    }
+
+    #[test]
+    fn state_placement_follows_the_flag_then_the_backend_then_the_environment() {
+        let cases = [
+            (
+                "flag, headless",
+                at("/f"),
+                BackendChoice::Headless,
+                env(Some("/x"), Some("/h")),
+                at("/f"),
+            ),
+            (
+                "flag, tty",
+                at("/f"),
+                BackendChoice::Tty,
+                env(Some("/x"), Some("/h")),
+                at("/f"),
+            ),
+            (
+                "headless, no flag",
+                StateHome::Ephemeral,
+                BackendChoice::Headless,
+                env(Some("/x"), Some("/h")),
+                StateHome::Ephemeral,
+            ),
+            (
+                "tty, xdg",
+                StateHome::Ephemeral,
+                BackendChoice::Tty,
+                env(Some("/x"), Some("/h")),
+                at("/x/casement"),
+            ),
+            (
+                "winit, home only",
+                StateHome::Ephemeral,
+                BackendChoice::Winit,
+                env(None, Some("/h")),
+                at("/h/.local/state/casement"),
+            ),
+            (
+                "tty, no home",
+                StateHome::Ephemeral,
+                BackendChoice::Tty,
+                env(None, None),
+                StateHome::Ephemeral,
+            ),
+        ];
+        for (name, flag, backend, env, want) in cases {
+            assert_eq!(state_home(flag, backend, &env), want, "{name}");
         }
     }
 }
