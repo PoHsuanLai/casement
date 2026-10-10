@@ -29,6 +29,7 @@ pub(super) fn hear(state: &mut State, events: &[Event], now: Mono) {
 /// only a change.
 pub(crate) fn sync_inhibitors(state: &mut State) {
     let now = state.clock.now();
+    state.wl.idle_inhibit.forget_dead();
     let inhibited = visible_inhibitors(state);
     let effects = idle_notify::on_inhibit(&mut state.wl.idle_notify, inhibited, now);
     run(state, effects);

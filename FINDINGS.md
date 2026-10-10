@@ -695,3 +695,14 @@ W13 8 to 0.
   workspace and of `casement`; `Cargo.lock` must be regenerated (`cargo metadata`) with network access.
 - A Caps Lock that is on adds `CAPS_LOCK` to the chord `deliver_key` builds, so no binding matches while it is on
   (not changed here).
+
+## c17: idle-inhibit and a client that hangs up (2026-10-11)
+- AUDIT (e)5 / the H6-H8 QUIRK note ("idle-inhibit never uninhibits on client disconnect") was already worked
+  around by P0-wire: `core_loop::sync_inhibitors` runs on every `feed` (so on `Event::ClientGone`) and
+  `IdleInhibitPart::inhibited_where` counts only live surfaces. What was missing: a test, and the dead surface
+  stayed in `IdleInhibitPart::inhibitors` for the rest of the session. c17 adds
+  `idle_inhibit::a_client_that_disconnects_stops_inhibiting` and `IdleInhibitPart::forget_dead`
+  (called from `on_inhibit`, `on_uninhibit` and `sync_inhibitors`).
+- Unverified (no builds this lane): the new test has not run. If it fails, the dead-surface check is not
+  reached at the disconnect (look at the order of `ClientState::disconnected` and the object clean-up in
+  wayland-backend), and the fix is to call `sync_inhibitors` from `exec::resync_keyboard`'s caller in `turn`.

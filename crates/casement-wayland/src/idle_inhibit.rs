@@ -31,6 +31,13 @@ impl IdleInhibitPart {
         }
     }
 
+    /// Drops the inhibitors whose surface is gone (their client hung up or destroyed the
+    /// surface): smithay calls `uninhibit` only for an explicit destroy, so without this a
+    /// crashed player's entry would stay for the rest of the session.
+    pub fn forget_dead(&mut self) {
+        self.inhibitors.retain(WlSurface::is_alive);
+    }
+
     /// Whether any inhibitor's surface still exists. smithay never reports an inhibitor whose
     /// client left, so a dead surface stops counting here.
     ///
@@ -60,6 +67,7 @@ impl IdleInhibitPart {
 /// now held off. The model has no idle event, so the answer goes to
 /// `idle_notify::on_inhibit` instead of the core loop.
 pub fn on_inhibit(part: &mut IdleInhibitPart, surface: &WlSurface) -> Inhibited {
+    part.forget_dead();
     part.inhibitors.push(surface.clone());
     part.inhibited()
 }
@@ -69,6 +77,6 @@ pub fn on_uninhibit(part: &mut IdleInhibitPart, surface: &WlSurface) -> Inhibite
     if let Some(at) = part.inhibitors.iter().position(|held| held == surface) {
         part.inhibitors.remove(at);
     }
-    part.inhibitors.retain(|held| held.is_alive());
+    part.forget_dead();
     part.inhibited()
 }
