@@ -9,7 +9,7 @@ use crate::{State, StartError, cli, clients, core_loop};
 use casement_backend::BackendKind;
 use casement_ipc::IpcError;
 use porter_core::PeerIdentity;
-use smithay::reexports::calloop::{EventLoop, Error as LoopError};
+use smithay::reexports::calloop::{Error as LoopError, EventLoop};
 use smithay::reexports::wayland_server::backend::InitError;
 use smithay::reexports::wayland_server::{BindError, Display};
 use smithay::wayland::socket::ListeningSocketSource;

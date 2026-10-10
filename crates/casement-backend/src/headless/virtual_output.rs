@@ -113,7 +113,8 @@ impl VirtualOutputSpec {
             vrr: VrrCapability::Incapable,
         };
         fields.try_fold(base, |spec, field| {
-            with_option(spec, field).ok_or_else(|| bad(SpecError::UnknownOption(field.to_owned())))
+            with_option(spec, field)
+                .ok_or_else(|| bad(SpecError::UnknownOption(field.to_owned())))
         })
     }
 
