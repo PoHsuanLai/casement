@@ -3,6 +3,7 @@
 
 use crate::app::AppKey;
 use crate::cause::Cause;
+use crate::desktop::DesktopNote;
 use crate::event::ResizeEdges;
 use crate::focus::PressRoute;
 use crate::geometry::LogicalSize;
@@ -10,6 +11,7 @@ use crate::ids::{ClientKey, InputSerial, LayerKey, OutputKey, WindowId};
 use crate::input::{Argv, DbusCall};
 use crate::lock::LockReply;
 use crate::output::{GammaRamp, OutputConfig};
+use crate::shell::ShellNote;
 use crate::time::{Due, TimerKey};
 use casement_protocols::vocab::{Attention, Emphasis};
 
@@ -107,6 +109,11 @@ pub enum Effect {
     /// Send `zwlr_foreign_toplevel_management` clients this window's title, app id, state and
     /// outputs as they now are (P1-M2).
     PublishToplevel(WindowId),
+    /// Send `quire_desktop_v1` clients this object as it now is (P2-Z; the model emits it with
+    /// the lane P2-Q1).
+    Desktop(DesktopNote),
+    /// Record or send this to the shell (`quire_shell_v1`; P2-Z).
+    Shell(ShellNote),
 }
 
 /// A toplevel configure.
@@ -231,4 +238,16 @@ pub enum CoreNote {
     UnknownWindow(WindowId),
     /// A client's request to change an output was refused (P1-M1).
     RefusedOutput(crate::output::OutputRefusal),
+    /// A desktop request the model does not carry out yet (P2-Z).
+    Deferred(Deferred),
+}
+
+/// A desktop request that waits for the machine that carries it out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum Deferred {
+    /// Force quit: the quit machine (P3-Z).
+    ForceQuit,
+    /// Reopen an app with no windows: the launch intent (P4).
+    Reopen,
 }

@@ -1,0 +1,97 @@
+//! Requests from the shell's desktop manager (`quire_desktop_manager_v1`; P2-Z): the same
+//! transitions a window's own requests, a window-list client, a workspace client or a key
+//! binding take, reached by name. Everything here is the person's: the wire layer refuses
+//! management on an agent connection before an event is made.
+
+use super::Model;
+use super::moved::Moved;
+use crate::app::AppKey;
+use crate::desktop::{AppAsk, DesktopRequest, SpaceAsk, WindowAsk};
+use crate::effect::{CoreNote, Deferred, Effect};
+use crate::ids::WindowId;
+use crate::space::WorkspaceRequest;
+use crate::window::WlrToplevelRequest;
+use casement_protocols::vocab::{ActorKind, Toggle};
+use porter_core::SpaceId;
+
+impl Model {
+    /// The shell asked something of the desktop.
+    pub(super) fn desktop_request(self, request: DesktopRequest) -> Moved {
+        match request {
+            DesktopRequest::App { app, ask } => self.app_ask(app, ask),
+            DesktopRequest::Window { window, ask } => self.window_ask(window, ask),
+            DesktopRequest::Space { space, ask } => self.space_ask(space, ask),
+            DesktopRequest::CreateSpace { output } => {
+                self.workspace_request(WorkspaceRequest::Create {
+                    output,
+                    name: String::new(),
+                })
+            }
+        }
+    }
+
+    /// An app. One the model does not know is left alone: the shell's view was a moment old.
+    fn app_ask(self, app: AppKey, ask: AppAsk) -> Moved {
+        if !self.apps.contains_key(&app) {
+            return Moved::of(self);
+        }
+        match ask {
+            AppAsk::Activate => self.activation(app, ActorKind::User),
+            AppAsk::Hide => self.hide_app(&app),
+            AppAsk::Unhide => self.unhide_app(&app),
+            AppAsk::HideOthers => self.hide_others(Some(app)),
+            AppAsk::Quit => self.close_all_of(Some(app)),
+            AppAsk::ForceQuit => {
+                Moved::of(self).with(Effect::Note(CoreNote::Deferred(Deferred::ForceQuit)))
+            }
+            AppAsk::Reopen => {
+                Moved::of(self).with(Effect::Note(CoreNote::Deferred(Deferred::Reopen)))
+            }
+        }
+    }
+
+    /// A window.
+    fn window_ask(self, window: WindowId, ask: WindowAsk) -> Moved {
+        let Some(held) = self.windows.get(&window).cloned() else {
+            return Moved::of(self).with(Effect::Note(CoreNote::UnknownWindow(window)));
+        };
+        match ask {
+            WindowAsk::Activate => self.wlr_request(window, WlrToplevelRequest::Activate),
+            WindowAsk::Close => self.wlr_request(window, WlrToplevelRequest::Close),
+            WindowAsk::Minimise => {
+                self.wlr_request(window, WlrToplevelRequest::Minimise(Toggle::On))
+            }
+            WindowAsk::Unminimise => {
+                self.wlr_request(window, WlrToplevelRequest::Minimise(Toggle::Off))
+            }
+            WindowAsk::FullScreen(toggle) => self.wlr_request(
+                window,
+                WlrToplevelRequest::FullScreen {
+                    toggle,
+                    output: None,
+                },
+            ),
+            WindowAsk::Place(target) => self.place(&held, target),
+            WindowAsk::ToSpace(space) => {
+                let _ = space;
+                todo!("P2-Q1: move a window to a Space (SpacePlace::On, relayout)")
+            }
+            WindowAsk::Assign(assign) => {
+                let _ = assign;
+                todo!("P2-Q1: assign a window to every Space, this one, or none")
+            }
+        }
+    }
+
+    /// A Space.
+    fn space_ask(self, space: SpaceId, ask: SpaceAsk) -> Moved {
+        match ask {
+            SpaceAsk::Activate => self.workspace_request(WorkspaceRequest::Activate(space)),
+            SpaceAsk::Remove => self.workspace_request(WorkspaceRequest::Remove(space)),
+            SpaceAsk::MoveTo(index) => {
+                let _ = (space, index);
+                todo!("P2-Q1: move a Space within its output's row")
+            }
+        }
+    }
+}

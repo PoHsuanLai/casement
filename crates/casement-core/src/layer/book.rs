@@ -1,8 +1,9 @@
 //! Every layer surface, and the usable area their exclusive zones leave on an output.
 
-use super::LayerSpec;
+use super::{LayerSpec, ShellRoleTag};
 use crate::geometry::{LogicalPoint, LogicalRect};
 use crate::ids::{LayerKey, OutputKey};
+use casement_protocols::vocab::ShellRole;
 use std::collections::BTreeMap;
 
 /// Every mapped layer surface.
@@ -44,6 +45,15 @@ impl LayerBook {
         let mut pins = self.pins;
         pins.remove(layer);
         LayerBook { layers, pins }
+    }
+
+    /// The surface that holds the shell role `role`, if one does (`quire_shell_v1`: one surface
+    /// per role).
+    pub fn role_holder(&self, role: ShellRole) -> Option<LayerKey> {
+        self.layers
+            .iter()
+            .find(|(_, spec)| spec.role == ShellRoleTag::Assigned(role))
+            .map(|(key, _)| *key)
     }
 
     /// Where `layer` was put by hand, if it was.

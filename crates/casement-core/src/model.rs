@@ -11,6 +11,7 @@
 mod apps;
 mod clients;
 mod commands;
+mod desktop_requests;
 mod focus_feed;
 mod keyboard;
 mod layers;
@@ -21,6 +22,7 @@ mod outputs;
 mod published;
 mod query;
 mod requests;
+mod shell_requests;
 mod space_persist;
 mod spaces;
 mod states;
@@ -177,6 +179,8 @@ impl Model {
             Event::WlrToplevel { window, request } => self.wlr_request(window, request),
             Event::Workspace(request) => self.workspace_request(request),
             Event::SpacesLoaded(file) => self.restore_spaces(*file),
+            Event::Desktop(request) => self.desktop_request(request),
+            Event::Shell(request) => self.shell_request(request),
         }
     }
 

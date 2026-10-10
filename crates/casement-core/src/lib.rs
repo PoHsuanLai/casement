@@ -29,6 +29,7 @@ mod invariants;
 mod model;
 
 pub mod app;
+pub mod desktop;
 pub mod focus;
 pub mod frame;
 pub mod geometry;
@@ -39,14 +40,15 @@ pub mod lock;
 pub mod output;
 pub mod policy;
 pub mod settings;
+pub mod shell;
 pub mod space;
 pub mod time;
 pub mod window;
 
 pub use cause::{Cause, MinimiseTarget, SwipeRelease};
 pub use effect::{
-    Activation, ConfigureSize, ConfigureSpec, CoreNote, Effect, GrabSpec, Held, KeyboardTarget,
-    ProtocolFault, TiledEdges, ToplevelStates,
+    Activation, ConfigureSize, ConfigureSpec, CoreNote, Deferred, Effect, GrabSpec, Held,
+    KeyboardTarget, ProtocolFault, TiledEdges, ToplevelStates,
 };
 pub use error::CoreError;
 pub use event::{

@@ -23,6 +23,7 @@ mod model_windows;
 mod model_wiring;
 mod output;
 mod output_request;
+mod quire;
 mod round_trip;
 mod space_persist;
 mod support;

@@ -57,7 +57,7 @@ impl Model {
 
     /// `rect` (global logical coordinates) is where `window` minimises to, on the output it
     /// lies on (else the window's own). An empty rectangle forgets the one set before.
-    fn with_minimise_rect(self, window: WindowId, rect: LogicalRect) -> Model {
+    pub(super) fn with_minimise_rect(self, window: WindowId, rect: LogicalRect) -> Model {
         let mut model = self;
         if rect.size.w == 0 || rect.size.h == 0 {
             model.minimise_rects.remove(&window);

@@ -120,6 +120,14 @@ pub enum GlobalKind {
     /// `ext_output_image_capture_source_manager_v1` and `ext_image_copy_capture_manager_v1`
     /// (P1-Z; advertised by P1-C1).
     ImageCapture,
+    /// `ext_foreign_toplevel_image_capture_source_manager_v1` (P2-Z: declared, not advertised
+    /// until P2-Q3, because a public client sees it and a request would reach a `todo!()`).
+    ToplevelCapture,
+    /// `quire_desktop_manager_v1`: the desktop model of apps, windows and Spaces (P2-Z; the
+    /// shell manages through it, an agent reads it).
+    QuireDesktop,
+    /// `quire_shell_v1`: the shell's surface roles and system events (P2-Z; the shell only).
+    QuireShell,
 }
 
 /// Whether a connection sees a global.
@@ -133,15 +141,46 @@ pub enum Advertise {
 
 /// Whether a connection of `role` sees `global`. A sandboxed client sees none of the
 /// clipboard managers, the toplevel list, the input-method and virtual-keyboard managers, the
-/// security-context manager, layer shell and the session lock; every other P0 global is seen by
-/// every connection. (P2-Z adds the shell- and agent-only globals.)
+/// security-context manager, layer shell, the session lock, output and window management,
+/// workspaces, capture and the desktop and shell protocols. The shell connection sees
+/// everything. The agent connection sees everything but `quire_shell_v1`; the public socket
+/// sees neither `quire_desktop_manager_v1` nor `quire_shell_v1` (P2-Z).
 ///
-/// The match on `global` is exhaustive on purpose: a new global fails to compile until someone
-/// decides whether a sandbox sees it (I7).
+/// The match on `global` in `sandbox_sees` is exhaustive on purpose: a new global fails to
+/// compile until someone decides whether a sandbox sees it (I7). Whoever adds a privileged
+/// global also gives it a tier in `tier_of`.
 pub fn advertised(global: GlobalKind, role: &ConnectionRole) -> Advertise {
     match role {
-        ConnectionRole::Public | ConnectionRole::Shell | ConnectionRole::Agent => Advertise::Yes,
+        ConnectionRole::Shell => Advertise::Yes,
+        ConnectionRole::Agent => match tier_of(global) {
+            Tier::ShellOnly => Advertise::No,
+            Tier::ShellAndAgent | Tier::Everyone => Advertise::Yes,
+        },
+        ConnectionRole::Public => match tier_of(global) {
+            Tier::ShellOnly | Tier::ShellAndAgent => Advertise::No,
+            Tier::Everyone => Advertise::Yes,
+        },
         ConnectionRole::Sandboxed(_) => sandbox_sees(global),
+    }
+}
+
+/// Which connections may see a global at all, before a sandbox narrows it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum Tier {
+    /// Every kind of connection.
+    Everyone,
+    /// The shell and the agent tier (never the public socket).
+    ShellAndAgent,
+    /// The shell only.
+    ShellOnly,
+}
+
+/// The tier of `global`: everything is `Everyone` but the two `quire` management protocols.
+fn tier_of(global: GlobalKind) -> Tier {
+    match global {
+        GlobalKind::QuireShell => Tier::ShellOnly,
+        GlobalKind::QuireDesktop => Tier::ShellAndAgent,
+        _ => Tier::Everyone,
     }
 }
 
@@ -195,6 +234,9 @@ fn sandbox_sees(global: GlobalKind) -> Advertise {
         | GlobalKind::Gamma
         | GlobalKind::WlrToplevel
         | GlobalKind::Workspace
-        | GlobalKind::ImageCapture => Advertise::No,
+        | GlobalKind::ImageCapture
+        | GlobalKind::ToplevelCapture
+        | GlobalKind::QuireDesktop
+        | GlobalKind::QuireShell => Advertise::No,
     }
 }

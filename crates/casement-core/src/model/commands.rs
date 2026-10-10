@@ -66,7 +66,7 @@ impl Model {
         })
     }
 
-    fn activation(self, app: AppKey, by: ActorKind) -> Moved {
+    pub(super) fn activation(self, app: AppKey, by: ActorKind) -> Moved {
         let refused = matches!(
             by,
             ActorKind::App | ActorKind::ThirdParty | ActorKind::Unknown
@@ -143,7 +143,7 @@ impl Model {
     }
 
     /// Every shown app but `keep` is hidden.
-    fn hide_others(self, keep: Option<AppKey>) -> Moved {
+    pub(super) fn hide_others(self, keep: Option<AppKey>) -> Moved {
         let others: Vec<AppKey> = self
             .apps
             .values()
@@ -157,7 +157,7 @@ impl Model {
     }
 
     /// Every window of the app is asked to close (the polite half of quitting).
-    fn close_all_of(self, app: Option<AppKey>) -> Moved {
+    pub(super) fn close_all_of(self, app: Option<AppKey>) -> Moved {
         let windows: Vec<WindowId> = app
             .and_then(|app| self.apps.get(&app).map(|record| record.windows.clone()))
             .unwrap_or_default();

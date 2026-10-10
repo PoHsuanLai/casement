@@ -1,6 +1,7 @@
 //! The closed set of inputs to [`crate::Model::step`]. Each delta freeze extends it.
 
 use crate::app::AppKey;
+use crate::desktop::DesktopRequest;
 use crate::focus::TokenCheck;
 use crate::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use crate::ids::{ClientKey, InputSerial, LayerKey, OutputKey, WindowId};
@@ -10,6 +11,7 @@ use crate::lock::LockEvent;
 use crate::output::{GammaRamp, OutputChangeSet, OutputConfig, OutputFacts};
 use crate::policy::ConnectionRole;
 use crate::settings::CasementSettings;
+use crate::shell::ShellRequest;
 use crate::space::{SpaceFile, WorkspaceRequest};
 use crate::time::TimerKey;
 use crate::window::{
@@ -169,6 +171,11 @@ pub enum Event {
     /// The Spaces file was read at start: the model adopts the stored ids, so a Space is the
     /// same Space after a restart (P1-M2).
     SpacesLoaded(Box<SpaceFile>),
+    /// The shell managed the desktop (`quire_desktop_manager_v1`; P2-Z). The wire layer has
+    /// refused these on an agent connection, so every one is the person's.
+    Desktop(DesktopRequest),
+    /// The shell told the compositor something (`quire_shell_v1`; P2-Z).
+    Shell(ShellRequest),
 }
 
 /// A toplevel that just mapped.
