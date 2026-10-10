@@ -364,6 +364,7 @@ dependencies = [
  "casement-core",
  "casement-protocols",
  "casement-testkit",
+ "desktop-client",
  "rustix 1.1.5",
  "serde",
  "serde_json",
@@ -423,8 +424,11 @@ name = "casementctl"
 version = "0.1.0"
 dependencies = [
  "casement-testclient",
+ "desktop-client",
+ "image",
  "thiserror 2.0.21",
  "tokio",
+ "wayland-client",
  "zbus",
 ]
 
@@ -519,6 +523,17 @@ name = "cursor-icon"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
+
+[[package]]
+name = "desktop-client"
+version = "0.1.0"
+dependencies = [
+ "rustix 1.1.5",
+ "thiserror 2.0.21",
+ "wayland-client",
+ "wayland-protocols",
+ "wayland-protocols-wlr",
+]
 
 [[package]]
 name = "dispatch2"

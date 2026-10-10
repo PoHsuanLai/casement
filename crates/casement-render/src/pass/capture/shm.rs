@@ -1,14 +1,14 @@
 //! Writing a captured frame into a client's `wl_shm` buffer.
 //!
-//! smithay lends a pool as a raw pointer (the client may map it too), so this is the one
-//! place outside `gl_raw` that turns a pointer into a slice. Everything else here is safe
-//! and tested on plain byte slices.
-#![allow(unsafe_code)]
+//! smithay lends a pool as a raw pointer (the client may map it too); `gl_raw::with_shm_pool_mut`,
+//! the workspace's one unsafe module, turns it into a slice. Everything here is safe and tested on
+//! plain byte slices.
 
 use super::CapturedFrame;
+use crate::gl_raw::with_shm_pool_mut;
 use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_shm::Format;
-use smithay::wayland::shm::{BufferAccessError, BufferData, with_buffer_contents_mut};
+use smithay::wayland::shm::{BufferAccessError, BufferData};
 
 /// Why a frame could not be written into a client's buffer.
 #[derive(Debug, thiserror::Error)]
@@ -62,16 +62,12 @@ impl Layout {
 /// # }
 /// ```
 pub fn write_frame(buffer: &WlBuffer, frame: &CapturedFrame) -> Result<(), ShmWriteError> {
-    with_buffer_contents_mut(buffer, |pointer, length, data| {
+    with_shm_pool_mut(buffer, |pool, data| {
         let layout = Layout::of(&data)?;
         let format_fits = matches!(data.format, Format::Argb8888 | Format::Xrgb8888);
         if !format_fits {
             return Err(ShmWriteError::Format(data.format));
         }
-        // SAFETY: smithay lends `length` bytes at `pointer` for the length of this call and
-        // nothing else in this process touches the pool meanwhile; the client may map it too,
-        // which is the nature of shared memory (smithay's own docs say the same).
-        let pool = unsafe { std::slice::from_raw_parts_mut(pointer, length) };
         copy_rows(pool, layout, frame)
     })?
 }

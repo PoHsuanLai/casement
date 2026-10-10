@@ -1,7 +1,8 @@
 //! The one `unsafe` module of the casement workspace (row B18, 21-FREEZE-AMENDMENTS A17).
 //!
 //! smithay marks two constructors `unsafe fn`: `EGLDisplay::new` and `GlesRenderer::new`. This
-//! module owns exactly those two calls and nothing else; every other GL pass goes through
+//! module owns exactly those two calls, plus the one slice made from the raw pointer smithay
+//! lends for a client's shm pool (P1-C1's capture writes); every other GL pass goes through
 //! smithay's safe shader API. A new `unsafe` block here needs a reviewed interface ask
 //! (ARCHITECTURE.md section 6).
 #![allow(unsafe_code)]
@@ -10,6 +11,8 @@ use crate::damage::RenderError;
 use smithay::backend::egl::native::EGLSurfacelessDisplay;
 use smithay::backend::egl::{EGLContext, EGLDisplay};
 use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
+use smithay::wayland::shm::{BufferAccessError, BufferData, with_buffer_contents_mut};
 
 /// A GLES renderer on the EGL surfaceless platform: no DRM node, no window system. In the jail
 /// this is Mesa's llvmpipe (the jail pins the Mesa EGL vendor), the headless backend's
@@ -28,4 +31,19 @@ pub fn surfaceless_gles() -> Result<GlesRenderer, RenderError> {
     // shared or made current anywhere; the renderer takes ownership of it.
     unsafe { GlesRenderer::new(context) }
         .map_err(|error| RenderError::Renderer(format!("GLES renderer: {error}")))
+}
+
+/// Runs `write` over the bytes of `buffer`'s shm pool, with the buffer's layout. smithay lends the
+/// pool as a pointer and a length for the length of the call; this is where they become a slice.
+pub(crate) fn with_shm_pool_mut<T>(
+    buffer: &WlBuffer,
+    write: impl FnOnce(&mut [u8], BufferData) -> T,
+) -> Result<T, BufferAccessError> {
+    with_buffer_contents_mut(buffer, |pointer, length, data| {
+        // SAFETY: smithay lends `length` bytes at `pointer` for the length of this call and
+        // nothing else in this process touches the pool meanwhile; the client may map it too,
+        // which is the nature of shared memory (smithay's own docs say the same).
+        let pool = unsafe { std::slice::from_raw_parts_mut(pointer, length) };
+        write(pool, data)
+    })
 }

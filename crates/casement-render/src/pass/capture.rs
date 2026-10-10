@@ -89,8 +89,10 @@ impl CapturedFrame {
     /// ```
     pub fn from_rgba(area: PhysicalRect, rgba: &[u8]) -> CapturedFrame {
         let bytes = rgba
-            .chunks_exact(4)
-            .flat_map(|px| [px[2], px[1], px[0], px[3]])
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .flat_map(|&[r, g, b, a]| [b, g, r, a])
             .collect();
         CapturedFrame {
             area,
