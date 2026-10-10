@@ -158,7 +158,8 @@ impl OutputPowers {
             state: ControlState::Silent,
             modes: Vec::new(),
         });
-        self.flush()
+        self.flush()?;
+        Ok(id)
     }
 
     /// Asks for `mode` on a control.

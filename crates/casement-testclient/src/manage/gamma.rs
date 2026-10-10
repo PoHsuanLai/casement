@@ -98,7 +98,8 @@ impl GammaControls {
             proxy,
             state: ControlState::Silent,
         });
-        self.flush()
+        self.flush()?;
+        Ok(id)
     }
 
     /// What a control has said last.

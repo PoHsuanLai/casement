@@ -169,8 +169,10 @@ fn read_ramp(fd: OwnedFd, size: GammaSize) -> Option<GammaRamp> {
     let mut bytes = vec![0; length];
     file.read_exact_at(&mut bytes, 0).ok()?;
     let words: Vec<u16> = bytes
-        .chunks_exact(2)
-        .map(|pair| u16::from_ne_bytes([pair[0], pair[1]]))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|pair| u16::from_ne_bytes(*pair))
         .collect();
     let (red, rest) = words.split_at(steps);
     let (green, blue) = rest.split_at(steps);
