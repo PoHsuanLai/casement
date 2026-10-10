@@ -1,23 +1,17 @@
-//! The P2-Z surface of the model: which connection sees the `quire` globals (I7), what the
-//! shell's role and minimise-target requests do, and what the desktop manager's requests reach.
-//! The rows for `ToSpace`, `Assign`, `MoveTo` and the published notes wait for P2-Q1.
+//! The P2-Z surface of the model: which connection sees the `quire` globals (I7) and what the
+//! desktop manager's requests reach. The rows for `ToSpace`, `Assign`, `MoveTo` and the published
+//! notes wait for P2-Q1. The shell's requests are in `model_shell.rs`.
 
 use crate::support::driver::{Op, last, map, plug, run, run_from};
-use crate::support::{headless, proven, rect};
+use crate::support::{headless, proven};
 use casement_core::app::AppVisibility;
 use casement_core::desktop::{AppAsk, DesktopNote, DesktopRequest, SpaceAsk, WindowAsk};
 use casement_core::focus::TokenCheck;
-use casement_core::geometry::{LogicalPoint, LogicalSize};
-use casement_core::layer::{
-    Anchor, Anchors, ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerSpec, Margins,
-    ShellRoleTag,
-};
 use casement_core::policy::{Advertise, ConnectionRole, GlobalKind, advertised};
-use casement_core::shell::{ShellNote, ShellRequest};
 use casement_core::space::SpaceIndex;
 use casement_core::window::{SpacePlace, WindowState};
-use casement_core::{CoreNote, Deferred, Effect, Event, LayerKey, WindowId};
-use casement_protocols::vocab::{Assign, PlaceTarget, ShellRole};
+use casement_core::{CoreNote, Deferred, Effect, Event, WindowId};
+use casement_protocols::vocab::{Assign, PlaceTarget};
 use porter_core::SandboxFacts;
 
 const GLOBALS: [GlobalKind; 3] = [
@@ -67,38 +61,6 @@ fn the_p2_globals_are_seen_by_the_right_connections() {
     }
 }
 
-fn layer(layer_key: u64, spec_role: ShellRoleTag) -> Op {
-    let spec = LayerSpec {
-        output: headless("HEADLESS-1").key,
-        level: LayerLevel::Top,
-        anchor: Anchors {
-            top: Anchor::Free,
-            bottom: Anchor::Held,
-            left: Anchor::Free,
-            right: Anchor::Free,
-        },
-        exclusive: ExclusiveZone::Ignore,
-        margin: Margins {
-            top: 0,
-            right: 0,
-            bottom: 0,
-            left: 0,
-        },
-        keyboard: KeyboardInteractivity::None,
-        namespace: "dock".to_owned(),
-        size: LogicalSize { w: 400, h: 80 },
-        role: spec_role,
-    };
-    Op::Event(Event::LayerMapped {
-        layer: LayerKey(layer_key),
-        spec,
-    })
-}
-
-fn shell(request: ShellRequest) -> Op {
-    Op::Event(Event::Shell(request))
-}
-
 fn desktop(request: DesktopRequest) -> Op {
     Op::Event(Event::Desktop(request))
 }
@@ -108,73 +70,6 @@ fn window_ask(window: u64, ask: WindowAsk) -> Op {
         window: WindowId(window),
         ask,
     })
-}
-
-#[test]
-fn a_shell_role_is_held_by_one_surface() {
-    let first = shell(ShellRequest::Role {
-        layer: LayerKey(1),
-        role: ShellRole::Dock,
-    });
-    let second = shell(ShellRequest::Role {
-        layer: LayerKey(2),
-        role: ShellRole::Dock,
-    });
-    let taken = run(vec![
-        plug("HEADLESS-1"),
-        layer(1, ShellRoleTag::Unassigned),
-        layer(2, ShellRoleTag::Unassigned),
-        first,
-    ]);
-    assert!(last(&taken).contains(&Effect::Shell(ShellNote::Role(
-        LayerKey(1),
-        ShellRole::Dock
-    ))));
-    assert_eq!(
-        taken.model.layers().role_holder(ShellRole::Dock),
-        Some(LayerKey(1))
-    );
-    let again = run_from(taken.model, vec![second]);
-    assert_eq!(
-        again.model.layers().role_holder(ShellRole::Dock),
-        Some(LayerKey(1)),
-        "a role another surface holds is not given twice"
-    );
-    assert!(last(&again).is_empty());
-}
-
-#[test]
-fn a_minimise_target_is_local_to_the_dock_and_stored_globally() {
-    let mail = proven("org.quire.Mail");
-    let placed = run(vec![
-        plug("HEADLESS-1"),
-        layer(1, ShellRoleTag::Unassigned),
-        Op::Event(Event::LayerPlaced {
-            layer: LayerKey(1),
-            at: LogicalPoint { x: 100, y: 900 },
-        }),
-        map(1, &mail, TokenCheck::Missing),
-        shell(ShellRequest::MinimiseTarget {
-            dock: LayerKey(1),
-            window: WindowId(1),
-            local: rect(10, 5, 64, 64),
-        }),
-    ]);
-    let stored = placed.model.minimise_target(WindowId(1)).expect("a target");
-    assert_eq!(stored.rect, rect(110, 905, 64, 64));
-    assert!(
-        last(&placed).contains(&Effect::Shell(ShellNote::MinimiseTarget(
-            WindowId(1),
-            rect(110, 905, 64, 64)
-        )))
-    );
-    let cleared = run_from(
-        placed.model,
-        vec![shell(ShellRequest::ClearMinimiseTarget {
-            window: WindowId(1),
-        })],
-    );
-    assert!(cleared.model.minimise_target(WindowId(1)).is_none());
 }
 
 #[test]
@@ -200,7 +95,10 @@ fn the_desktop_manager_reaches_the_windows_and_apps_it_names() {
             ask: AppAsk::Hide,
         })],
     );
-    assert_eq!(hidden.model.apps()[&mail].visibility, AppVisibility::Hidden);
+    assert!(matches!(
+        hidden.model.apps()[&mail].visibility,
+        AppVisibility::Hidden { .. }
+    ));
     let missing = run_from(base.model, vec![window_ask(9, WindowAsk::Close)]);
     assert!(last(&missing).contains(&Effect::Note(CoreNote::UnknownWindow(WindowId(9)))));
 }

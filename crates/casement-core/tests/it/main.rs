@@ -18,6 +18,7 @@ mod model_layers;
 mod model_lock;
 mod model_props;
 mod model_requests;
+mod model_shell;
 mod model_spaces;
 mod model_windows;
 mod model_wiring;

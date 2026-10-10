@@ -135,7 +135,7 @@ P2-Q1 9 (5 in the test kit, 4 in casement-core), P2-Q2 7 (3 in casement-agent, 4
 | `crates/casement-wayland/src/capture_source.rs` | on_toplevel_source, on_source_destroyed, on_session, on_frame_request, apply_content, apply_ready, apply_failed, apply_window_gone (8) | P2-Q3 | `crates/casement-testkit/tests/it/protocol/capture_source.rs` (4 ignored) |
 | `crates/casement/src/handlers/capture_source.rs` | constraints, new_session, serve, release (4) | P2-Q3 | the same |
 | `crates/casement-testkit/tests/it/protocol/quire_window.rs` | (no stub: `request_placement_places_the_window_and_reports_the_mark` is ignored, and `request_placement_is_stored` is replaced by it) | P2-Q3 | itself |
-| `crates/casement-core/src/model/desktop_requests.rs` | ToSpace, Assign, Space MoveTo (3) | P2-Q1 | `crates/casement-core/tests/it/quire.rs` (4 ignored, including the model's `Effect::Desktop` emission, which has no stub: nothing emits it yet) |
+| `crates/casement-core/src/model/desktop_requests.rs` | ToSpace, Assign, Space MoveTo (3; the shell's model tests are in `model_shell.rs`, P2-Q2's) | P2-Q1 | `crates/casement-core/tests/it/quire.rs` (4 ignored, including the model's `Effect::Desktop` emission, which has no stub: nothing emits it yet) |
 
 ## Open items
 
