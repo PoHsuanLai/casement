@@ -15,13 +15,16 @@
 //! assert_eq!(config.mode, XwaylandMode::Satellite);
 //! ```
 
+mod guard;
 mod listen;
 
+pub use guard::{MAX_STARTS, Permit, Restarts, WINDOW};
 pub use listen::{Listening, X11Dir};
 
 use crate::spawn::{EnvVar, SpawnError, SpawnSpec, Spawned, Spawner};
 use crate::state::State;
 use casement_core::input::Argv;
+use casement_core::time::Mono;
 use std::os::fd::AsRawFd;
 use std::path::PathBuf;
 
@@ -33,6 +36,18 @@ pub enum XwaylandMode {
     Satellite,
     /// Not at all: no `DISPLAY`.
     Off,
+}
+
+/// How the X server behind satellite draws.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[non_exhaustive]
+pub enum SatelliteRendering {
+    /// Satellite's own choice (graphics hardware when it can).
+    #[default]
+    Automatic,
+    /// Without graphics acceleration (`-glamor none`): a machine or a jail with no usable
+    /// render node. Note satellite's spelling: `off` makes it panic (SP6).
+    Software,
 }
 
 /// The satellite binary: a path, or a name looked up in `PATH`.
@@ -47,6 +62,8 @@ pub struct XwaylandConfig {
     pub mode: XwaylandMode,
     /// The satellite binary.
     pub satellite: SatellitePath,
+    /// How the X server behind satellite draws.
+    pub rendering: SatelliteRendering,
 }
 
 impl XwaylandConfig {
@@ -55,6 +72,7 @@ impl XwaylandConfig {
         XwaylandConfig {
             mode: XwaylandMode::Off,
             satellite: SatellitePath(PathBuf::from("xwayland-satellite")),
+            rendering: SatelliteRendering::Automatic,
         }
     }
 
@@ -63,7 +81,14 @@ impl XwaylandConfig {
         XwaylandConfig {
             mode: XwaylandMode::Satellite,
             satellite: SatellitePath(PathBuf::from(path)),
+            rendering: SatelliteRendering::Automatic,
         }
+    }
+
+    /// The same, drawing without graphics acceleration.
+    #[must_use]
+    pub fn with_rendering(self, rendering: SatelliteRendering) -> XwaylandConfig {
+        XwaylandConfig { rendering, ..self }
     }
 }
 
@@ -142,6 +167,9 @@ fn spawn_satellite(
         argv.push("-listenfd".to_owned());
         argv.push(fd.as_raw_fd().to_string());
     }
+    if config.rendering == SatelliteRendering::Software {
+        argv.extend(["-glamor".to_owned(), "none".to_owned()]);
+    }
     let spec = passed
         .into_iter()
         .fold(SpawnSpec::new(Argv(argv)), SpawnSpec::with_fd)
@@ -165,6 +193,12 @@ pub enum ServeStep {
     Idle,
     /// A client was waiting and satellite was started.
     Started(Spawned),
+    /// A client is waiting but satellite started too often lately (a crash loop): the next
+    /// start is allowed at `until`. The client keeps waiting; nothing is lost.
+    Held {
+        /// When the next start may happen.
+        until: Mono,
+    },
 }
 
 /// Whether X11 is being served.
@@ -189,17 +223,24 @@ impl XwaylandState {
         }
     }
 
-    /// Starts satellite when a client is waiting on the sockets; a start that fails leaves the
-    /// sockets bound (the next call tries again) and returns why.
+    /// Starts satellite when a client is waiting on the sockets, at most [`MAX_STARTS`] times in
+    /// [`WINDOW`] (`now` is the session clock's); a start that fails leaves the sockets bound
+    /// (the next call tries again) and returns why.
     pub fn serve(
         &mut self,
         config: &XwaylandConfig,
         spawner: &mut dyn Spawner,
         wayland: &WaylandSocket,
+        now: Mono,
     ) -> Result<ServeStep, XwaylandError> {
-        let waiting = matches!(self, XwaylandState::Listening(s) if s.connection_waiting());
-        if !waiting {
+        let XwaylandState::Listening(waiting) = self else {
             return Ok(ServeStep::Idle);
+        };
+        if !waiting.connection_waiting() {
+            return Ok(ServeStep::Idle);
+        }
+        if let Permit::Held { until } = waiting.restarts_mut().permit(now) {
+            return Ok(ServeStep::Held { until });
         }
         let XwaylandState::Listening(sockets) = std::mem::take(self) else {
             return Ok(ServeStep::Idle);
@@ -287,11 +328,21 @@ pub fn attach(state: &mut State, config: &XwaylandConfig) {
 pub fn turn(state: &mut State, config: &XwaylandConfig, wayland: &WaylandSocket) {
     state.xwayland.reap();
     let State {
-        xwayland, seams, ..
+        xwayland,
+        seams,
+        clock,
+        ..
     } = state;
-    match xwayland.serve(config, seams.spawner.as_mut(), wayland) {
+    let now = clock.now();
+    match xwayland.serve(config, seams.spawner.as_mut(), wayland, now) {
         Ok(ServeStep::Started(process)) => {
             tracing::info!(pid = process.pid.0, "xwayland-satellite started");
+        }
+        Ok(ServeStep::Held { until }) => {
+            tracing::debug!(
+                ?until,
+                "xwayland-satellite keeps exiting; holding its restart"
+            );
         }
         Ok(ServeStep::Idle) => {}
         Err(error) => tracing::warn!(%error, "xwayland-satellite did not start"),

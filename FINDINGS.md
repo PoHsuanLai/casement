@@ -1012,6 +1012,27 @@ Nothing here compiled (no builds this lane). `todo!()` left for the lane: 0.
   whether the compositor honours or refuses `_NET_ACTIVE_WINDOW` (the activation script records the outcome and asserts only
   consistency); `override-redirect` windows keeping the position the client asked for.
 
+## p2-xw: XWayland hardening and the Q-C5 memo (2026-10-11)
+
+Nothing here compiled (no builds this lane). `todo!()` left: 0. Shared files touched: none (`run.rs`, `main.rs`,
+`state.rs` untouched; `xwayland::turn` reads `state.clock`, which already exists).
+
+- **Departures.** `XwaylandState::serve` takes a fourth argument, `now: Mono` (the session clock, so the crash-loop guard
+  reads no clock); `ServeStep` gained `Held { until }`; `XwaylandConfig` gained `rendering: SatelliteRendering`
+  (`Automatic`, `Software` = `-glamor none` appended after the `-listenfd` pairs) with `with_rendering`. New public types:
+  `Restarts`, `Permit`, `MAX_STARTS` (4), `WINDOW` (30 s) in `xwayland/guard.rs`. `Listening` carries the `Restarts`.
+- **Memo.** `docs/xwayland-decision.md`: recommends keeping satellite; its "unverified" cells are the list below.
+- **Only a real X11 run proves:** (1) whether satellite takes `-glamor none` after the `-listenfd` pairs, in that order;
+  (2) mixed scale: whether `Xft.dpi` is one value per screen and how a window moved between outputs looks and is sized
+  (`xwayland-scale.sh` records it; judge sharpness by eye); (3) clipboard with large (INCR) and image content, and
+  `PRIMARY`; (4) drag and drop between an X11 and a Wayland window; (5) whether `_NET_ACTIVE_WINDOW` from an X11 app
+  reaches casement as an activation request with a valid token, and whether a focus-stealing X11 window is refused;
+  (6) that a satellite which exits at start is held after four starts and a waiting client is served after the window
+  (kill it in a loop); (7) that the held state logs nothing at `warn` (a person sees only that the program waits; check the
+  wording is enough or promote it).
+- **Ozone hint.** The risk table wants Wayland-native Electron defaults in the session; that is the session's environment
+  (dist), not `XwaylandState::env`, whose test pins `DISPLAY` as the only variable. Left to the dist lane.
+
 ## p1-f2: the fake logind (2026-10-11)
 
 - **Departures.** The frozen unit structs `Manager`, `Session`, `Seat` and `FakeLogind` became real: the three objects are

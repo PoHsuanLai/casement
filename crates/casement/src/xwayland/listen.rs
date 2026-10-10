@@ -5,7 +5,7 @@
 //! finds a server before satellite exists; the connection waits in the backlog until satellite
 //! is started with the same descriptors and accepts it.
 
-use super::{DisplayName, XwaylandError};
+use super::{DisplayName, Restarts, XwaylandError};
 use rustix::event::{PollFd, PollFlags, Timespec, poll};
 use rustix::net::{
     AddressFamily, SocketAddrUnix, SocketFlags, SocketType, bind, listen, socket_with,
@@ -30,6 +30,7 @@ pub struct Listening {
     display: DisplayName,
     path: PathBuf,
     sockets: Vec<OwnedFd>,
+    restarts: Restarts,
 }
 
 impl Listening {
@@ -54,6 +55,11 @@ impl Listening {
     /// The display these sockets serve.
     pub fn display(&self) -> &DisplayName {
         &self.display
+    }
+
+    /// The recent satellite starts on this display.
+    pub(super) fn restarts_mut(&mut self) -> &mut Restarts {
+        &mut self.restarts
     }
 
     /// The sockets, for registering with the event loop.
@@ -106,6 +112,7 @@ fn try_display(dir: &Path, number: u32) -> Option<Listening> {
         display: DisplayName(format!(":{number}")),
         path,
         sockets: vec![OwnedFd::from(listener), abstract_socket],
+        restarts: Restarts::default(),
     })
 }
 
