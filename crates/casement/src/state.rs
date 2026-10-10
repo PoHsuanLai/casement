@@ -219,7 +219,7 @@ impl State {
             ),
             security_context: security_context::SecurityContextPart::new::<State>(&dh, filter),
             background_effect: background_effect::BackgroundEffectPart::new::<State>(&dh, filter),
-            // P1-Z: declared, not advertised (each `new` creates no global until its lane fills it).
+            // P1-M1 advertises the first three; P1-M2 and P1-C1 fill the rest (their `new` creates no global yet).
             output_management: output_management::OutputManagementPart::new::<State>(&dh, filter),
             output_power: output_power::OutputPowerPart::new::<State>(&dh, filter),
             gamma: gamma::GammaPart::new::<State>(&dh, filter),

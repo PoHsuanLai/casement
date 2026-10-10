@@ -4,8 +4,9 @@
 use crate::fixture::{Fixture, ShotTarget};
 use casement::core_loop;
 use casement_backend::{FramePixels, VirtualOutputSpec};
-use casement_core::OutputName;
 use casement_core::geometry::{LogicalPoint, LogicalRect, to_physical};
+use casement_core::output::{GammaRamp, Mode};
+use casement_core::{Event, OutputName};
 
 impl Fixture {
     /// Plugs an output and pumps; returns its connector name.
@@ -36,6 +37,34 @@ impl Fixture {
             core_loop::configure_output(self.state_mut(), &key, config);
         }
         self.pump();
+    }
+
+    /// Gives `name` the modes in `extra` besides the ones it offers (a display with several
+    /// reports them all) and pumps. An output the model does not know changes nothing.
+    pub fn offer_modes(&mut self, name: &OutputName, extra: &[Mode]) {
+        let known = self
+            .model()
+            .outputs()
+            .0
+            .values()
+            .find(|state| state.facts.name == *name)
+            .map(|state| state.facts.clone());
+        if let Some(mut facts) = known {
+            let new: Vec<Mode> = extra
+                .iter()
+                .filter(|mode| !facts.modes.contains(mode))
+                .copied()
+                .collect();
+            facts.modes.extend(new);
+            core_loop::feed(self.state_mut(), vec![Event::OutputPlugged(facts)]);
+        }
+        self.pump();
+    }
+
+    /// The gamma ramp a client last set on `name` (the identity curve until one does); none
+    /// when it is not plugged.
+    pub fn gamma_of(&self, name: &OutputName) -> Option<GammaRamp> {
+        self.headless().gamma_of(name).cloned()
     }
 
     /// A shot of `target`, from the last presented frame. A window is cut out of the frame of

@@ -229,4 +229,6 @@ pub enum CoreNote {
     StaleTimer(TimerKey),
     /// An event named a window the model does not know.
     UnknownWindow(WindowId),
+    /// A client's request to change an output was refused (P1-M1).
+    RefusedOutput(crate::output::OutputRefusal),
 }

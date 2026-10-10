@@ -817,3 +817,35 @@ the `--xwayland` flags, `VendorFact::from_pci_vendor`, `GammaTable::new`, `Outpu
   `casement/src/state.rs` and `exec.rs` (module and import names `gamma`, `workspace`, `spawn`), the doc tests (all
   `no_run`), `casement-testkit/src/fixture.rs`, `fakes/session.rs` (`TtySession` over smithay's `Session`), and
   `casement-render/src/pass/capture.rs` (the `ExportMem` bound with `R::Framebuffer<'_>`).
+
+## p1-m1: output management, output power, gamma control (2026-10-11)
+
+P1-M1 advertises `zwlr_output_manager_v1` (4), `zwlr_output_power_manager_v1` (1) and `zwlr_gamma_control_manager_v1` (1);
+`globals.txt` and the sandbox hidden-list have their rows. Nothing here compiled (no builds this lane).
+
+- **One sync hook.** `core_loop::feed` ends with `handlers::sync_outputs`: the heads (`apply_heads`, which compares the
+  model's outputs with what was announced and sends nothing when they match), the power controls (`output_power::follow`)
+  and the gamma controls (`gamma::follow`) follow the model after every batch. Heads for a changed `OutputFacts` are
+  finished and announced again; a changed `OutputConfig` only resends the head's state. The manager serial moves once per
+  change; a configuration made at an older one is `cancelled`.
+- **`apply_heads` takes a `DisplayHandle` and the dispatch type** (`apply_heads::<State>(part, display, outputs)`): the
+  frozen signature had neither, and a new head is a server-created object.
+- **Disabled is dark.** `disable_head` is `OutputPower::Off`, `enable_head` is `On` (the output keeps its place in the
+  arrangement; no output is removed from the layout). A disabled head sends only `enabled 0`.
+- **Every head must be configured.** `apply` or `test` with a head left out is the protocol error `unconfigured_head`
+  (what wlroots does); the frozen `Configuration` doc said "left out are disabled" and now says the protocol makes the
+  client name them all. `already_configured_head` and `already_used` are posted too.
+- **Custom modes** match an offered mode by size and rate (the fastest when the rate is 0); one the display does not
+  offer reaches `resolve_change` as asked and is refused: `failed`, not a protocol error. Adaptive sync is not offered:
+  `set_adaptive_sync` is ignored and no `adaptive_sync` event is sent. Scales take 0.25x to 8x (`resolve_change`).
+- **A new `CoreNote::RefusedOutput(OutputRefusal)`** (an `exec::note_of` arm logs it) for a refused `OutputRequested`.
+- **Gamma on headless** is recorded on the `VirtualOutput` (`HeadlessBackend::{set_gamma, gamma_of}`, table size 256) and
+  read back through `Fixture::gamma_of`; no pixel changes. On tty `Effect::SetGamma` goes to `Kms::set_gamma` of the
+  device that drives the connector. **Real-hardware check:** the KMS device reports no gamma table size
+  (`CrtcFacts` has no field), so a tty output announces 256 steps; P1-D2 should add the real `GAMMA_LUT_SIZE` and
+  `handlers/gamma.rs::gamma_table_size` should read it. A client that sends a ramp the CRTC cannot take gets the
+  `failed` event only once `RealKms::set_gamma` reports it (not wired).
+- **One control per output** for power and gamma: a second `get_*` on a controlled output, or on one that is gone,
+  gets an inert object that says `failed` at once; destroying the holder frees the output (gamma: identity restored).
+- **Test kit.** `Fixture::offer_modes` (an output with several modes: the virtual output offers one) and
+  `Fixture::gamma_of`; the catalogue lists the three managers and `errors.rs` their error enums.

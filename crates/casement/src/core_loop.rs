@@ -64,6 +64,7 @@ pub fn feed(state: &mut State, events: Vec<Event>) {
     state.core.model = model;
     exec::exec(state, effects);
     surfaces::sync(state, &events_seen);
+    crate::handlers::sync_outputs(state);
     idle::hear(state, &events_seen, now);
     ime::hear(state, &events_seen);
     events_seen

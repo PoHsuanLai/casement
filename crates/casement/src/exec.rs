@@ -141,6 +141,9 @@ fn note_of(note: &CoreNote) {
         CoreNote::UnknownWindow(window) => {
             tracing::debug!(window = window.0, "an event named an unknown window");
         }
+        CoreNote::RefusedOutput(refusal) => {
+            tracing::debug!(%refusal, "an output change was refused");
+        }
     }
 }
 

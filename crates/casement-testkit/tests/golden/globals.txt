@@ -46,5 +46,8 @@ zwp_idle_inhibit_manager_v1 1 idle_inhibit
 ext_foreign_toplevel_list_v1 1 foreign_toplevel_list
 wp_security_context_manager_v1 1 security_context
 ext_background_effect_manager_v1 1 background_effect
+zwlr_output_manager_v1 4 output_management
+zwlr_output_power_manager_v1 1 output_power
+zwlr_gamma_control_manager_v1 1 gamma
 # With --dmabuf soft (and on hardware from P1) also, with default feedback:
 #   zwp_linux_dmabuf_v1 6 dmabuf
