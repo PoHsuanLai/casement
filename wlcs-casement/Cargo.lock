@@ -437,6 +437,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "chordkit"
+version = "0.1.0"
+source = "git+https://github.com/PoHsuanLai/chordkit.git?rev=ba094c62006c280ac53c4c5df5c0e639c1226c07#ba094c62006c280ac53c4c5df5c0e639c1226c07"
+dependencies = [
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "combine"
 version = "4.6.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -587,6 +595,7 @@ dependencies = [
 name = "ds-core"
 version = "0.1.0"
 dependencies = [
+ "chordkit",
  "ds-core-derive",
  "futures-timer",
  "keyboard-types 0.7.0",
