@@ -8,8 +8,9 @@
 //! state as acked where a buffer is pending and nothing has been acked: what the client would
 //! have sent.
 //!
-//! Behind the `testing` feature, and off ([`AckPolicy::Strict`]) until a process asks for it:
-//! only the wlcs shim does, in its own process, so every other test keeps the strict rule.
+//! Behind the `testing` feature, and off ([`AckPolicy::Strict`]) until a fixture asks for it
+//! (`State::ack_policy`, set from `FixtureSpec::with_ack_policy`): only the wlcs shim and its
+//! own test do, so every other test keeps the strict rule.
 
 use crate::state::State;
 use smithay::reexports::wayland_server::DisplayHandle;
@@ -22,27 +23,15 @@ use smithay::wayland::shell::wlr_layer::{LayerSurfaceConfigure, LayerSurfaceData
 use smithay::wayland::shell::xdg::{
     PopupConfigure, ToplevelConfigure, XdgPopupSurfaceData, XdgToplevelSurfaceData,
 };
-use std::sync::OnceLock;
 
 /// What a commit that attaches a buffer before the first ack is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AckPolicy {
     /// A protocol error (the protocol's rule, and the default).
+    #[default]
     Strict,
     /// Taken as the ack the client skipped (wlcs' helpers need it).
     Lenient,
-}
-
-static POLICY: OnceLock<AckPolicy> = OnceLock::new();
-
-/// Sets the policy of this process, once; a second call changes nothing.
-pub fn set_policy(policy: AckPolicy) {
-    let _ = POLICY.set(policy);
-}
-
-/// The policy of this process.
-pub fn policy() -> AckPolicy {
-    POLICY.get().copied().unwrap_or(AckPolicy::Strict)
 }
 
 /// Adds the relaxation to `surface`.
@@ -50,8 +39,8 @@ pub(crate) fn install(surface: &WlSurface) {
     add_pre_commit_hook::<State, _>(surface, pre_commit);
 }
 
-fn pre_commit(_state: &mut State, _dh: &DisplayHandle, surface: &WlSurface) {
-    if policy() == AckPolicy::Strict {
+fn pre_commit(state: &mut State, _dh: &DisplayHandle, surface: &WlSurface) {
+    if state.ack_policy == AckPolicy::Strict {
         return;
     }
     with_states(surface, |states| {

@@ -2,6 +2,7 @@
 
 use crate::gpu::GpuTopology;
 use casement_backend::{DmabufMode, RenderCostModel, SoftRenderer, VirtualOutputSpec};
+use casement::relax::AckPolicy;
 use casement_core::settings::CasementSettings;
 use std::time::Duration;
 
@@ -20,6 +21,8 @@ pub struct FixtureSpec {
     pub cost: RenderCostModel,
     /// Whether `zwp_linux_dmabuf_v1` is offered (a fake main device over `/dev/udmabuf`).
     pub dmabuf: DmabufMode,
+    /// Whether a buffer attached before the first ack is an error (A37; wlcs needs it lenient).
+    pub ack_policy: AckPolicy,
 }
 
 impl FixtureSpec {
@@ -36,12 +39,18 @@ impl FixtureSpec {
             settings: CasementSettings::defaults(),
             cost: RenderCostModel::Fixed(Duration::from_millis(4)),
             dmabuf: DmabufMode::None,
+            ack_policy: AckPolicy::Strict,
         }
     }
 
     /// The same, with this dma-buf mode.
     pub fn with_dmabuf(self, dmabuf: DmabufMode) -> FixtureSpec {
         FixtureSpec { dmabuf, ..self }
+    }
+
+    /// The same, with this ack policy.
+    pub fn with_ack_policy(self, ack_policy: AckPolicy) -> FixtureSpec {
+        FixtureSpec { ack_policy, ..self }
     }
 
     /// The same, with these outputs.

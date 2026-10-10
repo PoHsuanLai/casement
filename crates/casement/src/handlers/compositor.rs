@@ -116,7 +116,7 @@ impl State {
                         // it maps the window too, as it does for the compositors wlcs was
                         // written against. Idempotent for every other commit.
                         #[cfg(feature = "testing")]
-                        if crate::relax::policy() == crate::relax::AckPolicy::Lenient {
+                        if self.ack_policy == crate::relax::AckPolicy::Lenient {
                             events.extend(xdg_shell::on_toplevel_commit(
                                 &mut self.wl.xdg_shell,
                                 surface,

@@ -15,7 +15,7 @@ use casement_motion::{OutputFrame, PlacedWindow};
 use convert::{on_output, sub_of};
 use ds_core::geometry::scale::Scale;
 use smithay::backend::renderer::element::surface::render_elements_from_surface_tree;
-use smithay::backend::renderer::element::{Id, Kind};
+use smithay::backend::renderer::element::Kind;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 
 /// Where an output sits and how dense it is: what turns the frame's global sub-pixels into this
@@ -124,7 +124,7 @@ pub fn output_elements<R: Compositor>(
         if let Some(entry) = lock {
             elements.extend(tree(&entry.root, sub_of(view.area.origin), view, renderer));
         }
-        elements.push(CasementElement::Cover(cover(view)));
+        elements.push(CasementElement::Cover(cover(view, book)));
         return elements;
     }
     let draw_level =
@@ -181,21 +181,15 @@ const COVER: Rgba8 = Rgba8 {
     a: 255,
 };
 
-thread_local! {
-    /// The cover's id: one for every output (each output has its own damage tracker), kept
-    /// for the life of the thread so a standing cover damages nothing.
-    static COVER_ID: Id = Id::new();
-}
-
-/// The lock cover over all of `view`.
-fn cover(view: &OutputView) -> LockCoverElement {
+/// The lock cover over all of `view`; its id is `book`'s, so a standing cover damages nothing.
+fn cover(view: &OutputView, book: &TextureBook) -> LockCoverElement {
     let area = PhysicalRect {
         x: 0,
         y: 0,
         w: view.mode.w,
         h: view.mode.h,
     };
-    LockCoverElement::new(COVER_ID.with(Id::clone), area, COVER)
+    LockCoverElement::new(book.cache().cover_id(), area, COVER)
 }
 
 /// A surface tree with its top-left at `origin` (global sub-pixels), opaque, front first.

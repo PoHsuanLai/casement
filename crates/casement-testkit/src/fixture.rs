@@ -133,6 +133,7 @@ impl Fixture {
             entropy: Entropy::Fixed(FIXTURE_ENTROPY),
         };
         let mut state = State::new(config, &mut display, &handle)?;
+        state.ack_policy = spec.ack_policy;
         let display = attach_display(display, &handle)?;
         core_loop::announce_outputs(&mut state);
         if *state.settings() != spec.settings {

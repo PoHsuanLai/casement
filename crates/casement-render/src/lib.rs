@@ -10,6 +10,7 @@
 
 mod compositor;
 mod damage;
+mod draw_cache;
 mod element;
 mod gl_raw;
 mod scene;

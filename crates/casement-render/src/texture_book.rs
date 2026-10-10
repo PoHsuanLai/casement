@@ -1,5 +1,6 @@
 //! Which surface tree draws each window, layer surface and lock surface.
 
+use crate::draw_cache::DrawCache;
 use casement_core::geometry::LogicalSize;
 use casement_core::{LayerKey, OutputKey, WindowId};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -22,9 +23,16 @@ pub struct TextureBook {
     layers: BTreeMap<LayerKey, SurfaceEntry>,
     locks: BTreeMap<OutputKey, SurfaceEntry>,
     cursor: Option<WlSurface>,
+    /// What drawing remembers between frames (cursor rasters, the cover's id).
+    cache: DrawCache,
 }
 
 impl TextureBook {
+    /// What drawing remembers between frames.
+    pub(crate) fn cache(&self) -> &DrawCache {
+        &self.cache
+    }
+
     /// No surfaces.
     pub fn empty() -> TextureBook {
         TextureBook::default()

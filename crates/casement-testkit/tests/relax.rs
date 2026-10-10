@@ -1,20 +1,20 @@
-//! A37, in a process of its own (the policy is per process, and this is the only test here):
-//! with the lenient policy a buffer attached before the first ack maps the window instead of
+//! A37: with the lenient policy a buffer attached before the first ack maps the window instead of
 //! killing the client, which is what wlcs' helpers do.
 
-// Its own binary: `relax::set_policy` is process-global (A37).
-use casement::relax::{self, AckPolicy};
+use casement::relax::AckPolicy;
 use casement_core::geometry::PhysicalSize;
 use casement_core::policy::ConnectionRole;
 use casement_testclient::surface::toplevel::WmBase;
 use casement_testclient::{Pattern, shm_buffer};
 use casement_testkit::{Fixture, FixtureSpec};
 
+fn lenient() -> Fixture {
+    Fixture::start(FixtureSpec::desktop().with_ack_policy(AckPolicy::Lenient)).expect("fixture")
+}
+
 #[test]
 fn a_buffer_before_the_ack_maps_the_window_under_the_lenient_policy() {
-    relax::set_policy(AckPolicy::Lenient);
-    assert_eq!(relax::policy(), AckPolicy::Lenient);
-    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let mut fixture = lenient();
     let id = fixture.connect(ConnectionRole::Public);
     let base = WmBase::bind(fixture.client(id), 7);
     let top = base.toplevel(fixture.client(id));
@@ -41,8 +41,7 @@ fn a_buffer_after_a_null_buffer_maps_the_window_again_under_the_lenient_policy()
     use casement_core::input::DeviceClass;
     use casement_testclient::surface::toplevel::bind_pointer;
     use casement_testkit::TestOrigin;
-    relax::set_policy(AckPolicy::Lenient);
-    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let mut fixture = lenient();
     let id = fixture.connect(ConnectionRole::Public);
     let base = WmBase::bind(fixture.client(id), 7);
     let seat = bind_pointer(fixture.client(id));

@@ -255,7 +255,7 @@ mod tests {
     ];
 
     fn at(raster: &Raster, x: u32, y: u32) -> [u8; 4] {
-        let i = usize::try_from((y * raster.side + x) * 4).expect("index fits");
+        let i = usize::try_from((y * raster.side + x) * 4).unwrap_or(usize::MAX);
         [
             raster.argb[i],
             raster.argb[i + 1],
@@ -311,8 +311,8 @@ mod tests {
         let raster = raster(CursorShape::Default, Scale(120));
         let tip = hotspot(CursorShape::Default);
         let (x, y) = (
-            u32::try_from(tip.x).expect("x"),
-            u32::try_from(tip.y).expect("y"),
+            u32::try_from(tip.x).unwrap_or(0),
+            u32::try_from(tip.y).unwrap_or(0),
         );
         assert_ne!(at(&raster, x, y + 1)[3], 0, "covered just below the tip");
         assert_eq!(at(&raster, x - 3, y - 2)[3], 0, "clear up and left of it");
