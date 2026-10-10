@@ -15,7 +15,7 @@ mod udev;
 
 pub use input_devices::FakeInputDevices;
 pub use kms::{
-    FakeKms, FakeKmsOpener, KmsFixtureError, KmsWorld, LinkBehaviour, SyntheticTopology,
+    FakeKms, FakeKmsOpener, KmsFixtureError, KmsWorld, LinkBehaviour, SyntheticTopology, edid,
     load_fixture,
 };
 pub use logind::{

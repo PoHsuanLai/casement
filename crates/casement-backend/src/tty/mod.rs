@@ -169,7 +169,6 @@ impl TtyBackend {
                 SessionNote::Activated => returned = true,
                 SessionNote::Paused => returned = false,
                 SessionNote::VtSwitch(vt) => self.ask_for_vt(VtNumber(vt)),
-                _ => {}
             }
             notes.push(TtyNote::Session(note));
         }

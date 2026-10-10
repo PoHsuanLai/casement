@@ -284,10 +284,9 @@ fn unplugging_a_gpu_falls_back_to_shm() {
     let mut renderer = gpu
         .renderer(&a, &a, Fourcc::Argb8888)
         .expect("A is still there");
-    let error = renderer
-        .import_dmabuf(&client.dmabuf, None)
-        .err()
-        .expect("B's buffer is gone with B");
+    let Err(error) = renderer.import_dmabuf(&client.dmabuf, None) else {
+        panic!("B's buffer is gone with B");
+    };
     assert!(format!("{error:?}").contains("DeviceMissing"), "{error:?}");
 
     // The next commit, as shm, renders exactly on A.

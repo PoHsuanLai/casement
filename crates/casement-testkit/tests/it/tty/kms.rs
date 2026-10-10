@@ -144,7 +144,7 @@ fn a_retraining_link_reports_changed_and_nothing_else() {
     assert_eq!(devices.announce().len(), 1);
     for _ in 0..4 {
         let commit = first_commit(&kms, VrrPolicy::Off);
-        let mut driver = devices.driving(&name("DP-1")).expect("driver");
+        let driver = devices.driving(&name("DP-1")).expect("driver");
         driver.commit(commit).expect("commit");
         let events = devices.changed(&card(0)).expect("changed");
         assert!(matches!(events.as_slice(), [ConnectorEvent::Changed(_)]));

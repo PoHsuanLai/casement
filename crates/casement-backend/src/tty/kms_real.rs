@@ -160,7 +160,6 @@ impl Kms for RealKms {
                 return Err(KmsError::Refused(KmsRefusal::ModesetForbidden));
             }
             CommitVerdict::Refused(refusal) => return Err(KmsError::Refused(refusal)),
-            _ => return Err(KmsError::Refused(KmsRefusal::Unsupported)),
         }
         for output in &commit.outputs {
             self.light(output)?;
@@ -346,7 +345,7 @@ fn planes(device: &DrmDevice, crtcs: &[crtc::Handle]) -> Result<Vec<PlaneFacts>,
                 .formats
                 .iter()
                 .map(|f| FormatEntry {
-                    format: Fourcc(u32::from(f.code)),
+                    format: Fourcc(f.code as u32),
                     modifier: Modifier(u64::from(f.modifier)),
                 })
                 .collect();

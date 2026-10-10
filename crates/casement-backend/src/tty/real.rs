@@ -21,10 +21,11 @@ pub fn real_seams<D: 'static>(
     let session = RealSession::open(handle)?;
     let udev = RealUdev::watch(&session.seat_name(), handle)
         .map_err(|error| SessionFault::Unavailable(format!("udev: {error}")))?;
+    let fds = session.fds();
     Ok(TtySeams::new(
         Box::new(session),
         Box::new(udev),
-        Box::new(RealKmsOpener),
+        Box::new(RealKmsOpener::new(Box::new(fds))),
         Box::new(SysRenderNodes::new(root)),
         choice,
     ))

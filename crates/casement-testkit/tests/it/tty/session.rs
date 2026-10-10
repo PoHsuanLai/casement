@@ -28,7 +28,7 @@ impl RenderNodes for NoGpus {
     }
 
     fn open(&mut self, node: &DrmNodeId) -> Result<GpuHandle, GpuError> {
-        Err(GpuError::UnknownNode(node.clone()))
+        Err(GpuError::UnknownNode(*node))
     }
 }
 

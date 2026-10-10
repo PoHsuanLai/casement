@@ -5,6 +5,8 @@
 //! logind's `PrepareForSleep` is not libseat's to report: a suspend reaches this adapter only as
 //! the pause logind makes of the session (see FINDINGS, p1-d1).
 
+use super::kms::KmsError;
+use super::kms_real::FdSource;
 use super::session::{SessionNote, TtySession};
 use super::udev::DevicePath;
 use super::vt::VtNumber;
@@ -40,9 +42,26 @@ impl RealSession {
         Ok(RealSession { seat, pending })
     }
 
+    /// The KMS seam's device opener: a second handle on this libseat session.
+    pub fn fds(&self) -> SessionFds {
+        SessionFds(self.seat.clone())
+    }
+
     /// The seat's name (`seat0`), for the udev monitor.
     pub fn seat_name(&self) -> String {
         self.seat.seat()
+    }
+}
+
+/// Opens display devices through the session, for [`RealKmsOpener`](super::kms_real::RealKmsOpener).
+#[derive(Debug)]
+pub struct SessionFds(LibSeatSession);
+
+impl FdSource for SessionFds {
+    fn fd(&mut self, path: &DevicePath) -> Result<OwnedFd, KmsError> {
+        self.0
+            .open(path.as_path(), OFlags::RDWR)
+            .map_err(|error| KmsError::Io(std::io::Error::other(error.to_string())))
     }
 }
 
