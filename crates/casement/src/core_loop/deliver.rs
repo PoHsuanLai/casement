@@ -163,6 +163,14 @@ fn mac_mods(mods: &ModifiersState) -> MacMods {
     .fold(MacMods::NONE, |all, (_, one)| all.with(one))
 }
 
+/// The modifiers of a binding's chord: `mac_mods` without the locks. Caps Lock is a state, not
+/// a key held for the chord (Num Lock is not in `MacMods` at all), so a binding matches with
+/// either on.
+fn chord_mods(mods: &ModifiersState) -> MacMods {
+    let held = mac_mods(mods);
+    MacMods(held.0 & !MacMods::CAPS_LOCK.0)
+}
+
 fn keyboard_target(model: &Model) -> InputTarget {
     match model.keyboard_target() {
         KeyboardTarget::Window(window) => InputTarget::Window(window),
@@ -234,7 +242,7 @@ fn deliver_key(state: &mut State, seat: &Seat<State>, key: KeyDelivery) {
             return FilterResult::Intercept(None);
         }
         let chord = handle.raw_latin_sym_or_raw_current_sym().map(|sym| Chord {
-            mods: mac_mods(mods),
+            mods: chord_mods(mods),
             key: Keysym(sym.raw()),
         });
         match chord.map(|chord| resolve(&bindings, &chord, &origin)) {
@@ -633,4 +641,60 @@ pub(super) fn refocus(state: &mut State) {
     .map(|(_, at)| at);
     let now = state.clock.now();
     log(seat::apply_refocus(&seat, state, under, now));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// (case, state, chord modifiers)
+    fn cases() -> Vec<(&'static str, ModifiersState, MacMods)> {
+        let with = |f: fn(&mut ModifiersState)| {
+            let mut state = ModifiersState::default();
+            f(&mut state);
+            state
+        };
+        vec![
+            ("nothing held", with(|_| {}), MacMods::NONE),
+            ("command", with(|m| m.logo = true), MacMods::COMMAND),
+            (
+                "caps lock alone",
+                with(|m| m.caps_lock = true),
+                MacMods::NONE,
+            ),
+            (
+                "command with caps lock",
+                with(|m| {
+                    m.logo = true;
+                    m.caps_lock = true;
+                }),
+                MacMods::COMMAND,
+            ),
+            (
+                "command with num lock",
+                with(|m| {
+                    m.logo = true;
+                    m.num_lock = true;
+                }),
+                MacMods::COMMAND,
+            ),
+            (
+                "shift, control and both locks",
+                with(|m| {
+                    m.shift = true;
+                    m.ctrl = true;
+                    m.caps_lock = true;
+                    m.num_lock = true;
+                }),
+                MacMods::SHIFT.with(MacMods::CONTROL),
+            ),
+        ]
+    }
+
+    #[test]
+    fn a_chord_ignores_the_locks() {
+        for (case, state, want) in cases() {
+            assert_eq!(chord_mods(&state), want, "{case}");
+        }
+    }
 }

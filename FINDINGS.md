@@ -693,8 +693,7 @@ W13 8 to 0.
   the sill hand-offs stay.
 - **Dependencies**: `chordkit` (rev ba094c62) and `keycap-client` (rev 95f41dc4) are git dependencies of the
   workspace and of `casement`; `Cargo.lock` must be regenerated (`cargo metadata`) with network access.
-- A Caps Lock that is on adds `CAPS_LOCK` to the chord `deliver_key` builds, so no binding matches while it is on
-  (not changed here).
+- Caps Lock no longer blocks bindings: `deliver::chord_mods` leaves it out of the chord (Num Lock was never in `MacMods`).
 
 ## c17: idle-inhibit and a client that hangs up (2026-10-11)
 - AUDIT (e)5 / the H6-H8 QUIRK note ("idle-inhibit never uninhibits on client disconnect") was already worked
