@@ -98,7 +98,7 @@ fn a_window_is_listed_with_its_state_and_withdrawn_when_it_closes() {
         outputs: 1,
         closed: Closing::Open,
     };
-    assert_eq!(watch.listed(), [want.clone()]);
+    assert_eq!(watch.listed(), std::slice::from_ref(&want));
 
     top.set_title("Drafts");
     top.surface.commit();

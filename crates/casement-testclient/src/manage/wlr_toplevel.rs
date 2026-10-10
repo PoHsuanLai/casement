@@ -292,16 +292,16 @@ impl Dispatch<ZwlrForeignToplevelHandleV1, ()> for Roster {
 /// skipped).
 fn states_of(bytes: &[u8]) -> Vec<WlrState> {
     bytes
-        .chunks_exact(4)
-        .filter_map(
-            |word| match u32::from_ne_bytes([word[0], word[1], word[2], word[3]]) {
-                0 => Some(WlrState::Maximized),
-                1 => Some(WlrState::Minimized),
-                2 => Some(WlrState::Activated),
-                3 => Some(WlrState::Fullscreen),
-                _ => None,
-            },
-        )
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .filter_map(|word| match u32::from_ne_bytes(*word) {
+            0 => Some(WlrState::Maximized),
+            1 => Some(WlrState::Minimized),
+            2 => Some(WlrState::Activated),
+            3 => Some(WlrState::Fullscreen),
+            _ => None,
+        })
         .collect()
 }
 

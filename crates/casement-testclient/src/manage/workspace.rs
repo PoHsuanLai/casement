@@ -324,8 +324,10 @@ impl Dispatch<ExtWorkspaceHandleV1, ()> for Roster {
             ext_workspace_handle_v1::Event::Name { name } => space.seen.name = name,
             ext_workspace_handle_v1::Event::Coordinates { coordinates } => {
                 space.seen.coordinates = coordinates
-                    .chunks_exact(4)
-                    .map(|word| u32::from_ne_bytes([word[0], word[1], word[2], word[3]]))
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .map(|word| u32::from_ne_bytes(*word))
                     .collect();
             }
             ext_workspace_handle_v1::Event::State { state: bits } => {
