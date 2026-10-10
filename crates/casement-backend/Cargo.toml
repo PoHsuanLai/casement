@@ -1,6 +1,6 @@
 [package]
 name = "casement-backend"
-description = "casement's backends: the headless backend (virtual outputs, vblank source, render-cost model, VirtualInput), winit, and the device seams with their thin real adapters (tty at P1)."
+description = "casement's backends: the headless backend (virtual outputs, vblank source, render-cost model, VirtualInput), winit, and the tty seams (session, udev, KMS, scanout, GPU nodes, libinput settings) with their thin real adapters behind the features tty and libinput."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,7 +12,10 @@ publish.workspace = true
 casement-core = { workspace = true }
 casement-render = { workspace = true }
 ds-core = { workspace = true }
-smithay = { workspace = true, features = ["renderer_gl", "renderer_pixman", "backend_egl", "backend_session", "backend_winit"] }
+smithay = { workspace = true, features = ["renderer_gl", "renderer_pixman", "renderer_multi", "backend_egl", "backend_session", "backend_winit"] }
+# The KMS fixtures (`KmsResources` and its parts) are serde values, recorded and replayed by the
+# test kit's FakeKms.
+serde = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 rustix = { workspace = true }
@@ -22,6 +25,18 @@ rustix = { workspace = true }
 testing = ["casement-render/testing"]
 # casementctl's injection path (B10): minting Physical/Remote/Test origins from Debug1.
 debug-inject = []
+# The real tty adapters (`tty/*_real.rs`, `gpu/render_nodes_real.rs`): libseat, udev, DRM, GBM
+# (A2). Off by default so headless consumers (the test kit, cua's tests, a harness) build with
+# no system libraries; the `casement` binary turns it on. Only smithay's own features, which
+# bring the device crates, so no crate is added beyond the union the binary already links.
+tty = [
+  "smithay/backend_drm",
+  "smithay/backend_gbm",
+  "smithay/backend_udev",
+  "smithay/backend_session_libseat",
+]
+# The real libinput adapter (`input/libinput_real.rs`), off by default for the same reason.
+libinput = ["smithay/backend_libinput"]
 
 [lints]
 workspace = true

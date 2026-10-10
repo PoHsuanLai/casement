@@ -25,6 +25,8 @@ mod gl_raw;
 mod scene;
 mod texture_book;
 
+pub mod pass;
+
 #[cfg(feature = "testing")]
 pub mod golden;
 

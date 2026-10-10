@@ -16,8 +16,9 @@ pub enum ConnectionRole {
     Sandboxed(SandboxFacts),
 }
 
-/// Every global casement advertises at P0, one variant per `delegates.rs` global (each delta
-/// freeze adds its own; P0-Z2 checks this list against the delegates).
+/// Every global casement advertises, one variant per `delegates.rs` global (each delta
+/// freeze adds its own; P0-Z2 checks this list against the delegates). P1-Z declared the last
+/// six without advertising them: each fill lane creates its global in `Part::new`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum GlobalKind {
     /// `wl_compositor`.
@@ -106,6 +107,19 @@ pub enum GlobalKind {
     SecurityContext,
     /// `ext_background_effect_manager_v1`.
     BackgroundEffect,
+    /// `zwlr_output_manager_v1` (P1-Z; advertised by P1-M1).
+    OutputManagement,
+    /// `zwlr_output_power_manager_v1` (P1-Z; advertised by P1-M1).
+    OutputPower,
+    /// `zwlr_gamma_control_manager_v1` (P1-Z; advertised by P1-M1).
+    Gamma,
+    /// `zwlr_foreign_toplevel_manager_v1` (P1-Z; advertised by P1-M2).
+    WlrToplevel,
+    /// `ext_workspace_manager_v1` (P1-Z; advertised by P1-M2).
+    Workspace,
+    /// `ext_output_image_capture_source_manager_v1` and `ext_image_copy_capture_manager_v1`
+    /// (P1-Z; advertised by P1-C1).
+    ImageCapture,
 }
 
 /// Whether a connection sees a global.
@@ -175,6 +189,12 @@ fn sandbox_sees(global: GlobalKind) -> Advertise {
         | GlobalKind::InputMethod
         | GlobalKind::VirtualKeyboard
         | GlobalKind::ForeignToplevelList
-        | GlobalKind::SecurityContext => Advertise::No,
+        | GlobalKind::SecurityContext
+        | GlobalKind::OutputManagement
+        | GlobalKind::OutputPower
+        | GlobalKind::Gamma
+        | GlobalKind::WlrToplevel
+        | GlobalKind::Workspace
+        | GlobalKind::ImageCapture => Advertise::No,
     }
 }

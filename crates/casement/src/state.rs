@@ -2,7 +2,9 @@
 
 use crate::cli::StartConfig;
 use crate::config::{self, ConfigError};
+use crate::seams::Seams;
 use crate::time::ClockSource;
+use crate::xwayland::XwaylandState;
 use casement_backend::{
     BackendChoice, BackendError, BackendKind, DmabufMode, HeadlessBackend, HeadlessConfig,
     WinitBackend,
@@ -17,11 +19,12 @@ use casement_render::{ChromeLayer, CursorDraw, CursorShape, TextureBook};
 use casement_wayland::{
     ClientMint, GlobalFilter, WaylandFault, WaylandStates, alpha_modifier, background_effect,
     commit_timing, compositor, content_type, cursor_shape, data_device, dmabuf, ext_data_control,
-    fifo, foreign_toplevel_list, fractional_scale, idle_inhibit, idle_notify, input_method,
-    layer_shell, output, pointer_constraints, pointer_gestures, presentation, primary_selection,
-    quire_window, relative_pointer, seat, security_context, session_lock, shm, shortcuts_inhibit,
-    single_pixel, subcompositor, system_bell, tablet, text_input, viewporter, virtual_keyboard,
-    wlr_data_control, xdg_activation, xdg_decoration, xdg_dialog, xdg_foreign, xdg_shell,
+    fifo, foreign_toplevel_list, fractional_scale, gamma, idle_inhibit, idle_notify, image_capture,
+    input_method, layer_shell, output, output_management, output_power, pointer_constraints,
+    pointer_gestures, presentation, primary_selection, quire_window, relative_pointer, seat,
+    security_context, session_lock, shm, shortcuts_inhibit, single_pixel, subcompositor,
+    system_bell, tablet, text_input, viewporter, virtual_keyboard, wlr_data_control, wlr_toplevel,
+    workspace, xdg_activation, xdg_decoration, xdg_dialog, xdg_foreign, xdg_shell,
     xdg_toplevel_icon, xdg_toplevel_tag,
 };
 use smithay::backend::renderer::damage::OutputDamageTracker;
@@ -46,6 +49,10 @@ pub struct State {
     pub ipc: IpcState,
     /// The session clock (the only clock, `time/`).
     pub clock: ClockSource,
+    /// The injected file, bus and process seams (A1, A4, A5).
+    pub seams: Seams,
+    /// X11 clients through xwayland-satellite (P1-X1 starts it; off until then).
+    pub xwayland: XwaylandState,
     /// The display, for creating globals, inserting clients and sending events. (Not in the
     /// plan's sketch; the handlers need it: FINDINGS.)
     pub display: DisplayHandle,
@@ -135,12 +142,23 @@ pub enum StartError {
 }
 
 impl State {
-    /// casement as `config` describes it: the settings document read, every P0 global created
-    /// behind the I7 filter, the backend started, the clock attached to `event_loop`, an empty
-    /// model at the clock's now. Outputs are plugged afterwards through the core loop, the
-    /// same path hotplug takes.
+    /// casement as `config` describes it, with the real seams for its state home: the settings
+    /// document read, every global created behind the I7 filter, the backend started, the clock
+    /// attached to `event_loop`, an empty model at the clock's now. Outputs are plugged
+    /// afterwards through the core loop, the same path hotplug takes.
     pub fn new(
         config: StartConfig,
+        display: &mut Display<State>,
+        event_loop: &LoopHandle<'static, State>,
+    ) -> Result<State, StartError> {
+        let seams = Seams::real(&config.state_home);
+        State::with_seams(config, seams, display, event_loop)
+    }
+
+    /// The same with these seams (the test kit injects its fakes here).
+    pub fn with_seams(
+        config: StartConfig,
+        seams: Seams,
         display: &mut Display<State>,
         event_loop: &LoopHandle<'static, State>,
     ) -> Result<State, StartError> {
@@ -201,6 +219,13 @@ impl State {
             ),
             security_context: security_context::SecurityContextPart::new::<State>(&dh, filter),
             background_effect: background_effect::BackgroundEffectPart::new::<State>(&dh, filter),
+            // P1-Z: declared, not advertised (each `new` creates no global until its lane fills it).
+            output_management: output_management::OutputManagementPart::new::<State>(&dh, filter),
+            output_power: output_power::OutputPowerPart::new::<State>(&dh, filter),
+            gamma: gamma::GammaPart::new::<State>(&dh, filter),
+            wlr_toplevel: wlr_toplevel::WlrToplevelPart::new::<State>(&dh, filter),
+            workspace: workspace::WorkspacePart::new::<State>(&dh, filter),
+            image_capture: image_capture::ImageCapturePart::new::<State>(&dh, filter),
         };
         if config.dmabuf == DmabufMode::Soft {
             dmabuf::apply_offer::<State>(&mut wl.dmabuf, &dh, &dmabuf::DmabufOffer::soft())?;
@@ -223,7 +248,9 @@ impl State {
                 BackendKind::Winit(WinitBackend::start(first)?)
             }
             BackendChoice::Tty => {
-                return Err(StartError::NotYet("the tty backend arrives at P1-Z"));
+                return Err(StartError::NotYet(
+                    "the tty backend starts once P1-D1 to D3 fill it",
+                ));
             }
         };
         let clock = ClockSource::start(config.clock, event_loop)?;
@@ -265,6 +292,8 @@ impl State {
                 handles: casement_ipc::IpcHandles::none(),
             },
             clock,
+            seams,
+            xwayland: XwaylandState::Off,
             display: dh,
             event_loop: event_loop.clone(),
             #[cfg(feature = "testing")]

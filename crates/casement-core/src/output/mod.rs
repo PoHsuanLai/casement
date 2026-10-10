@@ -5,7 +5,9 @@ mod arrangement;
 mod config;
 mod density;
 mod facts;
+mod gamma;
 mod mode_pick;
+mod request;
 mod scale_policy;
 
 pub use arrangement::place_outputs;
@@ -13,7 +15,9 @@ pub use config::{OutputConfig, OutputPower, SavedOutputs};
 pub use facts::{
     EdidFacts, EdidSerial, Mode, ModePreference, OutputFacts, PhysicalMm, VrrCapability,
 };
+pub use gamma::{GammaRamp, GammaTable};
 pub use mode_pick::{ModeWish, pick_mode};
+pub use request::{OutputChangeSet, OutputRefusal, resolve_change};
 pub use scale_policy::{ScalePolicy, first_sight_scale};
 
 #[cfg(test)]

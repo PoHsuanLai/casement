@@ -16,10 +16,11 @@ ds-motion = { workspace = true }
 ds-behaviour = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
-
-[dev-dependencies]
+# The Space ids file's codec (A1): text in, text out, no file I/O.
 serde_json = { workspace = true }
 toml = { workspace = true }
+
+[dev-dependencies]
 proptest = { workspace = true }
 
 [lints]

@@ -1,0 +1,1 @@
+//! `ext_output_image_capture_source_manager_v1` and `ext_image_copy_capture_manager_v1` (P1-C1): the smithay handler traits for image capture sources and copy sessions, rendering through `casement_render::pass::capture_output`. Declared at P1-Z, no global advertised yet.

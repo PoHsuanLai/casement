@@ -10,12 +10,15 @@
 
 mod live;
 
-use crate::fakes::{FakePalmrest, FakeSession};
+use crate::fakes::{FakePalmrest, FakeSession, FakeShellCalls, FakeSpawner, MemorySpaceStore};
 use crate::input::FixtureInput;
 use crate::spec::FixtureSpec;
 use casement::cli::{ClockChoice, ConfigHome, Entropy, StartConfig, StartMode};
 use casement::display::{self, SharedDisplay, attach_display};
+use casement::seams::Seams;
+use casement::space_store::StateHome;
 use casement::time::{ClockSource, SharedClock};
+use casement::xwayland::XwaylandConfig;
 use casement::{State, clients, core_loop};
 use casement_backend::{BackendChoice, BackendKind, FramePixels, HeadlessBackend};
 use casement_core::geometry::LogicalRect;
@@ -43,6 +46,12 @@ pub struct Fixture {
     servers: BTreeMap<ClientId, Client>,
     /// The next client's number.
     next_client: u32,
+    /// The Spaces file the compositor stores into (a clone of the one it holds).
+    space_store: MemorySpaceStore,
+    /// The D-Bus calls bindings made (a clone of the one the compositor holds).
+    shell_calls: FakeShellCalls,
+    /// The programs the compositor started (a clone of the one it holds).
+    spawner: FakeSpawner,
 }
 
 impl std::fmt::Debug for Fixture {
@@ -131,8 +140,18 @@ impl Fixture {
             mode: StartMode::Normal,
             config_home: ConfigHome::At(scratch_config_home()),
             entropy: Entropy::Fixed(FIXTURE_ENTROPY),
+            state_home: StateHome::Ephemeral,
+            xwayland: XwaylandConfig::off(),
         };
-        let mut state = State::new(config, &mut display, &handle)?;
+        let space_store = spec.space_store.clone();
+        let shell_calls = FakeShellCalls::new();
+        let spawner = FakeSpawner::new();
+        let seams = Seams::new(
+            Box::new(space_store.clone()),
+            Box::new(shell_calls.clone()),
+            Box::new(spawner.clone()),
+        );
+        let mut state = State::with_seams(config, seams, &mut display, &handle)?;
         state.ack_policy = spec.ack_policy;
         let display = attach_display(display, &handle)?;
         core_loop::announce_outputs(&mut state);
@@ -149,9 +168,28 @@ impl Fixture {
             clients: BTreeMap::new(),
             servers: BTreeMap::new(),
             next_client: 1,
+            space_store,
+            shell_calls,
+            spawner,
         };
         fixture.pump();
         Ok(fixture)
+    }
+
+    /// The Spaces file the compositor stores into: read it back, or start another fixture on a
+    /// clone of it to restart.
+    pub fn space_store(&self) -> &MemorySpaceStore {
+        &self.space_store
+    }
+
+    /// The D-Bus calls bindings made.
+    pub fn shell_calls(&self) -> &FakeShellCalls {
+        &self.shell_calls
+    }
+
+    /// The programs the compositor started.
+    pub fn spawner(&self) -> &FakeSpawner {
+        &self.spawner
     }
 
     /// A new client arriving through a socket of `role`.

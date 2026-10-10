@@ -6,6 +6,8 @@ mod focus;
 mod focus_beyond;
 mod focus_props;
 mod focus_spaces;
+mod frame;
+mod gpu;
 mod ids;
 mod input;
 mod kinds;
@@ -20,7 +22,9 @@ mod model_spaces;
 mod model_windows;
 mod model_wiring;
 mod output;
+mod output_request;
 mod round_trip;
+mod space_persist;
 mod support;
 mod window;
 

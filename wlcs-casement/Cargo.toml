@@ -22,7 +22,7 @@ wlcs = "0.1"
 wayland-sys = { version = "0.31.1", features = ["client", "server"] }
 # casement itself, by path: the shim drives the test kit's Fixture (headless backend, virtual
 # clock). `testing` carries A37, the ack-before-attach relaxation, off until `Host::start` asks.
-casement = { path = "../crates/casement", features = ["testing"] }
+casement = { path = "../crates/casement", default-features = false, features = ["testing"] }
 casement-core = { path = "../crates/casement-core" }
 casement-testkit = { path = "../crates/casement-testkit" }
 

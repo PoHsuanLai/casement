@@ -7,8 +7,9 @@ use crate::event::ResizeEdges;
 use crate::focus::PressRoute;
 use crate::geometry::LogicalSize;
 use crate::ids::{ClientKey, InputSerial, LayerKey, OutputKey, WindowId};
+use crate::input::{Argv, DbusCall};
 use crate::lock::LockReply;
-use crate::output::OutputConfig;
+use crate::output::{GammaRamp, OutputConfig};
 use crate::time::{Due, TimerKey};
 use casement_protocols::vocab::{Attention, Emphasis};
 
@@ -92,6 +93,20 @@ pub enum Effect {
     },
     /// A diagnostic.
     Note(CoreNote),
+    /// A binding calls a method on the session bus (sill's launcher, the screenshot tool):
+    /// carried out through the injected `ShellCalls` seam (P1-I1).
+    CallBinding(DbusCall),
+    /// A binding starts a program, through the injected `Spawner` seam (P1-I1).
+    Spawn(Argv),
+    /// Drive this output with this gamma ramp (`zwlr_gamma_control_v1`, night light; P1-M1).
+    SetGamma(OutputKey, GammaRamp),
+    /// Write the Spaces file: the Space ids changed (P1-M2).
+    PersistSpaces,
+    /// Send `ext_workspace` clients the Spaces as they now are (P1-M2).
+    PublishWorkspaces,
+    /// Send `zwlr_foreign_toplevel_management` clients this window's title, app id, state and
+    /// outputs as they now are (P1-M2).
+    PublishToplevel(WindowId),
 }
 
 /// A toplevel configure.

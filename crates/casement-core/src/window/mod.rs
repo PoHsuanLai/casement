@@ -2,6 +2,7 @@
 
 mod hints;
 mod limits;
+mod request;
 mod state;
 mod title;
 #[allow(
@@ -12,6 +13,7 @@ mod window;
 
 pub use hints::{A11yRoot, FirstMouse, FrameHint, WindowHints};
 pub use limits::{MaxSize, SizeLimits};
+pub use request::WlrToplevelRequest;
 pub use state::{Restore, WindowState};
 pub use title::WindowTitle;
 pub use window::{Parent, SpacePlace, StackRank, Window};

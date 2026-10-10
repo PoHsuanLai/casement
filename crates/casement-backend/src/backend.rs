@@ -1,6 +1,9 @@
 //! Which backend runs.
 
+use crate::gpu::GpuError;
 use crate::headless::{HeadlessBackend, SpecError};
+use crate::session::SessionFault;
+use crate::tty::{KmsError, TtyBackend};
 use crate::winit::WinitBackend;
 use casement_render::RenderError;
 use smithay::backend::SwapBuffersError;
@@ -8,7 +11,7 @@ use smithay::backend::renderer::gles::GlesError;
 use smithay::backend::renderer::pixman::PixmanError;
 use std::path::PathBuf;
 
-/// The running backend. (`Tty(TtyBackend)` joins at P1-Z.)
+/// The running backend.
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum BackendKind {
@@ -16,6 +19,9 @@ pub enum BackendKind {
     Headless(HeadlessBackend),
     /// A window on the user's own session: the user's feel checks only (never an agent, §3.2).
     Winit(WinitBackend),
+    /// A real seat: DRM devices, libseat, udev (P1; the seams are injected, so the FakeKms
+    /// suite runs it in the jail).
+    Tty(TtyBackend),
 }
 
 /// The backend `--backend` asks for.
@@ -25,7 +31,7 @@ pub enum BackendChoice {
     Headless,
     /// `winit`.
     Winit,
-    /// `tty` (P1; refused before P1-Z).
+    /// `tty`.
     Tty,
 }
 
@@ -71,6 +77,15 @@ pub enum BackendError {
         /// The mode's height.
         h: u32,
     },
+    /// A display device refused.
+    #[error("kms: {0}")]
+    Kms(#[from] KmsError),
+    /// The session refused.
+    #[error("session: {0}")]
+    Session(#[from] SessionFault),
+    /// A GPU call failed.
+    #[error("gpu: {0}")]
+    Gpu(#[from] GpuError),
     /// A device open was refused (in the jail: anything but the fixtures and /dev/udmabuf).
     #[error("denied open {}: {source}", path.display())]
     DeniedOpen {

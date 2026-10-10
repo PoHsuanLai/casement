@@ -1,6 +1,11 @@
 //! The fake logind (`org.freedesktop.login1` subset on the jail's private bus, the `fake-logind`
 //! binary): Manager `Inhibit` (a pipe fd), `PrepareForSleep`, `ListSessions`; Session `Lock`,
-//! `Unlock`, `SetIdleHint`, `TakeDevice`; Seat `SwitchTo`. Bodies at P1 (P1-F2).
+//! `Unlock`, `SetIdleHint`, `TakeDevice`; Seat `SwitchTo`. Bodies at P1 (P1-F2), one file per
+//! object: [`manager`], [`session`], [`seat`].
+
+pub mod manager;
+pub mod seat;
+pub mod session;
 
 /// A call the fake recorded, for assertions.
 #[derive(Debug, Clone, PartialEq, Eq)]

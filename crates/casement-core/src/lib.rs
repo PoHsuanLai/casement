@@ -30,7 +30,9 @@ mod model;
 
 pub mod app;
 pub mod focus;
+pub mod frame;
 pub mod geometry;
+pub mod gpu;
 pub mod input;
 pub mod layer;
 pub mod lock;

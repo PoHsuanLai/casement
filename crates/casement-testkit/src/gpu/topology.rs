@@ -2,6 +2,11 @@
 //! real facts would be (P1).
 
 use casement_backend::{FixtureName, GpuId};
+use casement_core::OutputName;
+
+/// The vendor a soft GPU claims: core's own type, so a topology feeds `casement_core::gpu::
+/// plan_for` exactly as detection would.
+pub use casement_core::gpu::VendorFact;
 
 /// The soft GPUs of a fixture.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -14,19 +19,20 @@ impl GpuTopology {
     /// One pixman GPU (an AMD-like display GPU), linear formats, direct imports.
     pub fn single() -> GpuTopology {
         GpuTopology {
-            gpus: vec![SoftGpu {
-                id: GpuId(0),
-                engine: SoftEngine::Pixman,
-                formats: FormatSet::LinearOnly,
-                cross: CrossImport::Direct,
-                vendor: VendorFact::Amd,
-            }],
+            gpus: vec![SoftGpu::new(
+                GpuId(0),
+                SoftEngine::Pixman,
+                FormatSet::LinearOnly,
+                CrossImport::Direct,
+                VendorFact::Amd,
+            )],
         }
     }
 }
 
 /// One soft GPU.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct SoftGpu {
     /// Its number (its fabricated node is `226:(128 + id)`).
     pub id: GpuId,
@@ -38,6 +44,35 @@ pub struct SoftGpu {
     pub cross: CrossImport,
     /// The vendor detection would report.
     pub vendor: VendorFact,
+    /// The connectors this GPU drives (what `drives` detection would report); none for a GPU
+    /// that only renders.
+    pub drives: Vec<OutputName>,
+}
+
+impl SoftGpu {
+    /// A soft GPU that drives no connector.
+    pub fn new(
+        id: GpuId,
+        engine: SoftEngine,
+        formats: FormatSet,
+        cross: CrossImport,
+        vendor: VendorFact,
+    ) -> SoftGpu {
+        SoftGpu {
+            id,
+            engine,
+            formats,
+            cross,
+            vendor,
+            drives: Vec::new(),
+        }
+    }
+
+    /// The same, driving these connectors.
+    #[must_use]
+    pub fn driving(self, drives: Vec<OutputName>) -> SoftGpu {
+        SoftGpu { drives, ..self }
+    }
 }
 
 /// What renders on a soft GPU.
@@ -67,17 +102,4 @@ pub enum FormatSet {
     LinearOnly,
     /// A recorded format table.
     Recorded(FixtureName),
-}
-
-/// The vendor a soft GPU claims.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum VendorFact {
-    /// AMD.
-    Amd,
-    /// NVIDIA.
-    Nvidia,
-    /// Intel.
-    Intel,
-    /// Another PCI vendor id.
-    Other(u16),
 }

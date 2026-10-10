@@ -19,6 +19,7 @@ casement-layout = { workspace = true }
 casement-render = { workspace = true, features = ["testing"] }
 casement-backend = { workspace = true, features = ["testing"] }
 casement-wayland = { workspace = true }
+casement-ipc = { workspace = true }
 casement-testclient = { workspace = true }
 casement-protocols = { workspace = true }
 porter-core = { workspace = true }

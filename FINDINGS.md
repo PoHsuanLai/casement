@@ -106,7 +106,7 @@ P3-CSS, three in `src/` and its ignored parity test, never built at P0-Z2).
 | `crates/casementctl/src/command.rs` | parse, run (2) | P0-T-dev | `crates/casement-ipc/src/inject.rs`, `wait.rs` tests; `crates/casementctl/src/command.rs` test; `dev/accept.sh --jobs 8` |
 | `crates/casement-testkit/src/fixture.rs` | Fixture::session (1) | P1-D1 | P1-Z's session suite |
 | `crates/casement-testkit/src/bin/fake_logind.rs` | main: no longer a `todo!()` (P0-accept): it prints "P1-F2: not built" and exits 0, so the headless session starts without it | P1-F2 | P1-Z's logind tests |
-| `crates/casement-testkit/src/fakes/logind.rs` | FakeLogind::serve (1) | P1-F2 | P1-Z's logind tests |
+| `crates/casement-testkit/src/fakes/logind/mod.rs` | FakeLogind::serve (1) | P1-F2 | `crates/casement-testkit/tests/it/logind.rs` |
 | `crates/casement-agent/src/socket.rs` | hand_out, role_for (2) | P2-Q2 | `crates/casement-agent/src/socket.rs` `only_the_shell_and_the_agent_tier_get_privileged_roles` |
 | `crates/casement-testkit/src/fixture.rs` | Fixture::palmrest (1) | P3-Z | P3-Z's palmrest tests |
 
@@ -732,3 +732,88 @@ W13 8 to 0.
 - Unverified (no builds this lane): none of this has compiled. First places to look: `run.rs` (the `cfg` arms and the
   `#[from]` set), `casement-backend/src/backend.rs` (the `#[from]` error types' paths) and `headless/renderer.rs`
   (`Into<BackendError>` bound on `draw_with`), `casement-testkit/src/fuzz/*`.
+
+## p1z: the P1 delta freeze (2026-10-11)
+
+P1-Z adds the tty, GPU, scheduler, protocol and seam surface that the P1 fill lanes write bodies for. Every item
+below has a signature, a doc, a `todo!("<lane>: …")` body and a test written and `#[ignore = "<lane>"]`d. Nothing
+here compiled (no builds this lane). `todo!()` in sources by lane: P1-D1 12, P1-D2 28, P1-D3 12, P1-D4 12,
+P1-M1 11, P1-M2 20, P1-I1 8, P1-X1 2, P1-C1 7, P1-F2 9; ignored test bodies: D1 2, D2 6, D3 4, D4 4, M1 7, M2 6,
+C1 3, F2 3, plus I1 3 and X1 3 whose bodies are `todo!()` after a first assertion. (D1's count includes
+`Fixture::session`, which P0-Z2 left; the P0-Z2 `fakes/udev.rs` and `fakes/session.rs` bodies stay implemented.)
+
+### Where each lane works (files; a lane edits only its own)
+
+| Lane | Source files | Fake and test files |
+| --- | --- | --- |
+| P1-D1 session, udev, VT | `crates/casement-backend/src/tty/{session,session_real,udev,udev_real,vt,real}.rs`, `TtyBackend::{start, dispatch}` in `tty/mod.rs` | `crates/casement-testkit/src/fakes/{session,udev}.rs`, `crates/casement-testkit/tests/it/tty/session.rs` |
+| P1-D2 KMS, hotplug, modes | `crates/casement-backend/src/tty/{kms,kms_real,device,connector,hotplug}.rs`, `TtyBackend::announce`; core `output/{mode_pick,arrangement}.rs` are already filled | `crates/casement-testkit/src/fakes/kms/`, `crates/casement-testkit/fixtures/kms/`, `crates/casement-testkit/tests/it/tty/kms.rs`, `dev/hw/` |
+| P1-D3 scheduler, scanout | `crates/casement-backend/src/tty/{surface,surface_real,flip}.rs`, `TtyBackend::present`; `crates/casement-core/src/frame/` | `crates/casement-testkit/src/fakes/scanout.rs`, `crates/casement-testkit/tests/it/tty/scanout.rs`, `crates/casement-core/tests/it/frame.rs` |
+| P1-D4 GPU plan, multi-GPU | `crates/casement-core/src/gpu/`, `crates/casement-backend/src/gpu/{render_nodes,render_nodes_real,manager,import,feedback}.rs`, `crates/casement-wayland/src/dmabuf.rs` and its handler (tag with `set_node`, A5) | `crates/casement-testkit/src/gpu/{soft_api,sys_tree,topology}.rs`, `crates/casement-testkit/tests/it/topology/mod.rs`, `crates/casement-core/tests/it/gpu.rs` |
+| P1-M1 output management, power, gamma | `crates/casement-wayland/src/{output_management,output_power,gamma}.rs`, `crates/casement/src/handlers/{output_management,output_power,gamma}.rs`, `crates/casement/src/exec/gamma.rs`, `crates/casement-core/src/model/output_requests.rs`, `crates/casement-core/src/output/request.rs` | `crates/casement-testkit/tests/it/protocol/{output_management,output_power,gamma}.rs`, `crates/casement-core/tests/it/output_request.rs`, `crates/casement-testclient/src/manage/{output_management,output_power,gamma}.rs` |
+| P1-M2 wlr toplevel, workspaces, Space ids | `crates/casement-wayland/src/{wlr_toplevel,workspace}.rs`, `crates/casement/src/handlers/{wlr_toplevel,workspace}.rs`, `crates/casement/src/exec/publish.rs`, `crates/casement/src/space_store.rs`, `crates/casement-core/src/space/{persist,request}.rs`, `crates/casement-core/src/model/{wlr_requests,workspace_requests,space_persist}.rs` | `crates/casement-testkit/tests/it/protocol/{wlr_toplevel,workspace}.rs`, `crates/casement-core/tests/it/space_persist.rs`, `crates/casement/tests/it/space_store.rs`, `crates/casement-testclient/src/manage/{wlr_toplevel,workspace}.rs` |
+| P1-I1 input, bindings | `crates/casement-backend/src/input/{devices,config,libinput_real}.rs`, `crates/casement-ipc/src/shell_calls.rs`, `crates/casement/src/exec/{call,spawn}.rs`, `crates/casement/src/spawn.rs` (the real `ProcessSpawner`), `settings/pointer.rs` wiring | `crates/casement-testkit/tests/it/bindings.rs`, `crates/casement-backend/tests/it/input_config.rs` |
+| P1-X1 XWayland | `crates/casement/src/xwayland.rs` | `crates/casement-testclient/src/bin/x11probe.rs`, `crates/casement-testkit/tests/it/xwayland.rs` |
+| P1-C1 output capture | `crates/casement-wayland/src/image_capture.rs`, `crates/casement/src/handlers/image_capture.rs`, `crates/casement-render/src/pass/capture.rs` | `crates/casement-testkit/tests/it/protocol/image_capture.rs`, `crates/casement-testclient/src/capture/` |
+| P1-F2 fake logind | `crates/casement-testkit/src/fakes/logind/` (mod, manager, session, seat), `crates/casement-testkit/src/bin/fake_logind.rs` | `crates/casement-testkit/tests/it/logind.rs` |
+| P1-SESS | none in this repo | none |
+
+Already implemented at this freeze, not stubs: `MemorySpaceStore`, `FakeShellCalls`, `FakeSpawner`,
+`FakeInputDevices` and `FakeUdev` (small recorders), `Seams`, `StateDirs`, `EphemeralSpaceStore`, `XwaylandConfig`,
+the `--xwayland` flags, `VendorFact::from_pci_vendor`, `GammaTable::new`, `OutputChangeSet`, `PointerSettings::defaults`,
+`FakeSession`'s `TtySession::{open_device, switch_vt}`.
+
+### Departures from 20-FREEZE-PLAN §4.15 and 22
+
+- **Not advertised.** The six new globals are declared (`GlobalKind` variants with their I7 rows: sandboxed clients
+  see none; `WaylandStates` fields; `Part::new` calls in `State::new`; handler files; testkit protocol files) and none is
+  advertised: each `Part::new` creates no global and returns the empty part. `globals.txt` and the goldens are
+  unchanged. The lane that fills a protocol creates the global in `Part::new`, adds its `globals.txt` row and
+  un-ignores its tests.
+- **The new `Event`/`Effect` variants are emitted by no model path yet.** Effects: `CallBinding`, `Spawn`, `SetGamma`,
+  `PersistSpaces`, `PublishWorkspaces` and one beyond the plan, `PublishToplevel(WindowId)` (wlr handles need a state
+  push; `ListWindow` is the ext list's). Events: `OutputRequested`, `GammaSet`, `WlrToplevel`, `Workspace`,
+  `SpacesLoaded`. Their `exec` arms and `Model::route` arms exist and reach `todo!()` bodies that nothing calls yet:
+  zero `todo!()` on the headless path holds.
+- **`binding` actions.** `core_loop/deliver.rs::carry_out` still logs `BindingAction::Call|Spawn` ("from P2"); P1-I1
+  replaces the log with `exec::exec(state, vec![Effect::CallBinding(call.clone())])` and `Effect::Spawn(argv.clone())`.
+  Left alone so a stray `[bindings]` call entry cannot reach a `todo!()`.
+- **`BackendKind::Tty`.** `core_loop::frame` and `announce_outputs` have their arms (`TtyBackend::{present, announce}`); they
+  are unreachable because `State::new` still answers `StartError::NotYet` for `--backend tty`. P1-D1 to D3 start the
+  backend there and add the loop turn that drains `TtyBackend::dispatch` (connector events into the existing
+  `core_loop` connector path, `SessionNote::Paused` stops frames) in `run.rs`.
+- **`RenderPlan::scanout` is keyed by `OutputName`, not `OutputKey`** (the sketch says `OutputKey`; detection knows
+  connector names, and a key needs the EDID). `GpuFacts::drives` is `Vec<OutputName>` as sketched.
+- **`Kms::set_gamma`** is added to the sketch's `Kms` (the `SetGamma` effect needs a destination).
+- **`SessionSeam::Libseat(LibseatSlot)` is untouched** (a unit slot). The tty backend takes its session as
+  `TtySession`, which `FakeSession` and the real `RealSession` implement; smithay's `Session` stays the fake's own
+  interface. The plan's "LibseatSlot filled from `session_real.rs`" is therefore moot: P1-D1 may delete the slot.
+- **Real adapters are opaque at the freeze** (`RealKms { fd }`, `RealScanout { connector, crtc }`, …): they name no
+  device-crate type, so nothing here depends on an API this lane could not check; each lane adds the fields.
+- **Features (A2).** `casement-backend`: `tty` (forwards smithay's `backend_drm`, `backend_gbm`, `backend_udev`,
+  `backend_session_libseat`) and `libinput` (`backend_libinput`), both off by default; `renderer_multi` is now always on
+  there. `casement`: `tty` and `libinput` forward to those, are the default, and the binary has `required-features =
+  ["tty", "libinput"]`; the casement dependency of the workspace and of `wlcs-casement` has `default-features =
+  false`. No optional crate was added: smithay's features bring the device crates, already in the lock through the
+  union the `casement` crate carried. The device features left `casement`'s own smithay list.
+- **Cargo.lock needs regenerating** (nothing here could): `casement-core` gains `serde_json` and `toml` as normal
+  dependencies (the Space file codec; they were dev-dependencies), `casement-backend` gains `serde` (KMS fixtures are
+  serde values), `casement-testkit` gains `casement-ipc`. `casement-testclient` gains only a bin target.
+- **`SpaceFile`'s sill import** reads `by_id` keys of the interim `quire/spaces.json`, because sill has no concrete writer yet
+  (`sill-ui-kit/src/look.rs` says so); the shape is a guess P1-M2 pins against whatever sill wrote by then.
+- **Settings.** `PointerSettings` (mouse and touchpad profiles) exists in core and is not yet a field of
+  `CasementSettings` nor a section of the document: P1-I1 adds both with the "Add a settings key" recipe.
+  The Xwayland mode and satellite path are `StartConfig` fields set by `--xwayland` and `--xwayland-satellite`
+  (A5: configuration, never the environment); they move to the document if the Settings app should draw them.
+- **`StartConfig` gained `state_home` and `xwayland`; `State` gained `seams` and `xwayland`.** `State::new` builds the
+  real seams, `State::with_seams` takes injected ones. `main` resolves `$XDG_STATE_HOME` (or `$HOME/.local/state`) for
+  every backend but headless. Loading the Spaces file at start (`Event::SpacesLoaded`) is P1-M2's, in `run.rs`.
+- **The test kit.** `FixtureSpec` gained `space_store`; `Fixture` exposes `space_store()`, `shell_calls()` and
+  `spawner()`; `fakes/udev.rs` now speaks `casement_backend::tty::DeviceEvent`; `gpu::VendorFact` is core's type;
+  `SoftGpu` is `#[non_exhaustive]` with `SoftGpu::new` and a `drives` field.
+- **Unverified (no builds this lane).** First places to look if it does not compile: `casement-core/src/space/persist.rs`
+  (toml 1 error type paths), `casement-backend/src/tty/kms.rs` and `hotplug.rs` (serde derives over `Mode`,
+  `PhysicalMm`, `OutputName`), `casement-backend/src/backend.rs` (the three new `#[from]` sources),
+  `casement/src/state.rs` and `exec.rs` (module and import names `gamma`, `workspace`, `spawn`), the doc tests (all
+  `no_run`), `casement-testkit/src/fixture.rs`, `fakes/session.rs` (`TtySession` over smithay's `Session`), and
+  `casement-render/src/pass/capture.rs` (the `ExportMem` bound with `R::Framebuffer<'_>`).

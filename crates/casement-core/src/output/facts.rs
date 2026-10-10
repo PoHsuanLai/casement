@@ -48,7 +48,7 @@ pub enum ModePreference {
 }
 
 /// A display's physical size in millimetres (zero when unknown: a projector, a headless output).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PhysicalMm {
     /// The width.
     pub w: u32,
@@ -57,7 +57,8 @@ pub struct PhysicalMm {
 }
 
 /// Whether a display can vary its refresh rate.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum VrrCapability {
     /// It can.
     Capable,

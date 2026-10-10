@@ -51,8 +51,12 @@ pub mod log;
 #[cfg(feature = "testing")]
 pub mod relax;
 mod run;
+pub mod seams;
+pub mod space_store;
+pub mod spawn;
 mod state;
 pub mod time;
+pub mod xwayland;
 
 pub use run::{DebugBus, RunConfig, RunError, run};
 pub use state::{AgentState, CoreState, IpcState, RenderState, StartError, State};

@@ -12,6 +12,11 @@ publish.workspace = true
 name = "casement-probe"
 path = "src/bin/probe.rs"
 
+# The X11 client of the XWayland suite (P1-X1; x11rb joins its dependencies then).
+[[bin]]
+name = "casement-x11probe"
+path = "src/bin/x11probe.rs"
+
 [dependencies]
 casement-core = { workspace = true }
 casement-protocols = { workspace = true, features = ["client"] }

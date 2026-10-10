@@ -16,13 +16,17 @@ mod keyboard;
 mod layers;
 mod lock;
 mod moved;
+mod output_requests;
 mod outputs;
 mod query;
 mod requests;
+mod space_persist;
 mod spaces;
 mod states;
 mod timers;
 mod windows;
+mod wlr_requests;
+mod workspace_requests;
 
 #[cfg(test)]
 mod tests;
@@ -154,6 +158,11 @@ impl Model {
             Event::TimerFired(key) => self.fire(key),
             Event::Pong { client } => self.pong(client),
             Event::SettingsChanged(settings) => self.change_settings(*settings),
+            Event::OutputRequested { output, change } => self.request_output(output, change),
+            Event::GammaSet { output, ramp } => self.set_gamma(output, ramp),
+            Event::WlrToplevel { window, request } => self.wlr_request(window, request),
+            Event::Workspace(request) => self.workspace_request(request),
+            Event::SpacesLoaded(file) => self.restore_spaces(*file),
         }
     }
 

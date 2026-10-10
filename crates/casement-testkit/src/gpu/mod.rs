@@ -4,7 +4,11 @@
 //! `casement_backend::gpu::FixedUdmabuf`. Bodies at P1 (P1-D4).
 
 mod fabricated;
+mod soft_api;
+mod sys_tree;
 mod topology;
 
 pub use fabricated::{FabricatedNode, fabricated_nodes};
+pub use soft_api::SoftGraphicsApi;
+pub use sys_tree::FabricatedSysRoot;
 pub use topology::{CrossImport, FormatSet, GpuTopology, SoftEngine, SoftGpu, VendorFact};

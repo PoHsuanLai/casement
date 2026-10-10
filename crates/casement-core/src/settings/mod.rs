@@ -4,11 +4,13 @@
 mod bindings;
 mod keyboard;
 mod outputs;
+mod pointer;
 mod spaces;
 mod windows;
 
 pub use keyboard::{KeyboardSettings, RepeatRate, XkbNames};
 pub use outputs::OutputSettings;
+pub use pointer::{AccelProfile, PointerProfile, PointerSettings};
 pub use spaces::SpaceSettings;
 pub use windows::{Enabled, FirstClick, MinimiseEffect, TitleDoubleClick, WindowSettings};
 

@@ -3,6 +3,7 @@
 //! ```text
 //! casement [--backend headless|winit|tty] [--clock wall|stepped] [--outputs SPEC[;SPEC...]]...
 //!          [--renderer pixman|llvmpipe] [--dmabuf none|soft] [--safe] [--config-home DIR]
+//!          [--xwayland satellite|off] [--xwayland-satellite PATH]
 //! casement --write-schema PATH
 //! ```
 //!
@@ -11,6 +12,8 @@
 //! guard). The defaults are the headless backend, the wall clock, pixman, no dma-buf and one
 //! 1920x1080 output at scale 1.
 
+use crate::space_store::StateHome;
+use crate::xwayland::{SatellitePath, XwaylandConfig, XwaylandMode};
 use casement_backend::{
     BackendChoice, BackendError, DmabufMode, RenderCostModel, SoftRenderer, VirtualOutputSpec,
 };
@@ -41,6 +44,10 @@ pub struct StartConfig {
     pub config_home: ConfigHome,
     /// Where Space-id entropy comes from.
     pub entropy: Entropy,
+    /// Where state files (the Spaces file) live; `main` resolves it from the environment.
+    pub state_home: StateHome,
+    /// How X11 clients are served (A5).
+    pub xwayland: XwaylandConfig,
 }
 
 /// The session clock.
@@ -145,6 +152,8 @@ pub fn parse_args(args: &[String]) -> Result<Command, CliError> {
         mode: StartMode::Normal,
         config_home: ConfigHome::Xdg,
         entropy: Entropy::System,
+        state_home: StateHome::Ephemeral,
+        xwayland: XwaylandConfig::off(),
     };
     let mut rest = args.iter();
     while let Some(flag) = rest.next() {
@@ -196,6 +205,19 @@ pub fn parse_args(args: &[String]) -> Result<Command, CliError> {
             }
             "--safe" => config.mode = StartMode::Safe,
             "--config-home" => config.config_home = ConfigHome::At(PathBuf::from(value()?)),
+            "--xwayland" => {
+                config.xwayland.mode = word(
+                    flag,
+                    &value()?,
+                    &[
+                        ("satellite", XwaylandMode::Satellite),
+                        ("off", XwaylandMode::Off),
+                    ],
+                )?
+            }
+            "--xwayland-satellite" => {
+                config.xwayland.satellite = SatellitePath(PathBuf::from(value()?))
+            }
             "--outputs" => {
                 let text = value()?;
                 let specs = text
@@ -235,7 +257,7 @@ fn word<T: Copy>(flag: &str, value: &str, words: &[(&str, T)]) -> Result<T, CliE
 /// The usage text.
 pub const USAGE: &str = "usage: casement [--backend headless|winit|tty] [--clock wall|stepped] \
 [--outputs SPEC[;SPEC...]] [--renderer pixman|llvmpipe] [--dmabuf none|soft] [--safe] \
-[--config-home DIR]\n       casement --write-schema DIR\n";
+[--config-home DIR] [--xwayland satellite|off] [--xwayland-satellite PATH]\n       casement --write-schema DIR\n";
 
 #[cfg(test)]
 mod tests {
@@ -279,6 +301,21 @@ mod tests {
         assert_eq!(config.config_home, ConfigHome::At(PathBuf::from("/tmp/c")));
         let names: Vec<&str> = config.outputs.iter().map(|o| o.name.as_str()).collect();
         assert_eq!(names, ["DP-1", "DP-2", "HDMI-A-1"]);
+    }
+
+    #[test]
+    fn the_xwayland_flags_are_read() {
+        let config = run("--xwayland satellite --xwayland-satellite /opt/satellite");
+        assert_eq!(config.xwayland.mode, XwaylandMode::Satellite);
+        assert_eq!(
+            config.xwayland.satellite,
+            SatellitePath(PathBuf::from("/opt/satellite"))
+        );
+        assert_eq!(run("").xwayland.mode, XwaylandMode::Off);
+        assert!(matches!(
+            parse_args(&args("--xwayland x11")),
+            Err(CliError::BadValue { .. })
+        ));
     }
 
     #[test]

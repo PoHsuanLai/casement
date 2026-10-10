@@ -37,7 +37,9 @@ casement-wayland = { path = "crates/casement-wayland" }
 casement-backend = { path = "crates/casement-backend" }
 casement-agent = { path = "crates/casement-agent" }
 casement-ipc = { path = "crates/casement-ipc" }
-casement = { path = "crates/casement" }
+# No default features: the real session (features `tty`, `libinput`) is the binary's, and a
+# headless consumer builds with no system libraries (A2).
+casement = { path = "crates/casement", default-features = false }
 casement-testclient = { path = "crates/casement-testclient" }
 casement-testkit = { path = "crates/casement-testkit" }
 

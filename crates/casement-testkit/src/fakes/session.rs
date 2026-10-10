@@ -2,6 +2,7 @@
 //! fixture is `DeniedOpen`, which fails the test with exit 5 (a jail breach, §6.1).
 
 use casement_backend::SessionFault;
+use casement_backend::tty::{DevicePath, SessionNote, TtySession, VtNumber};
 use rustix::fs::{MemfdFlags, OFlags, SeekFrom};
 use smithay::backend::session::Session;
 use std::collections::BTreeMap;
@@ -102,6 +103,21 @@ impl Session for FakeSession {
 
     fn seat(&self) -> String {
         SEAT.to_owned()
+    }
+}
+
+impl TtySession for FakeSession {
+    fn open_device(&mut self, path: &DevicePath) -> Result<OwnedFd, SessionFault> {
+        Session::open(self, path.as_path(), OFlags::RDWR)
+    }
+
+    fn switch_vt(&mut self, vt: VtNumber) -> Result<(), SessionFault> {
+        let vt = i32::try_from(vt.0).map_err(|_| SessionFault::Inactive)?;
+        Session::change_vt(self, vt)
+    }
+
+    fn notes(&mut self) -> Vec<SessionNote> {
+        todo!("P1-D1: FakeSession::notes (Paused on a VT switch away, Activated on resume)")
     }
 }
 

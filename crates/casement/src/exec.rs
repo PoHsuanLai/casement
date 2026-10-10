@@ -7,6 +7,11 @@
 //! delivery is the seat's and was decided before the effect), `Disconnect` (a client key names
 //! no connection until the client table exists), `Bell` and `Attention` (P3).
 
+mod call;
+mod gamma;
+mod publish;
+mod spawn;
+
 use crate::core_loop;
 use crate::state::State;
 use casement_core::output::OutputConfig;
@@ -106,6 +111,14 @@ fn apply(state: &mut State, effect: Effect) {
             );
         }
         Effect::Relayout(cause) => core_loop::relayout(state, &cause),
+        // P1-Z's effects: the model emits none of them until the fill lanes land, so these arms
+        // are not reached before then.
+        Effect::CallBinding(call) => call::call_binding(state, call),
+        Effect::Spawn(argv) => spawn::spawn_program(state, argv),
+        Effect::SetGamma(output, ramp) => gamma::set_gamma(state, output, ramp),
+        Effect::PersistSpaces => publish::persist_spaces(state),
+        Effect::PublishWorkspaces => publish::publish_workspaces(state),
+        Effect::PublishToplevel(window) => publish::publish_toplevel(state, window),
         // `Effect` grows in core; one this build does not know is logged, never a panic.
         other => tracing::warn!(?other, "an effect this build does not apply"),
     }

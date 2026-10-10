@@ -3,6 +3,7 @@
 //! One integration binary: every former `tests/*.rs` is a module here, and `support` is shared.
 
 mod headless;
+mod input_config;
 mod virtual_input;
 
 /// Test files that run in their own process and stay their own binary (a comment in each says why).

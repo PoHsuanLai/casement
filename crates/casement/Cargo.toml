@@ -14,6 +14,9 @@ path = "src/lib.rs"
 [[bin]]
 name = "casement"
 path = "src/main.rs"
+# The real session needs the device libraries (A2): a build without the default features is the
+# headless library only (what the test kit, cua's tests and a harness take).
+required-features = ["tty", "libinput"]
 
 [dependencies]
 casement-core = { workspace = true }
@@ -30,7 +33,8 @@ ds-core = { workspace = true }
 ds-settings = { workspace = true }
 chordkit = { workspace = true }
 keycap-client = { workspace = true }
-# A14's feature list, the union the binary links (xwayland off until the Q-C5 gate).
+# A14's feature list, the union the binary links (xwayland off until the Q-C5 gate). The device
+# backends (drm, gbm, libinput, udev, libseat) come with the `tty` and `libinput` features below.
 smithay = { workspace = true, features = [
   "wayland_frontend",
   "desktop",
@@ -39,11 +43,6 @@ smithay = { workspace = true, features = [
   "renderer_multi",
   "backend_winit",
   "backend_egl",
-  "backend_drm",
-  "backend_gbm",
-  "backend_libinput",
-  "backend_udev",
-  "backend_session_libseat",
   "backend_libei",
   "backend_vulkan",
   "use_system_lib",
@@ -60,6 +59,12 @@ tempfile = { workspace = true }
 toml = { workspace = true }
 
 [features]
+# The real session (A2): the tty backend's adapters (libseat, udev, DRM, GBM) and libinput. On by
+# default so `cargo build -p casement` makes the compositor; a headless consumer takes the
+# library with `default-features = false` (the workspace dependency does).
+default = ["tty", "libinput"]
+tty = ["casement-backend/tty"]
+libinput = ["casement-backend/libinput"]
 # Headless tests only (B10): the test kit builds casement with it. A binary with it refuses
 # every backend but headless and refuses to start outside the jail (jail_check.rs).
 testing = ["casement-render/testing", "casement-backend/testing"]

@@ -19,18 +19,18 @@ the binaries and the test kit (P0-Z2). casement-intents joins at P4-Z, casement-
 
 | Crate | Purpose | I/O |
 | --- | --- | --- |
-| `casement-core` | the pure model: ids, geometry, time data (`Mono`, `VblankClock`, `TimerBook`, `VirtualClock`), apps, windows, Spaces, layers, the lock, focus and press routing, input origins, reach and bindings, output facts and policy, connection policy (I7), settings, `Event`, `Effect`, `Model::step`, invariants | none |
+| `casement-core` | the pure model: ids, geometry, time data (`Mono`, `VblankClock`, `TimerBook`, `VirtualClock`), apps, windows, Spaces, layers, the lock, focus and press routing, input origins, reach and bindings, output facts and policy, connection policy (I7), settings, `Event`, `Effect`, `Model::step`, invariants; from P1-Z the GPU plan (`gpu`), the frame scheduler's maths (`frame`) and the Space ids file's codec (`space::SpaceFile`) | none |
 | `casement-layout` | the `SceneLayout` seam: `SceneSpec`, `Arrangement`, `RustScene`, `spec_of(&Model)`; taffy only in `crates/casement-layout/src/taffy_bridge/` | none |
 | `casement-motion` | `MotionBook` of ds-motion spring legs, `retarget`, `sample` into an `Eq` `FrameScene` in 1/120 px | none |
-| `casement-render` | the `Compositor` renderer trait, `CasementElement`, `output_elements` (FrameScene to elements), `render_output` (damage-tracked), blur v0, the lock cover, `golden` (feature `testing`); the workspace's one unsafe module `src/gl_raw.rs` (A17) | the GPU through smithay |
+| `casement-render` | the `Compositor` renderer trait, `CasementElement`, `output_elements` (FrameScene to elements), `render_output` (damage-tracked), blur v0, the lock cover, output read-back (`pass::capture_output`, P1-Z), `golden` (feature `testing`); the workspace's one unsafe module `src/gl_raw.rs` (A17) | the GPU through smithay |
 | `casement-wayland` | one module per protocol: a `<Protocol>Part` (smithay's state plus our BTreeMap tables), `Part::new` behind the I7 filter, `on_*` (request to `Event`s), `apply_*` (effect to wire); `WaylandStates`, `GlobalFilter`, `ClientState`, `convert` | the wire |
-| `casement-backend` | the headless backend (virtual outputs, vblank source, render-cost model, `VirtualInput: InputBackend`), winit, the session seam, the soft-GPU pieces (`SoftPixman`, `FixedUdmabuf`, A4); the tty seams and their thin adapters from P1-Z | devices (P1), none headless |
+| `casement-backend` | the headless backend (virtual outputs, vblank source, render-cost model, `VirtualInput: InputBackend`), winit, the session seam, the soft-GPU pieces (`SoftPixman`, `FixedUdmabuf`, A4); from P1-Z the tty seams (`tty::{Kms, KmsOpener, ScanoutSurface, TtySession, DeviceSource}`, `input::InputDevices`, `gpu::{RenderNodes, FormatSource}`), `TtyBackend` over them, and their thin real adapters (`*_real.rs`) compiled only under the features `tty` and `libinput` (off by default; A2) | devices under the features, none headless |
 | `casement-agent` | the privileged-connection hand-out (P2), agent seat, EIS, masked capture, trusted surface, kill (P4); a skeleton at P0 | sockets |
-| `casement-ipc` | the inject and wait grammars (its `casement-backend` dependency is optional, on with `debug-inject`; `serve_debug_at(address)` takes the bus address, the library reads no environment); `org.quire.Casement.Debug1` (feature `debug-inject`), `org.quire.Compositor1` (P2-Z); `IpcHandles` | D-Bus |
-| `casement` | lib + bin: `State` (frozen), `delegates.rs` (frozen), `handlers/<protocol>.rs`, `core_loop`, `exec`, `clients`, `display`, `time/` (the only clock), `config/` (ds-settings), `cli`, `run` (`casement::run(RunConfig) -> Result<(), RunError>`: the startup and the event loop; `main.rs` is only arguments, `$CASEMENT_LOG`, `$DBUS_SESSION_BUS_ADDRESS` and the exit code), `debug` (Debug1 in the loop, feature `debug-inject`), `jail_check` (features `testing`, `debug-inject`), `log` (takes its filter as an argument) | everything, through the crates above |
+| `casement-ipc` | the inject and wait grammars (its `casement-backend` dependency is optional, on with `debug-inject`; `serve_debug_at(address)` takes the bus address, the library reads no environment); `org.quire.Casement.Debug1` (feature `debug-inject`), `org.quire.Compositor1` (P2-Z); `shell_calls::{ShellCalls, ZbusShellCalls}`, the one place a binding's D-Bus call is made (A4); `IpcHandles` | D-Bus |
+| `casement` | lib + bin: `State` (frozen), `delegates.rs` (frozen), `handlers/<protocol>.rs`, `core_loop`, `exec`, `clients`, `display`, `time/` (the only clock), `config/` (ds-settings), `cli`, `run` (`casement::run(RunConfig) -> Result<(), RunError>`: the startup and the event loop; `main.rs` is only arguments, `$CASEMENT_LOG`, `$DBUS_SESSION_BUS_ADDRESS` and the exit code), `debug` (Debug1 in the loop, feature `debug-inject`), `jail_check` (features `testing`, `debug-inject`), `log` (takes its filter as an argument); from P1-Z `seams` (the injected `SpaceStore`, `ShellCalls` and `Spawner`), `space_store`, `spawn`, `xwayland`; its features `tty` and `libinput` (default on) turn the backend's real adapters on | everything, through the crates above |
 | `casementctl` | lib + bin: `debug` (Debug1), `shot` (P1), `report` (P5) | D-Bus, the wire |
 | `casement-testclient` | typed wayland-client helpers per protocol, `Transcript`, `Pattern`, shm buffers; bin `casement-probe`; no smithay (B9) | the wire |
-| `casement-testkit` | `Fixture` over the real `State`, `FixtureSpec`, `TestOrigin`, `FixtureInput`, fakes (session, udev, logind, palmrest), the soft GPU topology and the jail's fabricated nodes, `Env` (goldens), typed fuzz ops; bin `fake-logind` | the jail's scratch only |
+| `casement-testkit` | `Fixture` over the real `State`, `FixtureSpec`, `TestOrigin`, `FixtureInput`, fakes (session, udev, logind, palmrest, KMS, scanout, libinput settings, the Spaces file, sill's D-Bus methods, the process table), the soft GPU topology and the jail's fabricated nodes and sys tree, `Env` (goldens), typed fuzz ops; bin `fake-logind` | the jail's scratch only |
 
 Layers, bottom up: `casement-core` ← `casement-layout` ← `casement-motion` (C24) ←
 `casement-render`; `casement-core` ← `casement-wayland`; `casement-core` + `casement-render` ←
@@ -48,7 +48,7 @@ A1 and A4):
 | `casement-motion` | core's list plus casement-layout; its source never names taffy (B3) |
 | `casement-render` | smithay's renderers; names no `smithay::backend::{drm, udev, session, libinput}`; reaches no wgpu, vello, anyrender, Blitz, Stylo, parley, fontique (B4) |
 | `casement-wayland` | smithay's wayland frontend and desktop; names no device backend, reaches neither drm nor gbm (B6) |
-| `casement-backend` | smithay's renderers, EGL, session and winit; names no `casement_wayland` and no `smithay::wayland` module but dmabuf (B5); only its thin adapters name the device crates (B7) |
+| `casement-backend` | smithay's renderers, EGL, session and winit; names no `casement_wayland` and no `smithay::wayland` module but dmabuf (B5); only its thin adapters name the device crates (B7), and they compile only under the features `tty` and `libinput` (A2) |
 | `casement-testclient` | wayland-client and the protocol crates; no smithay (B9) |
 | `casement-ipc`, `casement` | ds-settings (B13; the test kit reaches it only through `casement` and names none of it) |
 
@@ -94,7 +94,17 @@ A1: `Instant::now`, `SystemTime::now`, smithay's `Clock::now` and calloop's `Tim
 | smithay's types becoming ours | `casement-wayland::convert` and the handlers, never deeper |
 | which serials answer a press | `casement-wayland::serial::SerialBook` |
 | a virtual output's spec and its text grammar (C27) | `casement-backend::VirtualOutputSpec` |
-| a connector appearing, changing or going | `casement-backend::ConnectorEvent` (headless and KMS alike) |
+| a connector appearing, changing or going | `casement-backend::ConnectorEvent` (headless and KMS alike; `tty::hotplug::reconcile` makes them from a KMS device) |
+| a KMS device's resources and how it is driven | `casement-backend::tty::{Kms, KmsResources, KmsCommit}` (P1-Z); its fake is `casement-testkit::fakes::FakeKms` |
+| which GPU renders and which scans out; the dma-buf feedback tranches | `casement-core::gpu::{plan_for, feedback_for}` (pure); detection is `casement-backend::gpu::RenderNodes` over an injected `SysRoot` (A6) |
+| when to render a frame; whether a frame made its vblank; the cursor plane choice | `casement-core::frame` (pure; P1-Z) |
+| the Space ids file's bytes (parse, render, import of sill's `spaces.json`) | `casement-core::space::SpaceFile` (pure codec, A1) |
+| reading and writing that file | `casement::space_store::SpaceStore` (injected; `StateDirs` from `main`; fake `MemorySpaceStore`) |
+| a binding's D-Bus call | `casement-ipc::shell_calls::ShellCalls` (A4; fake `FakeShellCalls`); `casement::exec` names the call and never zbus |
+| starting a program (a binding's, xwayland-satellite) | `casement::spawn::Spawner` (A5; fake `FakeSpawner`) |
+| X11 clients | `casement::xwayland` (`XwaylandConfig`: mode and satellite path from configuration, never the environment) |
+| libinput device settings and their fake | `casement-backend::input::{InputDevices, DeviceSettings}`; `casement-testkit::fakes::FakeInputDevices` |
+| reading an output's frame back | `casement-render::pass::capture_output` (P1-Z) |
 | virtual input devices and their events | `casement-backend::VirtualInput` |
 | the soft GPU pieces (A4) | `casement-backend::gpu::{SoftPixman, FixedUdmabuf}` |
 | the session clock and the virtual clock's event source (A1) | `casement::time::{ClockSource, SharedClock, VirtualTimerSource}` |
@@ -145,7 +155,59 @@ pub trait QuireWindowHandler: 'static {
 }
 ```
 
-P1-Z adds `Kms`, `ScanoutSurface`, `InputDevices`, `RenderNodes`.
+P1-Z adds these seams. Every one has a thin real implementation and a fake exported by
+`casement-testkit`; the traits take `std::fmt::Debug` as a supertrait so a `Box<dyn …>` can sit in
+a `#[derive(Debug)]` struct.
+
+```rust
+// casement-backend::tty (real: kms_real.rs, surface_real.rs, session_real.rs, udev_real.rs under
+// feature `tty`; fakes: FakeKms, FakeScanout, FakeSession, FakeUdev)
+pub trait Kms: Debug {
+    fn resources(&self) -> KmsResources;
+    fn test(&mut self, commit: &KmsCommit) -> CommitVerdict;         // TEST_ONLY
+    fn commit(&mut self, commit: KmsCommit) -> Result<(), KmsError>;
+    fn set_power(&mut self, connector: ConnectorId, power: OutputPower) -> Result<(), KmsError>;
+    fn set_gamma(&mut self, connector: ConnectorId, ramp: &GammaRamp) -> Result<(), KmsError>;
+    fn events(&mut self) -> Vec<ConnectorEvent>;
+}
+pub trait KmsOpener: Debug { fn open(&mut self, path: &DevicePath) -> Result<Box<dyn Kms>, KmsError>; }
+pub trait ScanoutSurface: Debug {
+    fn queue(&mut self, frame: QueuedFrame) -> QueueOutcome;
+    fn presented(&mut self) -> Option<Presented>;
+}
+pub trait TtySession: Debug {
+    fn open_device(&mut self, path: &DevicePath) -> Result<OwnedFd, SessionFault>;
+    fn switch_vt(&mut self, vt: VtNumber) -> Result<(), SessionFault>;
+    fn notes(&mut self) -> Vec<SessionNote>;
+}
+pub trait DeviceSource: Debug { fn present(&self) -> Vec<DevicePath>; fn next_event(&mut self) -> Option<DeviceEvent>; }
+
+// casement-backend::input (real: libinput_real.rs under feature `libinput`; fake: FakeInputDevices)
+pub trait InputDevices: Debug { fn apply(&mut self, device: DeviceId, settings: &DeviceSettings) -> Applied; }
+
+// casement-backend::gpu (real: render_nodes_real.rs under feature `tty`, reading an injected SysRoot;
+// fake: the same adapter over FabricatedSysRoot's tree, SoftGraphicsApi for the renderers)
+pub trait RenderNodes: Debug {
+    fn nodes(&self) -> Vec<GpuFacts>;
+    fn open(&mut self, node: &DrmNodeId) -> Result<GpuHandle, GpuError>;
+}
+
+// casement-ipc (real: ZbusShellCalls; fake: FakeShellCalls)
+pub trait ShellCalls: Debug {
+    fn call(&mut self, call: &DbusCall) -> Result<(), ShellCallError>;
+    fn failures(&mut self) -> Vec<FailedCall>;
+}
+
+// casement (real: FileSpaceStore, ProcessSpawner; fakes: MemorySpaceStore, FakeSpawner)
+pub trait SpaceStore: Debug {
+    fn read(&self) -> Result<Option<String>, SpaceStoreError>;
+    fn write(&mut self, text: &str) -> Result<(), SpaceStoreError>;     // atomic
+}
+pub trait Spawner: Debug { fn spawn(&mut self, spec: SpawnSpec) -> Result<Spawned, SpawnError>; }
+```
+
+`casement::State::new` builds the real seams (`Seams::real`); `State::with_seams` takes injected
+ones, which is how the test kit's `Fixture` gets its fakes.
 
 ## 4. Recipes
 
@@ -194,6 +256,30 @@ P1-Z adds `Kms`, `ScanoutSurface`, `InputDevices`, `RenderNodes`.
    (`<interface> <version> <module>`), `crates/casement-testkit/tests/it/protocol/<p>.rs` with its
    `mod` line in `tests/it/protocol/mod.rs` (`scripts/check-protocol-coverage.sh`), a testclient
    helper module, and for a private request a fuzz op.
+
+**Declare a protocol before its lane fills it (a delta freeze).** Everything in "Add a protocol",
+except that `Part::new::<D>(display, role_filter)` creates no global and returns the empty part,
+so no client sees the protocol and `globals.txt` stays as it is. The `GlobalKind` variant (and its
+I7 row), the `WaylandStates` field, the `Part::new` call in `State::new`, the handler file, the
+testkit protocol test (ignored, lane-named) and its `mod` line all exist; the lane creates the
+global in `Part::new`, adds the `globals.txt` row and un-ignores the tests.
+
+**Add a seam with its fake.**
+1. The trait beside its types in the crate that drives it, with `Debug` as a supertrait, typed
+   errors (thiserror, typed sources) and no `bool`s. Real I/O goes in a `*_real.rs` adapter, behind
+   a feature when it needs system libraries (A2); a new adapter joins `ADAPTERS` in
+   `scripts/check-boundary.sh`.
+2. The fake in `crates/casement-testkit/src/fakes/` as a cloneable shared handle (`Arc<Mutex<…>>`):
+   the compositor holds one clone, the test the other, and the test asserts on what the fake
+   recorded. Export it from `fakes/mod.rs`.
+3. Inject it: a field of `casement::seams::Seams` (or of `TtySeams` for the tty backend), a real
+   default in `Seams::real`, the fake in `Fixture::start`.
+4. A doc test on the trait's use, and the behaviour test through the fake.
+
+**Add a real adapter under a feature.** The file is named `<thing>_real.rs`, is listed in the
+boundary script's adapter list, is declared in its `mod.rs` under `#[cfg(feature = "tty")]` (or
+`libinput`), and is the only place that names the device crates. Add no crate to a manifest when
+smithay's own features bring it (`tty = ["smithay/backend_drm", …]`).
 
 **Add a debug verb.**
 1. A `DebugRequest` variant and its `#[zbus::interface]` method in
@@ -254,6 +340,13 @@ nodes (`--fabricate-gpus N`: `/sys/dev/char/226:(128+n)`, A3) for the multi-GPU 
   `GATE GREEN (<tier>) <run>`; `dev/out/<run>/summary.json` records every step. Every exit code
   is checked, nothing is piped or tailed. `~/rs-wt/gate-lane-jailed.sh <checkout>` is the
   cross-repo form.
+- Features (A2): `casement-backend` has `tty` and `libinput`, both off by default; `casement` has
+  `tty` and `libinput`, on by default, and its binary requires both. The workspace dependency
+  `casement = { default-features = false }` keeps the test kit, `wlcs-casement` and any other
+  headless consumer free of system libraries. The gate builds both feature sets: `cargo build -p
+  casement` (everything) and `cargo build -p casement-testkit` (headless only). Building the
+  whole workspace at once unifies `casement`'s default features into the test kit; build the test
+  kit's tests with `-p casement-testkit` for the jail.
 - `unsafe_code = "deny"` at the workspace. The one unsafe module is
   `crates/casement-render/src/gl_raw.rs`: exactly `EGLDisplay::new` and `GlesRenderer::new`
   (A17). Another `unsafe` block there needs a reviewed interface ask showing a GL pass smithay's

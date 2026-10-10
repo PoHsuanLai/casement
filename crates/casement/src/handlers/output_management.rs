@@ -1,0 +1,1 @@
+//! `zwlr_output_manager_v1` (P1-M1): its dispatch is our own `GlobalDispatch2`/`Dispatch2` in `casement_wayland::output_management`; this file will hold the callbacks that feed `Event::OutputRequested`. Declared at P1-Z, no global advertised yet.

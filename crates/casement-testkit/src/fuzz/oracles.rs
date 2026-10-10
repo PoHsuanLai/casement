@@ -167,6 +167,15 @@ fn kind_of(interface: &str) -> Option<GlobalKind> {
         "ext_foreign_toplevel_list_v1" => GlobalKind::ForeignToplevelList,
         "wp_security_context_manager_v1" => GlobalKind::SecurityContext,
         "ext_background_effect_manager_v1" => GlobalKind::BackgroundEffect,
+        // Declared at P1-Z; the fill lanes advertise them.
+        "zwlr_output_manager_v1" => GlobalKind::OutputManagement,
+        "zwlr_output_power_manager_v1" => GlobalKind::OutputPower,
+        "zwlr_gamma_control_manager_v1" => GlobalKind::Gamma,
+        "zwlr_foreign_toplevel_manager_v1" => GlobalKind::WlrToplevel,
+        "ext_workspace_manager_v1" => GlobalKind::Workspace,
+        "ext_output_image_capture_source_manager_v1" | "ext_image_copy_capture_manager_v1" => {
+            GlobalKind::ImageCapture
+        }
         _ => return None,
     })
 }

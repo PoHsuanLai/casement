@@ -7,11 +7,14 @@ use crate::ids::{ClientKey, InputSerial, LayerKey, OutputKey, WindowId};
 use crate::input::InputEvent;
 use crate::layer::LayerSpec;
 use crate::lock::LockEvent;
-use crate::output::{OutputConfig, OutputFacts};
+use crate::output::{GammaRamp, OutputChangeSet, OutputConfig, OutputFacts};
 use crate::policy::ConnectionRole;
 use crate::settings::CasementSettings;
+use crate::space::{SpaceFile, WorkspaceRequest};
 use crate::time::TimerKey;
-use crate::window::{A11yRoot, FirstMouse, FrameHint, Parent, SizeLimits, WindowTitle};
+use crate::window::{
+    A11yRoot, FirstMouse, FrameHint, Parent, SizeLimits, WindowTitle, WlrToplevelRequest,
+};
 use casement_protocols::vocab::{Edited, Modality, PlaceTarget, Toggle, WindowRole};
 use porter_core::{ClaimedId, PeerIdentity};
 
@@ -136,6 +139,36 @@ pub enum Event {
     },
     /// The settings changed.
     SettingsChanged(Box<CasementSettings>),
+    /// A client asked to change an output (`zwlr_output_manager_v1`, `zwlr_output_power_v1`);
+    /// the model checks it against the display's facts and answers with `ApplyOutput` or a
+    /// note (P1-M1).
+    OutputRequested {
+        /// The output.
+        output: OutputKey,
+        /// What it asked to change.
+        change: OutputChangeSet,
+    },
+    /// A client took control of an output's gamma, or gave it back with `Identity`
+    /// (`zwlr_gamma_control_v1`; P1-M1).
+    GammaSet {
+        /// The output.
+        output: OutputKey,
+        /// The ramp.
+        ramp: GammaRamp,
+    },
+    /// A window-list client asked something of a window (`zwlr_foreign_toplevel_handle_v1`;
+    /// P1-M2).
+    WlrToplevel {
+        /// The window.
+        window: WindowId,
+        /// What it asked.
+        request: WlrToplevelRequest,
+    },
+    /// A workspace client asked something of the Spaces (`ext_workspace_manager_v1`; P1-M2).
+    Workspace(WorkspaceRequest),
+    /// The Spaces file was read at start: the model adopts the stored ids, so a Space is the
+    /// same Space after a restart (P1-M2).
+    SpacesLoaded(Box<SpaceFile>),
 }
 
 /// A toplevel that just mapped.

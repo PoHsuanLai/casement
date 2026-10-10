@@ -1,5 +1,6 @@
 //! What a fixture starts with.
 
+use crate::fakes::MemorySpaceStore;
 use crate::gpu::GpuTopology;
 use casement::relax::AckPolicy;
 use casement_backend::{DmabufMode, RenderCostModel, SoftRenderer, VirtualOutputSpec};
@@ -23,6 +24,9 @@ pub struct FixtureSpec {
     pub dmabuf: DmabufMode,
     /// Whether a buffer attached before the first ack is an error (A37; wlcs needs it lenient).
     pub ack_policy: AckPolicy,
+    /// The Spaces file the compositor starts from and stores into (A1). A second fixture started
+    /// with a clone of the same store is a restart.
+    pub space_store: MemorySpaceStore,
 }
 
 impl FixtureSpec {
@@ -40,12 +44,21 @@ impl FixtureSpec {
             cost: RenderCostModel::Fixed(Duration::from_millis(4)),
             dmabuf: DmabufMode::None,
             ack_policy: AckPolicy::Strict,
+            space_store: MemorySpaceStore::empty(),
         }
     }
 
     /// The same, with this dma-buf mode.
     pub fn with_dmabuf(self, dmabuf: DmabufMode) -> FixtureSpec {
         FixtureSpec { dmabuf, ..self }
+    }
+
+    /// The same, starting from (and storing into) this Spaces file.
+    pub fn with_space_store(self, space_store: MemorySpaceStore) -> FixtureSpec {
+        FixtureSpec {
+            space_store,
+            ..self
+        }
     }
 
     /// The same, with this ack policy.

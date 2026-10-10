@@ -3,13 +3,13 @@
 use crate::client::{ClientMint, ClientState};
 use crate::{
     alpha_modifier, background_effect, commit_timing, compositor, content_type, cursor_shape,
-    data_device, dmabuf, ext_data_control, fifo, foreign_toplevel_list, fractional_scale,
-    idle_inhibit, idle_notify, input_method, layer_shell, output, pointer_constraints,
-    pointer_gestures, presentation, primary_selection, quire_window, relative_pointer, seat,
-    security_context, session_lock, shm, shortcuts_inhibit, single_pixel, subcompositor,
-    system_bell, tablet, text_input, viewporter, virtual_keyboard, wlr_data_control,
-    xdg_activation, xdg_decoration, xdg_dialog, xdg_foreign, xdg_shell, xdg_toplevel_icon,
-    xdg_toplevel_tag,
+    data_device, dmabuf, ext_data_control, fifo, foreign_toplevel_list, fractional_scale, gamma,
+    idle_inhibit, idle_notify, image_capture, input_method, layer_shell, output, output_management,
+    output_power, pointer_constraints, pointer_gestures, presentation, primary_selection,
+    quire_window, relative_pointer, seat, security_context, session_lock, shm, shortcuts_inhibit,
+    single_pixel, subcompositor, system_bell, tablet, text_input, viewporter, virtual_keyboard,
+    wlr_data_control, wlr_toplevel, workspace, xdg_activation, xdg_decoration, xdg_dialog,
+    xdg_foreign, xdg_shell, xdg_toplevel_icon, xdg_toplevel_tag,
 };
 use casement_core::WindowId;
 use casement_core::policy::{Advertise, ConnectionRole, GlobalKind};
@@ -110,6 +110,19 @@ pub struct WaylandStates<D: SeatHandler + 'static> {
     pub security_context: security_context::SecurityContextPart,
     /// `ext_background_effect_manager_v1`.
     pub background_effect: background_effect::BackgroundEffectPart,
+    /// `zwlr_output_manager_v1` (declared at P1-Z, advertised by P1-M1).
+    pub output_management: output_management::OutputManagementPart,
+    /// `zwlr_output_power_manager_v1` (declared at P1-Z, advertised by P1-M1).
+    pub output_power: output_power::OutputPowerPart,
+    /// `zwlr_gamma_control_manager_v1` (declared at P1-Z, advertised by P1-M1).
+    pub gamma: gamma::GammaPart,
+    /// `zwlr_foreign_toplevel_manager_v1` (declared at P1-Z, advertised by P1-M2).
+    pub wlr_toplevel: wlr_toplevel::WlrToplevelPart,
+    /// `ext_workspace_manager_v1` (declared at P1-Z, advertised by P1-M2).
+    pub workspace: workspace::WorkspacePart,
+    /// `ext_output_image_capture_source_manager_v1`, `ext_image_copy_capture_manager_v1`
+    /// (declared at P1-Z, advertised by P1-C1).
+    pub image_capture: image_capture::ImageCapturePart,
 }
 
 /// Which globals a connection sees: wraps `casement_core::policy::advertised` (I7). Copied into
