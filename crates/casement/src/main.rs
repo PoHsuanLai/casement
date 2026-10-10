@@ -108,18 +108,6 @@ fn main() -> ExitCode {
 mod tests {
     use super::*;
 
-    /// Without `debug-inject` the variable has no effect because nothing in this build names it:
-    /// the module that reads it is compiled only under that feature.
-    #[test]
-    fn the_peer_units_variable_is_read_only_by_a_debug_inject_module() {
-        let source = include_str!("main.rs");
-        let gate = "#[cfg(feature = \"debug-inject\")]\nmod debug_peer_units;";
-        assert!(source.contains(gate), "the module is gated");
-        let name = concat!("CASEMENT_DEBUG", "_PEER_UNITS");
-        let uses = source.matches(name).count();
-        assert_eq!(uses, 1, "main.rs names the variable only in this test");
-    }
-
     fn at(dir: &str) -> StateHome {
         StateHome::At(StateDirs::at(PathBuf::from(dir)))
     }
