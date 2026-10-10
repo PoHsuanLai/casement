@@ -43,7 +43,7 @@ fn shoot(fixture: &mut Fixture, name: &str) -> image::RgbaImage {
 }
 
 #[test]
-fn the_ten_base_scenes_match_their_pixman_goldens() {
+fn the_base_scenes_match_their_pixman_goldens() {
     let env = Env::of_process();
     let failures: Vec<String> = SCENES
         .iter()
