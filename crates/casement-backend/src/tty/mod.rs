@@ -41,7 +41,7 @@ pub use kms::{
     KmsError, KmsOpener, KmsRefusal, KmsResources, ModesetPolicy, OutputCommit, PlaneFacts,
     PlaneId, PlaneKind, VrrState,
 };
-pub use session::{SessionNote, TtySession};
+pub use session::{SeatState, SessionNote, TtySession};
 pub use surface::{DirectCandidate, Presented, QueueOutcome, QueuedFrame, ScanoutSurface};
 pub use udev::{DeviceEvent, DevicePath, DeviceSource};
 pub use vt::{VtNumber, vt_of_keysym};
@@ -62,6 +62,7 @@ use crate::gpu::RenderNodes;
 use crate::headless::{ConnectorEvent, FrameSource};
 use casement_core::OutputName;
 use casement_core::gpu::{GpuChoice, RenderPlan};
+use casement_core::input::Keysym;
 use casement_core::time::VblankSeq;
 
 /// Everything the tty backend is injected with.
@@ -118,13 +119,30 @@ pub struct TtyBackend {
     pub devices: TtyDevices,
     /// The render plan, once the GPUs are known.
     pub plan: Option<RenderPlan>,
+    /// Whether this session holds the seat; `present` draws nothing while it is lent.
+    pub seat: SeatState,
 }
 
 impl TtyBackend {
-    /// Opens every display device present, makes the render plan and holds the seat.
+    /// Takes the injected seams and holds the seat. The devices present are opened by
+    /// [`announce`](Self::announce), and the render plan is made from the GPUs once they are known
+    /// (P1-D4), so a start touches no device.
+    ///
+    /// ```no_run
+    /// use casement_backend::tty::{TtyBackend, TtySeams};
+    ///
+    /// fn up(seams: TtySeams) {
+    ///     let backend = TtyBackend::start(seams).expect("start");
+    ///     assert!(backend.devices.devices.is_empty());
+    /// }
+    /// ```
     pub fn start(seams: TtySeams) -> Result<TtyBackend, BackendError> {
-        let _ = seams;
-        todo!("P1-D1: TtyBackend::start")
+        Ok(TtyBackend {
+            seams,
+            devices: TtyDevices::empty(),
+            plan: None,
+            seat: SeatState::Held,
+        })
     }
 
     /// The connector events of the devices present at start, once (then none).
@@ -132,9 +150,83 @@ impl TtyBackend {
         todo!("P1-D2: TtyBackend::announce")
     }
 
-    /// Reads the seat and device events that arrived: a VT switch pauses, hotplug reconciles.
+    /// Reads the seat and device events that arrived, in order: a VT switch pauses, a return
+    /// re-reads every open device, hotplug reconciles. While the seat is lent no device is
+    /// touched: the device events stay queued and are read after the return.
     pub fn dispatch(&mut self) -> Vec<TtyNote> {
-        todo!("P1-D1: TtyBackend::dispatch")
+        let mut notes = Vec::new();
+        let mut returned = false;
+        for note in self.seams.session.notes() {
+            self.seat = self.seat.after(note);
+            match note {
+                SessionNote::Activated => returned = true,
+                SessionNote::Paused => returned = false,
+                SessionNote::VtSwitch(vt) => self.ask_for_vt(VtNumber(vt)),
+                _ => {}
+            }
+            notes.push(TtyNote::Session(note));
+        }
+        if self.seat == SeatState::Held {
+            if returned {
+                notes.extend(self.reread_devices());
+            }
+            notes.extend(self.read_device_events());
+        }
+        notes
+    }
+
+    /// Asks the session for the VT `sym` names (a `Ctrl+Alt+Fn` chord, after xkb); the VT asked
+    /// for, or none when `sym` names no VT. The session's own pause note follows when the
+    /// switch happens.
+    pub fn request_vt(&mut self, sym: Keysym) -> Result<Option<VtNumber>, BackendError> {
+        let Some(vt) = vt_of_keysym(sym) else {
+            return Ok(None);
+        };
+        self.seams.session.switch_vt(vt)?;
+        Ok(Some(vt))
+    }
+
+    /// A switch the session itself reported as wanted; a refusal is logged, not fatal.
+    fn ask_for_vt(&mut self, vt: VtNumber) {
+        if let Err(fault) = self.seams.session.switch_vt(vt) {
+            tracing::warn!(vt = vt.0, %fault, "the VT switch was refused");
+        }
+    }
+
+    /// Every open device's connectors, read again (the seat came back; a display may have
+    /// changed while it was away).
+    fn reread_devices(&mut self) -> Vec<TtyNote> {
+        let paths: Vec<DevicePath> = self.devices.devices.keys().cloned().collect();
+        paths
+            .into_iter()
+            .flat_map(|path| {
+                let result = self.devices.changed(&path);
+                connector_notes(&path, result)
+            })
+            .collect()
+    }
+
+    /// The device events waiting, applied in order.
+    fn read_device_events(&mut self) -> Vec<TtyNote> {
+        let mut notes = Vec::new();
+        while let Some(event) = self.seams.udev.next_event() {
+            let (path, result) = match event {
+                DeviceEvent::Added(path) => {
+                    let result = self.devices.added(path.clone(), &mut *self.seams.opener);
+                    (path, result)
+                }
+                DeviceEvent::Changed(path) => {
+                    let result = self.devices.changed(&path);
+                    (path, result)
+                }
+                DeviceEvent::Removed(path) => {
+                    let events = self.devices.removed(&path);
+                    (path, Ok(events))
+                }
+            };
+            notes.extend(connector_notes(&path, result));
+        }
+        notes
     }
 
     /// Draws `source` for `output` and queues it for the next vblank; the number of the frame
@@ -146,5 +238,19 @@ impl TtyBackend {
     ) -> Result<Option<VblankSeq>, BackendError> {
         let _ = (output, source);
         todo!("P1-D3: TtyBackend::present")
+    }
+}
+
+/// What a device reported, as notes; a device that refused is logged and reports nothing.
+fn connector_notes(
+    path: &DevicePath,
+    result: Result<Vec<ConnectorEvent>, KmsError>,
+) -> Vec<TtyNote> {
+    match result {
+        Ok(events) => events.into_iter().map(TtyNote::Connector).collect(),
+        Err(error) => {
+            tracing::warn!(path = %path.as_path().display(), %error, "a device refused");
+            Vec::new()
+        }
     }
 }

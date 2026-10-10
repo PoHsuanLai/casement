@@ -817,3 +817,37 @@ the `--xwayland` flags, `VendorFact::from_pci_vendor`, `GammaTable::new`, `Outpu
   `casement/src/state.rs` and `exec.rs` (module and import names `gamma`, `workspace`, `spawn`), the doc tests (all
   `no_run`), `casement-testkit/src/fixture.rs`, `fakes/session.rs` (`TtySession` over smithay's `Session`), and
   `casement-render/src/pass/capture.rs` (the `ExportMem` bound with `R::Framebuffer<'_>`).
+
+## p1-d1: session, udev, VT switch, pause/resume (2026-10-11)
+
+Nothing here compiled (no builds this lane). `todo!()` left for the lane: none.
+
+- **`SessionSeam::Libseat(LibseatSlot)` deleted** (as P1-Z allowed). `SessionFault` gained `Unavailable(String)` for a seat or
+  udev monitor that could not open; the libseat and udev errors reach it as text, not as typed sources (the adapter is the only
+  file that names those crates, and `SessionFault` is not an adapter file). Open failures through libseat become `DeniedOpen`.
+- **Seat state.** `tty::SeatState {Held, Lent}` (with `after(SessionNote)`) is a new field `TtyBackend::seat`; `present` (P1-D3)
+  must return `Ok(None)` while it is `Lent`. `FakeSession` notes only real changes of hands (a second pause is no note).
+- **`TtyBackend::start` touches no device and makes no plan.** Opening the devices present is `announce` (P1-D2); `plan` stays
+  `None` until P1-D4's `plan_for` exists. `dispatch` order: session notes first; if the seat is held, a return re-reads every
+  open device (`TtyDevices::changed`), then the udev queue is applied. While lent the udev events stay queued.
+- **VT switch is ordinary code.** `vt_of_keysym` maps `XF86Switch_VT_1..12`; `TtyBackend::request_vt(Keysym)` asks the session.
+  Nothing calls `request_vt` yet: the libinput feed (P1-I1) must call it for a key event whose keysym names a VT, before
+  bindings see it. `SessionNote::VtSwitch(n)` arriving from a session is turned into the same request.
+- **Loop turn.** `core_loop/tty.rs::drain`, called from `core_loop::turn` (so `run.rs` is unchanged): connector notes go to the
+  existing `connector` path; `Activated` re-applies every output's configuration as `Effect::ApplyOutput`, which re-modesets once
+  `exec::apply_output` has its tty arm (P1-D2; today it only handles headless).
+- **`State::new` starts the tty backend.** `Seams` gained `tty: Option<TtySeams>` and `Seams::with_tty`; `with_seams` takes the
+  injected seams, else builds `real_seams(SysRoot::host(), GpuChoice::Auto, loop handle)`. `real_seams` gained the loop handle
+  (libseat and the udev monitor are event sources). `gpu.render` is not a setting yet, so the choice is `Auto`.
+- **PrepareForSleep.** Through the fakes: `FakeSession::prepare_for_sleep(SleepPhase)` (the type is P1-F2's, in
+  `fakes/logind/manager.rs`) pauses and resumes; the fake logind server will call it. The real path is not built: libseat does not
+  report `PrepareForSleep`; a zbus subscription (with the inhibitor from P1-F2/SESS) must push `Paused`/`Activated` into
+  `RealSession`'s queue. Real-hardware check: suspend and wake must leave the displays lit and the seat held.
+- **Fakes.** `SharedSession` (a clonable `FakeSession`) lets a backend and a test hold the same session. `Fixture::session()` returns
+  a `FakeSession` the fixture holds, not wired to the headless backend.
+- **`RealKmsOpener` is a unit struct**, so `real_seams` cannot give it the session: P1-D2 must add a field (a
+  `LibSeatSession` clone, or take the descriptors from `RealSession`) and change the one line in `real.rs`.
+- **Ignored with a reason, not P1-D1's:** `udev_events_reach_the_backend_in_order` and `hotplug_waits_out_a_pause` have real bodies
+  but call `TtyDevices::{added,changed,removed}` and `FakeKmsOpener::open` (P1-D2); un-ignore when those land.
+- **Not covered by a test:** the loop turn (`Activated` re-modeset) needs a tty `State`, which needs P1-D2/D3 fakes; the
+  `Seams::with_tty` seam is there for that suite.

@@ -18,7 +18,7 @@ pub use kms::{FakeKms, FakeKmsOpener, KmsWorld, SyntheticTopology};
 pub use logind::{FakeLogind, LogindCall, LogindError};
 pub use palmrest::FakePalmrest;
 pub use scanout::FakeScanout;
-pub use session::{FakeSession, SessionFixture};
+pub use session::{FakeSession, SessionFixture, SharedSession};
 pub use shell_calls::FakeShellCalls;
 pub use space_store::MemorySpaceStore;
 pub use spawner::{FakeSpawner, StartedProgram};
