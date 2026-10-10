@@ -12,7 +12,7 @@ publish.workspace = true
 name = "casement-probe"
 path = "src/bin/probe.rs"
 
-# The X11 client of the XWayland suite (P1-X1; x11rb joins its dependencies then).
+# The X11 client of the XWayland suite (P1-X1).
 [[bin]]
 name = "casement-x11probe"
 path = "src/bin/x11probe.rs"
@@ -32,6 +32,7 @@ rustix = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+x11rb = { workspace = true }
 
 [dev-dependencies]
 # The infrastructure tests run against the real compositor (a dev-dependency cycle cargo

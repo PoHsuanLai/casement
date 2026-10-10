@@ -36,6 +36,15 @@ impl Model {
         let shown = desktop.clone();
         let mut model = model;
         model.spaces = model.spaces.with_shown(key.clone(), desktop);
+        // The Spaces the file stored for this display take their ids (P1-M2).
+        let mut model = model.adopt_ids(&key);
+        if let Some(choice) = model.stored_choice(&key) {
+            model.spaces = model.spaces.with_shown(key.clone(), choice);
+        }
+        let shown = model
+            .spaces
+            .shown_on(&key)
+            .map_or(shown, |space| space.id.clone());
         let model = model.homed_on(&key, &shown);
         Moved::of(model)
             .with(Effect::ApplyOutput {

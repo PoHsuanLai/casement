@@ -20,7 +20,7 @@ use casement_core::{InputSerial, geometry::LogicalSize, lock::LockReply};
 use casement_wayland::output::OutputWire;
 use casement_wayland::{
     WaylandFault, foreign_toplevel_list, image_capture, layer_shell, output, pointer_constraints,
-    presentation, quire_window, seat, session_lock, text_input, xdg_shell,
+    presentation, quire_window, seat, session_lock, text_input, wlr_toplevel, xdg_shell,
 };
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{IsAlive, SERIAL_COUNTER};
@@ -71,10 +71,16 @@ fn apply(state: &mut State, effect: Effect) {
                 ));
             }
         }
-        Effect::UnlistWindow(window) => log(foreign_toplevel_list::apply_closed(
-            &mut state.wl.foreign_toplevel_list,
-            window,
-        )),
+        Effect::UnlistWindow(window) => {
+            log(foreign_toplevel_list::apply_closed(
+                &mut state.wl.foreign_toplevel_list,
+                window,
+            ));
+            log(wlr_toplevel::apply_closed(
+                &mut state.wl.wlr_toplevel,
+                window,
+            ));
+        }
         Effect::SendClose { window } => {
             log(xdg_shell::apply_close(&mut state.wl.xdg_shell, window));
         }
@@ -140,6 +146,9 @@ fn note_of(note: &CoreNote) {
         CoreNote::StaleTimer(key) => tracing::debug!(?key, "a timer fired for something gone"),
         CoreNote::UnknownWindow(window) => {
             tracing::debug!(window = window.0, "an event named an unknown window");
+        }
+        CoreNote::RefusedOutput(refusal) => {
+            tracing::debug!(%refusal, "an output change was refused");
         }
     }
 }

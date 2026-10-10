@@ -5,14 +5,15 @@
 use super::action::ActionWords;
 use super::doc::CasementDoc;
 use super::sections::{
-    BindingsSection, FirstSight, KeyboardSection, OutputsSection, SpacesSection, WindowsSection,
+    BindingsSection, FirstSight, KeyboardSection, OutputsSection, PointerSection, SpacesSection,
+    TouchpadSection, WindowsSection,
 };
 use casement_core::CoreError;
 use casement_core::input::{Binding, Bindings, Chord};
 use casement_core::output::ScalePolicy;
 use casement_core::settings::{
-    CasementSettings, KeyboardSettings, OutputSettings, RepeatRate, SpaceSettings, WindowSettings,
-    XkbNames,
+    CasementSettings, KeyboardSettings, OutputSettings, PointerProfile, PointerSettings,
+    RepeatRate, SpaceSettings, WindowSettings, XkbNames,
 };
 use ds_core::geometry::scale::Scale;
 use ds_settings::{Count, Ms};
@@ -29,6 +30,7 @@ pub fn to_core(doc: &CasementDoc) -> CasementSettings {
         keyboard: keyboard(&doc.keyboard),
         bindings: bindings(&doc.bindings),
         outputs: outputs(&doc.outputs),
+        pointer: pointer(&doc.pointer, &doc.touchpad),
     }
 }
 
@@ -162,6 +164,45 @@ pub(super) fn outputs_doc(core: &OutputSettings) -> OutputsSection {
 fn percent_of(scale: Scale) -> Count {
     let percent = u64::from(scale.numerator()) * 100 / u64::from(Scale::DENOMINATOR);
     Count(u16::try_from(percent).unwrap_or(FIXED_SCALE.1))
+}
+
+fn pointer(mouse: &PointerSection, touchpad: &TouchpadSection) -> PointerSettings {
+    PointerSettings::new(
+        PointerProfile::new(
+            mouse.accel,
+            mouse.natural_scroll,
+            mouse.tap,
+            mouse.scroll_factor,
+            mouse.disable_while_typing,
+        ),
+        PointerProfile::new(
+            touchpad.accel,
+            touchpad.natural_scroll,
+            touchpad.tap,
+            touchpad.scroll_factor,
+            touchpad.disable_while_typing,
+        ),
+    )
+}
+
+pub(super) fn mouse_doc(core: &PointerProfile) -> PointerSection {
+    PointerSection {
+        accel: core.accel,
+        natural_scroll: core.natural_scroll,
+        tap: core.tap,
+        scroll_factor: core.scroll_factor,
+        disable_while_typing: core.disable_while_typing,
+    }
+}
+
+pub(super) fn touchpad_doc(core: &PointerProfile) -> TouchpadSection {
+    TouchpadSection {
+        accel: core.accel,
+        natural_scroll: core.natural_scroll,
+        tap: core.tap,
+        scroll_factor: core.scroll_factor,
+        disable_while_typing: core.disable_while_typing,
+    }
 }
 
 fn duration(ms: Ms) -> Duration {

@@ -54,3 +54,4 @@ pub(crate) use xdg_shell::popups::{
 };
 mod xdg_toplevel_icon;
 mod xdg_toplevel_tag;
+pub(crate) use output_management::sync_outputs;

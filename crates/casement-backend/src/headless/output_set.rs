@@ -5,7 +5,7 @@ use super::renderer::Canvas;
 use super::{PresentedFrame, VirtualOutputSpec};
 use casement_core::OutputName;
 use casement_core::geometry::Transform as CoreTransform;
-use casement_core::output::OutputPower;
+use casement_core::output::{GammaRamp, OutputPower};
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::utils::Transform;
 use std::collections::BTreeMap;
@@ -23,6 +23,9 @@ pub struct VirtualOutput {
     pub power: OutputPower,
     /// How many frames it has presented.
     pub presented: u64,
+    /// The gamma ramp a client last set on it (`zwlr_gamma_control_v1`; the identity curve
+    /// until one does). Recorded, never applied to pixels.
+    pub gamma: GammaRamp,
     /// The offscreen image it draws into (none when the renderer could not make one: the
     /// output then presents blank frames).
     pub(super) canvas: Option<Canvas>,
@@ -37,6 +40,7 @@ impl VirtualOutput {
             last: None,
             power: OutputPower::On,
             presented: 0,
+            gamma: GammaRamp::Identity,
             canvas,
         }
     }

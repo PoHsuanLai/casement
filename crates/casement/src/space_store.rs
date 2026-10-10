@@ -17,6 +17,7 @@
 //! ```
 
 use casement_core::space::{SpaceFile, SpaceFileError};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 /// The directory casement keeps its state files in (`$XDG_STATE_HOME/casement`).
@@ -97,12 +98,37 @@ impl FileSpaceStore {
 
 impl SpaceStore for FileSpaceStore {
     fn read(&self) -> Result<Option<String>, SpaceStoreError> {
-        todo!("P1-M2: FileSpaceStore::read")
+        match std::fs::read_to_string(&self.path) {
+            Ok(text) => Ok(Some(text)),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(source) => Err(SpaceStoreError::Io {
+                path: self.path.clone(),
+                source,
+            }),
+        }
     }
 
     fn write(&mut self, text: &str) -> Result<(), SpaceStoreError> {
-        let _ = text;
-        todo!("P1-M2: FileSpaceStore::write")
+        let io = |path: &Path| {
+            let path = path.to_path_buf();
+            move |source| SpaceStoreError::Io { path, source }
+        };
+        let dir = self.path.parent().unwrap_or(Path::new("."));
+        std::fs::create_dir_all(dir).map_err(io(dir))?;
+        let temporary = self.path.with_extension("toml.tmp");
+        let written = (|| {
+            let mut file = std::fs::File::create(&temporary)?;
+            file.write_all(text.as_bytes())?;
+            file.sync_all()
+        })();
+        written.map_err(io(&temporary))?;
+        std::fs::rename(&temporary, &self.path).map_err(|source| {
+            let _ = std::fs::remove_file(&temporary);
+            SpaceStoreError::Io {
+                path: self.path.clone(),
+                source,
+            }
+        })
     }
 }
 
@@ -123,12 +149,13 @@ impl SpaceStore for EphemeralSpaceStore {
 
 /// The stored Spaces: none when nothing was stored.
 pub fn load_spaces(store: &dyn SpaceStore) -> Result<SpaceFile, SpaceStoreError> {
-    let _ = store;
-    todo!("P1-M2: load_spaces")
+    match store.read()? {
+        Some(text) => Ok(SpaceFile::parse(&text)?),
+        None => Ok(SpaceFile::empty()),
+    }
 }
 
 /// Stores `file`.
 pub fn save_spaces(store: &mut dyn SpaceStore, file: &SpaceFile) -> Result<(), SpaceStoreError> {
-    let _ = (store, file);
-    todo!("P1-M2: save_spaces")
+    store.write(&file.render()?)
 }

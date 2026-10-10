@@ -19,6 +19,8 @@
 use casement_core::Pid;
 use casement_core::input::Argv;
 use std::os::fd::OwnedFd;
+use std::os::unix::process::CommandExt;
+use std::process::{Command, Stdio};
 
 /// One environment variable for the program.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -116,7 +118,43 @@ pub struct ProcessSpawner;
 
 impl Spawner for ProcessSpawner {
     fn spawn(&mut self, spec: SpawnSpec) -> Result<Spawned, SpawnError> {
-        let _ = spec;
-        todo!("P1-I1: ProcessSpawner::spawn")
+        let SpawnSpec { argv, env, pass } = spec;
+        let Some((program, args)) = argv.0.split_first() else {
+            return Err(SpawnError::Empty);
+        };
+        let start = |source: std::io::Error| SpawnError::Start {
+            program: program.clone(),
+            source,
+        };
+        for fd in &pass {
+            rustix::io::fcntl_setfd(fd, rustix::io::FdFlags::empty())
+                .map_err(|errno| start(errno.into()))?;
+        }
+        let mut child = Command::new(program)
+            .args(args)
+            .envs(env.iter().map(|var| (&var.name, &var.value)))
+            .stdin(Stdio::null())
+            .process_group(0)
+            .spawn()
+            .map_err(start)?;
+        // Our copies of the passed descriptors close; the child has its own.
+        drop(pass);
+        let pid = Pid(child.id());
+        // Nothing waits for a binding's program: a thread reaps it when it ends.
+        std::thread::spawn(move || {
+            let _ = child.wait();
+        });
+        Ok(Spawned::new(pid))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_empty_argument_list_starts_nothing() {
+        let spec = SpawnSpec::new(Argv(Vec::new()));
+        assert!(matches!(ProcessSpawner.spawn(spec), Err(SpawnError::Empty)));
     }
 }

@@ -18,6 +18,7 @@ mod lock;
 mod moved;
 mod output_requests;
 mod outputs;
+mod published;
 mod query;
 mod requests;
 mod space_persist;
@@ -32,6 +33,7 @@ mod workspace_requests;
 mod tests;
 
 use crate::app::{App, AppKey};
+use crate::cause::MinimiseTarget;
 use crate::effect::Effect;
 use crate::event::Event;
 use crate::focus::Focus;
@@ -41,7 +43,7 @@ use crate::layer::LayerBook;
 use crate::lock::LockState;
 use crate::output::{OutputConfig, OutputFacts};
 use crate::settings::CasementSettings;
-use crate::space::{SpaceBook, SpaceSeed};
+use crate::space::{SpaceBook, SpaceFile, SpaceSeed};
 use crate::time::{Mono, TimerBook};
 use moved::Moved;
 pub use query::OpeningRoom;
@@ -55,6 +57,12 @@ pub struct Model {
     /// Each connected client and the app its windows belong to, once it has mapped one.
     clients: BTreeMap<ClientKey, Option<AppKey>>,
     spaces: SpaceBook,
+    /// The Spaces file as it was read at start (P1-M2): its Spaces wait here for their output
+    /// to be plugged, and what is stored still names them until then.
+    remembered: SpaceFile,
+    /// Where each window's minimise animation should go: the rectangle its window-list client
+    /// set (`zwlr_foreign_toplevel_handle_v1.set_rectangle`; P1-M2).
+    minimise_rects: BTreeMap<WindowId, MinimiseTarget>,
     outputs: OutputBook,
     layers: LayerBook,
     /// The on-demand layer surface that holds the keyboard: the one that mapped with no key
@@ -89,6 +97,8 @@ impl Model {
             apps: BTreeMap::new(),
             clients: BTreeMap::new(),
             spaces: SpaceBook::empty(),
+            remembered: SpaceFile::empty(),
+            minimise_rects: BTreeMap::new(),
             outputs: OutputBook::default(),
             layers: LayerBook::empty(),
             demand: None,
@@ -119,7 +129,9 @@ impl Model {
     fn run(self, now: Mono, f: impl FnOnce(Model) -> Moved) -> (Model, Vec<Effect>) {
         let before = self.keyboard_target();
         let keyed = self.focus.key;
+        let shown = published::Published::of(&self);
         let mut moved = f(Model { now, ..self });
+        moved.model.forget_gone_minimise_rects();
         // A window that becomes key takes the keyboard back from an on-demand layer.
         if moved.model.focus.key != keyed && moved.model.focus.key.is_some() {
             moved.model.demand = None;
@@ -130,6 +142,8 @@ impl Model {
         } else {
             moved.with(Effect::Keyboard(after))
         };
+        let publish = shown.changes_to(&moved.model);
+        let moved = moved.with_all(publish);
         (moved.model, moved.effects)
     }
 
@@ -179,6 +193,11 @@ impl Model {
     /// Every Space.
     pub fn spaces(&self) -> &SpaceBook {
         &self.spaces
+    }
+
+    /// Where `window` should minimise to, when its window-list client set a rectangle.
+    pub fn minimise_target(&self, window: WindowId) -> Option<&MinimiseTarget> {
+        self.minimise_rects.get(&window)
     }
 
     /// Every plugged output.

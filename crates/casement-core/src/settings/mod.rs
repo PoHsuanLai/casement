@@ -29,6 +29,8 @@ pub struct CasementSettings {
     pub bindings: Bindings,
     /// Outputs.
     pub outputs: OutputSettings,
+    /// Mice and touchpads.
+    pub pointer: PointerSettings,
 }
 
 impl CasementSettings {
@@ -41,6 +43,7 @@ impl CasementSettings {
             keyboard: KeyboardSettings::defaults(),
             bindings: bindings::defaults(),
             outputs: OutputSettings::defaults(),
+            pointer: PointerSettings::defaults(),
         }
     }
 }

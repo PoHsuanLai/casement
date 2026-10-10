@@ -105,8 +105,6 @@ P3-CSS, three in `src/` and its ignored parity test, never built at P0-Z2).
 | `crates/casement-ipc/src/wait.rs` | parse_wait (1) | P0-T-dev | `crates/casement-ipc/src/inject.rs`, `wait.rs` tests; `crates/casementctl/src/command.rs` test; `dev/accept.sh --jobs 8` |
 | `crates/casementctl/src/command.rs` | parse, run (2) | P0-T-dev | `crates/casement-ipc/src/inject.rs`, `wait.rs` tests; `crates/casementctl/src/command.rs` test; `dev/accept.sh --jobs 8` |
 | `crates/casement-testkit/src/fixture.rs` | Fixture::session (1) | P1-D1 | P1-Z's session suite |
-| `crates/casement-testkit/src/bin/fake_logind.rs` | main: no longer a `todo!()` (P0-accept): it prints "P1-F2: not built" and exits 0, so the headless session starts without it | P1-F2 | P1-Z's logind tests |
-| `crates/casement-testkit/src/fakes/logind/mod.rs` | FakeLogind::serve (1) | P1-F2 | `crates/casement-testkit/tests/it/logind.rs` |
 | `crates/casement-agent/src/socket.rs` | hand_out, role_for (2) | P2-Q2 | `crates/casement-agent/src/socket.rs` `only_the_shell_and_the_agent_tier_get_privileged_roles` |
 | `crates/casement-testkit/src/fixture.rs` | Fixture::palmrest (1) | P3-Z | P3-Z's palmrest tests |
 
@@ -869,3 +867,303 @@ output and `--region` still go through Debug1.
 `Clone` closure), `casement-testclient/src/capture/copy_session.rs` (wayland-client signatures: `create_session`
 options type, `Format::try_from`), `casementctl/src/command/capture.rs` (desktop-client's paths), `shm.rs` (the closure
 returning `Result` through `with_buffer_contents_mut(..)?`).
+## p1-m2: wlr toplevel, workspaces, Space id persistence (2026-10-11)
+
+Nothing here compiled (no builds this lane). Both globals are advertised: `zwlr_foreign_toplevel_manager_v1` v3 and
+`ext_workspace_manager_v1` v1, hidden from sandboxed clients (I7 rows unchanged), with `globals.txt` rows.
+
+- **Publishing is a diff, not an emission at each transition.** `Model::run` takes a `Published` snapshot before a step
+  and compares it after (`model/published.rs`): `PublishToplevel(id)` for each window whose title, app id, state kind, key
+  flag or output changed (or that appeared), `PublishWorkspaces` when the `SpaceBook` changed, `PersistSpaces` when the
+  stored file (`Model::space_file`) changed. No transition had to learn the effects; the cost is one clone of the Space
+  book and a small record per window per step. Closing is `UnlistWindow`, whose exec arm now also calls
+  `wlr_toplevel::apply_closed`. Core tests that assert an exact effect list on a step that changes a window's key flag
+  (`model_lock.rs` 218-242 if a key window exists there) would see a `PublishToplevel` too.
+- **`import_sill_json`: sill writes no spaces file.** `sill-ui-kit/src/look.rs` still says quire has no `spaces.json`
+  store, and `sill-model` only reads the protocol's `id` as `stable_id`. The shape imported is the minimal one the codec
+  pins: `{"by_id": {"<space id>": {"output": "<output key>", "index": 0}}}`, both record fields optional, unknown keys
+  ignored. A record without an output is `StoredSpace::homeless` (so `StoredSpace::output` is now `Option<OutputKey>`;
+  `StoredSpace::new` still takes one) and the first output plugged adopts it. Nothing reads the file at start: the path
+  is sill's to name; wire `import_sill_json` where `load_stored_spaces` (`core_loop.rs`) loads `spaces.toml` once sill
+  writes one.
+- **Loading.** `core_loop::announce_outputs` reads the file through the seam first and feeds `Event::SpacesLoaded` (the
+  headless fixture and `run.rs` both call it once, so one edit covers both; FINDINGS p1z said `run.rs`). The model keeps
+  the file as `remembered`. A plugged output adopts its stored Spaces (`Model::adopt_ids`): the desktops it got by
+  default are renamed in row order to the stored ids (windows follow), extra stored ones are made, and the stored
+  "shown" choice is applied. A Space whose output is not plugged waits and stays in what `space_file` writes. A file that
+  does not parse is logged and the run goes on with fresh ids.
+- **Restart test.** The fixture's entropy is fixed, so an unchanged restart would mint the same ids with no file at all.
+  `the_workspace_id_survives_a_restart` edits the stored text to an id the entropy never mints and checks the protocol
+  shows that one.
+- **Departures.** (1) `apply_toplevel` takes the window's smithay `Output`s (`&[Output]`) and `apply_spaces` takes the
+  `wl_output` globals by key, because the protocol must name a client's `wl_output`; the freeze had `&[OutputName]` and
+  no outputs. (2) `WlrToplevelPart` lost its `listed` field (the part keeps what each handle was told instead) and both
+  parts gained private fields. (3) A Space has no name in the model: workspaces are named "Desktop N" (N = row position
+  + 1), "Full Screen", "Split View" or "Agent"; `create_workspace`'s name is ignored. (4) Full-screen, Split View and
+  agent Spaces are published as workspaces too, with only `activate`; only desktops can be removed or assigned, and an
+  output keeps at least one desktop. (5) The wlr `activate` request counts as a valid activation (a dock click is the
+  person's hand; the protocol carries no token). (6) `unset_minimized` restores through the activate path, so it also
+  keys the window. (7) `set_rectangle` converts only layer surfaces (a dock's tile) by their arranged origin; any other
+  surface is taken to sit at the origin. The rectangle's output is the one containing its origin, else the window's.
+  (8) The model stores one `MinimiseTarget` per window (`Model::minimise_target`), pruned when the window goes; the
+  minimise `Cause` uses it instead of the bottom-centre point.
+- **Not done.** The wlr `parent` event is not sent. A `wl_output` a client binds after the manager is told about at the
+  next publish, not at once. A workspace client's requests are processed at `commit` in order, not atomically in the
+  model (each is its own step). When the last output is unplugged the model drops its Spaces, and the file loses
+  them once written (the remembered file only holds what was loaded).
+- **Hardware to check.** A real dock (sill-dock over `desktop_wl`'s Wlr arm) minimising to its tile: the genie goes to
+  the layer surface's rectangle; a restart on the tty backend with two outputs keeps each Space on its connector.
+- **Goldens written by hand.** `transcripts/wlr_toplevel-list.txt` and `workspace-publish.txt` are predicted from the
+  code, with ids numbered by first appearance (`normalised`) and the `state` / `id` arguments masked; re-bless once with
+  `CASEMENT_BLESS=1` and read the diff.
+- **Unverified (first places to look if it does not compile).** `casement-wayland/src/workspace.rs` (bitflags types of
+  the enum arguments: `State`, `GroupCapabilities`, `WorkspaceCapabilities`; `Resource::data`, `Client::create_resource`
+  generics), `casement-wayland/src/wlr_toplevel.rs` (the `make` fn-pointer closures; `Output::client_outputs` in an
+  edition-2024 closure), `casement-core/src/model/space_persist.rs` (`is_none_or`, borrows in `adopt_ids`),
+  `casement-core/src/model/published.rs`, `casement/src/exec/publish.rs`, and the toml 1 paths in `space/persist.rs`.
+## p1-m1: output management, output power, gamma control (2026-10-11)
+
+P1-M1 advertises `zwlr_output_manager_v1` (4), `zwlr_output_power_manager_v1` (1) and `zwlr_gamma_control_manager_v1` (1);
+`globals.txt` and the sandbox hidden-list have their rows. Nothing here compiled (no builds this lane).
+
+- **One sync hook.** `core_loop::feed` ends with `handlers::sync_outputs`: the heads (`apply_heads`, which compares the
+  model's outputs with what was announced and sends nothing when they match), the power controls (`output_power::follow`)
+  and the gamma controls (`gamma::follow`) follow the model after every batch. Heads for a changed `OutputFacts` are
+  finished and announced again; a changed `OutputConfig` only resends the head's state. The manager serial moves once per
+  change; a configuration made at an older one is `cancelled`.
+- **`apply_heads` takes a `DisplayHandle` and the dispatch type** (`apply_heads::<State>(part, display, outputs)`): the
+  frozen signature had neither, and a new head is a server-created object.
+- **Disabled is dark.** `disable_head` is `OutputPower::Off`, `enable_head` is `On` (the output keeps its place in the
+  arrangement; no output is removed from the layout). A disabled head sends only `enabled 0`.
+- **Every head must be configured.** `apply` or `test` with a head left out is the protocol error `unconfigured_head`
+  (what wlroots does); the frozen `Configuration` doc said "left out are disabled" and now says the protocol makes the
+  client name them all. `already_configured_head` and `already_used` are posted too.
+- **Custom modes** match an offered mode by size and rate (the fastest when the rate is 0); one the display does not
+  offer reaches `resolve_change` as asked and is refused: `failed`, not a protocol error. Adaptive sync is not offered:
+  `set_adaptive_sync` is ignored and no `adaptive_sync` event is sent. Scales take 0.25x to 8x (`resolve_change`).
+- **A new `CoreNote::RefusedOutput(OutputRefusal)`** (an `exec::note_of` arm logs it) for a refused `OutputRequested`.
+- **Gamma on headless** is recorded on the `VirtualOutput` (`HeadlessBackend::{set_gamma, gamma_of}`, table size 256) and
+  read back through `Fixture::gamma_of`; no pixel changes. On tty `Effect::SetGamma` goes to `Kms::set_gamma` of the
+  device that drives the connector. **Real-hardware check:** the KMS device reports no gamma table size
+  (`CrtcFacts` has no field), so a tty output announces 256 steps; P1-D2 should add the real `GAMMA_LUT_SIZE` and
+  `handlers/gamma.rs::gamma_table_size` should read it. A client that sends a ramp the CRTC cannot take gets the
+  `failed` event only once `RealKms::set_gamma` reports it (not wired).
+- **One control per output** for power and gamma: a second `get_*` on a controlled output, or on one that is gone,
+  gets an inert object that says `failed` at once; destroying the holder frees the output (gamma: identity restored).
+- **Test kit.** `Fixture::offer_modes` (an output with several modes: the virtual output offers one) and
+  `Fixture::gamma_of`; the catalogue lists the three managers and `errors.rs` their error enums.
+## p1-i1: input settings, device configuration, bindings that call out (2026-10-11)
+
+Nothing here compiled (no builds this lane).
+
+- **Settings.** `CasementSettings` gained `pointer: PointerSettings`; the document gained `[pointer]` (mice and
+  trackballs) and `[touchpad]` sections (`accel`, `natural_scroll`, `tap`, `scroll_factor` per-mille, `disable_while_typing`),
+  on the Mouse & Gestures page. `AccelProfile` now derives `Serialize`, `Deserialize` and `Word`.
+- **xkb and repeat.** `SeatPart::new` already compiled the keymap from `KeyboardSettings`; `xkb_of` is the names the seat
+  compiles from. A live change of `keyboard.*` after start is not applied to the running seat (unchanged; not this lane's file).
+- **Device settings.** `device_settings` maps a class to the touchpad or mouse profile (every non-touchpad class gets the
+  mouse profile). Nothing in the loop calls `InputDevices::apply` yet: `Seams` has no input-devices slot (a shared file) and
+  the tty loop that sees libinput devices appear is P1-D1/D2's. `RealInputDevices::track` and `forget` are what that loop calls.
+- **Scroll factor** is not a libinput setting; the adapter does not report it as unsupported and the compositor must scale the
+  axis event with `DeviceSettings::scroll_factor` where it delivers it (`core_loop/deliver.rs::scroll`): not done here.
+- **Real adapter departure.** `RealInputDevices::open` opens device nodes directly (`DirectOpen`), not through logind's
+  `TakeDevice`; P1-D1's session replaces it. Real-hardware check: with the seat's real session, `apply` on a touchpad
+  changes tap, natural scroll and disable-while-typing, and a mouse answers `Partly` for tap and dwt.
+- **ZbusShellCalls.** One thread with a current-thread tokio runtime, the session bus connected on the first call, one task per
+  call, failures returned by `failures()` and logged by `exec::call`. A call carries at most four string arguments
+  (`ShellCallError::TooManyArgs`); names are validated before anything is queued. Real check: the default launcher binding
+  reaches sill once sill exports `org.quire.Sill1` (the fake accepts anything).
+- **ProcessSpawner.** `Command` with null stdin, its own process group, `spec.env` added, the `pass` descriptors' close-on-exec
+  cleared with rustix, a thread reaping the child.
+- **Bindings.** `carry_out` sends `Effect::CallBinding` and `Effect::Spawn` through `exec::exec`; the stale "not reached"
+  comment above those arms in `exec.rs` is left for the orchestrator. `exec::spawn` adds `Xwayland::env()` when satellite runs
+  (that body is P1-X1's).
+## p1-x1: XWayland through xwayland-satellite, started on demand (2026-10-11)
+
+Nothing here compiled (no builds this lane). `todo!()` left for the lane: 0.
+
+- **Shape.** `casement::xwayland`: `Listening` (binds `<dir>/X<n>` and the abstract `@<dir>/X<n>`, first free `n` up to 63,
+  removes the path socket on drop), `XwaylandState::{Off, Listening, Running}`, `bind` (config to state), `serve` (a client
+  waiting on a socket starts satellite once, through the `Spawner` seam), `reap` (a satellite child that exited returns the
+  state to `Listening`, so the next client restarts it), `env` (`DISPLAY`, exported from the moment the sockets are bound, so
+  satellite is started on demand, not at login). `Xwayland::start` changed from the freeze signature: it takes the bound
+  `Listening` and the `WaylandSocket` name and hands the sockets back on failure; a failed start is retried next turn.
+- **Satellite's command line** is `<binary> :N -listenfd <fd> -listenfd <fd>` with `WAYLAND_DISPLAY` in its environment; the
+  fds are `try_clone`d so casement keeps the sockets across restarts. `-listenfd` is from satellite's README (v0.8.3): a real
+  run must confirm it takes both the path and the abstract socket this way. `-glamor none` (SP6: `off` panics satellite) is
+  not in the argv; `dev/lib/x11probe.sh` adds it through a wrapper script for the jail.
+- **Wiring (shared `run.rs`, three lines):** `xwayland::attach` after the Wayland socket exists, `xwayland::turn` each loop
+  turn. `attach` prints `casement: X11 display :N` on stderr; `x11_compositor` reads it from casement.log.
+- **For P1-I1:** `exec/spawn.rs::spawn_program` should add `state.xwayland.env()` to the program's environment (its doc
+  says so; nothing here edits it). `reap` uses `waitpid(WNOHANG)`, which sees only a child of this process, so P1-I1's
+  `ProcessSpawner` must keep the satellite as a plain child (no double fork, SIGCHLD not ignored).
+- **`casement-x11probe`** (x11rb 0.13, new workspace dependency, already in the lock via smithay/winit): `session` reads
+  commands on stdin (`map`, `unmap`, `close`, `focus`, `activate`, `info`, `own-clipboard`, `paste`, `sync`, `quit`), prints
+  `x11: ...` lines. The loop polls the connection every 10 ms (a stdin thread feeds a channel) because `RustConnection`'s
+  `AsFd` could not be checked.
+- **Real-run checks** (`dev/accept/xwayland-*.sh`, jail only): which WM_CLASS string satellite uses as app id (the scripts
+  assume the class, the second string; the instance is set to a different value so a wrong pick fails); whether the pointer
+  position in `button-press` is in X pixels (physical) or logical at scale 2; whether satellite publishes `Xft.dpi` per
+  output scale; whether `xwayland-scale.sh` can get a window on each output (it skips with a reason when both land on one);
+  whether the compositor honours or refuses `_NET_ACTIVE_WINDOW` (the activation script records the outcome and asserts only
+  consistency); `override-redirect` windows keeping the position the client asked for.
+
+## p1-f2: the fake logind (2026-10-11)
+
+- **Departures.** The frozen unit structs `Manager`, `Session`, `Seat` and `FakeLogind` became real: the three objects are
+  `#[zbus::interface]` types holding a shared `Recorder`, and the test-facing drivers (`lock`, `unlock`, `prepare_for_sleep`,
+  `pause_device`, `resume_device`, `calls`, `held_inhibitors`, `wait_released`) are on `FakeLogind`, which owns a one-worker
+  tokio runtime, so they block and must not be called from inside an async runtime. `LogindCall` is `#[non_exhaustive]` and
+  gained `TakeControl`, `ReleaseControl`, `Activate`, `ReleaseDevice`, `PauseDeviceComplete`; `IdleHint(String)` is
+  `IdleHint(IdleHint)`. `LogindError::Bus` carries a `zbus::Error`; new variants `Runtime`, `Emit`, `Pipe`, `StillHeld`.
+- **Inhibit.** The client gets the write end of a pipe, the fake watches the read end (tokio `AsyncFd`); end of file on it is
+  the release (`InhibitReleased`). Every mode counts as held; `wait_released` is how a test sees the sleep may go on.
+- **`PauseDevice` and `ResumeDevice` are signals** in real logind (the brief calls them recorders): the fake sends them
+  (`pause_device`, `resume_device`) and records the session's answer, `PauseDeviceComplete`.
+- **Control interface** `org.quire.Casement.FakeLogind1` at `/org/quire/Casement/FakeLogind1` (Lock, Unlock,
+  PrepareForSleep(b), Calls, HeldInhibitors) lets a jailed scenario drive the `fake-logind` binary with `busctl`; the binary
+  takes the address from argv[1] or `DBUS_SYSTEM_BUS_ADDRESS` and refuses to start without one.
+- **`PrivateBus`** (testkit, `fakes::PrivateBus`) is the casement-ipc test helper made public: dbus-daemon on
+  `dev/private-bus.conf`, cleared environment, killed on drop. D1's session tests use it with `FakeLogind::serve`.
+- **Tests** use `zbus::export::futures_core::Stream` (doc-hidden re-export) to poll signal streams, to avoid a new dependency.
+- **Unverified (no builds this lane).** `fakes/logind/signals.rs` (`SignalEmitter::emit` bounds, `Fd::from(&OwnedFd)`),
+  `manager.rs`/`session.rs` (interface-macro signatures: sync methods returning `()` and tuples with `bool`, properties
+  with `name = "VTNr"`), `inhibit.rs` (`Errno::AGAIN` comparison, `AsyncFd::new` on an `OwnedFd`), the test helper
+  `next_signal` (`Pin<Box<MessageStream>>` as a `Stream`). Real hardware: nothing; no real logind is touched.
+## p1-d2: KMS, hotplug, modes (2026-10-11)
+
+Nothing here compiled (no builds this lane). `todo!()` left for D2: none.
+
+- **Departure: no `DrmCompositor` in `kms_real.rs`.** A `DrmCompositor` needs a renderer, an allocator and a framebuffer
+  exporter, which the device-level `Kms` seam has not got and the scanout lane (P1-D3, `surface_real.rs`) owns.
+  `RealKms` holds smithay's `DrmDevice` (opened with `disable_connectors = false`, so the console handover does not
+  flicker) and one `DrmSurface` per lit connector; D3 takes it with `RealKms::take_surface` and builds the compositor,
+  and takes the vblank source with `take_notifier`. Both are reachable only on a `RealKms`, not through `Box<dyn Kms>`:
+  D3 either adds an `as_any`-style accessor to `Kms` or builds the surface where it opens the device.
+- **`Kms::test` cannot be a kernel `TEST_ONLY`** before a framebuffer exists. Both the fake and the real device judge a
+  commit by the pure `tty::judge` (attached connector, free CRTC the connector can use, a listed mode, variable refresh
+  only where monitor and CRTC both support it, a mode or CRTC change is a modeset). The kernel's own test happens when D3
+  queues the first frame. `KmsRefusal::ModesetForbidden` was added for a forbidden modeset.
+- **DPMS:** `Off` clears the surface; `On` only records the intent and the next queued frame lights the output, so D3
+  must queue a frame after `On` (and `output_power` in M1 should ask for one).
+- **`RealKmsOpener::new(Box<dyn FdSource>)`** replaces `Default`: the opener needs descriptors from the session, so D1's
+  `real_seams` must implement `FdSource` over its `RealSession` (a shared handle) and build the opener with it.
+- **Announcement.** `TtyDevices` holds an `Announced` state: until `announce()` runs, `added`, `changed` and `removed`
+  return no events (the announcement reports every connector known at that moment, once). D1's `start` may therefore call
+  `added` and drop the events; a device added later reports its plugs from `added`. If D1's `dispatch` tests expect
+  events before the announcement they must call `announce()` first.
+- **EDID.** `parse_edid` reads the base block only: make is the PNP id, model the 0xFC name (else the product code in hex),
+  serial the 0xFF text (else the nonzero numeric serial). CTA extension blocks are not read. An unreadable EDID is an
+  anonymous display (`Unknown`/`Unknown`, keyed `connector:<name>`).
+- **Variable refresh policy** is `VrrPolicy {Off, WhenCapable}` and `vrr_state`: on only when asked and when both the
+  connector (`vrr_capable`) and the CRTC (`VRR_ENABLED` exists) are capable. Where `gpu`/settings hold the user's choice
+  is open: nothing reads a setting yet, `plan_outputs` takes the policy as an argument.
+- **Fixtures.** `fixtures/kms/*.json` are hand-written in the recorded shape (no recording was possible in the jail);
+  replace them with `dev/hw/smoke.sh` output (raw sysfs and `drm_info`, converted by a lane) when the owner has run it.
+- **Real-hardware checks** for the owner: `RealKms::open` takes master on a free VT; `resources()` reads names such as
+  `eDP-1`, modes with plausible millihertz (`clock * 1e6 / (htotal * vtotal)`), the EDID blob, `vrr_capable`;
+  a commit creates a surface and lights nothing until D3 queues a frame; `set_gamma` resamples a table to the CRTC's
+  gamma size; unplugging a monitor yields one `Unplugged`.
+- **Unverified (no builds).** Most likely not to compile: `kms_real.rs` (the drm-rs and smithay paths:
+  `smithay::reexports::drm::control::{ResourceHandle, ModeTypeFlags, PlaneType}`, `DeviceFd::from(OwnedFd)`,
+  `handles.filter_crtcs`, `plane.formats` field types, `u32::from(handle)`), `hotplug.rs` (`Option::is_none_or`, needs
+  Rust 1.82), `fakes/kms/fake.rs` (guard borrows in `retrain`), `tests/it/tty/kms.rs` (`Option::is_none_or`).
+## p1-d1: session, udev, VT switch, pause/resume (2026-10-11)
+
+Nothing here compiled (no builds this lane). `todo!()` left for the lane: none.
+
+- **`SessionSeam::Libseat(LibseatSlot)` deleted** (as P1-Z allowed). `SessionFault` gained `Unavailable(String)` for a seat or
+  udev monitor that could not open; the libseat and udev errors reach it as text, not as typed sources (the adapter is the only
+  file that names those crates, and `SessionFault` is not an adapter file). Open failures through libseat become `DeniedOpen`.
+- **Seat state.** `tty::SeatState {Held, Lent}` (with `after(SessionNote)`) is a new field `TtyBackend::seat`; `present` (P1-D3)
+  must return `Ok(None)` while it is `Lent`. `FakeSession` notes only real changes of hands (a second pause is no note).
+- **`TtyBackend::start` touches no device and makes no plan.** Opening the devices present is `announce` (P1-D2); `plan` stays
+  `None` until P1-D4's `plan_for` exists. `dispatch` order: session notes first; if the seat is held, a return re-reads every
+  open device (`TtyDevices::changed`), then the udev queue is applied. While lent the udev events stay queued.
+- **VT switch is ordinary code.** `vt_of_keysym` maps `XF86Switch_VT_1..12`; `TtyBackend::request_vt(Keysym)` asks the session.
+  Nothing calls `request_vt` yet: the libinput feed (P1-I1) must call it for a key event whose keysym names a VT, before
+  bindings see it. `SessionNote::VtSwitch(n)` arriving from a session is turned into the same request.
+- **Loop turn.** `core_loop/tty.rs::drain`, called from `core_loop::turn` (so `run.rs` is unchanged): connector notes go to the
+  existing `connector` path; `Activated` re-applies every output's configuration as `Effect::ApplyOutput`, which re-modesets once
+  `exec::apply_output` has its tty arm (P1-D2; today it only handles headless).
+- **`State::new` starts the tty backend.** `Seams` gained `tty: Option<TtySeams>` and `Seams::with_tty`; `with_seams` takes the
+  injected seams, else builds `real_seams(SysRoot::host(), GpuChoice::Auto, loop handle)`. `real_seams` gained the loop handle
+  (libseat and the udev monitor are event sources). `gpu.render` is not a setting yet, so the choice is `Auto`.
+- **PrepareForSleep.** Through the fakes: `FakeSession::prepare_for_sleep(SleepPhase)` (the type is P1-F2's, in
+  `fakes/logind/manager.rs`) pauses and resumes; the fake logind server will call it. The real path is not built: libseat does not
+  report `PrepareForSleep`; a zbus subscription (with the inhibitor from P1-F2/SESS) must push `Paused`/`Activated` into
+  `RealSession`'s queue. Real-hardware check: suspend and wake must leave the displays lit and the seat held.
+- **Fakes.** `SharedSession` (a clonable `FakeSession`) lets a backend and a test hold the same session. `Fixture::session()` returns
+  a `FakeSession` the fixture holds, not wired to the headless backend.
+- **`RealKmsOpener` is a unit struct**, so `real_seams` cannot give it the session: P1-D2 must add a field (a
+  `LibSeatSession` clone, or take the descriptors from `RealSession`) and change the one line in `real.rs`.
+- **Ignored with a reason, not P1-D1's:** `udev_events_reach_the_backend_in_order` and `hotplug_waits_out_a_pause` have real bodies
+  but call `TtyDevices::{added,changed,removed}` and `FakeKmsOpener::open` (P1-D2); un-ignore when those land.
+- **Not covered by a test:** the loop turn (`Activated` re-modeset) needs a tty `State`, which needs P1-D2/D3 fakes; the
+  `Seams::with_tty` seam is there for that suite.
+## p1-d3: frame scheduler, presentation feedback, scanout surface, cursor plane (2026-10-11)
+
+Nothing here compiled (no builds this lane).
+
+- **Scheduler** (`casement-core/src/frame/`): `predict` is the worst of the last 8 render costs (8 ms when empty): a
+  missed vblank costs more than rendering a little early. `next_deadline` takes the first vblank after `now` whose
+  `vblank - (predicted + slack) >= now`, looking at most 600 vblanks ahead. `judge` counts `presented - wanted`
+  vblanks (early is on time).
+- **Cursor plane policy: hardware when the output has a cursor plane and the logical cursor size scaled to physical
+  pixels (rounded up) fits the plane's largest size; composited otherwise.** No downscaling to fit. The real
+  compositor (smithay `DrmCompositor`) promotes or composites the cursor element itself; `cursor_plane_for` is what
+  casement uses to pick the cursor image size and to report the choice. A hardware run must check: plane size caps
+  (`DRM_CAP_CURSOR_WIDTH/HEIGHT`) are read into `CursorPlaneCaps` by P1-D2's `kms_real`, the pointer stays one frame
+  fresh when it moves with no other damage, and VRR panels do not stutter with the cursor on a plane.
+- **Seam changes** (`tty/surface.rs`): `QueuedFrame<'a>` gained `Draw(&dyn FrameSource)` (the surface draws with the
+  renderer its device uses; manual `Debug`), and `QueueOutcome::Queued` now carries the `VblankSeq` the frame is for
+  (only the surface knows the next vblank, and `present` has no clock). New `tty/scanouts.rs`: `Scanout` (surface,
+  `FlipTracker`, `VblankClock`, `RenderHistory`, `FrameTally`) and `ScanoutSet` (per output, `Flow::{Running,Held}`).
+  `TtyBackend` gained a `scanouts: ScanoutSet` field: P1-D1's `start` must build it with `ScanoutSet::empty()`, P1-D2
+  attaches a `Scanout` per lit output and calls `flow(Flow::Held)` on `SessionNote::Paused`, `Running` on activate.
+- **`RealScanout`** now owns a `DrmCompositor<GbmAllocator, GbmFramebufferExporter, (), DrmDeviceFd>` and a
+  `GlesRenderer`; the DRM event source (loop side, D1/D2) calls `flip_done(seq, at)` on each vblank event. Its
+  constructor signature is a guess against the pinned smithay; the render node should come from the GPU manager (D4) so
+  multi-GPU can swap the renderer. Hardware check: `Draw` falls back to compositing when direct scanout is refused.
+- **Test drive**: `tests/it/tty/scanout.rs` runs 36,000 virtual frames at 60 Hz (cost 1 ms: zero misses) and a
+  scripted 25 ms frame every 40 (exactly one miss per slow frame; two in a row miss once).
+## p1-d4: GPU detection, plan, multi-GPU import (2026-10-11)
+
+Nothing here compiled (no builds this lane).
+
+- **Plan rule** (`core/gpu/plan.rs`). Auto: of the GPUs that drive a connected monitor, the firmware's (`boot_vga`)
+  else the lowest node; with none driving a monitor the same rule over all GPUs. `gpu.render = <by-path id>` picks that
+  GPU (an id detection does not list is `PlanRefusal::UnknownGpu`, also with an empty list). Scanout stays on the GPU
+  that drives each connector. The owner's machine (AMD iGPU on the panel, NVIDIA dGPU) is a table case in
+  `casement-core/tests/it/gpu.rs`; no code names it.
+- **Feedback** (`core/gpu/feedback.rs`): a Render tranche (render GPU), then one Import tranche per other GPU that scans
+  an output out, each format-and-modifier only at its first tranche, empty tranches left out. There is **no Scanout
+  tranche yet**: it needs the KMS planes' formats, which `FormatTable` does not carry (P1-D2/D3 add them).
+- **Tagging (A5).** The linux-dmabuf protocol does not tell the server which tranche a client allocated from, so
+  `DmabufPart::source_device(format)` answers with the target of the tranche that offers the buffer's format and
+  modifier (unambiguous because `feedback_for` offers each pair once; the main device for a pair nobody offers). The
+  handler in `casement/src/handlers/dmabuf.rs` still does the `DrmNode` conversion (B6 keeps drm out of the protocol
+  crate); it was not moved into the render-node adapter. `backend::gpu::tag_node` is the same rule on the plan.
+- **Departures.** (1) `SysRenderNodes` is no longer behind the `tty` feature: it only reads files, and the test kit
+  must run it over the fabricated tree. (2) `GpuStack` gained `handles` (open render and scanout nodes; `#[non_exhaustive]`)
+  and holds no `GpuManager`: the manager is built over real devices by the frame loop (P1-D3). (3) `route_for` assumes a
+  direct-importing render GPU; `route_with(source, plan, CrossSupport)` takes the capability (`Copy`, `Refused`).
+  (4) `GpuError::NoFormats` (a recorded table nobody can load). (5) `DmabufOffer` is `#[non_exhaustive]` with
+  `tranches` and `from_feedback`; `State::new` still offers `DmabufOffer::soft()` and the tty start (P1-D1..D3) must build the
+  offer with `DmabufOffer::from_feedback(&feedback_for(plan, &format_table(..)?))`. (6) apply_offer adds every tranche
+  as a preference tranche: smithay sends the builder's "main" tranche after all preference tranches, which would put the
+  render GPU last. (7) Testkit: `FormatSet::LinearCodes`, `GpuTopology::pair/facts`, `SoftGpu::node/by_path`,
+  `SoftDevice`, `SoftApiError`; `FormatSource` is implemented for `GpuTopology`. `SoftPixman` has no `Offscreen` impl.
+- **Sysfs layout read** (`render_nodes_real.rs`): `sys/dev/char/226:<128..191>/device/{vendor,boot_vga}`,
+  `device/drm/card<N>/card<N>-<NAME>/status`, `dev/dri/by-path/pci-<addr>-render -> renderD<minor>`; a GPU without a
+  by-path link falls back to the file name of its `device` link.
+- **Counters asserted** (`tests/it/topology`): Direct is B `bind_dmabuf` 1, no `copy_texture`, no A `import_memory`,
+  A `import_dmabuf` >= 1 (SP4 saw 2; the exact figure is unexplained, so it is a lower bound); CopyOnly is B
+  `copy_texture` 1, A `import_memory` 1, B `bind_dmabuf` 0.
+- **Most likely not to compile:** `casement-backend/src/gpu/soft.rs` (the `Frame`/`Renderer` delegation against smithay
+  dc7ca68; SP4 ran e3d461a), `casement-testkit/src/gpu/soft_api.rs` (`GraphicsApi` bounds), `tests/it/topology/support.rs`
+  (generic `draw` over `MultiRenderer`), `casement-wayland/src/dmabuf.rs` (`add_preference_tranche` fold).
+- **Real hardware must check:** that `/sys/dev/char/226:N/device/drm/card*/card*-*/status` exists on the target kernel
+  (connector status is read from there, not from `/sys/class/drm`); that the by-path link set matches the `gpu.render`
+  ids Settings shows; a hybrid laptop with the NVIDIA proprietary driver (its render node may list no connectors, and
+  `boot_vga` may be 0 on both GPUs, which falls to the lowest node).

@@ -82,6 +82,56 @@ pub struct ConnectorFacts {
     pub possible_crtcs: Vec<CrtcId>,
 }
 
+impl ConnectorFacts {
+    /// A connector with no modes, no EDID and no size, that cannot vary its refresh and can be
+    /// driven by no CRTC yet.
+    pub fn new(id: ConnectorId, name: OutputName, status: ConnectorStatus) -> ConnectorFacts {
+        ConnectorFacts {
+            id,
+            name,
+            status,
+            modes: Vec::new(),
+            physical: PhysicalMm { w: 0, h: 0 },
+            edid: Vec::new(),
+            vrr: VrrCapability::Incapable,
+            possible_crtcs: Vec::new(),
+        }
+    }
+
+    /// The same with these modes.
+    #[must_use]
+    pub fn with_modes(self, modes: Vec<Mode>) -> ConnectorFacts {
+        ConnectorFacts { modes, ..self }
+    }
+
+    /// The same with this physical size.
+    #[must_use]
+    pub fn with_physical(self, physical: PhysicalMm) -> ConnectorFacts {
+        ConnectorFacts { physical, ..self }
+    }
+
+    /// The same with this raw EDID.
+    #[must_use]
+    pub fn with_edid(self, edid: Vec<u8>) -> ConnectorFacts {
+        ConnectorFacts { edid, ..self }
+    }
+
+    /// The same with this variable-refresh capability.
+    #[must_use]
+    pub fn with_vrr(self, vrr: VrrCapability) -> ConnectorFacts {
+        ConnectorFacts { vrr, ..self }
+    }
+
+    /// The same with these CRTCs able to drive it.
+    #[must_use]
+    pub fn with_crtcs(self, possible_crtcs: Vec<CrtcId>) -> ConnectorFacts {
+        ConnectorFacts {
+            possible_crtcs,
+            ..self
+        }
+    }
+}
+
 /// One CRTC.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
@@ -90,6 +140,13 @@ pub struct CrtcFacts {
     pub id: CrtcId,
     /// Whether it can drive a variable-refresh monitor.
     pub vrr: VrrCapability,
+}
+
+impl CrtcFacts {
+    /// A CRTC.
+    pub fn new(id: CrtcId, vrr: VrrCapability) -> CrtcFacts {
+        CrtcFacts { id, vrr }
+    }
 }
 
 /// One plane.
@@ -104,6 +161,23 @@ pub struct PlaneFacts {
     pub possible_crtcs: Vec<CrtcId>,
     /// The formats and modifiers it scans out.
     pub formats: Vec<FormatEntry>,
+}
+
+impl PlaneFacts {
+    /// A plane.
+    pub fn new(
+        id: PlaneId,
+        kind: PlaneKind,
+        possible_crtcs: Vec<CrtcId>,
+        formats: Vec<FormatEntry>,
+    ) -> PlaneFacts {
+        PlaneFacts {
+            id,
+            kind,
+            possible_crtcs,
+            formats,
+        }
+    }
 }
 
 /// Everything a device offers: connectors, CRTCs and planes.
@@ -224,6 +298,9 @@ pub enum KmsRefusal {
     /// No plane arrangement fits.
     #[error("no plane fits")]
     Planes,
+    /// The commit needs a modeset and the caller forbade one.
+    #[error("a modeset is needed and was forbidden")]
+    ModesetForbidden,
     /// Anything else the driver says no to.
     #[error("unsupported")]
     Unsupported,

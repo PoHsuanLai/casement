@@ -4,6 +4,7 @@
 
 use super::{GpuError, RenderNodes};
 use casement_core::gpu::{DrmNodeId, FormatEntry, FormatTable, RenderPlan};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// A node's formats. Real: the node's EGL display; fake: `casement_testkit::gpu::FormatSet`.
 pub trait FormatSource: std::fmt::Debug {
@@ -11,12 +12,23 @@ pub trait FormatSource: std::fmt::Debug {
     fn formats_of(&mut self, node: &DrmNodeId) -> Result<Vec<FormatEntry>, GpuError>;
 }
 
-/// The table for every node the plan names.
+/// The table for every node the plan names (the render GPU and each scanout GPU), each read
+/// once. A node detection does not list is `GpuError::UnknownNode`.
 pub fn format_table(
     source: &mut dyn FormatSource,
     nodes: &dyn RenderNodes,
     plan: &RenderPlan,
 ) -> Result<FormatTable, GpuError> {
-    let _ = (source, nodes, plan);
-    todo!("P1-D4: format_table")
+    let known: BTreeSet<DrmNodeId> = nodes.nodes().into_iter().map(|gpu| gpu.node).collect();
+    let wanted: BTreeSet<DrmNodeId> = std::iter::once(plan.render)
+        .chain(plan.scanout.values().copied())
+        .collect();
+    let mut per_node = BTreeMap::new();
+    for node in wanted {
+        if !known.contains(&node) {
+            return Err(GpuError::UnknownNode(node));
+        }
+        per_node.insert(node, source.formats_of(&node)?);
+    }
+    Ok(FormatTable::new(per_node))
 }

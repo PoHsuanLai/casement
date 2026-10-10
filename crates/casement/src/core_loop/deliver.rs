@@ -275,8 +275,8 @@ fn deliver_key(state: &mut State, seat: &Seat<State>, key: KeyDelivery) {
     }
 }
 
-/// A binding's action. A desktop command is the model's; a D-Bus call or a program waits for
-/// the services that carry them (P2).
+/// A binding's action. A desktop command is the model's; a D-Bus call and a program go out
+/// through the injected seams within the frame the key was pressed in.
 fn carry_out(state: &mut State, action: &BindingAction) {
     match action {
         BindingAction::Desktop(command) => {
@@ -284,9 +284,10 @@ fn carry_out(state: &mut State, action: &BindingAction) {
             let effects = run_model(state, |model, now| model.command(command, now));
             exec::exec(state, effects);
         }
-        BindingAction::Call(_) | BindingAction::Spawn(_) => {
-            tracing::info!(?action, "a binding that calls out is carried out from P2");
+        BindingAction::Call(call) => {
+            exec::exec(state, vec![Effect::CallBinding(call.clone())]);
         }
+        BindingAction::Spawn(argv) => exec::exec(state, vec![Effect::Spawn(argv.clone())]),
     }
 }
 

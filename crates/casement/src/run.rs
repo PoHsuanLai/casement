@@ -126,6 +126,7 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
     let handle = event_loop.handle();
     let mut display: Display<State> = Display::new()?;
     let config_home = start.config_home.clone();
+    let xwayland_config = start.xwayland.clone();
     let mut state = State::new(start, &mut display, &handle)?;
     let display = attach_display(display, &handle)?;
     let socket = ListeningSocketSource::new_auto()?;
@@ -133,6 +134,7 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
         "casement: listening on {}",
         socket.socket_name().to_string_lossy()
     );
+    let socket_name = socket.socket_name().to_string_lossy().into_owned();
     handle
         .insert_source(socket, |stream, (), state: &mut State| {
             let role = casement_core::policy::ConnectionRole::Public;
@@ -146,6 +148,8 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
     let debug = attach_debug(&mut state, &handle, &debug_bus)?;
     #[cfg(not(feature = "debug-inject"))]
     let _ = debug_bus;
+    let wayland = crate::xwayland::WaylandSocket(socket_name);
+    crate::xwayland::attach(&mut state, &xwayland_config);
     core_loop::announce_outputs(&mut state);
     crate::keymap::attach(&mut state, &config_home)?;
     let stop = event_loop.get_signal();
@@ -155,6 +159,7 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
     let wake = Option::<std::time::Duration>::None;
     event_loop.run(wake, &mut state, |state| {
         core_loop::turn(state);
+        crate::xwayland::turn(state, &xwayland_config, &wayland);
         #[cfg(feature = "debug-inject")]
         debug::turn(&debug, state);
         if let BackendKind::Winit(window) = &mut state.backend

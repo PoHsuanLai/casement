@@ -1,7 +1,9 @@
 //! `casement --write-schema DIR`: the schema detent and the Settings app read.
 
 use super::ConfigError;
-use super::sections::{KeyboardSection, OutputsSection, SpacesSection, WindowsSection};
+use super::sections::{
+    KeyboardSection, OutputsSection, PointerSection, SpacesSection, TouchpadSection, WindowsSection,
+};
 use ds_settings::schema::{AppId, FilePath, Schema, SettingsSchema};
 use std::path::Path;
 
@@ -21,6 +23,8 @@ pub fn schema() -> Schema {
             SpacesSection::schema(),
             KeyboardSection::schema(),
             OutputsSection::schema(),
+            PointerSection::schema(),
+            TouchpadSection::schema(),
         ]
         .into_iter()
         .flat_map(|schema| schema.key)

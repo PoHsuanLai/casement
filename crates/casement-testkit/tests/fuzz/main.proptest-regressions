@@ -5,3 +5,5 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 1623b147df460d57364874168fa1880a0f889eb41520e8c53fbe7fdb03268bbe # shrinks to [Request { role: Public, object: Valid(1), request: Wire { interface: "zwp_pointer_gesture_hold_v1", opcode: 0, args: [0, -1, 1688301463, 16, 1826068150] } }]
+cc 202ec9bf05ddaaa8c321367dfbfc46326e3ae89b733a0ea3a3ed7d729196b37c # shrinks to [Request { role: Public, object: Valid(16), request: Repeated { times: 2, request: Wire { interface: "wl_shm_pool", opcode: 1, args: [1] } } }]
+cc b6b2e50827511be25c5eb2b7fe09da7735ef251354729c8a4e362999329285ca # shrinks to [Request { role: Public, object: Valid(0), request: Repeated { times: 2, request: Wire { interface: "zxdg_decoration_manager_v1", opcode: 1, args: [1] } } }]

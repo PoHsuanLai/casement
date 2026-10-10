@@ -33,6 +33,7 @@ mod input;
 mod presence;
 mod scene;
 mod surfaces;
+mod tty;
 mod windows;
 
 pub(crate) use grab::start as start_grab;
@@ -64,6 +65,7 @@ pub fn feed(state: &mut State, events: Vec<Event>) {
     state.core.model = model;
     exec::exec(state, effects);
     surfaces::sync(state, &events_seen);
+    crate::handlers::sync_outputs(state);
     idle::hear(state, &events_seen, now);
     ime::hear(state, &events_seen);
     events_seen
@@ -137,7 +139,6 @@ pub fn frame(state: &mut State, output: &OutputKey) {
     let shown = match &mut state.backend {
         BackendKind::Headless(backend) => present_headless(backend, &name, now, &source),
         BackendKind::Winit(winit) => winit.present(&source),
-        // Not reachable before P1-D1 to D3 let `State::new` start the tty backend.
         BackendKind::Tty(tty) => tty.present(&name, &source),
         // A backend this build does not know presents nothing.
         _ => Ok(None),
@@ -336,6 +337,7 @@ pub fn sample_scene(state: &State) -> FrameScene {
 /// Reports the outputs the backend plugged at start (the caller does it once, after the
 /// clock and display are attached, so start-up and hotplug are one path).
 pub fn announce_outputs(state: &mut State) {
+    load_stored_spaces(state);
     let events = match &mut state.backend {
         BackendKind::Headless(backend) => backend.announce(),
         BackendKind::Winit(winit) => winit.announce(),
@@ -344,6 +346,16 @@ pub fn announce_outputs(state: &mut State) {
     };
     for event in events {
         connector(state, event);
+    }
+}
+
+/// Reads the Spaces file through the injected store and tells the model, so a Space keeps its
+/// id across a restart (P1-M2). A file that cannot be read is logged and the run goes on with
+/// fresh ids.
+fn load_stored_spaces(state: &mut State) {
+    match crate::space_store::load_spaces(state.seams.space_store.as_ref()) {
+        Ok(file) => feed(state, vec![Event::SpacesLoaded(Box::new(file))]),
+        Err(error) => tracing::warn!(%error, "the Spaces file could not be read"),
     }
 }
 
@@ -432,8 +444,9 @@ pub fn turn(state: &mut State) -> usize {
         crate::exec::resync_keyboard(state);
     }
     let drained = drain_input(state);
+    let reported = tty::drain(state);
     ime::settle(state);
-    drained + polled + departed
+    drained + polled + departed + reported
 }
 
 /// Delivers the input the backend queued, in the order it came: each event is told to the
