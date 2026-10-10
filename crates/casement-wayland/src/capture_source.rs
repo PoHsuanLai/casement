@@ -200,8 +200,10 @@ pub fn apply_window_gone(
 mod tests {
     use super::*;
 
-    /// (case, logical, scale in 120ths, physical)
-    const SIZES: &[(&str, (u32, u32), u32, (u32, u32))] = &[
+    /// One row: case, logical size, scale in 120ths, physical size.
+    type SizeRow = (&'static str, (u32, u32), u32, (u32, u32));
+
+    const SIZES: &[SizeRow] = &[
         ("1x", (800, 600), 120, (800, 600)),
         ("1.25x rounds each side", (801, 601), 150, (1_001, 751)),
         ("1.5x", (801, 601), 180, (1_202, 902)),
