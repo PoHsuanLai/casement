@@ -24,6 +24,7 @@ use casement_wayland::foreign_toplevel_list::window_of_identifier;
 use casement_wayland::image_capture::CaptureFailure;
 use ds_core::geometry::scale::Scale;
 use render::draw_window;
+#[cfg(feature = "debug-inject")]
 pub(crate) use render::window_rgba;
 use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_shm::Format;
