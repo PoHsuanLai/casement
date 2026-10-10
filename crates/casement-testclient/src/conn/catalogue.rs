@@ -98,6 +98,7 @@ fn roots() -> Vec<&'static Interface> {
         misc::zwp_virtual_keyboard_v1::client::zwp_virtual_keyboard_manager_v1::ZwpVirtualKeyboardManagerV1,
         quire::quire_window_v1::quire_window_v1::QuireWindowV1,
         quire::quire_window_v1::quire_window_manager_v1::QuireWindowManagerV1,
+        quire::quire_desktop_v1::quire_desktop_manager_v1::QuireDesktopManagerV1,
     ]
 }
 

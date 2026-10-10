@@ -1,6 +1,6 @@
-//! The P2-Z surface of the model: which connection sees the `quire` globals (I7) and what the
-//! desktop manager's requests reach. The rows for `ToSpace`, `Assign`, `MoveTo` and the published
-//! notes wait for P2-Q1. The shell's requests are in `model_shell.rs`.
+//! The P2 surface of the model: which connection sees the `quire` globals (I7), what the desktop
+//! manager's requests reach (`ToSpace`, `Assign`, `MoveTo` included) and the notes the model
+//! publishes for `quire_desktop_v1`. The shell's requests are in `model_shell.rs`.
 
 use crate::support::driver::{Op, last, map, plug, run, run_from};
 use crate::support::{headless, proven};
@@ -135,7 +135,6 @@ fn a_new_space_is_made_on_the_named_output() {
 }
 
 #[test]
-#[ignore = "P2-Q1: ToSpace moves a window to the named Space"]
 fn a_window_moves_to_the_space_named() {
     let mail = proven("org.quire.Mail");
     let key = headless("HEADLESS-1").key;
@@ -165,7 +164,6 @@ fn a_window_moves_to_the_space_named() {
 }
 
 #[test]
-#[ignore = "P2-Q1: Assign puts a window on every Space or pins it to this one"]
 fn a_window_is_assigned_to_every_space_or_this_one() {
     let mail = proven("org.quire.Mail");
     let all = run(vec![
@@ -188,7 +186,6 @@ fn a_window_is_assigned_to_every_space_or_this_one() {
 }
 
 #[test]
-#[ignore = "P2-Q1: MoveTo reorders a Space within its output's row"]
 fn a_space_moves_within_its_row() {
     let key = headless("HEADLESS-1").key;
     let made = run(vec![
@@ -209,7 +206,6 @@ fn a_space_moves_within_its_row() {
 }
 
 #[test]
-#[ignore = "P2-Q1: the model publishes desktop changes as Effect::Desktop"]
 fn a_mapped_window_and_its_app_are_published() {
     let mail = proven("org.quire.Mail");
     let mapped = run(vec![plug("HEADLESS-1"), map(1, &mail, TokenCheck::Missing)]);
@@ -227,5 +223,27 @@ fn a_mapped_window_and_its_app_are_published() {
         last(&unmapped).contains(&Effect::Desktop(DesktopNote::Removed(
             casement_core::desktop::DesktopRef::Window(WindowId(1))
         )))
+    );
+}
+
+#[test]
+fn a_step_publishes_exactly_what_changed() {
+    let mail = proven("org.quire.Mail");
+    let mapped = run(vec![plug("HEADLESS-1"), map(1, &mail, TokenCheck::Missing)]);
+    let notes: Vec<DesktopNote> = last(&mapped)
+        .iter()
+        .filter_map(|effect| match effect {
+            Effect::Desktop(note) => Some(note.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        notes,
+        vec![
+            DesktopNote::App(mail),
+            DesktopNote::Window(WindowId(1)),
+            DesktopNote::Active
+        ],
+        "a Space is not named when it did not change, and the notes come in the order a client needs"
     );
 }

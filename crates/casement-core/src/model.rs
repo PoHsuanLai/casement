@@ -11,6 +11,8 @@
 mod apps;
 mod clients;
 mod commands;
+mod desktop_notes;
+mod desktop_places;
 mod desktop_requests;
 mod focus_feed;
 mod keyboard;

@@ -35,7 +35,7 @@ impl Model {
     }
 
     /// The output a window is on: its Space's, or its home for a window on every Space.
-    pub(super) fn output_of(&self, window: &Window) -> Option<OutputKey> {
+    pub fn output_of(&self, window: &Window) -> Option<OutputKey> {
         match &window.place {
             SpacePlace::On(id) => self.spaces.get(id).map(|space| space.output.clone()),
             SpacePlace::AllSpaces => window.home.clone(),

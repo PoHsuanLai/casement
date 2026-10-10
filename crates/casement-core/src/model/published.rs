@@ -4,9 +4,11 @@
 //! snapshot before a step and one comparison after it ask for the publishing effects, so no
 //! transition has to remember them: `PublishToplevel` for each window whose title, app id,
 //! state, key flag or output changed (or that appeared), `PublishWorkspaces` when the Spaces
-//! changed, and `PersistSpaces` when what the Spaces file stores changed.
+//! changed, `PersistSpaces` when what the Spaces file stores changed, and the desktop's notes
+//! (`desktop_notes`) for `quire_desktop_v1`.
 
 use super::Model;
+use super::desktop_notes::DeskSnapshot;
 use super::space_persist::stored_file;
 use crate::effect::Effect;
 use crate::ids::{OutputKey, WindowId};
@@ -32,6 +34,7 @@ pub(super) struct Published {
     remembered: SpaceFile,
     plugged: BTreeSet<OutputKey>,
     windows: BTreeMap<WindowId, Listing>,
+    desk: DeskSnapshot,
 }
 
 impl Published {
@@ -55,6 +58,7 @@ impl Published {
                     (window.id, listing)
                 })
                 .collect(),
+            desk: DeskSnapshot::of(model),
         }
     }
 
@@ -72,7 +76,11 @@ impl Published {
             .then(|| (self.stored(), now.stored()))
             .filter(|(was, is)| was != is)
             .map(|_| Effect::PersistSpaces);
-        toplevels.chain(workspaces).chain(persist).collect()
+        toplevels
+            .chain(workspaces)
+            .chain(persist)
+            .chain(self.desk.changes_to(after))
+            .collect()
     }
 
     /// The Spaces file this state stores.

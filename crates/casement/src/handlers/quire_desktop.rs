@@ -13,6 +13,13 @@ impl QuireDesktopHandler for State {
             view: DesktopView {
                 model: &self.core.model,
                 outputs: &self.wl.output.outputs,
+                rects: self
+                    .core
+                    .arrangement
+                    .windows
+                    .iter()
+                    .map(|target| (target.window, target.rect))
+                    .collect(),
             },
         }
     }

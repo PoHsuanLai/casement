@@ -2,7 +2,8 @@
 //! renderer or the clock that carries it out. A failure is logged and degrades; it never
 //! panics the loop (CONVENTIONS addendum 2).
 //!
-//! A batch's `Relayout`s collapse into one arrangement, made after the rest of the batch.
+//! A batch's `Relayout`s collapse into one arrangement, made after the rest of the batch; the
+//! desktop's notes (`quire_desktop_v1`) follow it, since they carry the arrangement's rectangles.
 //! Some effects have no wire function to call yet and are logged: `Route` (the press's
 //! delivery is the seat's and was decided before the effect), `Disconnect` (a client key names
 //! no connection until the client table exists), `Bell` and `Attention` (P3).
@@ -34,6 +35,9 @@ pub fn exec(state: &mut State, effects: Vec<Effect>) {
     let (relayouts, rest): (Vec<Effect>, Vec<Effect>) = effects
         .into_iter()
         .partition(|effect| matches!(effect, Effect::Relayout(_)));
+    let (desktop, rest): (Vec<Effect>, Vec<Effect>) = rest
+        .into_iter()
+        .partition(|effect| matches!(effect, Effect::Desktop(_)));
     for effect in rest {
         apply(state, effect);
     }
@@ -45,6 +49,10 @@ pub fn exec(state: &mut State, effects: Vec<Effect>) {
         });
     if let Some(cause) = cause {
         core_loop::relayout(state, &cause);
+    }
+    // The desktop's notes carry window geometry, which is the arrangement just made.
+    for effect in desktop {
+        apply(state, effect);
     }
 }
 

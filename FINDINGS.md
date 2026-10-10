@@ -127,7 +127,6 @@ P2-Q1 9 (5 in the test kit, 4 in casement-core), P2-Q2 7 (3 in casement-agent, 4
 
 | File | Items | Lane | Proven by |
 | --- | --- | --- | --- |
-| `crates/casement-wayland/src/quire/desktop.rs` | on_bind, on_get_window_for, on_create_space, on_stop, on_app, on_window, on_space, apply_note (8) | P2-Q1 | `crates/casement-testkit/tests/it/protocol/quire_desktop.rs` (5 ignored) |
 | `crates/casement-wayland/src/quire/shell.rs` | on_set_role, on_set_minimise_target, on_clear_minimise_target, apply_note (4) | P2-Q2 | `crates/casement-testkit/tests/it/protocol/quire_shell.rs` (4 ignored) |
 | `crates/casement-agent/src/socket.rs` | (3, in the table above) | P2-Q2 | the agent crate's three ignored tests |
 | `crates/casement-ipc/src/dbus/compositor1.rs` | ProcCgroups::cgroup_of, Compositor1::connect (2) | P2-Q2 | the `Connect` row in `quire_shell.rs`; a private-bus test the lane writes beside `serve_compositor_at` |
@@ -135,7 +134,6 @@ P2-Q1 9 (5 in the test kit, 4 in casement-core), P2-Q2 7 (3 in casement-agent, 4
 | `crates/casement-wayland/src/capture_source.rs` | on_toplevel_source, on_source_destroyed, on_session, on_frame_request, apply_content, apply_ready, apply_failed, apply_window_gone (8) | P2-Q3 | `crates/casement-testkit/tests/it/protocol/capture_source.rs` (4 ignored) |
 | `crates/casement/src/handlers/capture_source.rs` | constraints, new_session, serve, release (4) | P2-Q3 | the same |
 | `crates/casement-testkit/tests/it/protocol/quire_window.rs` | (no stub: `request_placement_places_the_window_and_reports_the_mark` is ignored, and `request_placement_is_stored` is replaced by it) | P2-Q3 | itself |
-| `crates/casement-core/src/model/desktop_requests.rs` | ToSpace, Assign, Space MoveTo (3; the shell's model tests are in `model_shell.rs`, P2-Q2's) | P2-Q1 | `crates/casement-core/tests/it/quire.rs` (4 ignored, including the model's `Effect::Desktop` emission, which has no stub: nothing emits it yet) |
 
 ## Open items
 
@@ -1485,3 +1483,56 @@ Nothing here compiled or run (the lane does not build). Plan: 20 §4.15 and §4.
   `session` after `session.source()`), `casement/src/exec.rs` (the new `ShellNote` import beside `mod shell`),
   `casement-wayland/src/capture_source.rs` (`ImageCaptureSourceHandler` as the bound of `new`), and
   `casement/src/state.rs` (the three `::<State>` constructor bounds through the blanket `delegate_dispatch2!`).
+
+## p2-q1: the desktop manager (2026-10-11)
+
+Nothing here compiled or run (the lane does not build). Plan: 23 §1. The eleven `todo!()` of the lane and the nine
+ignored tests are gone; their rows left the P2-Z table.
+
+- **Built.** `casement-wayland::quire::desktop`: `on_bind`, `on_get_window_for`, `on_create_space`, `on_stop`, `on_app`,
+  `on_window`, `on_space`, `apply_note`, and two child files (`desktop/facts.rs`, `desktop/bound.rs`). An object's
+  state is a value (`AppFacts`, `WindowFacts`, `SpaceFacts`, `ActiveFacts`); each bound manager keeps what each of its
+  objects was last told (`Told`) and sends only the events whose value differs, so the same note twice sends nothing
+  the second time and a new object gets every event. `casement-core`: `WindowAsk::ToSpace`, `WindowAsk::Assign`,
+  `SpaceAsk::MoveTo` (`model/desktop_places.rs`) and the emission of `Effect::Desktop` (`model/desktop_notes.rs`, a
+  snapshot before and after each step beside `Published`), in the order Spaces, apps, windows, active, then what went.
+  The test client: `quire::desktop::DesktopWatch` (a side queue, like `WorkspaceWatch`; it also binds the window list so
+  `get_window_for` can name a window). `GLOBAL` is `Advertised::Yes`; the catalogue has `quire_desktop_manager_v1`.
+- **Decision (orchestrator, from p2-z-dc): an activation with serial 0 is accepted from the Shell role only.**
+  `desktop-client` sends serial 0 on `quire_desktop_app_v1.activate` and `quire_desktop_window_v1.activate` because its
+  `DesktopCommand::Activate` has none. The dispatch never read the serial, and refuses every management request on a
+  `ReadOnly` (Agent) connection before an event is made, so the rule is: the shell's activation is the person's hand (a
+  dock or switcher click, as P1-M2 departure 5 did for wlr activate); an agent's stays refused. Both `activate` arms say
+  so in a comment, and the tests send serial 0 from a shell and from an agent.
+- **Departure: `DesktopView` owns `rects`.** The geometry of a window is the arrangement's rectangle, which the model
+  does not hold (it lives in `State`). `DesktopView` gained `rects: BTreeMap<WindowId, LogicalRect>`, built in both places
+  that make a view (`handlers/quire_desktop.rs`, `exec/desktop.rs`) from `state.core.arrangement`; it lost `Copy`.
+- **Departure: `exec()` runs `Effect::Desktop` after the batch's relayout** (`exec.rs`, a shared file, one hunk): the
+  notes carry the rectangles the relayout just made. A window whose rectangle changes with no change in its model state
+  (a tiled window when a layer's exclusive zone moves) is not re-sent; a `geometry` event for it waits for the next note
+  of that window. Open item for P2-SQ.
+- **Departure: `Bound` has two more fields** (`asked`, `told`); `Model::output_of` is `pub` (the wire layer needs a
+  window's output).
+- **Departure: `state` events carry `actor_kind` unknown.** The model keeps no provenance for state changes yet; the
+  actor is the provenance lane's.
+- **Departure: bind order.** Spaces, apps, then a `window` event for every window, then each window's burst, `active`,
+  `done`. The XML says "an app, window and space event for each"; a window's burst names its app, Space and parent, so
+  those objects exist first. The golden `quire_desktop-bind.txt` was written by hand from the code and may need one
+  `CASEMENT_BLESS=1` run; check the diff by eye (the masked events are the ones that depend on the run).
+- **Departure: the refusal is raised on the object the request was made on** (the frozen glue's `refused`), with the
+  manager's `not_permitted` code (0). The XML says the manager's; a client reads an error code in the object's own
+  interface. Fixing it means finding the manager from an app, window or Space object (a lookup in `part.bound`); the tests
+  check the code only.
+- **Known gaps.** A client that destroys an app, window or Space object it was sent gets it created again at the next note
+  for it (the object is forgotten when found dead). `attention` and `activity` are constants until a lane carries them.
+  `menu_source` is `none` (the menu lane's). The window `lease` is `free`/`off` until the agent lease lane publishes it.
+- **Fuzz seeds.** The catalogue line shifts the typed fuzz box's object ids (as P1-C1's globals did), and the fuzz box now
+  binds the desktop manager on `Shell` and `Agent` connections and sends it requests: re-run every seed that failed
+  before, and the role fuzz (`PrivilegedOffered`, `GlobalNotForRole`).
+- **Spots most likely not to compile.** `quire/desktop/facts.rs` (`wire::<W: TryFrom<u32>>` over the generated enums; the
+  cross-protocol enum paths `quire_window_v1::quire_window_v1::{Emphasis, PlacementMark, WindowRole}`,
+  `quire_sensitive_v1::quire_sensitive_surface_v1::SensitivityLevel`, `quire_agent_v1::quire_agent_lease_v1::GlowState`;
+  `Output::client_outputs(..).next()`), `quire/desktop/bound.rs` (the field-by-field borrows in `window()`; `Told` and
+  `Asked` public in a private module), `casement-core/src/model/desktop_places.rs` (`window_to_space`'s borrows),
+  `casement-testclient/src/quire/desktop/roster.rs` (client event field names and `event_created_child!`), and the
+  `[(&str, fn); 19]` table in the agent test.

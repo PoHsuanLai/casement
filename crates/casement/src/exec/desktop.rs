@@ -1,4 +1,4 @@
-//! `Effect::Desktop` (P2-Z; filled by P2-Q1): tells `quire_desktop_v1` clients what changed.
+//! `Effect::Desktop` (P2-Q1): tells `quire_desktop_v1` clients what changed.
 
 use super::log;
 use crate::state::State;
@@ -10,6 +10,13 @@ pub(super) fn publish(state: &mut State, note: DesktopNote) {
     let view = DesktopView {
         model: &state.core.model,
         outputs: &state.wl.output.outputs,
+        rects: state
+            .core
+            .arrangement
+            .windows
+            .iter()
+            .map(|target| (target.window, target.rect))
+            .collect(),
     };
     log(desktop::apply_note(
         &mut state.wl.quire_desktop,

@@ -72,14 +72,8 @@ impl Model {
                 },
             ),
             WindowAsk::Place(target) => self.place(&held, target),
-            WindowAsk::ToSpace(space) => {
-                let _ = space;
-                todo!("P2-Q1: move a window to a Space (SpacePlace::On, relayout)")
-            }
-            WindowAsk::Assign(assign) => {
-                let _ = assign;
-                todo!("P2-Q1: assign a window to every Space, this one, or none")
-            }
+            WindowAsk::ToSpace(space) => self.window_to_space(window, &space),
+            WindowAsk::Assign(assign) => self.window_assigned(window, assign),
         }
     }
 
@@ -88,10 +82,7 @@ impl Model {
         match ask {
             SpaceAsk::Activate => self.workspace_request(WorkspaceRequest::Activate(space)),
             SpaceAsk::Remove => self.workspace_request(WorkspaceRequest::Remove(space)),
-            SpaceAsk::MoveTo(index) => {
-                let _ = (space, index);
-                todo!("P2-Q1: move a Space within its output's row")
-            }
+            SpaceAsk::MoveTo(index) => self.space_moved(&space, index),
         }
     }
 }

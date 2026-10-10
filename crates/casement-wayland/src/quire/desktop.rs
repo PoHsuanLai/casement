@@ -3,17 +3,24 @@
 //! windows and Spaces, published to the shell (which also manages through it) and to the
 //! agent tier (which only reads it). Frozen at P2-Z; filled by P2-Q1.
 //!
-//! The wire glue is written: the part, the handler trait, the global's and the four
-//! objects' dispatch, the refusal of management on an agent connection, and the makers that
-//! create the objects an event announces. What each request means (`on_*`) and the
-//! publishing of the model's changes (`apply_note`, the bind burst) are the lane's.
+//! The wire glue (the part, the handler trait, the global's and the four objects' dispatch,
+//! the refusal of management on an agent connection, the makers that create the objects an
+//! event announces) was frozen at P2-Z. What each request means (`on_*`) and the publishing of
+//! the model's changes (`apply_note`, the bind burst) are P2-Q1's: `facts` is what an object
+//! tells a manager, as values that compare, and `bound` is one manager's objects and what each
+//! was last told.
 
+mod bound;
+mod facts;
+
+use self::bound::{Asked, Outcome, Told};
 use super::{Advertised, code_of};
 use crate::client::ClientState;
 use crate::foreign_toplevel_list::window_of_identifier;
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::app::AppKey;
-use casement_core::desktop::{AppAsk, DesktopNote, SpaceAsk, WindowAsk};
+use casement_core::desktop::{AppAsk, DesktopNote, DesktopRequest, SpaceAsk, WindowAsk};
+use casement_core::geometry::LogicalRect;
 use casement_core::policy::{ConnectionRole, GlobalKind};
 use casement_core::space::SpaceIndex;
 use casement_core::{Event, Model, OutputKey, WindowId};
@@ -37,8 +44,8 @@ use std::collections::BTreeMap;
 /// The version casement serves.
 pub const VERSION: u32 = 1;
 
-/// Whether the global is created yet (the freeze: no; P2-Q1 flips it).
-pub const GLOBAL: Advertised = Advertised::Not;
+/// Whether the global is created: yes, behind the I7 filter (shell and agent tier only).
+pub const GLOBAL: Advertised = Advertised::Yes;
 
 /// What a connection may do through the desktop manager.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -74,6 +81,10 @@ pub struct Bound {
     pub spaces: BTreeMap<SpaceId, QuireDesktopSpaceV1>,
     /// Whether the client sent `stop` (no more `app`, `window` or `space` events).
     pub stopped: Stopped,
+    /// The window objects the client made with `get_window_for`, beside the one the bind gave.
+    pub asked: Vec<Asked>,
+    /// What each object was last told.
+    pub told: Told,
 }
 
 /// Whether a manager was stopped.
@@ -212,13 +223,17 @@ impl Makers {
     }
 }
 
-/// What the publishing functions read of the compositor: the model and the `wl_output`s.
-#[derive(Debug, Clone, Copy)]
+/// What the publishing functions read of the compositor: the model, the `wl_output`s and
+/// where the last arrangement put each window.
+#[derive(Debug, Clone)]
 pub struct DesktopView<'a> {
     /// The model.
     pub model: &'a Model,
     /// The `wl_output` globals of the plugged displays, by key.
     pub outputs: &'a BTreeMap<OutputKey, Output>,
+    /// Each arranged window's rectangle in global logical pixels (a minimised window has
+    /// none); `geometry` events come from here.
+    pub rects: BTreeMap<WindowId, LogicalRect>,
 }
 
 /// The part and what it reads, borrowed together (they sit in different fields of the state).
@@ -399,6 +414,7 @@ where
         _data_init: &mut DataInit<'_, D>,
     ) {
         let ask = match request {
+            // As for a window: the shell's serial (0 from `desktop-client`) is accepted unread.
             quire_desktop_app_v1::Request::Activate { .. } => AppAsk::Activate,
             quire_desktop_app_v1::Request::Hide => AppAsk::Hide,
             quire_desktop_app_v1::Request::Unhide => AppAsk::Unhide,
@@ -430,6 +446,9 @@ where
         _data_init: &mut DataInit<'_, D>,
     ) {
         let ask = match request {
+            // The input serial is not checked: the connection that may manage is the shell's,
+            // and the shell's activation is the person's hand (a dock or switcher click), so a
+            // serial of 0 from it is accepted; an agent connection is refused below.
             quire_desktop_window_v1::Request::Activate { .. } => Some(WindowAsk::Activate),
             quire_desktop_window_v1::Request::Close => Some(WindowAsk::Close),
             quire_desktop_window_v1::Request::Minimise => Some(WindowAsk::Minimise),
@@ -488,21 +507,39 @@ where
     }
 }
 
-/// A manager was bound: record it and send it the whole desktop (an `app`, `window` and
-/// `space` event for each existing object, each followed by its state burst, then `active`
-/// and `done`).
+/// A manager was bound: record it and send it the whole desktop. The order is the Spaces and
+/// the apps (each `space` or `app` event with its state burst), then a `window` event for
+/// every window, so a window's burst can name any app, Space or parent, then each window's
+/// burst, `active` and `done`.
 pub fn on_bind(
     part: &mut QuireDesktopPart,
     view: &DesktopView<'_>,
     manager: QuireDesktopManagerV1,
     standing: Standing,
 ) -> Result<(), WaylandFault> {
-    let _ = (part, view, manager, standing);
-    todo!("P2-Q1: on_bind")
+    let QuireDesktopPart { bound, makers, .. } = part;
+    let mut fresh = Bound::new(manager, standing);
+    for space in view.model.spaces().iter() {
+        fresh.space(makers, view, &space.id);
+    }
+    for key in view.model.apps().keys() {
+        fresh.app(makers, view, key);
+    }
+    let windows: Vec<WindowId> = view.model.windows().keys().copied().collect();
+    for id in &windows {
+        fresh.announce_window(makers, *id);
+    }
+    for id in windows {
+        fresh.window(makers, view, id);
+    }
+    fresh.active(view);
+    fresh.manager.done();
+    bound.push(fresh);
+    Ok(())
 }
 
 /// `get_window_for`: `object` is the desktop window of `window`; record it and send its
-/// state burst.
+/// state burst (it is closed at once when the model has no such window).
 pub fn on_get_window_for(
     part: &mut QuireDesktopPart,
     view: &DesktopView<'_>,
@@ -510,38 +547,55 @@ pub fn on_get_window_for(
     window: WindowId,
     object: QuireDesktopWindowV1,
 ) -> Result<(), WaylandFault> {
-    let _ = (part, view, manager, window, object);
-    todo!("P2-Q1: on_get_window_for")
+    let QuireDesktopPart { bound, makers, .. } = part;
+    let Some(held) = bound.iter_mut().find(|held| held.manager == *manager) else {
+        return Ok(());
+    };
+    held.prune();
+    if held
+        .ask_window(makers, view, window, object)
+        .closes_a_burst()
+    {
+        held.manager.done();
+    }
+    Ok(())
 }
 
 /// `create_space` on `output` (already checked live): the request the model takes.
-pub fn on_create_space(part: &mut QuireDesktopPart, output: OutputKey) -> Vec<Event> {
-    let _ = (part, output);
-    todo!("P2-Q1: on_create_space")
+pub fn on_create_space(_part: &mut QuireDesktopPart, output: OutputKey) -> Vec<Event> {
+    vec![Event::Desktop(DesktopRequest::CreateSpace { output })]
 }
 
-/// `stop`: send `manager` nothing new and answer `finished`.
+/// `stop`: send `manager` nothing new and answer `finished` (once).
 pub fn on_stop(part: &mut QuireDesktopPart, manager: &QuireDesktopManagerV1) {
-    let _ = (part, manager);
-    todo!("P2-Q1: on_stop")
+    let Some(held) = part.bound.iter_mut().find(|held| held.manager == *manager) else {
+        return;
+    };
+    if held.stopped == Stopped::No {
+        held.stopped = Stopped::Yes;
+        manager.finished();
+    }
 }
 
 /// A request on an app (`Event::Desktop(DesktopRequest::App { .. })`).
-pub fn on_app(part: &mut QuireDesktopPart, app: &AppKey, ask: AppAsk) -> Vec<Event> {
-    let _ = (part, app, ask);
-    todo!("P2-Q1: on_app")
+pub fn on_app(_part: &mut QuireDesktopPart, app: &AppKey, ask: AppAsk) -> Vec<Event> {
+    vec![Event::Desktop(DesktopRequest::App {
+        app: app.clone(),
+        ask,
+    })]
 }
 
 /// A request on a window (`Event::Desktop(DesktopRequest::Window { .. })`).
-pub fn on_window(part: &mut QuireDesktopPart, window: WindowId, ask: WindowAsk) -> Vec<Event> {
-    let _ = (part, window, ask);
-    todo!("P2-Q1: on_window")
+pub fn on_window(_part: &mut QuireDesktopPart, window: WindowId, ask: WindowAsk) -> Vec<Event> {
+    vec![Event::Desktop(DesktopRequest::Window { window, ask })]
 }
 
 /// A request on a Space (`Event::Desktop(DesktopRequest::Space { .. })`).
-pub fn on_space(part: &mut QuireDesktopPart, space: &SpaceId, ask: SpaceAsk) -> Vec<Event> {
-    let _ = (part, space, ask);
-    todo!("P2-Q1: on_space")
+pub fn on_space(_part: &mut QuireDesktopPart, space: &SpaceId, ask: SpaceAsk) -> Vec<Event> {
+    vec![Event::Desktop(DesktopRequest::Space {
+        space: space.clone(),
+        ask,
+    })]
 }
 
 /// A manager's object went away (the client destroyed it or disconnected).
@@ -551,12 +605,27 @@ pub fn on_manager_gone(part: &mut QuireDesktopPart, manager: &QuireDesktopManage
 
 /// The model said `note`: send every bound manager the object it names as it now is (a new
 /// object is created and announced first), or its `closed` and `removed` end, then `done`.
-/// A manager that was stopped gets no new object.
+/// A manager that was stopped gets no new object. Saying the same thing again sends nothing:
+/// each object remembers what it was told.
 pub fn apply_note(
     part: &mut QuireDesktopPart,
     view: &DesktopView<'_>,
     note: &DesktopNote,
 ) -> Result<(), WaylandFault> {
-    let _ = (part, view, note);
-    todo!("P2-Q1: apply_note")
+    let QuireDesktopPart { bound, makers, .. } = part;
+    for held in bound.iter_mut() {
+        held.prune();
+        let outcome = match note {
+            DesktopNote::App(key) => held.app(makers, view, key),
+            DesktopNote::Window(id) => held.window(makers, view, *id),
+            DesktopNote::Space(id) => held.space(makers, view, id),
+            DesktopNote::Active => held.active(view),
+            DesktopNote::Removed(gone) => held.removed(gone),
+            _ => Outcome::Same,
+        };
+        if outcome.closes_a_burst() {
+            held.manager.done();
+        }
+    }
+    Ok(())
 }
