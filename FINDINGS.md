@@ -105,8 +105,6 @@ P3-CSS, three in `src/` and its ignored parity test, never built at P0-Z2).
 | `crates/casement-ipc/src/wait.rs` | parse_wait (1) | P0-T-dev | `crates/casement-ipc/src/inject.rs`, `wait.rs` tests; `crates/casementctl/src/command.rs` test; `dev/accept.sh --jobs 8` |
 | `crates/casementctl/src/command.rs` | parse, run (2) | P0-T-dev | `crates/casement-ipc/src/inject.rs`, `wait.rs` tests; `crates/casementctl/src/command.rs` test; `dev/accept.sh --jobs 8` |
 | `crates/casement-testkit/src/fixture.rs` | Fixture::session (1) | P1-D1 | P1-Z's session suite |
-| `crates/casement-testkit/src/bin/fake_logind.rs` | main: no longer a `todo!()` (P0-accept): it prints "P1-F2: not built" and exits 0, so the headless session starts without it | P1-F2 | P1-Z's logind tests |
-| `crates/casement-testkit/src/fakes/logind/mod.rs` | FakeLogind::serve (1) | P1-F2 | `crates/casement-testkit/tests/it/logind.rs` |
 | `crates/casement-agent/src/socket.rs` | hand_out, role_for (2) | P2-Q2 | `crates/casement-agent/src/socket.rs` `only_the_shell_and_the_agent_tier_get_privileged_roles` |
 | `crates/casement-testkit/src/fixture.rs` | Fixture::palmrest (1) | P3-Z | P3-Z's palmrest tests |
 
@@ -817,3 +815,27 @@ the `--xwayland` flags, `VendorFact::from_pci_vendor`, `GammaTable::new`, `Outpu
   `casement/src/state.rs` and `exec.rs` (module and import names `gamma`, `workspace`, `spawn`), the doc tests (all
   `no_run`), `casement-testkit/src/fixture.rs`, `fakes/session.rs` (`TtySession` over smithay's `Session`), and
   `casement-render/src/pass/capture.rs` (the `ExportMem` bound with `R::Framebuffer<'_>`).
+
+
+## p1-f2: the fake logind (2026-10-11)
+
+- **Departures.** The frozen unit structs `Manager`, `Session`, `Seat` and `FakeLogind` became real: the three objects are
+  `#[zbus::interface]` types holding a shared `Recorder`, and the test-facing drivers (`lock`, `unlock`, `prepare_for_sleep`,
+  `pause_device`, `resume_device`, `calls`, `held_inhibitors`, `wait_released`) are on `FakeLogind`, which owns a one-worker
+  tokio runtime, so they block and must not be called from inside an async runtime. `LogindCall` is `#[non_exhaustive]` and
+  gained `TakeControl`, `ReleaseControl`, `Activate`, `ReleaseDevice`, `PauseDeviceComplete`; `IdleHint(String)` is
+  `IdleHint(IdleHint)`. `LogindError::Bus` carries a `zbus::Error`; new variants `Runtime`, `Emit`, `Pipe`, `StillHeld`.
+- **Inhibit.** The client gets the write end of a pipe, the fake watches the read end (tokio `AsyncFd`); end of file on it is
+  the release (`InhibitReleased`). Every mode counts as held; `wait_released` is how a test sees the sleep may go on.
+- **`PauseDevice` and `ResumeDevice` are signals** in real logind (the brief calls them recorders): the fake sends them
+  (`pause_device`, `resume_device`) and records the session's answer, `PauseDeviceComplete`.
+- **Control interface** `org.quire.Casement.FakeLogind1` at `/org/quire/Casement/FakeLogind1` (Lock, Unlock,
+  PrepareForSleep(b), Calls, HeldInhibitors) lets a jailed scenario drive the `fake-logind` binary with `busctl`; the binary
+  takes the address from argv[1] or `DBUS_SYSTEM_BUS_ADDRESS` and refuses to start without one.
+- **`PrivateBus`** (testkit, `fakes::PrivateBus`) is the casement-ipc test helper made public: dbus-daemon on
+  `dev/private-bus.conf`, cleared environment, killed on drop. D1's session tests use it with `FakeLogind::serve`.
+- **Tests** use `zbus::export::futures_core::Stream` (doc-hidden re-export) to poll signal streams, to avoid a new dependency.
+- **Unverified (no builds this lane).** `fakes/logind/signals.rs` (`SignalEmitter::emit` bounds, `Fd::from(&OwnedFd)`),
+  `manager.rs`/`session.rs` (interface-macro signatures: sync methods returning `()` and tuples with `bool`, properties
+  with `name = "VTNr"`), `inhibit.rs` (`Errno::AGAIN` comparison, `AsyncFd::new` on an `OwnedFd`), the test helper
+  `next_signal` (`Pin<Box<MessageStream>>` as a `Stream`). Real hardware: nothing; no real logind is touched.

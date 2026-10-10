@@ -15,7 +15,10 @@ mod udev;
 
 pub use input_devices::FakeInputDevices;
 pub use kms::{FakeKms, FakeKmsOpener, KmsWorld, SyntheticTopology};
-pub use logind::{FakeLogind, LogindCall, LogindError};
+pub use logind::{
+    FakeLogind, IdleHint, LogindCall, LogindError, PauseKind, PrivateBus, PrivateBusError,
+    SleepPhase,
+};
 pub use palmrest::FakePalmrest;
 pub use scanout::FakeScanout;
 pub use session::{FakeSession, SessionFixture};
