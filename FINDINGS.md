@@ -1703,3 +1703,37 @@ casement as a systemd service, and its Spaces registered with accountd. Nothing 
   (`SocketAddrExt::from_abstract_name`, `UnixDatagram::{bind_addr, send_to_addr}`, the `wrap` closure used three times,
   `Option::is_none_or`); `run.rs` (`ran` result after the borrow by the loop closure, `Ok(ran?)`); the doctests in
   `notify.rs`; `casement-core/src/space/space.rs` test imports (`crate::ids::OutputName`).
+
+
+## debug-role
+
+Test unit overrides for jailed desktop scenarios (no systemd, so no unit in `/proc/<pid>/cgroup`). Not compiled or run.
+
+- **Contract.** Environment variable `CASEMENT_DEBUG_PEER_UNITS="<program-or-pid>=<unit>[,<program-or-pid>=<unit>...]"`.
+  Left side all digits: a process id; anything else: a program name compared with `/proc/<pid>/comm` (the kernel keeps
+  15 bytes, so a longer name is cut to 15 before comparing; sill and cuad fit). Right side: a service unit name
+  (`name.service`, no slash). Entries are comma-separated, spaces around them are trimmed, the first matching entry
+  wins. Example for "sill is sill.service": `CASEMENT_DEBUG_PEER_UNITS="sill=sill.service"`; with the agent tier too:
+  `"sill=sill.service,cuad=cuad.service"`. A malformed value makes casement exit 64 with the reason on stderr.
+- **Only with `debug-inject`.** `crates/casement/src/debug_peer_units.rs` (the only place the variable is named) is a
+  module of the binary compiled under `cfg(feature = "debug-inject")`; `main.rs` reads it there and passes the typed
+  `PeerUnitTable` through `RunConfig::with_debug_peer_units` (the field exists only under the feature). A build without the
+  feature does not contain the name, so the variable has no effect; `main.rs` has a test that the module is gated and that
+  the name appears nowhere else in `main.rs`.
+- **Mechanism.** `casement-ipc/src/dbus/debug_units.rs` (same feature): `PeerUnitTable::parse` (pure), `PeerNames` seam
+  with `ProcComm` (`/proc/<pid>/comm`), and `DebugPeerUnits`, a `PeerCgroups` that answers a matching peer with a
+  synthesised cgroup text ending in the unit, else asks the real `ProcCgroups`. `run.rs::with_debug_units` wraps it
+  around `ProcCgroups` for Compositor1 and logs once at warn level "TEST ONLY: test unit overrides are active" (only when
+  the table is non-empty). `role_for` and `CallerUnit::of_cgroup` are untouched, so a peer still needs a unit the plan names.
+- **Pid namespace.** `GetConnectionUnixProcessID` returns the pid in casement's namespace; the jail runs casement and
+  sill in one, so `comm` is readable. The wrapper never trusts a peer's own claim, only the table the compositor's own
+  environment gave it.
+- **Desktop-facing.** `dev/lib/compositor.sh` header documents how a scenario sets it (the variable is inherited by the
+  casement child).
+- **Tests.** Table parsing, precedence over a fake inner seam, pid rules, first match and the comm cut
+  (`debug_units.rs`); env wrapper (`debug_peer_units.rs`); the gate test in `main.rs`. Nothing proves a real Connect from a
+  bubblewrapped sill: that needs the scenario run.
+- **Spots most likely not to compile.** `run.rs` (`#[cfg]` on a function parameter and on a call argument; the `dyn
+  PeerCgroups` coercions in `attach_compositor`); `main.rs` (the `return` inside the cfg'd `let ... = match` and the shadowed
+  `config`; the `include_str!("main.rs")` gate string with escapes); `debug_units.rs` (`PeerMatch` closure borrow in
+  `unit_of`, `assert_eq!(ok.rules(), [..])` comparing a slice with an array).

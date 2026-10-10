@@ -6,6 +6,13 @@
 #   DBUS_SESSION_BUS_ADDRESS, DBUS_SYSTEM_BUS_ADDRESS, XDG_RUNTIME_DIR, CASEMENT_PID,
 #   CASEMENT_LOGIND_PID, CASEMENT_BUS_PID, CASEMENT_STATE. Defaults: one 1920x1080 output at
 #   scale 1, the stepped clock (virtual time: `casementctl debug clock`), no dma-buf.
+#   Test unit overrides: casement is started with this shell's environment, so a scenario with no
+#   systemd sets CASEMENT_DEBUG_PEER_UNITS="<program-or-pid>=<unit>[,...]" before start_compositor,
+#   e.g. CASEMENT_DEBUG_PEER_UNITS="sill=sill.service" start_compositor. Then a bus peer whose
+#   program name (/proc/<pid>/comm, 15 bytes) is `sill` is taken to run in sill.service, and
+#   org.quire.Compositor1.Connect("shell") hands it the shell connection. An all-digit left side is
+#   a pid. Only the jail's debug-inject build reads it; any other build ignores it. A bad value
+#   makes casement exit 64 (start_compositor then prints the log). See FINDINGS "## debug-role".
 # stop_compositor: stops what start_compositor started, each by the pid in the env file (never by
 #   name), the bus last.
 #

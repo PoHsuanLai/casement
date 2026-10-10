@@ -15,6 +15,14 @@ pub use compositor1::{
 mod debug1;
 
 #[cfg(feature = "debug-inject")]
+mod debug_units;
+
+#[cfg(feature = "debug-inject")]
+pub use debug_units::{
+    DebugPeerUnits, PeerMatch, PeerNames, PeerUnitRule, PeerUnitTable, PeerUnitsError, ProcComm,
+};
+
+#[cfg(feature = "debug-inject")]
 mod serve;
 
 #[cfg(feature = "debug-inject")]

@@ -60,6 +60,9 @@ pub struct RunConfig {
     pub notify: NotifySocket,
     /// How often the service manager wants a ping.
     pub watchdog: Watchdog,
+    /// Test overrides of which unit a bus peer runs in (feature `debug-inject` only).
+    #[cfg(feature = "debug-inject")]
+    pub debug_peer_units: casement_ipc::dbus::PeerUnitTable,
 }
 
 impl RunConfig {
@@ -72,6 +75,22 @@ impl RunConfig {
             compositor_bus: CompositorBus::Unset,
             notify: NotifySocket::Unset,
             watchdog: Watchdog::Off,
+            #[cfg(feature = "debug-inject")]
+            debug_peer_units: casement_ipc::dbus::PeerUnitTable::default(),
+        }
+    }
+
+    /// The same run taking bus peers to run in the units `debug_peer_units` names (a build with
+    /// `debug-inject` only; the hand-out then trusts the table before `/proc`).
+    #[cfg(feature = "debug-inject")]
+    #[must_use]
+    pub fn with_debug_peer_units(
+        self,
+        debug_peer_units: casement_ipc::dbus::PeerUnitTable,
+    ) -> RunConfig {
+        RunConfig {
+            debug_peer_units,
+            ..self
         }
     }
 
@@ -175,6 +194,26 @@ fn attach_debug(
     Ok(debug::attach(handle, calls)?)
 }
 
+/// `cgroups` with the test unit overrides in front of it; an empty table changes nothing and
+/// logs nothing, a non-empty one is announced once, plainly.
+#[cfg(feature = "debug-inject")]
+fn with_debug_units(
+    cgroups: std::sync::Arc<dyn casement_ipc::dbus::PeerCgroups>,
+    table: casement_ipc::dbus::PeerUnitTable,
+) -> std::sync::Arc<dyn casement_ipc::dbus::PeerCgroups> {
+    if table.rules().is_empty() {
+        return cgroups;
+    }
+    tracing::warn!(
+        overrides = table.rules().len(),
+        "TEST ONLY: test unit overrides are active, so some programs are taken to run in units they do not"
+    );
+    let names = std::sync::Arc::new(casement_ipc::dbus::ProcComm);
+    std::sync::Arc::new(casement_ipc::dbus::DebugPeerUnits::new(
+        table, names, cgroups,
+    ))
+}
+
 /// Starts serving `org.quire.Compositor1` on the session bus. A bus that cannot be reached, or a
 /// name another casement holds, is logged and the compositor runs without a hand-out: the shell
 /// then has no way to get its connection, and nothing else is lost.
@@ -182,11 +221,15 @@ fn attach_compositor(
     state: &mut State,
     handle: &smithay::reexports::calloop::LoopHandle<'static, State>,
     bus: &CompositorBus,
+    #[cfg(feature = "debug-inject")] peer_units: casement_ipc::dbus::PeerUnitTable,
 ) -> Result<(), RunError> {
     let CompositorBus::At(address) = bus else {
         return Ok(());
     };
-    let cgroups = std::sync::Arc::new(casement_ipc::dbus::ProcCgroups);
+    let cgroups: std::sync::Arc<dyn casement_ipc::dbus::PeerCgroups> =
+        std::sync::Arc::new(casement_ipc::dbus::ProcCgroups);
+    #[cfg(feature = "debug-inject")]
+    let cgroups = with_debug_units(cgroups, peer_units);
     match casement_ipc::dbus::serve_compositor_at(address, cgroups) {
         Ok((calls, connection)) => {
             state.ipc.handles.compositor = Some(connection);
@@ -210,6 +253,8 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
         compositor_bus,
         notify,
         watchdog,
+        #[cfg(feature = "debug-inject")]
+        debug_peer_units,
     } = config;
     let mut event_loop: EventLoop<'static, State> = EventLoop::try_new()?;
     let handle = event_loop.handle();
@@ -244,7 +289,13 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
     let debug = attach_debug(&mut state, &handle, &debug_bus)?;
     #[cfg(not(feature = "debug-inject"))]
     let _ = debug_bus;
-    attach_compositor(&mut state, &handle, &compositor_bus)?;
+    attach_compositor(
+        &mut state,
+        &handle,
+        &compositor_bus,
+        #[cfg(feature = "debug-inject")]
+        debug_peer_units,
+    )?;
     let wayland = crate::xwayland::WaylandSocket(socket_name);
     crate::xwayland::attach(&mut state, &xwayland_config);
     // Held for the run: dropping it stops the thread that hears the machine go to sleep.

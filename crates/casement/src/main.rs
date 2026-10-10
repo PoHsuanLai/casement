@@ -1,5 +1,8 @@
 //! The `casement` binary: arguments, the environment and an exit code around [`casement::run`].
 
+#[cfg(feature = "debug-inject")]
+mod debug_peer_units;
+
 use casement::cli::{self, Command};
 use casement::notify::{NotifySocket, Watchdog};
 use casement::space_store::{StateDirs, StateHome};
@@ -78,6 +81,14 @@ fn main() -> ExitCode {
                 .with_watchdog(watchdog)
                 .with_debug_bus(debug_bus)
                 .with_compositor_bus(compositor_bus);
+            #[cfg(feature = "debug-inject")]
+            let config = match debug_peer_units::from_env() {
+                Ok(table) => config.with_debug_peer_units(table),
+                Err(error) => {
+                    eprintln!("casement: {error}");
+                    return ExitCode::from(64);
+                }
+            };
             match casement::run(config) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(error) => {
@@ -96,6 +107,18 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Without `debug-inject` the variable has no effect because nothing in this build names it:
+    /// the module that reads it is compiled only under that feature.
+    #[test]
+    fn the_peer_units_variable_is_read_only_by_a_debug_inject_module() {
+        let source = include_str!("main.rs");
+        let gate = "#[cfg(feature = \"debug-inject\")]\nmod debug_peer_units;";
+        assert!(source.contains(gate), "the module is gated");
+        let name = concat!("CASEMENT_DEBUG", "_PEER_UNITS");
+        let uses = source.matches(name).count();
+        assert_eq!(uses, 1, "main.rs names the variable only in this test");
+    }
 
     fn at(dir: &str) -> StateHome {
         StateHome::At(StateDirs::at(PathBuf::from(dir)))
