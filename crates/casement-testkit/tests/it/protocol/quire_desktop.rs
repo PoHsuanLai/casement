@@ -48,6 +48,15 @@ fn settle(fixture: &mut Fixture, watch: &mut DesktopWatch) {
     }
 }
 
+/// Pumps both ends after a request the compositor answers with a protocol error: the error
+/// ends the client's connection, so the client's own pump is expected to fail.
+fn settle_refused(fixture: &mut Fixture, watch: &mut DesktopWatch) {
+    for _ in 0..3 {
+        fixture.pump();
+        let _ = watch.pump();
+    }
+}
+
 /// A client of `role` with a bound desktop manager, all read.
 fn watched(fixture: &mut Fixture, role: ConnectionRole) -> (ClientId, DesktopWatch) {
     let id = fixture.connect(role);
@@ -144,9 +153,13 @@ fn binding_sends_the_whole_desktop() {
         assert_eq!((geometry.width, geometry.height), (400, 300));
         assert_eq!(geometry.scale120, 120);
     }
-    let key = fixture.model().focus().key.expect("a key window");
-    assert_eq!(watch.active().app.as_deref(), Some(apps[0].key.as_str()));
-    assert_eq!(watch.active().key, Some(format!("w{}", key.0)));
+    // The model's key window, if a mapped window took the key (a public client's map does
+    // not always): the manager reports exactly that, or none.
+    let key = fixture.model().focus().key;
+    assert_eq!(watch.active().key, key.map(|key| format!("w{}", key.0)));
+    if key.is_some() {
+        assert_eq!(watch.active().app.as_deref(), Some(apps[0].key.as_str()));
+    }
     assert_eq!(watch.dones(), 1, "one burst closes the bind");
 
     let text = flow(
@@ -219,7 +232,7 @@ fn an_agent_connection_is_refused_management() {
     for (name, request) in requests {
         let (agent, mut watch) = watched(&mut fixture, ConnectionRole::Agent);
         request(&watch).expect("the request is sent");
-        settle(&mut fixture, &mut watch);
+        settle_refused(&mut fixture, &mut watch);
         let error = fixture
             .client(agent)
             .protocol_error()

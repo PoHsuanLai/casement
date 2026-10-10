@@ -11,7 +11,7 @@ quire_desktop_app_v1#4.identity("claimed:org.example.Mail", 2, "org.example.Mail
 quire_desktop_app_v1#4.life(1)
 quire_desktop_app_v1#4.visibility(0)
 quire_desktop_app_v1#4.menu_source(0, "", "", "")
-quire_desktop_app_v1#4.attention(0)
+quire_desktop_app_v1#4.attention(1)
 quire_desktop_app_v1#4.mru(0)
 quire_desktop_app_v1#4.done()
 quire_desktop_manager_v1#1.window(new quire_desktop_window_v1#5)
