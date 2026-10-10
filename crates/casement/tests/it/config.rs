@@ -268,6 +268,7 @@ fn every_kind_of_binding_survives_the_document() {
         }),
         BindingAction::Desktop(DesktopCommand::CloseKey),
         BindingAction::Desktop(DesktopCommand::MinimiseKey),
+        BindingAction::Desktop(DesktopCommand::ToggleFullScreenKey),
         BindingAction::Desktop(DesktopCommand::HideActive),
         BindingAction::Desktop(DesktopCommand::HideOthers),
         BindingAction::Desktop(DesktopCommand::QuitActive),

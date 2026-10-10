@@ -129,7 +129,7 @@ module); `Rgba8`; `TextureBook`; `Transcript`, `Pattern`; `FixtureSpec`, `TestOr
 | ds-core's `Scale` has no serde, so stored types write it through `geometry::scale_serde` | ds-core derives `Serialize, Deserialize` (transparent) on `Scale` (interface ask to quire); the helper module is deleted |
 | ds-style without dioxus still pulls `image` (png, jpeg, moxcms) into casement-core's graph (A22, SP8) | quire makes `image` an optional ds-style feature |
 | ds-behaviour is a dependency of casement-core with no caller yet | the switcher, hot-corner and Space-swipe machines run in casement (C41, P3-Z), fed through `Mono::stamp`, with their `*Params` in `CasementSettings` |
-| `CasementSettings::defaults` carries no bindings (C30 says the settings document holds the defaults) | P1-I1 writes the default table (Space steps, placement chords, hide and quit) into `settings/bindings.rs` (A26) |
+| `CasementSettings::defaults` carries no bindings (C30 says the settings document holds the defaults) | the shell's chords are not defaults of the settings document: c17 reads them from the desktop keymap (`casement::keymap`, see the c17 rows below); `settings/bindings.rs` stays empty and a `[bindings]` entry is only an addition or a win over the keymap for one chord |
 | The smithay fork `PoHsuanLai/smithay` (branch `casement`, C2) exists (P0-fork) and the pin names its commit; it carries two patches, listed below | a further patch is one more commit on the fork and a new rev in the root Cargo.toml and `wlcs-casement/Cargo.toml` |
 | Workspace pins outside quire's pinned block: smithay, wayland-protocols-wlr, wayland-protocols-misc, xkbcommon 0.9 (quire's block says 0.8 through sctk 0.20, A14), libseat, tracing, tracing-subscriber | quire's `docs/workspace-deps.toml` carries them (with the xkbcommon note) and this workspace copies the block verbatim |
 | `reis` and `pipewire` are pinned (A14) and named by no crate | P2-Z (capture source) and P4-Z (EIS) name them |
@@ -666,3 +666,32 @@ W13 8 to 0.
   `tests/it/protocol/pointer_constraints.rs` (stops at the edge; released and held again with the
   keyboard), `tests/relax.rs` (remap), unit tests in `serial.rs`, `xdg_shell/requests.rs`,
   `seat/hold.rs`. Each failed with the fix disabled, except the remap test (casement needed no change).
+
+## c17: shell bindings from the keymap (2026-10-11)
+- **Bindings come from the keymap, not a file or a table** (AUDIT (e)3): before, `settings.bindings` was empty by default
+  and held only what a `[bindings]` entry in `settings.toml` said, so a fresh casement bound nothing.
+  `casement::keymap::attach` (called from `main.rs` after the outputs are announced) loads
+  `KeycapSource::load_reporting(Linux/Ours)` (chordkit conventions, the desktop's own bindings, the machine
+  keymap, the person's keymap), maps each standard action the compositor carries out (`keymap/shell.rs`
+  `ROWS`: close, minimise, full screen, hide, hide others, quit, force quit, Space left/right/1-9,
+  and sill's launcher, switcher, screenshots and power menu as `sill ...` spawns) to a `BindingAction`, converts
+  each chord (`keymap/chord.rs`: Super is Command, Alt is Option; chordkit's `+` and `?` become shifted `=` and
+  `/`) and appends the result after the document's own bindings. No `dist/casement/bindings.toml` ships:
+  the action vocabulary is chordkit's `StandardAction`, so the contract with keycap is action names already.
+- **Reload**: `KeycapSource::watch` (daemon message, or the keymap files polled) sends on a calloop channel; the
+  handler recomputes the bindings and feeds `Event::SettingsChanged` only when they differ. The watch lives in
+  the handler's closure. Under `ConfigHome::At(dir)` (tests, the jail) the source reads only inside `dir`
+  (`keycap/keymap` for the person, `keycap-machine/keymap` for the machine, a socket path that does not exist).
+- **New command** `DesktopCommand::ToggleFullScreenKey` (word `toggle_full_screen_key`): the key window enters or
+  leaves full screen through the model's own `ToplevelRequest::FullScreen`.
+- **Known gaps**: `Spawn` and `Call` bindings are still only logged by `carry_out` ("from P2"), so the launcher,
+  switcher, screenshot and power-menu chords resolve and are swallowed but do nothing yet. LockScreen,
+  MissionControl, AppWindows, NextWindow, NextInputSource and EmojiAndSymbols have no casement or sill command
+  and are not bound. `ScreenshotTools` runs `sill screenshot area` (dist/cosmic's Screenshot).
+- **Risk**: Close, Minimise, Hide, Quit and Full screen are app actions on a Mac; binding them in the compositor takes
+  Cmd+W, Cmd+M, Cmd+H, Cmd+Q and Ctrl+Cmd+F from apps that use them for something narrower (a tab). They are
+  one `ROWS` line each if the owner wants the apps to keep them.
+- **Dependencies**: `chordkit` (rev ba094c62) and `keycap-client` (rev 95f41dc4) are git dependencies of the
+  workspace and of `casement`; `Cargo.lock` must be regenerated (`cargo metadata`) with network access.
+- A Caps Lock that is on adds `CAPS_LOCK` to the chord `deliver_key` builds, so no binding matches while it is on
+  (not changed here).

@@ -19,6 +19,7 @@ pub mod exec;
 mod handlers;
 #[cfg(any(feature = "testing", feature = "debug-inject"))]
 pub mod jail_check;
+pub mod keymap;
 pub mod log;
 #[cfg(feature = "testing")]
 pub mod relax;

@@ -49,6 +49,11 @@ ds-core   = { path = "../quire/crates/ds-core", default-features = false }
 ds-style  = { path = "../quire/crates/ds-style", default-features = false }
 ds-motion = { path = "../quire/crates/ds-motion", default-features = false }
 ds-behaviour = { path = "../quire/crates/ds-behaviour" }
+# The desktop's keymap (chordkit's layers) and keycap's program end, `KeycapSource`: casement
+# reads its shell bindings from them (`casement::keymap`). The revs are the ones sill, quire and
+# cua pin.
+chordkit      = { git = "https://github.com/PoHsuanLai/chordkit.git", rev = "ba094c62006c280ac53c4c5df5c0e639c1226c07" }
+keycap-client = { git = "https://github.com/PoHsuanLai/keycap", rev = "95f41dc4b613e3557f3cabc1638e53da348a09ff" }
 # The stored settings document (C45, B13): casement and casement-ipc only.
 ds-settings = { path = "../quire/crates/ds-settings", default-features = false }
 

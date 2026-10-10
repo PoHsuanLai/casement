@@ -155,6 +155,26 @@ fn the_desktop_commands_that_close_minimise_and_place_the_key_window() {
 }
 
 #[test]
+fn the_full_screen_command_takes_the_key_window_in_and_out() {
+    let entered = run_from(
+        two_apps().model,
+        vec![Op::Command(DesktopCommand::ToggleFullScreenKey)],
+    );
+    assert!(matches!(
+        entered.model.windows()[&WindowId(3)].state,
+        WindowState::FullScreen { .. }
+    ));
+    let left = run_from(
+        entered.model,
+        vec![Op::Command(DesktopCommand::ToggleFullScreenKey)],
+    );
+    assert!(!matches!(
+        left.model.windows()[&WindowId(3)].state,
+        WindowState::FullScreen { .. }
+    ));
+}
+
+#[test]
 fn quitting_asks_every_window_of_the_active_app_to_close() {
     let run = run_from(
         two_apps().model,
@@ -176,6 +196,7 @@ fn commands_with_nothing_to_act_on_do_nothing() {
     for command in [
         DesktopCommand::CloseKey,
         DesktopCommand::MinimiseKey,
+        DesktopCommand::ToggleFullScreenKey,
         DesktopCommand::HideActive,
         DesktopCommand::HideOthers,
         DesktopCommand::QuitActive,

@@ -28,6 +28,8 @@ casement-protocols = { workspace = true, features = ["server"] }
 porter-core = { workspace = true }
 ds-core = { workspace = true }
 ds-settings = { workspace = true }
+chordkit = { workspace = true }
+keycap-client = { workspace = true }
 # A14's feature list, the union the binary links (xwayland off until the Q-C5 gate).
 smithay = { workspace = true, features = [
   "wayland_frontend",

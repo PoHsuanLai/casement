@@ -115,6 +115,7 @@ fn serve(config: cli::StartConfig) -> Result<(), RunError> {
         EventLoop::try_new().map_err(|error| loop_error(&error))?;
     let handle = event_loop.handle();
     let mut display: Display<State> = Display::new().map_err(|error| loop_error(&error))?;
+    let config_home = config.config_home.clone();
     let mut state = State::new(config, &mut display, &handle)?;
     let display = attach_display(display, &handle)?;
     let socket = ListeningSocketSource::new_auto().map_err(|error| loop_error(&error))?;
@@ -139,6 +140,7 @@ fn serve(config: cli::StartConfig) -> Result<(), RunError> {
     #[cfg(not(feature = "debug-inject"))]
     let _ = debug_calls(&mut state)?;
     core_loop::announce_outputs(&mut state);
+    casement::keymap::attach(&mut state, &config_home)?;
     let stop = event_loop.get_signal();
     #[cfg(feature = "debug-inject")]
     let wake = debug.as_ref().map(|_| debug::WAITING_TURN);

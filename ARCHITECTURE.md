@@ -74,7 +74,7 @@ A1: `Instant::now`, `SystemTime::now`, smithay's `Clock::now` and calloop's `Tim
 | the usable area after layer exclusive zones | `LayerBook::usable_area` |
 | focus, key and main windows, press routing | `casement-core::focus` (03 §1.2) |
 | where input came from, and what it may reach | `casement-core::input::{Origin, reach}` (C19, I3, I8) |
-| key bindings and their resolution | `casement-core::input::{Bindings, resolve}`; defaults in `settings` (C30) |
+| key bindings and their resolution | `casement-core::input::{Bindings, resolve}`; the shell's own chords come from the desktop keymap, `casement::keymap` (chordkit layers through keycap-client's `KeycapSource`), behind casement's `[bindings]` entries |
 | first-sight scale, mode choice, output placement | `casement-core::output` |
 | which connection sees which global (I7) | `casement-core::policy::advertised` |
 | typed settings | `casement-core::settings::CasementSettings` (the stored document: `casement::config`) |
