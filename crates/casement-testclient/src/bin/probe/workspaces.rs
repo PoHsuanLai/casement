@@ -15,9 +15,12 @@ const TURN: Duration = Duration::from_millis(20);
 
 /// Every workspace the compositor announces, one line each.
 pub(crate) fn run() -> Result<(), Failure> {
-    let client = TestClient::connect_env()?;
+    let mut client = TestClient::connect_env()?;
     let mut watch = WorkspaceWatch::start(client.globals())?;
     for _ in 0..TURNS {
+        // The client's tap relays bytes only when the client is pumped: without this the
+        // binds never reach the compositor and its answer never reaches the watch's queue.
+        client.pump();
         watch.pump()?;
         if watch.dones() > 0 {
             for workspace in watch.workspaces() {
