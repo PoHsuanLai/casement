@@ -8,6 +8,9 @@ use tokio::runtime::Handle;
 use zbus::fdo;
 use zbus::zvariant::{OwnedFd, OwnedObjectPath};
 
+/// One `ListSessions` row: `(id, uid, user, seat, path)`.
+type SessionRow = (String, u32, String, String, OwnedObjectPath);
+
 /// The manager object. Served as a `#[zbus::interface]` by [`FakeLogind`](super::FakeLogind).
 #[derive(Debug)]
 pub struct Manager {
@@ -43,7 +46,7 @@ impl Manager {
     }
 
     /// `ListSessions()`: the one session, as `(id, uid, user, seat, path)`.
-    fn list_sessions(&self) -> fdo::Result<Vec<(String, u32, String, String, OwnedObjectPath)>> {
+    fn list_sessions(&self) -> fdo::Result<Vec<SessionRow>> {
         let uid = rustix::process::getuid().as_raw();
         Ok(vec![(
             SESSION_ID.to_owned(),

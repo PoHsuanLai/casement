@@ -33,7 +33,10 @@ impl Signals {
     where
         B: Serialize + DynamicType,
     {
-        let emit = |source: zbus::Error| LogindError::Emit { member, source };
+        let emit = |source: zbus::Error| LogindError::Emit {
+            member,
+            source: Box::new(source),
+        };
         SignalEmitter::new(&self.connection, path)
             .map_err(emit)?
             .emit(interface, member, body)

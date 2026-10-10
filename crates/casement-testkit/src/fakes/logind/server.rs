@@ -46,7 +46,7 @@ impl FakeLogind {
         let served = runtime.block_on(connect(address, &log, handle));
         let connection = served.map_err(|source| LogindError::Bus {
             address: address.to_owned(),
-            source,
+            source: Box::new(source),
         })?;
         Ok(FakeLogind {
             runtime: Some(runtime),

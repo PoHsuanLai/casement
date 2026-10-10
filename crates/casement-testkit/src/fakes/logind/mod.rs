@@ -77,9 +77,9 @@ pub enum LogindError {
     Bus {
         /// The bus address.
         address: String,
-        /// Why the connection failed.
+        /// Why the connection failed (boxed: a zbus error is large).
         #[source]
-        source: zbus::Error,
+        source: Box<zbus::Error>,
     },
     /// The runtime that drives the server could not start.
     #[error("runtime: {source}")]
@@ -93,9 +93,9 @@ pub enum LogindError {
     Emit {
         /// The signal's member name.
         member: &'static str,
-        /// Why it failed.
+        /// Why it failed (boxed: a zbus error is large).
         #[source]
-        source: zbus::Error,
+        source: Box<zbus::Error>,
     },
     /// A pipe could not be made or configured.
     #[error("pipe: {source}")]

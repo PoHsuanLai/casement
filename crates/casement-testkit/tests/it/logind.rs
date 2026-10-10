@@ -87,6 +87,8 @@ fn an_inhibitor_is_held_until_its_pipe_closes() {
     let bus = PrivateBus::start().expect("bus");
     let logind = FakeLogind::serve(bus.address()).expect("serve");
     let rt = runtime();
+    // Connections and streams drop at the end of the test, and dropping one spawns on the runtime.
+    let _in_runtime = rt.enter();
     let fd = rt.block_on(async {
         let client = connect(bus.address()).await;
         inhibit(&proxy(&client, MANAGER_PATH, MANAGER).await, "sleep").await
@@ -109,6 +111,8 @@ fn lock_and_unlock_signals_reach_a_listener() {
     let bus = PrivateBus::start().expect("bus");
     let logind = FakeLogind::serve(bus.address()).expect("serve");
     let rt = runtime();
+    // Connections and streams drop at the end of the test, and dropping one spawns on the runtime.
+    let _in_runtime = rt.enter();
     let (client, mut heard) = rt.block_on(async {
         let client = connect(bus.address()).await;
         let heard = signals(&client, SESSION_PATH, SESSION).await;
@@ -130,6 +134,8 @@ fn prepare_for_sleep_waits_for_inhibitors() {
     let bus = PrivateBus::start().expect("bus");
     let logind = FakeLogind::serve(bus.address()).expect("serve");
     let rt = runtime();
+    // Connections and streams drop at the end of the test, and dropping one spawns on the runtime.
+    let _in_runtime = rt.enter();
     let (client, mut heard, fd) = rt.block_on(async {
         let client = connect(bus.address()).await;
         let heard = signals(&client, MANAGER_PATH, MANAGER).await;
@@ -168,6 +174,8 @@ fn session_and_seat_calls_are_recorded_and_device_signals_sent() {
     let bus = PrivateBus::start().expect("bus");
     let logind = FakeLogind::serve(bus.address()).expect("serve");
     let rt = runtime();
+    // Connections and streams drop at the end of the test, and dropping one spawns on the runtime.
+    let _in_runtime = rt.enter();
     let (client, mut heard) = rt.block_on(async {
         let client = connect(bus.address()).await;
         let heard = signals(&client, SESSION_PATH, SESSION).await;
