@@ -404,7 +404,7 @@ impl Session {
     }
 
     fn report(&self, window: Window, kind: &str, detail: String) {
-        note(&format!("event {} {kind} {detail}", self.name_of(window)).trim_end());
+        note(format!("event {} {kind} {detail}", self.name_of(window)).trim_end());
     }
 
     /// Another client pastes from us: the text, or the list of targets we serve.

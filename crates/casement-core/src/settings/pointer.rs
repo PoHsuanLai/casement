@@ -65,6 +65,11 @@ pub struct PointerSettings {
 }
 
 impl PointerSettings {
+    /// Settings with `mouse` for mice and trackballs and `touchpad` for touchpads.
+    pub fn new(mouse: PointerProfile, touchpad: PointerProfile) -> PointerSettings {
+        PointerSettings { mouse, touchpad }
+    }
+
     /// The Mac's defaults: adaptive acceleration, natural scrolling and tap-to-click on the
     /// touchpad, a plain mouse, scroll at the device's own step.
     pub fn defaults() -> PointerSettings {

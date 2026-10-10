@@ -4,7 +4,6 @@
 
 use crate::state::State;
 use casement_core::input::DbusCall;
-use casement_ipc::shell_calls::ShellCalls;
 
 /// Sends `call` through `state.seams.shell_calls` within the frame the binding fired in. A
 /// failure is logged and degrades; it never stops the loop.

@@ -167,22 +167,22 @@ fn percent_of(scale: Scale) -> Count {
 }
 
 fn pointer(mouse: &PointerSection, touchpad: &TouchpadSection) -> PointerSettings {
-    PointerSettings {
-        mouse: PointerProfile::new(
+    PointerSettings::new(
+        PointerProfile::new(
             mouse.accel,
             mouse.natural_scroll,
             mouse.tap,
             mouse.scroll_factor,
             mouse.disable_while_typing,
         ),
-        touchpad: PointerProfile::new(
+        PointerProfile::new(
             touchpad.accel,
             touchpad.natural_scroll,
             touchpad.tap,
             touchpad.scroll_factor,
             touchpad.disable_while_typing,
         ),
-    }
+    )
 }
 
 pub(super) fn mouse_doc(core: &PointerProfile) -> PointerSection {

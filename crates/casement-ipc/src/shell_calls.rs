@@ -113,61 +113,6 @@ fn checked(call: &DbusCall) -> Result<(), ShellCallError> {
 impl ShellCalls for ZbusShellCalls {
     fn call(&mut self, call: &DbusCall) -> Result<(), ShellCallError> {
         checked(call)?;
-        let worker = match self.worker.take() {
-            Some(worker) => worker,
-            None => Worker::start().map_err(ShellCallError::Thread)?,
-        };
-        match worker.send(call.clone()) {
-            Ok(()) => {
-                self.worker = Some(worker);
-                Ok(())
-            }
-            // The thread is gone: the next call starts a new one.
-            Err(_) => Err(ShellCallError::Thread(std::io::Error::other(
-                "the thread has stopped",
-            ))),
-        }
-    }
-
-    fn failures(&mut self) -> Vec<FailedCall>;
-}
-
-/// The real implementation over zbus on the session bus, connected on first use.
-#[derive(Debug, Default)]
-pub struct ZbusShellCalls {
-    worker: Option<Worker>,
-}
-
-impl ZbusShellCalls {
-    /// A caller that connects to the session bus when the first call is made.
-    pub fn lazy() -> ZbusShellCalls {
-        ZbusShellCalls::default()
-    }
-}
-
-/// Checks the names in `call` the way the bus will, before anything is queued.
-fn checked(call: &DbusCall) -> Result<(), ShellCallError> {
-    let bad = |what: &'static str, text: &str| ShellCallError::BadName {
-        what,
-        text: text.to_owned(),
-    };
-    BusName::try_from(call.service.as_str()).map_err(|_| bad("service", &call.service))?;
-    ObjectPath::try_from(call.path.as_str()).map_err(|_| bad("path", &call.path))?;
-    InterfaceName::try_from(call.interface.as_str())
-        .map_err(|_| bad("interface", &call.interface))?;
-    MemberName::try_from(call.method.as_str()).map_err(|_| bad("method", &call.method))?;
-    match call.args.len() {
-        given if given > MOST_ARGS => Err(ShellCallError::TooManyArgs {
-            most: MOST_ARGS,
-            given,
-        }),
-        _ => Ok(()),
-    }
-}
-
-impl ShellCalls for ZbusShellCalls {
-    fn call(&mut self, call: &DbusCall) -> Result<(), ShellCallError> {
-        checked(call)?;
         if self.worker.is_none() {
             self.worker = Some(Worker::start().map_err(ShellCallError::Thread)?);
         }
