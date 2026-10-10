@@ -817,3 +817,33 @@ the `--xwayland` flags, `VendorFact::from_pci_vendor`, `GammaTable::new`, `Outpu
   `casement/src/state.rs` and `exec.rs` (module and import names `gamma`, `workspace`, `spawn`), the doc tests (all
   `no_run`), `casement-testkit/src/fixture.rs`, `fakes/session.rs` (`TtySession` over smithay's `Session`), and
   `casement-render/src/pass/capture.rs` (the `ExportMem` bound with `R::Framebuffer<'_>`).
+
+## p1-x1: XWayland through xwayland-satellite, started on demand (2026-10-11)
+
+Nothing here compiled (no builds this lane). `todo!()` left for the lane: 0.
+
+- **Shape.** `casement::xwayland`: `Listening` (binds `<dir>/X<n>` and the abstract `@<dir>/X<n>`, first free `n` up to 63,
+  removes the path socket on drop), `XwaylandState::{Off, Listening, Running}`, `bind` (config to state), `serve` (a client
+  waiting on a socket starts satellite once, through the `Spawner` seam), `reap` (a satellite child that exited returns the
+  state to `Listening`, so the next client restarts it), `env` (`DISPLAY`, exported from the moment the sockets are bound, so
+  satellite is started on demand, not at login). `Xwayland::start` changed from the freeze signature: it takes the bound
+  `Listening` and the `WaylandSocket` name and hands the sockets back on failure; a failed start is retried next turn.
+- **Satellite's command line** is `<binary> :N -listenfd <fd> -listenfd <fd>` with `WAYLAND_DISPLAY` in its environment; the
+  fds are `try_clone`d so casement keeps the sockets across restarts. `-listenfd` is from satellite's README (v0.8.3): a real
+  run must confirm it takes both the path and the abstract socket this way. `-glamor none` (SP6: `off` panics satellite) is
+  not in the argv; `dev/lib/x11probe.sh` adds it through a wrapper script for the jail.
+- **Wiring (shared `run.rs`, three lines):** `xwayland::attach` after the Wayland socket exists, `xwayland::turn` each loop
+  turn. `attach` prints `casement: X11 display :N` on stderr; `x11_compositor` reads it from casement.log.
+- **For P1-I1:** `exec/spawn.rs::spawn_program` should add `state.xwayland.env()` to the program's environment (its doc
+  says so; nothing here edits it). `reap` uses `waitpid(WNOHANG)`, which sees only a child of this process, so P1-I1's
+  `ProcessSpawner` must keep the satellite as a plain child (no double fork, SIGCHLD not ignored).
+- **`casement-x11probe`** (x11rb 0.13, new workspace dependency, already in the lock via smithay/winit): `session` reads
+  commands on stdin (`map`, `unmap`, `close`, `focus`, `activate`, `info`, `own-clipboard`, `paste`, `sync`, `quit`), prints
+  `x11: ...` lines. The loop polls the connection every 10 ms (a stdin thread feeds a channel) because `RustConnection`'s
+  `AsFd` could not be checked.
+- **Real-run checks** (`dev/accept/xwayland-*.sh`, jail only): which WM_CLASS string satellite uses as app id (the scripts
+  assume the class, the second string; the instance is set to a different value so a wrong pick fails); whether the pointer
+  position in `button-press` is in X pixels (physical) or logical at scale 2; whether satellite publishes `Xft.dpi` per
+  output scale; whether `xwayland-scale.sh` can get a window on each output (it skips with a reason when both land on one);
+  whether the compositor honours or refuses `_NET_ACTIVE_WINDOW` (the activation script records the outcome and asserts only
+  consistency); `override-redirect` windows keeping the position the client asked for.
