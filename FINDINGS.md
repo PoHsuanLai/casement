@@ -123,9 +123,6 @@ module); `Rgba8`; `TextureBook`; `Transcript`, `Pattern`; `FixtureSpec`, `TestOr
 `todo!()` by lane: none left (P2-Q1, P2-Q2 and P2-Q3 filled all 33 and un-ignored all 21 tests). Lane ids and file sets:
 `~/rs-wt/compositor-scope/23-P2-FILL-LANES.md`.
 
-| File | Items | Lane | Proven by |
-| --- | --- | --- | --- |
-
 ## Open items
 
 | Item | Closes when |
