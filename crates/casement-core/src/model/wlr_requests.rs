@@ -37,7 +37,7 @@ impl Model {
             }
             WlrToplevelRequest::Close => Moved::of(self).with(Effect::SendClose { window }),
             WlrToplevelRequest::MinimiseRect(rect) => {
-                Moved::of(self.with_minimise_rect(window, rect))
+                Moved::of(self.with_window_list_rect(window, rect))
             }
         }
     }

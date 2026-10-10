@@ -66,6 +66,16 @@ impl Model {
             .with_all(stored.map(|rect| Effect::Shell(ShellNote::MinimiseTarget(window, rect))))
     }
 
+    /// A window-list client's `set_rectangle` for `window`. While a dock holds a role the dock's
+    /// tiles are where windows minimise to, so the window-list client's rectangle is ignored
+    /// (the shell's target wins whichever asked last); with no dock it is the only source.
+    pub(super) fn with_window_list_rect(self, window: WindowId, rect: LogicalRect) -> Model {
+        match self.layers.role_holder(ShellRole::Dock) {
+            Some(_) => self,
+            None => self.with_minimise_rect(window, rect),
+        }
+    }
+
     /// Where `layer` sits: its pin, else the corner its anchors and configured size give it.
     fn layer_origin(&self, layer: LayerKey) -> Option<LogicalPoint> {
         if let Some(pin) = self.layers.pin(&layer) {

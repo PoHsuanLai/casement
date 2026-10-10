@@ -74,3 +74,6 @@ async fn connect(
         .build()
         .await
 }
+
+#[cfg(test)]
+mod tests;

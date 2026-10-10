@@ -8,6 +8,7 @@
 //! transcript; `advance` pumps at the current instant before the first stop, then stops at
 //! every due instant, so chopping an advance differently gives the same transcript.
 
+mod handout;
 mod live;
 
 use crate::fakes::{FakePalmrest, FakeSession, FakeShellCalls, FakeSpawner, MemorySpaceStore};
