@@ -1,7 +1,7 @@
 //! `quire_window_manager_v1` (C50): what an app says about its toplevel (first-mouse regions,
 //! frame, role, accessibility root, edited) and what it learns back (emphasis, placement).
 //! Advertised from P0 so shell-host can tell casement apart by this global; requests are
-//! stored in the model, `request_placement` is acted on from P2.
+//! stored in the model, `request_placement` is acted on from P2 ([`PLACEMENT_POLICY`]).
 //!
 //! smithay has no module for our protocol, so this one carries its own `GlobalDispatch2` and
 //! `Dispatch2` impls; `delegate_dispatch2!` in the composition root routes to them, and they
@@ -51,8 +51,11 @@ pub struct QuireWindowPart {
     pub windows: BTreeMap<WindowId, QuireWindowV1>,
     /// The double-buffered values each window staged since its last commit.
     pub pending: BTreeMap<WindowId, PendingHints>,
-    /// The last placement each window asked for with a proven press (stored, P0).
+    /// The last placement each window asked for with a proven press.
     pub placements: BTreeMap<WindowId, (PlaceTarget, InputSerial)>,
+    /// The placement mark each extended window was last told, so a state change that leaves the
+    /// mark where it was sends nothing.
+    pub marks: BTreeMap<WindowId, PlacementMark>,
     /// The windows whose surface carries our commit hook (it is added once).
     hooked: BTreeSet<WindowId>,
 }
@@ -73,6 +76,7 @@ impl QuireWindowPart {
             windows: BTreeMap::new(),
             pending: BTreeMap::new(),
             placements: BTreeMap::new(),
+            marks: BTreeMap::new(),
             hooked: BTreeSet::new(),
         }
     }
@@ -177,6 +181,7 @@ where
                 if let Some(facts) = state.window_facts(window) {
                     object.emphasis(wire_emphasis(facts.emphasis));
                     object.placement(wire_mark(facts.mark));
+                    state.quire_window_part().marks.insert(window, facts.mark);
                     hook_commits(state, window, &facts.surface);
                 }
                 state.quire_window_events(events);
@@ -301,6 +306,7 @@ where
         part.windows.remove(&window);
         part.pending.remove(&window);
         part.placements.remove(&window);
+        part.marks.remove(&window);
         if !self.toplevel.alive() {
             return;
         }
@@ -422,7 +428,7 @@ pub fn on_set_edited(_part: &mut QuireWindowPart, window: WindowId, edited: Edit
 }
 
 /// `request_placement`, answering the press `serial` (the dispatch has already checked the
-/// press): stored at P0, acted on from P2 ([`PLACEMENT_POLICY`]).
+/// press): stored, and from P2 acted on ([`PLACEMENT_POLICY`]).
 pub fn on_request_placement(
     part: &mut QuireWindowPart,
     window: WindowId,
@@ -450,7 +456,19 @@ pub fn apply_emphasis(
     }
 }
 
-/// Sends `window` its placement mark.
+/// Sends `window` its placement mark when it differs from the one it was last told (the model
+/// publishes a window whenever its state changes, and most changes leave the mark alone).
+///
+/// ```no_run
+/// use casement_core::WindowId;
+/// use casement_protocols::vocab::PlacementMark;
+/// use casement_wayland::quire_window::{QuireWindowPart, apply_placement};
+///
+/// # fn demo(part: &mut QuireWindowPart) {
+/// // Nobody extended window 1: there is nobody to tell.
+/// assert!(apply_placement(part, WindowId(1), PlacementMark::Left).is_ok());
+/// # }
+/// ```
 pub fn apply_placement(
     part: &mut QuireWindowPart,
     window: WindowId,
@@ -458,7 +476,9 @@ pub fn apply_placement(
 ) -> Result<(), WaylandFault> {
     match part.windows.get(&window) {
         Some(object) if object.is_alive() => {
-            object.placement(wire_mark(mark));
+            if part.marks.insert(window, mark) != Some(mark) {
+                object.placement(wire_mark(mark));
+            }
             Ok(())
         }
         Some(_) => Err(WaylandFault::SurfaceGone),

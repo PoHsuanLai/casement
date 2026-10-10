@@ -416,6 +416,18 @@ impl TtyBackend {
         self.readback.last_frame(output)
     }
 
+    /// Draws `source` alone into a fresh image of `size` at `scale` through the software
+    /// renderer and reads it back: a window's pixels for window capture. A client buffer pixman
+    /// cannot import (a dma-buf of a GPU) is missing from it, as from the capture shadow.
+    pub fn render_offscreen(
+        &mut self,
+        size: casement_core::geometry::PhysicalSize,
+        scale: ds_core::geometry::scale::Scale,
+        source: &dyn FrameSource,
+    ) -> Result<crate::headless::RgbaFrame, BackendError> {
+        self.readback.render_offscreen(size, scale, source)
+    }
+
     /// What the seat's input devices reported since the last call: nothing while the seat is
     /// lent, or when the seat has no input.
     pub fn poll_input(&mut self, context: &PollContext) -> Vec<FedInput> {

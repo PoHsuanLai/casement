@@ -2,8 +2,10 @@
 //! the mask pass.
 
 mod capture;
+mod window;
 
 pub use capture::{
     CaptureFormat, CaptureRequest, CapturedFrame, CursorInclusion, ShmWriteError, capture_output,
     write_frame,
 };
+pub use window::{render_window, window_capture_size, window_tree};

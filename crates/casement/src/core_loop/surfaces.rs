@@ -35,6 +35,8 @@ pub(super) fn sync(state: &mut State, events: &[Event]) {
                 state.render.textures = book.with_layer(*layer, entry);
             }
             Event::LayerUnmapped { layer } => {
+                // Whatever shell role the surface held is free again.
+                casement_wayland::quire::shell::on_layer_gone(&mut state.wl.quire_shell, *layer);
                 let book = std::mem::take(&mut state.render.textures);
                 state.render.textures = book.without_layer(layer);
             }

@@ -1,14 +1,14 @@
-//! The shot grammar: what `casementctl shot` asks Debug1 to capture while ext-image-copy-capture
-//! (P1-C1) is not built. The compositor writes the output's last presented frame (or a region of
-//! it) as a PNG to a path the caller names, inside the jail.
+//! The shot grammar: what `casementctl shot` asks Debug1 to capture (a named output goes over
+//! ext-image-copy-capture instead). The compositor writes the output's last presented frame, a
+//! region of it, or one window drawn alone, as a PNG to a path the caller names, inside the jail.
 //!
 //! ```text
-//! output | output:NAME | region:X,Y,W,H      (X, Y, W, H in global logical pixels)
+//! output | output:NAME | region:X,Y,W,H | window:ID   (X, Y, W, H in global logical pixels)
 //! ```
 
 use crate::error::IpcError;
-use casement_core::OutputName;
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
+use casement_core::{OutputName, WindowId};
 
 /// What a shot covers.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -17,6 +17,8 @@ pub enum ShotArea {
     Output(Option<OutputName>),
     /// A rectangle of the global logical space, cut from the output that holds its origin.
     Region(LogicalRect),
+    /// One window drawn alone, at the scale of its output.
+    Window(WindowId),
 }
 
 /// The area `text` says.
@@ -40,6 +42,10 @@ pub fn parse_shot(text: &str) -> Result<ShotArea, IpcError> {
                 _ => Err(bad()),
             }
         }
+        Some(("window", id)) => id
+            .parse()
+            .map(|id| ShotArea::Window(WindowId(id)))
+            .map_err(|_| bad()),
         _ => Err(bad()),
     }
 }
@@ -65,7 +71,9 @@ mod tests {
             ("region:0,0,0,5", None),
             ("region:0,0,5", None),
             ("region:a,0,5,5", None),
-            ("window:3", None),
+            ("window:3", Some(ShotArea::Window(WindowId(3)))),
+            ("window:x", None),
+            ("window:", None),
             ("", None),
         ];
         for (text, want) in cases {

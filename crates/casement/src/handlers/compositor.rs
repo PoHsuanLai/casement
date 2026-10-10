@@ -83,6 +83,8 @@ impl CompositorHandler for State {
         ));
         events.extend(self.commit_role(route, surface));
         feed(self, events);
+        // After the model has heard the commit: the window's size in the surface book is new.
+        super::capture_source::committed(self, surface);
         core_loop::refocus_pointer(self);
     }
 

@@ -105,7 +105,6 @@ P3-CSS, three in `src/` and its ignored parity test, never built at P0-Z2).
 | `crates/casement-ipc/src/wait.rs` | parse_wait (1) | P0-T-dev | `crates/casement-ipc/src/inject.rs`, `wait.rs` tests; `crates/casementctl/src/command.rs` test; `dev/accept.sh --jobs 8` |
 | `crates/casementctl/src/command.rs` | parse, run (2) | P0-T-dev | `crates/casement-ipc/src/inject.rs`, `wait.rs` tests; `crates/casementctl/src/command.rs` test; `dev/accept.sh --jobs 8` |
 | `crates/casement-testkit/src/fixture.rs` | Fixture::session (1) | P1-D1 | P1-Z's session suite |
-| `crates/casement-agent/src/socket.rs` | hand_out, role_for, CallerUnit::of_cgroup (3; the P2-Z freeze changed `hand_out`'s signature, see p2-z) | P2-Q2 | `crates/casement-agent/src/socket.rs` `only_the_shell_and_the_agent_tier_get_privileged_roles`, `a_hand_out_needs_the_unit_that_may_have_the_role`, `a_unit_is_read_from_the_cgroup_text` |
 | `crates/casement-testkit/src/fixture.rs` | Fixture::palmrest (1) | P3-Z | P3-Z's palmrest tests |
 
 Ignored tests by lane (P0-Z2): P0-H1 17, P0-H2 16, P0-H3 7, P0-H4 10, P0-H5 7, P0-H6 3,
@@ -121,19 +120,11 @@ module); `Rgba8`; `TextureBook`; `Transcript`, `Pattern`; `FixtureSpec`, `TestOr
 
 ### P2-Z: the private protocols, window capture, the hand-out
 
-`todo!()` by lane (33): P2-Q1 11 (8 in the protocol, 3 in the model), P2-Q2 10, P2-Q3 12. Ignored tests by lane:
-P2-Q1 9 (5 in the test kit, 4 in casement-core), P2-Q2 7 (3 in casement-agent, 4 in the test kit), P2-Q3 5. Lane ids and file sets:
+`todo!()` by lane: none left (P2-Q1, P2-Q2 and P2-Q3 filled all 33 and un-ignored all 21 tests). Lane ids and file sets:
 `~/rs-wt/compositor-scope/23-P2-FILL-LANES.md`.
 
 | File | Items | Lane | Proven by |
 | --- | --- | --- | --- |
-| `crates/casement-wayland/src/quire/shell.rs` | on_set_role, on_set_minimise_target, on_clear_minimise_target, apply_note (4) | P2-Q2 | `crates/casement-testkit/tests/it/protocol/quire_shell.rs` (4 ignored) |
-| `crates/casement-agent/src/socket.rs` | (3, in the table above) | P2-Q2 | the agent crate's three ignored tests |
-| `crates/casement-ipc/src/dbus/compositor1.rs` | ProcCgroups::cgroup_of, Compositor1::connect (2) | P2-Q2 | the `Connect` row in `quire_shell.rs`; a private-bus test the lane writes beside `serve_compositor_at` |
-| `crates/casement/src/connect.rs` | answer (1) | P2-Q2 | the same |
-| `crates/casement-wayland/src/capture_source.rs` | on_toplevel_source, on_source_destroyed, on_session, on_frame_request, apply_content, apply_ready, apply_failed, apply_window_gone (8) | P2-Q3 | `crates/casement-testkit/tests/it/protocol/capture_source.rs` (4 ignored) |
-| `crates/casement/src/handlers/capture_source.rs` | constraints, new_session, serve, release (4) | P2-Q3 | the same |
-| `crates/casement-testkit/tests/it/protocol/quire_window.rs` | (no stub: `request_placement_places_the_window_and_reports_the_mark` is ignored, and `request_placement_is_stored` is replaced by it) | P2-Q3 | itself |
 
 ## Open items
 
@@ -1536,3 +1527,112 @@ ignored tests are gone; their rows left the P2-Z table.
   `Asked` public in a private module), `casement-core/src/model/desktop_places.rs` (`window_to_space`'s borrows),
   `casement-testclient/src/quire/desktop/roster.rs` (client event field names and `event_created_child!`), and the
   `[(&str, fn); 19]` table in the agent test.
+
+## p2-q3: window capture and full placement (2026-10-11)
+
+Nothing here compiled or run (the lane does not build). `ext_foreign_toplevel_image_capture_source_manager_v1`
+is advertised at version 1 to every non-sandboxed connection (`globals.txt` row, the sandbox `HIDDEN` table, the
+I7 table in casement-core's `input.rs`, the globals test's `KINDS`, the test client's catalogue line).
+`quire_window`'s `PLACEMENT_POLICY` is `Act`. Re-run the fuzz seeds that failed before: the catalogue line adds an
+interface, which shifts the typed fuzz box's object ids (as P1-C1's globals did).
+
+### The decision: an offscreen pass, not a crop of the output's last frame
+
+A window's capture is its surface tree drawn alone into a fresh image the size of its content
+(`casement_render::pass::{window_tree, render_window}`), read back like `capture_output` reads a framebuffer.
+Cropping the output's last frame is wrong in three cases the brief names and right in none that matters: a
+window under another window shows the other window's pixels; a window off the screen (or partly) has no pixels
+in the frame; and an output at 1.5x shows the window at the output's scale, but a crop cannot honour any other
+size. The offscreen draw is right for all three by construction (the test
+`an_overlapped_window_is_captured_whole` pins the first). The cost is a second draw of one window per delivered
+frame, paid only when the damage gate lets a frame through (a static window pays none). The image is transparent
+where the window draws nothing, so a translucent window or a rounded client corner keeps its alpha.
+The backend owns the renderer, so `HeadlessBackend::render_offscreen` and `TtyBackend::render_offscreen` (the
+latter through the capture shadow's pixman renderer, started on the first call) run the pass; the casement
+crate only builds the elements (`handlers/capture_source/render.rs`). No golden image was written (a golden needs
+a run); `casement-render/tests/it/window_pass.rs` pins the pass on pixman with solid elements instead.
+
+### Departures
+
+- **Capture size is the window's committed size.** The content is `TextureBook::window(..).committed`: the
+  declared window geometry, else the bounding box of the tree, at the scale of the output the window is on (its
+  Space's output, or its home). It is not the layout rectangle.
+- **A scale change is announced lazily.** A window that changes size is told its sessions' new constraints at its
+  commit (and a held frame fails with `buffer_constraints`); an output that changes scale has no commit, so the
+  session learns at the next frame request, which fails with `buffer_constraints` and carries the new
+  `buffer_size`. The brief wanted the announce "again when the scale changes"; a proactive announce needs a hook
+  in the output-change path (`core_loop`), which is outside this lane.
+- **Source destruction (closed at merge):** `image_capture.rs::source_destroyed` now forwards a `ToplevelSourceId` to `capture_source::on_source_destroyed`. Was: `handlers/image_capture.rs::source_destroyed` only knows output
+  sources, so a destroyed window source stays in `ToplevelCaptureBook::sources` until its window closes (a
+  session made from it already works). Interface ask: forward a `ToplevelSourceId` in that handler to
+  `capture_source::on_source_destroyed` (three lines in a file this lane may not edit).
+- **A mark change inside one tile state is not published.** `placement` is sent from `publish_toplevel`, whose
+  trigger (`model/published.rs::Listing`) compares `WindowStateKind`; Left to Right (both `Tiled`) changes no
+  field, so the object is not told. Interface ask (P2-Q1's file): add `mark: PlacementMark` to `Listing`.
+  `apply_placement` keeps the last mark it sent and sends only on a change.
+- **`shot --window ID` has no end-to-end test.** `ShotArea::Window` (grammar `window:ID`), the planner and the
+  debug object's `window_shot` are covered by the grammar table and the planner test; the debug object needs a
+  private bus, so the pixels are proved through the same `window_rgba` by the capture tests.
+- **Shared files touched:** `casement/src/exec.rs` (one line in `UnlistWindow`), `handlers/mod.rs`
+  (`pub(crate) mod capture_source`), `handlers/compositor.rs` (one hook), `casement-ipc/src/shot.rs`,
+  `casement-backend` (`headless/{mod,renderer}.rs`, `tty/{mod,readback}.rs`: the offscreen entry),
+  `casementctl/src/command{,/shot}.rs`, `casement-testclient` (`conn/catalogue.rs`,
+  `manage/foreign_toplevel_list.rs::handle_of`), `casement-core/tests/it/input.rs`.
+- **The test client is its own session.** `WindowCapture` does not use `OutputCapture`: `desktop_client`'s reducer
+  ends a capture at its first frame and ignores events after a failure, and these tests take many frames and
+  watch the constraints change.
+
+### Spots a real build checks first
+
+`casement-render/src/pass/window.rs` (`render_window`'s bounds with `Bind<T> + ExportMem`, `tracker.render_output`
+over `&[CasementElement<R>]` without `Routed`), `casement-backend/src/headless/renderer.rs::offscreen` (the pixman
+image type inferred from `create_buffer`, as `canvas` does), `casement/src/handlers/capture_source.rs` and
+`.../render.rs` (smithay's `ToplevelCaptureSourceHandler`, `ForeignToplevelHandle::identifier`, the borrows in
+`serve` and `committed`), `casement-wayland/src/capture_source.rs` (`new_with_filter` with the concrete closure),
+`casement-testclient/src/capture/toplevel_source{,/wire}.rs` (wayland-client signatures, `u32::from(Format)`).
+
+## p2-q2: the shell protocol, Compositor1 and the hand-out (2026-10-11)
+
+Lane P2-Q2 (not compiled; the orchestrator gates). Removed rows: the ten `todo!()` of the P2-Z table and the seven
+ignored tests of this lane; two tests were rewritten (below).
+
+- **Units are fixed, not configuration.** The plan names them (`sill.service` the shell, `cuad.service` the agent tier),
+  so `role_for` is a `match`. Moving them to a typed list is a one-function change if porter's unit check wants it.
+- **Departure: `on_set_minimise_target` takes the window, not the identifier string.** The dispatch turns the identifier
+  into a `WindowId` and keeps it only when `QuireShellHandler::window_known` says the model has it; the part gets
+  `Option<WindowId>` (`None` is `unknown_toplevel`). `on_clear_minimise_target` still takes the string and refuses one that
+  is no identifier. `window_known` is new on the handler trait, implemented in `handlers/quire_shell.rs`.
+- **Departure: `QuireShellPart` gained `asked` and `mods`.** `ShellNote::Role` carries the layer, not the surface, so
+  `on_set_role` remembers the surface each layer asked from and `apply_note` moves it into `roles` when the model confirms.
+  `mods` is the last set sent; `apply_note` sends `modifiers` only when it changed, so the edge may report after every key.
+- **Modifiers are reported after every delivered key** (`core_loop/deliver.rs::tell_shell_modifiers`), including a key a
+  binding took; the part drops a repeat. Modifier changes with no key (a focus change re-syncing the keymap) are not reported.
+- **Role release.** `on_layer_gone` is called from `core_loop/surfaces.rs` on `Event::LayerUnmapped` (a null-buffer commit
+  or a destroy that had mapped) and from `handlers/layer_shell.rs::layer_destroyed` (a destroy of one that never mapped);
+  not from `handlers/compositor.rs`, which P2-Q3 edits.
+- **Policy (p2-z open item 1 closed):** while any layer holds `ShellRole::Dock`, a window-list client's `set_rectangle`
+  is ignored (`Model::with_window_list_rect`, one call site in `wlr_requests.rs`); the dock's target is the only writer.
+  With no dock the window-list client's rectangle works as before.
+- **`hand_out` sets the server end non-blocking** (the display reads it from the loop). A failed socket pair is logged by
+  `casement::connect::answer` (`casement-agent` has no `tracing` dependency and Cargo files are frozen).
+- **`ProcCgroups` read errors are `IpcError::Bus(String)`**, not a typed I/O source: `error.rs` is not this lane's. A
+  variant `IpcError::Proc { pid, source: std::io::Error }` would be the typed form (interface ask).
+- **`ConnectAsk::new`** was added: the struct is `#[non_exhaustive]`, so the test kit could not build one.
+- **Test kit:** `Fixture::connect_through_handout(&dyn PeerCgroups, pid, role)` (`src/fixture/handout.rs`) runs
+  `connect::answer` with the cgroup text from the fake table and pumps the granted client in. It does not keep the
+  compositor's `Client` handle, so `toplevel_of` and friends are for `Fixture::connect` clients.
+- **Private-bus test:** `casement-ipc/src/dbus/compositor_serve/tests.rs` carries its own `PrivateBus` copy (the Debug1
+  one lives under the `debug-inject` feature) and a local cgroup table (`FakeCgroups` is in the test kit, which depends on
+  casement-ipc). It needs `dbus-daemon` on PATH and `GetConnectionUnixProcessID` allowed by `dev/private-bus.conf`.
+- **Not proven by a test:** that a minimised window travels to the dock's rectangle (the model test for the stored target
+  and `space_persist.rs` for the genie target together cover it); the `hot_corner` and `reveal` emitters are P3's.
+- **Fuzz:** `quire_shell_v1` is advertised and its interface is in the test client catalogue, so the typed fuzz box's
+  object ids shifted: re-run every seed that failed before the P2-Q2 merge, and the role fuzz (`PrivilegedOffered`,
+  `GlobalNotForRole`) for all four roles.
+- **Spots most likely not to compile.** `casement-wayland/src/quire/shell.rs` (`quire_shell_v1::MacMods::from_bits_truncate`,
+  `Corner`/`ScreenEdge`/`Shown` `TryFrom<u32>` from the scanner's enums, `shell.client() == holder.surface.client()`),
+  `casement-ipc/src/dbus/compositor1.rs` (`#[zbus(header)]` and `#[zbus(connection)]` together, `BusName::from(sender.clone())`,
+  `DBusProxy::get_connection_unix_process_id`, `OwnedFd::from`), `compositor_serve/tests.rs`,
+  `casement/src/connect.rs` (partial moves out of `handed`), `casement-testkit/tests/it/protocol/quire_shell.rs`
+  (the key code 125 reaching `logo` -> Command; `Anchor::Bottom` dock placement; `fixture.client(id).create_surface()`).
+

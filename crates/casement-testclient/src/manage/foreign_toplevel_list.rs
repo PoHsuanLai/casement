@@ -91,6 +91,15 @@ impl ToplevelList {
             .collect()
     }
 
+    /// The handle of the open window announced as `identifier`, to make a capture source from.
+    pub fn handle_of(&self, identifier: &str) -> Option<ExtForeignToplevelHandleV1> {
+        self.roster
+            .entries
+            .iter()
+            .find(|entry| entry.shown.identifier == identifier)
+            .map(|entry| entry.handle.clone())
+    }
+
     /// Asks the compositor to stop (`stop`); it answers `finished`.
     pub fn stop(&mut self) -> Result<(), ClientError> {
         self.list.stop();

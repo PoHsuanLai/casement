@@ -118,12 +118,13 @@ pub fn a11y_of(bus_name: &str, object_path: &str) -> Option<A11yRoot> {
 pub enum PlacementPolicy {
     /// It is stored and not acted on (P0: windows only float).
     StoreOnly,
-    /// The model places the window (P2).
+    /// The model places the window (P2, the policy in force).
     Act,
 }
 
-/// The policy this phase runs: P0 stores placement requests and does not act on them.
-pub const PLACEMENT_POLICY: PlacementPolicy = PlacementPolicy::StoreOnly;
+/// The policy this phase runs: from P2 a proven placement request is acted on (the model's
+/// `place`), and the object is told the window's new mark when its state changes.
+pub const PLACEMENT_POLICY: PlacementPolicy = PlacementPolicy::Act;
 
 /// The events a proven placement request is under `policy`.
 pub fn placement_events(
@@ -262,11 +263,16 @@ mod tests {
     }
 
     #[test]
-    fn placement_is_stored_at_p0_and_acted_on_when_asked_to() {
+    fn placement_is_acted_on_from_p2_and_stored_when_asked_to() {
         let (window, serial) = (WindowId(5), InputSerial(77));
-        assert_eq!(PLACEMENT_POLICY, PlacementPolicy::StoreOnly);
+        assert_eq!(PLACEMENT_POLICY, PlacementPolicy::Act);
         assert_eq!(
-            placement_events(PLACEMENT_POLICY, window, PlaceTarget::Left, serial),
+            placement_events(
+                PlacementPolicy::StoreOnly,
+                window,
+                PlaceTarget::Left,
+                serial
+            ),
             Vec::new()
         );
         assert_eq!(

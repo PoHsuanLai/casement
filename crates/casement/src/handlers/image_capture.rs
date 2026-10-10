@@ -32,6 +32,16 @@ impl ImageCaptureSourceHandler for State {
         if let Some(id) = source.user_data().get::<CaptureSourceId>() {
             image_capture::on_source_destroyed(&mut self.wl.image_capture.book, *id);
         }
+        // A window source (P2-Q3) leaves the window book with it, not when its window closes.
+        if let Some(id) = source
+            .user_data()
+            .get::<casement_wayland::capture_source::ToplevelSourceId>()
+        {
+            casement_wayland::capture_source::on_source_destroyed(
+                &mut self.wl.capture_source.book,
+                *id,
+            );
+        }
     }
 }
 

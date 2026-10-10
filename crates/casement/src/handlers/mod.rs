@@ -4,7 +4,7 @@
 
 mod alpha_modifier;
 mod background_effect;
-mod capture_source;
+pub(crate) mod capture_source;
 mod commit_timing;
 mod compositor;
 mod content_type;

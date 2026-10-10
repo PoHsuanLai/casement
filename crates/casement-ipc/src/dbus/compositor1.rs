@@ -12,13 +12,15 @@
 //! `casement_agent::hand_out`, which checks the unit against the role (`sill.service` the
 //! shell, `cuad.service` the agent tier) and makes the socket pair, and inserts the server end
 //! into the display. P4-Z adds `Desktop() -> s`, `Perform(action: s) -> s` and the `Killed()`
-//! signal. Frozen at P2-Z; the method's body is P2-Q2's.
+//! signal. Filled by P2-Q2.
 
 use crate::IpcError;
 use casement_core::policy::ConnectionRole;
 use std::os::fd::OwnedFd;
 use std::sync::Arc;
-use zbus::fdo;
+use zbus::message::Header;
+use zbus::names::BusName;
+use zbus::{Connection, fdo};
 
 /// The object's path.
 pub const OBJECT_PATH: &str = "/org/quire/Compositor1";
@@ -58,8 +60,8 @@ pub struct ProcCgroups;
 
 impl PeerCgroups for ProcCgroups {
     fn cgroup_of(&self, pid: u32) -> Result<String, IpcError> {
-        let _ = pid;
-        todo!("P2-Q2: ProcCgroups::cgroup_of")
+        std::fs::read_to_string(format!("/proc/{pid}/cgroup"))
+            .map_err(|error| IpcError::Bus(format!("the control group of process {pid}: {error}")))
     }
 }
 
@@ -80,6 +82,25 @@ pub struct ConnectAsk {
     pub role: ConnectionRole,
     /// The text of the caller's `/proc/<pid>/cgroup`, from which the loop reads its unit.
     pub caller_cgroup: String,
+}
+
+impl ConnectAsk {
+    /// The question of a caller whose control group file reads `caller_cgroup`, asking for a
+    /// connection with `role`.
+    ///
+    /// ```
+    /// use casement_core::policy::ConnectionRole;
+    /// use casement_ipc::dbus::ConnectAsk;
+    ///
+    /// let ask = ConnectAsk::new(ConnectionRole::Shell, "0::/app.slice/sill.service\n".to_owned());
+    /// assert_eq!(ask.role, ConnectionRole::Shell);
+    /// ```
+    pub fn new(role: ConnectionRole, caller_cgroup: String) -> ConnectAsk {
+        ConnectAsk {
+            role,
+            caller_cgroup,
+        }
+    }
 }
 
 /// What the event loop answered.
@@ -140,13 +161,40 @@ pub fn parse_connect_role(text: &str) -> Result<ConnectionRole, IpcError> {
 
 #[zbus::interface(name = "org.quire.Compositor1")]
 impl Compositor1 {
-    /// `Connect(role: s) -> (h)`: a new Wayland connection with the role `role` (`shell` or
+    /// `Connect(role: s) -> h`: a new Wayland connection with the role `role` (`shell` or
     /// `agent`), when the caller's unit may have it. The reply is the client end of a socket.
-    /// The lane adds `#[zbus(header)]` to read the sender, asks the bus for its process id,
-    /// reads its cgroup through the seam and asks the loop.
-    async fn connect(&self, role: String) -> fdo::Result<zbus::zvariant::OwnedFd> {
-        let _ = (&self.calls, &self.cgroups, role);
-        todo!("P2-Q2: Compositor1.Connect")
+    async fn connect(
+        &self,
+        role: String,
+        #[zbus(header)] header: Header<'_>,
+        #[zbus(connection)] connection: &Connection,
+    ) -> fdo::Result<zbus::zvariant::OwnedFd> {
+        let role = parse_connect_role(&role)
+            .map_err(|error| fdo::Error::InvalidArgs(error.to_string()))?;
+        let sender = header
+            .sender()
+            .ok_or_else(|| fdo::Error::Failed("the call has no sender".to_owned()))?;
+        let pid = fdo::DBusProxy::new(connection)
+            .await?
+            .get_connection_unix_process_id(BusName::from(sender.clone()))
+            .await?;
+        let caller_cgroup = self
+            .cgroups
+            .cgroup_of(pid)
+            .map_err(|error| fdo::Error::Failed(error.to_string()))?;
+        let (reply, answer) = tokio::sync::oneshot::channel();
+        let call = ConnectCall {
+            ask: ConnectAsk::new(role, caller_cgroup),
+            reply,
+        };
+        self.calls
+            .send(call)
+            .map_err(|_| ConnectRefusal::Unavailable.to_error())?;
+        match answer.await {
+            Ok(ConnectReply::Granted(fd)) => Ok(zbus::zvariant::OwnedFd::from(fd)),
+            Ok(ConnectReply::Refused(why)) => Err(why.to_error()),
+            Err(_) => Err(ConnectRefusal::Unavailable.to_error()),
+        }
     }
 }
 

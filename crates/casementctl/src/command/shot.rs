@@ -46,7 +46,8 @@ pub fn parse_shot(args: &[String]) -> Result<(ShotTarget, Masked, PathBuf), Comm
 /// Why a shot cannot be taken yet (exit 2: could not run), or the Debug1 call that takes it.
 /// A named output is captured over ext-image-copy-capture (`capture.rs`); the default output and
 /// a region of one are still written by casement's debug object, from inside the compositor.
-/// A window (P2) and a masked shot (P4) wait for their passes.
+/// A window is drawn alone by the same debug object (P2-Q3); a masked shot (P4) waits for its
+/// pass.
 pub fn call(
     target: &ShotTarget,
     masked: Masked,
@@ -55,9 +56,7 @@ pub fn call(
 ) -> Result<Call, &'static str> {
     let area = match (masked, target) {
         (Masked::Yes, _) => return Err("shot --masked needs the mask pass (P4)"),
-        (Masked::No, ShotTarget::Window(_)) => {
-            return Err("shot --window needs toplevel capture sources (P2)");
-        }
+        (Masked::No, ShotTarget::Window(id)) => format!("window:{id}"),
         (Masked::No, ShotTarget::Default) => "output".to_owned(),
         (Masked::No, ShotTarget::Output(name)) => format!("output:{name}"),
         (Masked::No, ShotTarget::Region { x, y, w, h }) => format!("region:{x},{y},{w},{h}"),
@@ -128,7 +127,13 @@ mod tests {
                 path: "/run/work/c.png".to_owned()
             })
         );
-        assert!(planned(ShotTarget::Window(7), Masked::No, "d.png").is_err());
+        assert_eq!(
+            planned(ShotTarget::Window(7), Masked::No, "d.png"),
+            Ok(Call::Shot {
+                area: "window:7".to_owned(),
+                path: "/run/work/d.png".to_owned()
+            })
+        );
         assert!(planned(ShotTarget::Default, Masked::Yes, "e.png").is_err());
     }
 

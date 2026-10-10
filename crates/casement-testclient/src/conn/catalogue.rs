@@ -86,6 +86,7 @@ fn roots() -> Vec<&'static Interface> {
         ext::data_control::v1::client::ext_data_control_manager_v1::ExtDataControlManagerV1,
         ext::idle_notify::v1::client::ext_idle_notifier_v1::ExtIdleNotifierV1,
         ext::foreign_toplevel_list::v1::client::ext_foreign_toplevel_list_v1::ExtForeignToplevelListV1,
+        ext::image_capture_source::v1::client::ext_foreign_toplevel_image_capture_source_manager_v1::ExtForeignToplevelImageCaptureSourceManagerV1,
         ext::background_effect::v1::client::ext_background_effect_manager_v1::ExtBackgroundEffectManagerV1,
         ext::workspace::v1::client::ext_workspace_manager_v1::ExtWorkspaceManagerV1,
         wlr::layer_shell::v1::client::zwlr_layer_shell_v1::ZwlrLayerShellV1,
@@ -97,6 +98,7 @@ fn roots() -> Vec<&'static Interface> {
         misc::zwp_input_method_v2::client::zwp_input_method_manager_v2::ZwpInputMethodManagerV2,
         misc::zwp_virtual_keyboard_v1::client::zwp_virtual_keyboard_manager_v1::ZwpVirtualKeyboardManagerV1,
         quire::quire_window_v1::quire_window_v1::QuireWindowV1,
+        quire::quire_shell_v1::quire_shell_v1::QuireShellV1,
         quire::quire_window_v1::quire_window_manager_v1::QuireWindowManagerV1,
         quire::quire_desktop_v1::quire_desktop_manager_v1::QuireDesktopManagerV1,
     ]
