@@ -5,9 +5,10 @@ use crate::config::{self, ConfigError};
 use crate::seams::Seams;
 use crate::time::ClockSource;
 use crate::xwayland::XwaylandState;
+use casement_backend::tty::TtySeams;
 use casement_backend::{
     BackendChoice, BackendError, BackendKind, DmabufMode, HeadlessBackend, HeadlessConfig,
-    WinitBackend,
+    TtyBackend, WinitBackend,
 };
 use casement_core::geometry::LogicalPoint;
 use casement_core::settings::CasementSettings;
@@ -158,7 +159,7 @@ impl State {
     /// The same with these seams (the test kit injects its fakes here).
     pub fn with_seams(
         config: StartConfig,
-        seams: Seams,
+        mut seams: Seams,
         display: &mut Display<State>,
         event_loop: &LoopHandle<'static, State>,
     ) -> Result<State, StartError> {
@@ -248,9 +249,7 @@ impl State {
                 BackendKind::Winit(WinitBackend::start(first)?)
             }
             BackendChoice::Tty => {
-                return Err(StartError::NotYet(
-                    "the tty backend starts once P1-D1 to D3 fill it",
-                ));
+                BackendKind::Tty(TtyBackend::start(tty_seams(seams.tty.take(), event_loop)?)?)
             }
         };
         let clock = ClockSource::start(config.clock, event_loop)?;
@@ -305,4 +304,35 @@ impl State {
     pub fn settings(&self) -> &CasementSettings {
         self.core.model.settings()
     }
+}
+
+/// The seams the tty backend starts over: the injected ones (a test), else the machine's own.
+fn tty_seams(
+    injected: Option<TtySeams>,
+    handle: &LoopHandle<'static, State>,
+) -> Result<TtySeams, StartError> {
+    match injected {
+        Some(seams) => Ok(seams),
+        None => real_tty_seams(handle),
+    }
+}
+
+/// The machine's seat, devices and GPUs (`gpu.render` is not a setting yet: automatic).
+#[cfg(feature = "tty")]
+fn real_tty_seams(handle: &LoopHandle<'static, State>) -> Result<TtySeams, StartError> {
+    let root = casement_backend::gpu::SysRoot::host();
+    Ok(casement_backend::tty::real_seams(
+        root,
+        casement_core::gpu::GpuChoice::Auto,
+        handle,
+    )?)
+}
+
+/// A build without the real adapters cannot run on a seat.
+#[cfg(not(feature = "tty"))]
+fn real_tty_seams(handle: &LoopHandle<'static, State>) -> Result<TtySeams, StartError> {
+    let _ = handle;
+    Err(StartError::NotYet(
+        "this build has no tty backend (feature `tty`)",
+    ))
 }

@@ -1,13 +1,16 @@
 //! The fake session: smithay's `Session` over memfd fixtures. Any open of a path that is not a
 //! fixture is `DeniedOpen`, which fails the test with exit 5 (a jail breach, §6.1).
 
+use super::logind::manager::SleepPhase;
 use casement_backend::SessionFault;
 use casement_backend::tty::{DevicePath, SessionNote, TtySession, VtNumber};
 use rustix::fs::{MemfdFlags, OFlags, SeekFrom};
 use smithay::backend::session::Session;
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::os::fd::OwnedFd;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 /// One device the fake session can open: its bytes, served from a memfd.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,6 +41,8 @@ pub struct FakeSession {
     activity: Activity,
     /// The VT the session was last asked to change to.
     switched_to: Option<i32>,
+    /// The seat changes not yet handed out by `notes`.
+    pending: Vec<SessionNote>,
 }
 
 impl FakeSession {
@@ -56,7 +61,79 @@ impl FakeSession {
 
     /// The seat is given back (the VT the session lives on is current again).
     pub fn resume(&mut self) {
-        self.activity = Activity::Active;
+        self.set(Activity::Active);
+    }
+
+    /// logind's `PrepareForSleep` as the session hears it: the seat is taken away when the
+    /// machine is about to sleep and given back when it woke. (The fake logind server, P1-F2,
+    /// drives this through the same two calls.)
+    pub fn prepare_for_sleep(&mut self, phase: SleepPhase) {
+        match phase {
+            SleepPhase::Starting => self.set(Activity::Inactive),
+            SleepPhase::Resumed => self.set(Activity::Active),
+        }
+    }
+
+    /// Moves to `activity`, noting a change of hands (and nothing when it did not change).
+    fn set(&mut self, activity: Activity) {
+        if self.activity == activity {
+            return;
+        }
+        self.activity = activity;
+        self.pending.push(match activity {
+            Activity::Active => SessionNote::Activated,
+            Activity::Inactive => SessionNote::Paused,
+        });
+    }
+}
+
+/// A [`FakeSession`] that a backend and a test both hold: the backend takes one clone as its
+/// `TtySession`, the test drives the seat through another.
+///
+/// ```
+/// use casement_testkit::fakes::{FakeSession, SharedSession};
+///
+/// let session = SharedSession::new(FakeSession::default());
+/// let for_the_backend = session.clone();
+/// session.resume();
+/// drop(for_the_backend);
+/// ```
+#[derive(Debug, Clone)]
+pub struct SharedSession(Rc<RefCell<FakeSession>>);
+
+impl SharedSession {
+    /// Shares `session`.
+    pub fn new(session: FakeSession) -> SharedSession {
+        SharedSession(Rc::new(RefCell::new(session)))
+    }
+
+    /// The seat is given back.
+    pub fn resume(&self) {
+        self.0.borrow_mut().resume();
+    }
+
+    /// logind's `PrepareForSleep`.
+    pub fn prepare_for_sleep(&self, phase: SleepPhase) {
+        self.0.borrow_mut().prepare_for_sleep(phase);
+    }
+
+    /// The VT the session was last asked to switch to, if any.
+    pub fn switched_to(&self) -> Option<i32> {
+        self.0.borrow().switched_to()
+    }
+}
+
+impl TtySession for SharedSession {
+    fn open_device(&mut self, path: &DevicePath) -> Result<OwnedFd, SessionFault> {
+        self.0.borrow_mut().open_device(path)
+    }
+
+    fn switch_vt(&mut self, vt: VtNumber) -> Result<(), SessionFault> {
+        self.0.borrow_mut().switch_vt(vt)
+    }
+
+    fn notes(&mut self) -> Vec<SessionNote> {
+        self.0.borrow_mut().notes()
     }
 }
 
@@ -93,7 +170,7 @@ impl Session for FakeSession {
 
     fn change_vt(&mut self, vt: i32) -> Result<(), SessionFault> {
         self.switched_to = Some(vt);
-        self.activity = Activity::Inactive;
+        self.set(Activity::Inactive);
         Ok(())
     }
 
@@ -117,7 +194,7 @@ impl TtySession for FakeSession {
     }
 
     fn notes(&mut self) -> Vec<SessionNote> {
-        todo!("P1-D1: FakeSession::notes (Paused on a VT switch away, Activated on resume)")
+        std::mem::take(&mut self.pending)
     }
 }
 
@@ -179,5 +256,18 @@ mod tests {
         session.resume();
         assert!(session.is_active());
         assert_eq!(session.seat(), "seat0");
+    }
+
+    #[test]
+    fn notes_are_handed_out_once_and_only_for_changes() {
+        let mut session = session();
+        session.resume();
+        assert_eq!(session.notes(), []);
+        session.prepare_for_sleep(SleepPhase::Starting);
+        session.prepare_for_sleep(SleepPhase::Starting);
+        assert_eq!(session.notes(), [SessionNote::Paused]);
+        assert_eq!(session.notes(), []);
+        session.prepare_for_sleep(SleepPhase::Resumed);
+        assert_eq!(session.notes(), [SessionNote::Activated]);
     }
 }

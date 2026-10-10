@@ -20,6 +20,10 @@ impl Deadline {
     }
 }
 
+/// How many vblanks a deadline looks past before giving up and taking the next one (a frame
+/// costing more than this many periods cannot be scheduled anyway).
+const MAX_SKIPPED: usize = 600;
+
 /// The deadline for the first vblank after `now` that a frame costing `predicted` plus `slack`
 /// can still make; a frame that cannot make the next vblank is for the one after.
 pub fn next_deadline(
@@ -28,6 +32,12 @@ pub fn next_deadline(
     now: Mono,
     slack: Duration,
 ) -> Deadline {
-    let _ = (clock, predicted, now, slack);
-    todo!("P1-D3: next_deadline")
+    let need = predicted.saturating_add(slack);
+    let first = clock.next_after(now).0;
+    let vblank = std::iter::successors(Some(first), |v| Some(clock.next_after(*v).0))
+        .take(MAX_SKIPPED)
+        .find(|v| v.0.checked_sub(need).is_some_and(|at| at >= now.0))
+        .unwrap_or(first);
+    let render_at = Mono(vblank.0.saturating_sub(need).max(now.0));
+    Deadline { render_at, vblank }
 }

@@ -35,6 +35,6 @@ pub use headless::{
     SpecError, VblankSource, VirtualOutputSpec,
 };
 pub use input::{DeviceName, DeviceSpec, VirtualDevice, VirtualInput};
-pub use session::{LibseatSlot, SessionFault, SessionSeam};
+pub use session::{SessionFault, SessionSeam};
 pub use tty::TtyBackend;
 pub use winit::WinitBackend;

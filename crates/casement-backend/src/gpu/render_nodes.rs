@@ -104,6 +104,9 @@ pub enum GpuError {
     /// The GPU went away while in use (an unplugged eGPU).
     #[error("GPU {0:?} was unplugged")]
     Unplugged(DrmNodeId),
+    /// No format table is available for the node (a recorded table nobody loaded).
+    #[error("no format table for GPU {0:?}")]
+    NoFormats(DrmNodeId),
     /// No plan could be made.
     #[error("plan: {0}")]
     Plan(#[from] PlanRefusal),
