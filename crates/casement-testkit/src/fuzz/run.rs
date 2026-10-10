@@ -236,7 +236,8 @@ mod tests {
             on(ConnectionRole::Public, ObjectRef::Null, "wl_surface", 0),
             on(sandboxed(), ObjectRef::Valid(0), "wl_compositor", 0),
         ];
-        run_on(&mut Scripted::new(fault), &ops).expect_err("the oracle fires")
+        run_on(&mut Scripted::new(fault), &ops)
+            .expect_err("the oracle fires")
             .to_string()
     }
 

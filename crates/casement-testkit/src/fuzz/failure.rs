@@ -1,8 +1,8 @@
 //! What a failed oracle looks like: one variant per way the five oracles (`oracles.rs`) can
 //! fire, so a harness matches on the failure and the message is only the rendering.
 
-use super::oracles::Snapshot;
 use super::ops::FuzzOp;
+use super::oracles::Snapshot;
 use crate::fixture::ClientId;
 use casement_core::InvariantBreak;
 use casement_core::policy::ConnectionRole;

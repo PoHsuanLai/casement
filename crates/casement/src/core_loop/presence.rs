@@ -55,7 +55,10 @@ pub(super) fn update(state: &mut State) {
     let placed = placements(state);
     let mut roots_seen = Vec::new();
     for group in placed.chunk_by(|a, b| a.0 == b.0) {
-        let Some(root) = group.iter().find(|(_, placed)| placed.kind == TreeKind::Root) else {
+        let Some(root) = group
+            .iter()
+            .find(|(_, placed)| placed.kind == TreeKind::Root)
+        else {
             continue;
         };
         let home = home_of(&root.1, &outputs);

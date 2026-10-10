@@ -14,8 +14,8 @@ use casement_core::{LayerKey, OutputKey, WindowId};
 use casement_motion::{OutputFrame, PlacedWindow};
 use convert::{on_output, sub_of};
 use ds_core::geometry::scale::Scale;
-use smithay::backend::renderer::element::surface::render_elements_from_surface_tree;
 use smithay::backend::renderer::element::Kind;
+use smithay::backend::renderer::element::surface::render_elements_from_surface_tree;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 
 /// Where an output sits and how dense it is: what turns the frame's global sub-pixels into this

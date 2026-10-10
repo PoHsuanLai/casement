@@ -51,8 +51,8 @@ impl WinitBackend {
             .with_surface_size(logical)
             .with_title("casement")
             .with_visible(true);
-        let (graphics, events) = winit::init_from_attributes::<GlesRenderer>(attributes)
-            .map_err(BackendError::from)?;
+        let (graphics, events) =
+            winit::init_from_attributes::<GlesRenderer>(attributes).map_err(BackendError::from)?;
         let size = graphics.window_size();
         let tracker = OutputDamageTracker::new(size, scale, Transform::Normal);
         let announce = Some(ConnectorEvent::Plugged(facts_of(&output)));
@@ -89,10 +89,7 @@ impl WinitBackend {
     pub fn present(&mut self, source: &dyn FrameSource) -> Result<Option<VblankSeq>, BackendError> {
         let age = self.graphics.buffer_age().unwrap_or(0);
         let damage = {
-            let (renderer, mut framebuffer) = self
-                .graphics
-                .bind()
-                .map_err(BackendError::from)?;
+            let (renderer, mut framebuffer) = self.graphics.bind().map_err(BackendError::from)?;
             let elements = source.gles(renderer);
             let rendered = render_output(
                 renderer,

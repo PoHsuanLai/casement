@@ -1,8 +1,8 @@
 //! What a fixture starts with.
 
 use crate::gpu::GpuTopology;
-use casement_backend::{DmabufMode, RenderCostModel, SoftRenderer, VirtualOutputSpec};
 use casement::relax::AckPolicy;
+use casement_backend::{DmabufMode, RenderCostModel, SoftRenderer, VirtualOutputSpec};
 use casement_core::settings::CasementSettings;
 use std::time::Duration;
 

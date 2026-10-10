@@ -5,7 +5,7 @@
 #[cfg(feature = "debug-inject")]
 use crate::debug;
 use crate::display::{self, attach_display};
-use crate::{State, StartError, cli, clients, core_loop};
+use crate::{StartError, State, cli, clients, core_loop};
 use casement_backend::BackendKind;
 use casement_ipc::IpcError;
 use porter_core::PeerIdentity;

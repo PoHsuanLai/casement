@@ -73,7 +73,9 @@ fn space_spec(model: &Model, space: &Space, output: &OutputKey, shown: Visibilit
         .values()
         .filter(|window| match &window.place {
             SpacePlace::On(id) => *id == space.id,
-            SpacePlace::AllSpaces => shown == Visibility::Shown && window.home.as_ref() == Some(output),
+            SpacePlace::AllSpaces => {
+                shown == Visibility::Shown && window.home.as_ref() == Some(output)
+            }
         })
         .collect::<Vec<&Window>>();
     held.sort_by_key(|window| (window.stack, window.id));
