@@ -2,6 +2,7 @@
 //!
 //! One integration binary: every former `tests/*.rs` is a module here, and `support` is shared.
 
+mod capture;
 mod render;
 mod scenes;
 #[cfg(feature = "testing")]

@@ -817,3 +817,55 @@ the `--xwayland` flags, `VendorFact::from_pci_vendor`, `GammaTable::new`, `Outpu
   `casement/src/state.rs` and `exec.rs` (module and import names `gamma`, `workspace`, `spawn`), the doc tests (all
   `no_run`), `casement-testkit/src/fixture.rs`, `fakes/session.rs` (`TtySession` over smithay's `Session`), and
   `casement-render/src/pass/capture.rs` (the `ExportMem` bound with `R::Framebuffer<'_>`).
+
+## p1-c1: output capture (ext-image-copy-capture-v1 with output sources)
+
+Nothing here compiled (no builds this lane). `ext_output_image_capture_source_manager_v1` and
+`ext_image_copy_capture_manager_v1` are advertised at version 1 to every non-sandboxed connection
+(`GlobalKind::ImageCapture` was already `Advertise::No` for sandboxes); `globals.txt` has both rows and the
+globals test's `KINDS` lists `ImageCapture`; `sandbox.rs` checks that both are hidden. `casementctl shot
+--output NAME OUT.png` captures over the wire; `--window` and `--masked` stay exit 2 (P2, P4); the default
+output and `--region` still go through Debug1.
+
+### Departures
+
+- **A capture is the last presented frame, not a new render.** `handlers/image_capture/frames.rs` copies the frame
+  the headless backend kept when the output presented (`HeadlessBackend::last_frame`, already read back through
+  `ExportMem`) into the client's shm buffer, so capture equals scanout by construction. `pass::capture_output` (the
+  same read-back for a framebuffer, plus `CapturedFrame::from_rgba`) is written and tested on pixman but the
+  headless path does not call it: the frame it would read is gone by the time a client asks. **The tty backend has
+  no read-back yet**: a frame request there fails with `unknown` until P1-D3's scanout keeps a frame or renders one
+  for the request. A real-hardware run must check a capture on KMS.
+- **No dma-buf.** Constraints are shm only (`argb8888`, `xrgb8888`, the output's mode size, `dma: None`). dma-buf
+  capture follows with P1-D4's GPU manager (the render node to announce). `BufferConstraints { dma }` exists because
+  `casement-backend` always builds smithay with `renderer_multi`, which brings `backend_drm`; a build of
+  `casement-wayland` alone does not construct it.
+- **The cursor option is carried and ignored.** The frame is scanout's, with whatever cursor scanout draws. A
+  `paint_cursors`-off capture of a frame with a software cursor needs the cursor-free render P4's mask pass brings.
+- **One unsafe function.** smithay lends a shm pool as `*mut u8`, so `casement-render/src/pass/capture/shm.rs` is
+  `#![allow(unsafe_code)]` for one `slice::from_raw_parts_mut` (its SAFETY comment says why); the row copy beside it is
+  safe and unit-tested. This breaks the "no unsafe" style rule; the alternative is not to write the client's buffer.
+- **A mode change fails the next frame.** If the output's mode size differs from the session's constraints, the
+  handler sends the new constraints (`update_constraints`) and fails the frame with `buffer_constraints`; the client
+  allocates again. smithay already fails buffers smaller than the announced size.
+- **`ImageCapturePart` holds smithay's states.** It is no longer `Default`: the pure bookkeeping is `CaptureBook`
+  (`Default`, unit-tested without a display), the free functions take it, and only `apply_output_gone` takes the part
+  (it drops the held `Session`s, whose `Drop` is the `stopped` event). `CaptureBook::sessions` maps to the output, not
+  the source, because a client may destroy a source right after creating its session. `WaylandFault` gained
+  `UnknownCapture(u64)`.
+- **The test client is not `DesktopClient`.** `casement_testclient::capture::OutputCapture` has its own wire on a
+  side queue (the `misc::idle` pattern) and folds events with `desktop_client::reduce`, reading `desktop_client::Frame`
+  (`to_rgba8`). `DesktopClient::new` and `roundtrip` block on the compositor, which the fixture serves on the same
+  thread, so they cannot be driven there. `casementctl shot` uses the full `DesktopClient` (feature `client`). One
+  `OutputCapture` is one session and one frame (the reducer's `take_ready` ends the capture).
+- **`desktop-client` is not in the sibling checkout this lane saw.** `../casement-protocols/desktop-client` exists on
+  that repo's `lane/dc-fill` branch only (a0ca174 master lacks it), so the workspace does not load here until it
+  lands; this lane read the API from that branch.
+
+### Spots a real build checks first
+
+`handlers/image_capture.rs` and `frames.rs` (smithay's `Session`/`SessionRef`/`Frame` paths, `insert_if_missing_threadsafe`,
+`BufferConstraints { dma }`), `casement-wayland/src/image_capture.rs` (`new_with_filter` bounds with the concrete
+`Clone` closure), `casement-testclient/src/capture/copy_session.rs` (wayland-client signatures: `create_session`
+options type, `Format::try_from`), `casementctl/src/command/capture.rs` (desktop-client's paths), `shm.rs` (the closure
+returning `Result` through `with_buffer_contents_mut(..)?`).

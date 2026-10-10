@@ -45,6 +45,9 @@ casement-testkit = { path = "crates/casement-testkit" }
 
 # Sibling repos, by path (each checkout sits beside this one; a lane worktree links them).
 casement-protocols = { path = "../casement-protocols" }
+# The one desktop client library (toplevels, workspaces, outputs, output capture): `casementctl
+# shot` uses its wire layer, the test client its reducer and Frame.
+desktop-client = { path = "../casement-protocols/desktop-client" }
 porter-core        = { path = "../porter/crates/porter-core" }
 # quire's pure crates without dioxus (S0-QM1): the compositor never links a UI framework.
 ds-core   = { path = "../quire/crates/ds-core", default-features = false }

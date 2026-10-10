@@ -166,4 +166,7 @@ pub enum WaylandFault {
     /// The keymap could not be compiled (the seat's keyboard cannot start).
     #[error("keymap: {0}")]
     Keymap(String),
+    /// A capture source or session this protocol module does not know (its number).
+    #[error("unknown capture {0}")]
+    UnknownCapture(u64),
 }

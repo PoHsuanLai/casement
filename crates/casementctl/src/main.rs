@@ -9,7 +9,7 @@
 //! casementctl output ...              the same, spelt as the freeze plan writes it
 //! casementctl debug windows | scene
 //! casementctl debug fault panic-after-frames N | stall-client-ms MS | drop-output INDEX
-//! casementctl shot [--output NAME | --window ID | --region X,Y,W,H] [--masked] OUT.png   (P1-C1)
+//! casementctl shot [--output NAME | --window ID | --region X,Y,W,H] [--masked] OUT.png
 //! casementctl report --kms --input --gpu                                              (P5, user only)
 //! ```
 //!

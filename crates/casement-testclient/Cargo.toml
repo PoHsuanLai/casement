@@ -20,6 +20,9 @@ path = "src/bin/x11probe.rs"
 [dependencies]
 casement-core = { workspace = true }
 casement-protocols = { workspace = true, features = ["client"] }
+# The capture helpers fold events with its reducer and read its Frame; no wire layer (a fixture
+# cannot answer its blocking round trips).
+desktop-client = { workspace = true }
 wayland-client = { workspace = true }
 wayland-backend = { workspace = true }
 wayland-protocols = { workspace = true }

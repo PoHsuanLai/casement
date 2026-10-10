@@ -14,7 +14,13 @@
 use crate::Compositor;
 use crate::damage::RenderError;
 use casement_core::geometry::PhysicalRect;
+use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::ExportMem;
+use smithay::utils::{Buffer, Rectangle};
+
+mod shm;
+
+pub use shm::{ShmWriteError, write_frame};
 
 /// Whether the cursor is in the captured image.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -67,12 +73,50 @@ pub struct CapturedFrame {
     pub bytes: Vec<u8>,
 }
 
+impl CapturedFrame {
+    /// A frame of `area` from `rgba`, tightly packed rows of R, G, B, A bytes (what the
+    /// renderers read back and what the headless backend keeps as its last frame): the same
+    /// pixels as little-endian `Argb8888`, so the capture is the scanout frame byte for byte.
+    ///
+    /// ```
+    /// use casement_core::geometry::PhysicalRect;
+    /// use casement_render::pass::{CaptureFormat, CapturedFrame};
+    ///
+    /// let area = PhysicalRect { x: 0, y: 0, w: 1, h: 1 };
+    /// let frame = CapturedFrame::from_rgba(area, &[1, 2, 3, 4]);
+    /// assert_eq!(frame.format, CaptureFormat::Argb8888);
+    /// assert_eq!(frame.bytes, [3, 2, 1, 4]);
+    /// ```
+    pub fn from_rgba(area: PhysicalRect, rgba: &[u8]) -> CapturedFrame {
+        let bytes = rgba
+            .chunks_exact(4)
+            .flat_map(|px| [px[2], px[1], px[0], px[3]])
+            .collect();
+        CapturedFrame {
+            area,
+            format: CaptureFormat::Argb8888,
+            stride: area.w.saturating_mul(4),
+            bytes,
+        }
+    }
+}
+
 /// Reads `request.area` of `target`, which the last render drew into.
 pub fn capture_output<R: Compositor + ExportMem>(
     renderer: &mut R,
     target: &R::Framebuffer<'_>,
     request: &CaptureRequest,
 ) -> Result<CapturedFrame, RenderError> {
-    let _ = (renderer, target, request);
-    todo!("P1-C1: capture_output")
+    let area = request.area;
+    let side = |n: u32| i32::try_from(n).map_err(|_| RenderError::NoTarget);
+    let region = Rectangle::<i32, Buffer>::new(
+        (area.x, area.y).into(),
+        (side(area.w)?, side(area.h)?).into(),
+    );
+    let fault = |error: R::Error| RenderError::Renderer(error.to_string());
+    let mapping = renderer
+        .copy_framebuffer(target, region, Fourcc::Abgr8888)
+        .map_err(fault)?;
+    let rgba = renderer.map_texture(&mapping).map_err(fault)?;
+    Ok(CapturedFrame::from_rgba(area, rgba))
 }

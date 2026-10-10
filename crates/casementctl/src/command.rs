@@ -1,6 +1,7 @@
 //! casementctl's subcommands.
 
 mod bus;
+mod capture;
 mod debug;
 mod jail;
 mod plan;
@@ -192,9 +193,13 @@ fn exit_code(command: Command) -> u8 {
             out,
         } => {
             let cwd = std::env::current_dir().unwrap_or_default();
-            match shot::call(&target, masked, &out, &cwd) {
-                Ok(call) => debug::run_call(call),
-                Err(why) => not_built(why),
+            match (&target, masked) {
+                // A named output is captured over the wire, like any screenshot tool would.
+                (ShotTarget::Output(name), Masked::No) => capture::run(name, &cwd.join(&out)),
+                _ => match shot::call(&target, masked, &out, &cwd) {
+                    Ok(call) => debug::run_call(call),
+                    Err(why) => not_built(why),
+                },
             }
         }
         Command::Report => not_built("report is the user's hardware report, built in P5"),
@@ -324,8 +329,10 @@ mod tests {
     }
 
     #[test]
-    fn window_and_masked_shots_and_report_are_not_built_at_p0() {
-        // An output or region shot goes through Debug1 (`shot.rs`); these need P1-C1's capture.
+    fn window_and_masked_shots_and_report_are_not_built_yet() {
+        // A named output is captured over the wire (`capture.rs`), the default output and a
+        // region go through Debug1 (`shot.rs`); a window needs P2's toplevel sources and a masked
+        // shot P4's mask pass.
         for line in ["shot --window 3 out.png", "shot --masked out.png"] {
             let shot = parse(&args(line)).expect("shot");
             assert_eq!(exit_code(shot), COULD_NOT_RUN, "{line}");

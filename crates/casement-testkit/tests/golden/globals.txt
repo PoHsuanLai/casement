@@ -46,5 +46,7 @@ zwp_idle_inhibit_manager_v1 1 idle_inhibit
 ext_foreign_toplevel_list_v1 1 foreign_toplevel_list
 wp_security_context_manager_v1 1 security_context
 ext_background_effect_manager_v1 1 background_effect
+ext_output_image_capture_source_manager_v1 1 image_capture
+ext_image_copy_capture_manager_v1 1 image_capture
 # With --dmabuf soft (and on hardware from P1) also, with default feedback:
 #   zwp_linux_dmabuf_v1 6 dmabuf

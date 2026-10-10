@@ -44,8 +44,9 @@ pub fn parse_shot(args: &[String]) -> Result<(ShotTarget, Masked, PathBuf), Comm
 }
 
 /// Why a shot cannot be taken yet (exit 2: could not run), or the Debug1 call that takes it.
-/// While ext-image-copy-capture (P1-C1) is not built, casement's debug object writes the PNG of
-/// an output's last frame, or of a region of it, from inside the compositor.
+/// A named output is captured over ext-image-copy-capture (`capture.rs`); the default output and
+/// a region of one are still written by casement's debug object, from inside the compositor.
+/// A window (P2) and a masked shot (P4) wait for their passes.
 pub fn call(
     target: &ShotTarget,
     masked: Masked,
@@ -53,9 +54,9 @@ pub fn call(
     cwd: &Path,
 ) -> Result<Call, &'static str> {
     let area = match (masked, target) {
-        (Masked::Yes, _) => return Err("shot --masked needs the capture protocols (P1-C1)"),
+        (Masked::Yes, _) => return Err("shot --masked needs the mask pass (P4)"),
         (Masked::No, ShotTarget::Window(_)) => {
-            return Err("shot --window needs the capture protocols (P1-C1)");
+            return Err("shot --window needs toplevel capture sources (P2)");
         }
         (Masked::No, ShotTarget::Default) => "output".to_owned(),
         (Masked::No, ShotTarget::Output(name)) => format!("output:{name}"),

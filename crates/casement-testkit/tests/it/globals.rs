@@ -82,7 +82,7 @@ fn module_of(kind: GlobalKind) -> &'static str {
 }
 
 /// Every P0 global kind (the `match` above fails to compile when one is added).
-const KINDS: [GlobalKind; 43] = [
+const KINDS: [GlobalKind; 44] = [
     GlobalKind::Compositor,
     GlobalKind::Subcompositor,
     GlobalKind::Shm,
@@ -126,6 +126,7 @@ const KINDS: [GlobalKind; 43] = [
     GlobalKind::ForeignToplevelList,
     GlobalKind::SecurityContext,
     GlobalKind::BackgroundEffect,
+    GlobalKind::ImageCapture,
 ];
 
 #[test]

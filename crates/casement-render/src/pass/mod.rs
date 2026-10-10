@@ -3,4 +3,7 @@
 
 mod capture;
 
-pub use capture::{CaptureFormat, CaptureRequest, CapturedFrame, CursorInclusion, capture_output};
+pub use capture::{
+    CaptureFormat, CaptureRequest, CapturedFrame, CursorInclusion, ShmWriteError, capture_output,
+    write_frame,
+};
