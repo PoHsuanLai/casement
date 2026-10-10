@@ -1512,7 +1512,7 @@ a run); `casement-render/tests/it/window_pass.rs` pins the pass on pixman with s
   session learns at the next frame request, which fails with `buffer_constraints` and carries the new
   `buffer_size`. The brief wanted the announce "again when the scale changes"; a proactive announce needs a hook
   in the output-change path (`core_loop`), which is outside this lane.
-- **Source destruction is not forwarded.** `handlers/image_capture.rs::source_destroyed` only knows output
+- **Source destruction (closed at merge):** `image_capture.rs::source_destroyed` now forwards a `ToplevelSourceId` to `capture_source::on_source_destroyed`. Was: `handlers/image_capture.rs::source_destroyed` only knows output
   sources, so a destroyed window source stays in `ToplevelCaptureBook::sources` until its window closes (a
   session made from it already works). Interface ask: forward a `ToplevelSourceId` in that handler to
   `capture_source::on_source_destroyed` (three lines in a file this lane may not edit).

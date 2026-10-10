@@ -332,10 +332,8 @@ mod tests {
     fn masked_shots_and_report_are_not_built_yet() {
         // A named output is captured over the wire (`capture.rs`), the default output, a region
         // and a window go through Debug1 (`shot.rs`); a masked shot needs P4's mask pass.
-        for line in ["shot --masked out.png"] {
-            let shot = parse(&args(line)).expect("shot");
-            assert_eq!(exit_code(shot), COULD_NOT_RUN, "{line}");
-        }
+        let shot = parse(&args("shot --masked out.png")).expect("shot");
+        assert_eq!(exit_code(shot), COULD_NOT_RUN, "a masked shot");
         assert_eq!(exit_code(Command::Report), COULD_NOT_RUN);
     }
 }
