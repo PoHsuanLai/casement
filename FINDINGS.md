@@ -1175,3 +1175,35 @@ or `place_below` with the sub-surface itself as the reference removed it from it
 the end. The protocol makes that reference a `bad_surface` error; the fork's `PrivateSurfaceData::reorder` now
 refuses it (branch `casement`, 9c8f762a on dc7ca684). An upstream PR waits for the owner's word (upstream PRs on
 hold).
+## p1-v: vkms acceptance and writeback goldens (2026-10-11)
+
+Nothing here compiled or run (no builds, no vkms). User-run only (C3).
+
+- **Delivered:** `dev/vkms/accept.sh` and `README.md` (the person's setup commands, what each step asserts);
+  `casement-testkit/src/writeback.rs` (pure: `decode`, `tolerance`, `compare_raw`, `PixelFormat`, `RawFrame`), the
+  `writeback-compare` binary (copied by `dev/bootstrap.sh` next to the other tools), tests in `tests/it/writeback.rs`
+  (run in the normal gate), and a scene `empty-desktop-1024x768` in `tests/it/scene`.
+- **The golden PNG does not exist yet.** `tests/golden/scenes/empty-desktop-1024x768.png` is created by one
+  `CASEMENT_BLESS=1` run of the scene test (the lane could not render). Until it is blessed the scene test fails with
+  "differs (golden missing)"; bless, review the image, commit. The scene assumes output spec
+  `HEADLESS-1:1024x768@60000:120:0,0` (120 = 1x) and the pointer at the middle.
+- **Departure: the script cannot run end to end today.** casement has no way to run the tty backend on one named
+  node: the real seams use libseat and `GpuChoice::Auto`, which would take the person's real VT and GPU. So the script
+  needs four hooks on casement, listed in its header ("casement contract") and probed with `casement --help`
+  (exit 4 when missing): `--drm-node PATH` (direct fd on that node, checks driver `vkms`), `--kms-report FILE` (JSON
+  lines: flips, missed, seat, outputs with name/mode/power), `--writeback-raw PATH` (on SIGHUP, one writeback frame as a
+  raw buffer plus `PATH.meta` "W H PITCH FOURCC"), SIGUSR1/SIGUSR2 as session Paused/Activated. KMS writeback is not in
+  the backend at all (`Kms` has no writeback connector); a follow-up lane (P1-D2/D3 owners) adds it behind
+  `--drm-node` mode only. `casementctl` is jail-only, so the script cannot use it; DPMS goes through `wlopm`
+  (wlr-output-power-management, P1-M1).
+- **Hotplug is a status flip, not mkdir/rmdir.** Connector subitems created by the kernel after the setup are
+  root-owned in configfs, so a user cannot link `possible_encoders` or write `status` on a connector it created. The
+  setup pre-creates `hotplug1` disconnected and the script writes `status` 1 / 2 on it.
+- **Most likely wrong (kernel side, unchecked on 7.2):** the configfs attribute names (`planes/*/type` values, `crtcs/*/writeback`,
+  connector `status` values 1 and 2, `possible_crtcs` / `possible_encoders` link dirs); `create_default_dev=0`; whether
+  `chown -R` on configfs persists for later-created attribute files; the udev `TAG-=` rules actually keeping the
+  desktop off the card; the default vkms mode being 1024x768@60 (the report's mode is what the script reads, only the
+  golden assumes 1024x768); whether writeback includes the cursor plane.
+- **Most likely not to compile:** `writeback_compare.rs` (the `map_or(Ok(3), |_| number(...))` type inference may
+  need a turbofish), `tests/it/writeback.rs` (`assert_eq!` on `Result<GoldenOutcome, WritebackError>` needs both to be
+  `PartialEq`; `GoldenOutcome` derives it).

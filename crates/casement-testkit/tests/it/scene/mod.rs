@@ -1,4 +1,4 @@
-//! The ten base scenes (P0-R-scene, tier P: pixman, byte-exact) and the blur v0 scene
+//! The base scenes (and the vkms one) (P0-R-scene, tier P: pixman, byte-exact) and the blur v0 scene
 //! (tier L: llvmpipe), driven through the fixture so real client surfaces are drawn.
 //! Goldens live in `tests/golden/scenes/<name>.png`, blessed with `CASEMENT_BLESS=1`.
 
@@ -7,8 +7,13 @@ use casement_render::golden::{Golden, GoldenOutcome, GoldenTier, compare};
 use casement_testkit::{Env, Fixture, FixtureSpec};
 
 /// The P0 base scenes: name, outputs.
-const SCENES: [(&str, &[&str]); 10] = [
+const SCENES: [(&str, &[&str]); 11] = [
     ("empty-desktop-1x", &["HEADLESS-1:1920x1080@60000:120:0,0"]),
+    // The vkms writeback golden (dev/vkms/accept.sh): the default 1024x768 mode of a vkms CRTC.
+    (
+        "empty-desktop-1024x768",
+        &["HEADLESS-1:1024x768@60000:120:0,0"],
+    ),
     ("one-window-1x", &["HEADLESS-1:1920x1080@60000:120:0,0"]),
     ("one-window-1.5x", &["HEADLESS-1:2880x1620@60000:180:0,0"]),
     ("one-window-2x", &["HEADLESS-1:3840x2160@60000:240:0,0"]),

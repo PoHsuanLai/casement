@@ -17,6 +17,7 @@ mod origin;
 mod output;
 mod spec;
 pub mod udmabuf;
+pub mod writeback;
 
 pub use env::Env;
 pub use fixture::{Advanced, ClientId, Fixture, FixtureError, FrameCount, SceneDump, ShotTarget};

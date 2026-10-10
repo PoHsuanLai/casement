@@ -12,6 +12,10 @@ publish.workspace = true
 name = "fake-logind"
 path = "src/bin/fake_logind.rs"
 
+[[bin]]
+name = "writeback-compare"
+path = "src/bin/writeback_compare.rs"
+
 [dependencies]
 casement = { workspace = true, features = ["testing"] }
 casement-core = { workspace = true }

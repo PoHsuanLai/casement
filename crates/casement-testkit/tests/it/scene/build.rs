@@ -22,6 +22,7 @@ pub fn scene(fixture: &mut Fixture, name: &str) -> image::RgbaImage {
     let mut desk = Desk::at(fixture);
     match name {
         "empty-desktop-1x" => desk.pointer_at(LogicalPoint { x: 960, y: 540 }),
+        "empty-desktop-1024x768" => desk.pointer_at(LogicalPoint { x: 512, y: 384 }),
         "one-window-1x" => one_window(&mut desk, Dpi::One),
         "one-window-1.5x" => one_window(&mut desk, Dpi::OneAndAHalf),
         "one-window-2x" => one_window(&mut desk, Dpi::Two),

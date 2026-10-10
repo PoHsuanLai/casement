@@ -11,6 +11,7 @@ mod protocol;
 mod scene;
 mod topology;
 mod tty;
+mod writeback;
 mod xwayland;
 
 /// Test files that run in their own process and stay their own binary (a comment in each says why).

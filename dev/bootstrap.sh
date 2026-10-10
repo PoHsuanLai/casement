@@ -64,12 +64,12 @@ build_casement() {
   cargo build "${flag[@]}" --bins -p casement -p casementctl -p casement-testclient -p casement-testkit \
     --features casement/debug-inject
   local bin
-  for bin in casement casementctl casement-probe fake-logind; do
+  for bin in casement casementctl casement-probe fake-logind writeback-compare; do
     # A copy, not a link: a later `cargo clean` must not leave the jail a dangling tool.
     cp -f "$target/$profile/$bin" "$tools/bin/$bin.new"
     mv -f "$tools/bin/$bin.new" "$tools/bin/$bin"
   done
-  echo "bootstrap: casement, casementctl, casement-probe, fake-logind -> $tools/bin ($profile)"
+  echo "bootstrap: casement, casementctl, casement-probe, fake-logind, writeback-compare -> $tools/bin ($profile)"
 }
 
 fetch_foot() {
