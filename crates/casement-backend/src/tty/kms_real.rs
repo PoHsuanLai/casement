@@ -20,7 +20,7 @@ use super::kms::{
     VrrState,
 };
 use super::surface::ScanoutSurface;
-use super::surface_real::{Flips, RealScanout};
+use super::surface_real::{DeviceShare, Flips, RealScanout};
 use super::udev::DevicePath;
 use crate::headless::ConnectorEvent;
 use casement_core::OutputName;
@@ -270,10 +270,12 @@ impl Kms for RealKms {
         let scanout = RealScanout::open(
             connector,
             surface,
-            &self.gbm,
-            renderer,
-            self.device.cursor_size(),
-            Rc::clone(&self.flips),
+            DeviceShare {
+                gbm: &self.gbm,
+                renderer,
+                cursor: self.device.cursor_size(),
+                flips: Rc::clone(&self.flips),
+            },
             claim,
             config,
         )?;

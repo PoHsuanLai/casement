@@ -77,19 +77,35 @@ pub struct RealScanout {
     _claim: Rc<()>,
 }
 
+/// What a device lends each surface it opens: its buffers, its renderer, its cursor plane size
+/// and its flip counts.
+pub(super) struct DeviceShare<'a> {
+    /// The device's buffer allocator.
+    pub gbm: &'a GbmDevice<DrmDeviceFd>,
+    /// The device's one renderer.
+    pub renderer: Rc<RefCell<GlesRenderer>>,
+    /// The cursor plane's size.
+    pub cursor: Size<u32, Buffer>,
+    /// The device's flip counts.
+    pub flips: Rc<RefCell<Flips>>,
+}
+
 impl RealScanout {
-    /// A surface for `connector` on `surface`'s CRTC, drawing `config`'s picture with a renderer
-    /// on `gbm`. `claim` is dropped with the surface; `flips` is the device's.
+    /// A surface for `connector` on `surface`'s CRTC, drawing `config`'s picture with the
+    /// device's renderer. `claim` is dropped with the surface.
     pub(super) fn open(
         connector: ConnectorId,
         surface: DrmSurface,
-        gbm: &GbmDevice<DrmDeviceFd>,
-        renderer: Rc<RefCell<GlesRenderer>>,
-        cursor: Size<u32, Buffer>,
-        flips: Rc<RefCell<Flips>>,
+        share: DeviceShare<'_>,
         claim: Rc<()>,
         config: &OutputConfig,
     ) -> Result<RealScanout, KmsError> {
+        let DeviceShare {
+            gbm,
+            renderer,
+            cursor,
+            flips,
+        } = share;
         let crtc = surface.crtc();
         let allocator = GbmAllocator::new(
             gbm.clone(),

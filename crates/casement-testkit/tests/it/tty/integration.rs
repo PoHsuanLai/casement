@@ -268,7 +268,7 @@ fn hotplug_removes_and_adds_a_scanout() {
     seat.fixture.pump();
     assert_eq!(seat.fixture.model().outputs().0.len(), 1);
     assert_eq!(seat.fixture.tty().scanouts.names(), [name("eDP-1")]);
-    assert!(seat.fixture.tty().lit.get(&name("DP-1")).is_none());
+    assert!(!seat.fixture.tty().lit.contains_key(&name("DP-1")));
 
     let monitor = SyntheticTopology::Dock.resources().connectors[1].clone();
     seat.world.kms.plug(monitor);
