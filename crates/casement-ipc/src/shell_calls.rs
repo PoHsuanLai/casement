@@ -9,12 +9,7 @@
 //! the loop logs.
 //!
 //! ```no_run
-//! mod worker;
-
-use casement_core::input::DbusCall;
-use worker::{MOST_ARGS, Worker};
-use zbus::names::{BusName, InterfaceName, MemberName};
-use zbus::zvariant::ObjectPath;
+//! //! use casement_core::input::DbusCall;
 //! use casement_ipc::shell_calls::{ShellCalls, ZbusShellCalls};
 //!
 //! let mut calls = ZbusShellCalls::lazy();
@@ -28,7 +23,12 @@ use zbus::zvariant::ObjectPath;
 //! calls.call(&toggle).expect("sent");
 //! ```
 
+mod worker;
+
 use casement_core::input::DbusCall;
+use worker::{MOST_ARGS, Worker};
+use zbus::names::{BusName, InterfaceName, MemberName};
+use zbus::zvariant::ObjectPath;
 
 /// Why a call could not be made.
 #[derive(Debug, thiserror::Error)]
@@ -181,7 +181,10 @@ impl ShellCalls for ZbusShellCalls {
     }
 
     fn failures(&mut self) -> Vec<FailedCall> {
-        self.worker.as_ref().map(Worker::failures).unwrap_or_default()
+        self.worker
+            .as_ref()
+            .map(Worker::failures)
+            .unwrap_or_default()
     }
 }
 
@@ -203,11 +206,7 @@ mod tests {
     fn a_name_that_is_not_d_bus_is_refused_before_anything_is_queued() {
         let mut calls = ZbusShellCalls::lazy();
         for (case, bad, what) in [
-            (
-                "service",
-                call("nodots", "/a", "org.a.B", "M"),
-                "service",
-            ),
+            ("service", call("nodots", "/a", "org.a.B", "M"), "service"),
             ("path", call("org.a.B", "a", "org.a.B", "M"), "path"),
             ("interface", call("org.a.B", "/a", "x", "M"), "interface"),
             ("method", call("org.a.B", "/a", "org.a.B", "1 2"), "method"),
