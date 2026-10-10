@@ -234,8 +234,10 @@ dependencies = [
  "casement-protocols",
  "casement-render",
  "casement-wayland",
+ "chordkit",
  "ds-core",
  "ds-settings",
+ "keycap-client",
  "porter-core",
  "rustix 1.1.5",
  "serde",
@@ -1225,6 +1227,26 @@ checksum = "0fbe853b403ae61a04233030ae8a79d94975281ed9770a1f9e246732b534b28d"
 dependencies = [
  "bitflags",
  "serde",
+]
+
+[[package]]
+name = "keycap-client"
+version = "0.1.0"
+source = "git+https://github.com/PoHsuanLai/keycap?rev=95f41dc4b613e3557f3cabc1638e53da348a09ff#95f41dc4b613e3557f3cabc1638e53da348a09ff"
+dependencies = [
+ "chordkit",
+ "keycap-protocol",
+ "rustix 1.1.5",
+]
+
+[[package]]
+name = "keycap-protocol"
+version = "0.1.0"
+source = "git+https://github.com/PoHsuanLai/keycap?rev=95f41dc4b613e3557f3cabc1638e53da348a09ff#95f41dc4b613e3557f3cabc1638e53da348a09ff"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
