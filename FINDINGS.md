@@ -817,3 +817,58 @@ the `--xwayland` flags, `VendorFact::from_pci_vendor`, `GammaTable::new`, `Outpu
   `casement/src/state.rs` and `exec.rs` (module and import names `gamma`, `workspace`, `spawn`), the doc tests (all
   `no_run`), `casement-testkit/src/fixture.rs`, `fakes/session.rs` (`TtySession` over smithay's `Session`), and
   `casement-render/src/pass/capture.rs` (the `ExportMem` bound with `R::Framebuffer<'_>`).
+
+## p1-m2: wlr toplevel, workspaces, Space id persistence (2026-10-11)
+
+Nothing here compiled (no builds this lane). Both globals are advertised: `zwlr_foreign_toplevel_manager_v1` v3 and
+`ext_workspace_manager_v1` v1, hidden from sandboxed clients (I7 rows unchanged), with `globals.txt` rows.
+
+- **Publishing is a diff, not an emission at each transition.** `Model::run` takes a `Published` snapshot before a step
+  and compares it after (`model/published.rs`): `PublishToplevel(id)` for each window whose title, app id, state kind, key
+  flag or output changed (or that appeared), `PublishWorkspaces` when the `SpaceBook` changed, `PersistSpaces` when the
+  stored file (`Model::space_file`) changed. No transition had to learn the effects; the cost is one clone of the Space
+  book and a small record per window per step. Closing is `UnlistWindow`, whose exec arm now also calls
+  `wlr_toplevel::apply_closed`. Core tests that assert an exact effect list on a step that changes a window's key flag
+  (`model_lock.rs` 218-242 if a key window exists there) would see a `PublishToplevel` too.
+- **`import_sill_json`: sill writes no spaces file.** `sill-ui-kit/src/look.rs` still says quire has no `spaces.json`
+  store, and `sill-model` only reads the protocol's `id` as `stable_id`. The shape imported is the minimal one the codec
+  pins: `{"by_id": {"<space id>": {"output": "<output key>", "index": 0}}}`, both record fields optional, unknown keys
+  ignored. A record without an output is `StoredSpace::homeless` (so `StoredSpace::output` is now `Option<OutputKey>`;
+  `StoredSpace::new` still takes one) and the first output plugged adopts it. Nothing reads the file at start: the path
+  is sill's to name; wire `import_sill_json` where `load_stored_spaces` (`core_loop.rs`) loads `spaces.toml` once sill
+  writes one.
+- **Loading.** `core_loop::announce_outputs` reads the file through the seam first and feeds `Event::SpacesLoaded` (the
+  headless fixture and `run.rs` both call it once, so one edit covers both; FINDINGS p1z said `run.rs`). The model keeps
+  the file as `remembered`. A plugged output adopts its stored Spaces (`Model::adopt_ids`): the desktops it got by
+  default are renamed in row order to the stored ids (windows follow), extra stored ones are made, and the stored
+  "shown" choice is applied. A Space whose output is not plugged waits and stays in what `space_file` writes. A file that
+  does not parse is logged and the run goes on with fresh ids.
+- **Restart test.** The fixture's entropy is fixed, so an unchanged restart would mint the same ids with no file at all.
+  `the_workspace_id_survives_a_restart` edits the stored text to an id the entropy never mints and checks the protocol
+  shows that one.
+- **Departures.** (1) `apply_toplevel` takes the window's smithay `Output`s (`&[Output]`) and `apply_spaces` takes the
+  `wl_output` globals by key, because the protocol must name a client's `wl_output`; the freeze had `&[OutputName]` and
+  no outputs. (2) `WlrToplevelPart` lost its `listed` field (the part keeps what each handle was told instead) and both
+  parts gained private fields. (3) A Space has no name in the model: workspaces are named "Desktop N" (N = row position
+  + 1), "Full Screen", "Split View" or "Agent"; `create_workspace`'s name is ignored. (4) Full-screen, Split View and
+  agent Spaces are published as workspaces too, with only `activate`; only desktops can be removed or assigned, and an
+  output keeps at least one desktop. (5) The wlr `activate` request counts as a valid activation (a dock click is the
+  person's hand; the protocol carries no token). (6) `unset_minimized` restores through the activate path, so it also
+  keys the window. (7) `set_rectangle` converts only layer surfaces (a dock's tile) by their arranged origin; any other
+  surface is taken to sit at the origin. The rectangle's output is the one containing its origin, else the window's.
+  (8) The model stores one `MinimiseTarget` per window (`Model::minimise_target`), pruned when the window goes; the
+  minimise `Cause` uses it instead of the bottom-centre point.
+- **Not done.** The wlr `parent` event is not sent. A `wl_output` a client binds after the manager is told about at the
+  next publish, not at once. A workspace client's requests are processed at `commit` in order, not atomically in the
+  model (each is its own step). When the last output is unplugged the model drops its Spaces, and the file loses
+  them once written (the remembered file only holds what was loaded).
+- **Hardware to check.** A real dock (sill-dock over `desktop_wl`'s Wlr arm) minimising to its tile: the genie goes to
+  the layer surface's rectangle; a restart on the tty backend with two outputs keeps each Space on its connector.
+- **Goldens written by hand.** `transcripts/wlr_toplevel-list.txt` and `workspace-publish.txt` are predicted from the
+  code, with ids numbered by first appearance (`normalised`) and the `state` / `id` arguments masked; re-bless once with
+  `CASEMENT_BLESS=1` and read the diff.
+- **Unverified (first places to look if it does not compile).** `casement-wayland/src/workspace.rs` (bitflags types of
+  the enum arguments: `State`, `GroupCapabilities`, `WorkspaceCapabilities`; `Resource::data`, `Client::create_resource`
+  generics), `casement-wayland/src/wlr_toplevel.rs` (the `make` fn-pointer closures; `Output::client_outputs` in an
+  edition-2024 closure), `casement-core/src/model/space_persist.rs` (`is_none_or`, borrows in `adopt_ids`),
+  `casement-core/src/model/published.rs`, `casement/src/exec/publish.rs`, and the toml 1 paths in `space/persist.rs`.

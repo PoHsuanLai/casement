@@ -1,0 +1,6 @@
+zwlr_foreign_toplevel_manager_v1#1.toplevel(new zwlr_foreign_toplevel_handle_v1#2)
+zwlr_foreign_toplevel_handle_v1#2.title("Inbox")
+zwlr_foreign_toplevel_handle_v1#2.app_id("org.example.Mail")
+zwlr_foreign_toplevel_handle_v1#2.output_enter(wl_output#3)
+zwlr_foreign_toplevel_handle_v1#2.state(<state>)
+zwlr_foreign_toplevel_handle_v1#2.done()

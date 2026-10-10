@@ -13,10 +13,11 @@
 //! assert_eq!(SpaceFile::parse(&file.render().expect("render")).expect("parse"), file);
 //! ```
 
-use super::{SpaceBook, SpaceIndex};
+use super::{SpaceBook, SpaceContent, SpaceIndex};
 use crate::ids::OutputKey;
 use porter_core::SpaceId;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 /// The Spaces file.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -35,18 +36,29 @@ pub struct SpaceFile {
 pub struct StoredSpace {
     /// Its id.
     pub id: SpaceId,
-    /// The display it belongs to.
-    pub output: OutputKey,
+    /// The display it belongs to; none for a Space imported without a home, which the first
+    /// output plugged adopts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<OutputKey>,
     /// Its place in the display's row.
     pub position: SpaceIndex,
 }
 
 impl StoredSpace {
-    /// A stored Space.
+    /// A stored Space of `output`.
     pub fn new(id: SpaceId, output: OutputKey, position: SpaceIndex) -> StoredSpace {
         StoredSpace {
             id,
-            output,
+            output: Some(output),
+            position,
+        }
+    }
+
+    /// A stored Space with no home output yet.
+    pub fn homeless(id: SpaceId, position: SpaceIndex) -> StoredSpace {
+        StoredSpace {
+            id,
+            output: None,
             position,
         }
     }
@@ -97,28 +109,79 @@ impl SpaceFile {
 
     /// The file `text` holds (empty text is an empty file; keys it does not know are ignored).
     pub fn parse(text: &str) -> Result<SpaceFile, SpaceFileError> {
-        let _ = text;
-        todo!("P1-M2: SpaceFile::parse")
+        Ok(toml::from_str(text)?)
     }
 
     /// The file as text: one `[[spaces]]` table per Space, in id order, so the same Spaces
     /// always render the same bytes.
     pub fn render(&self) -> Result<String, SpaceFileError> {
-        todo!("P1-M2: SpaceFile::render")
+        let mut sorted = self.clone();
+        sorted.spaces.sort_by(|a, b| a.id.cmp(&b.id));
+        sorted.shown.sort_by(|a, b| a.output.cmp(&b.output));
+        Ok(toml::to_string(&sorted)?)
     }
 
     /// The Spaces sill's interim minter wrote to `quire/spaces.json`, read once (C16): its
     /// `by_id` keys become Space ids, with the `output` and `index` a record carries when it
     /// has them. A record without an output is kept without a home and adopted by the first
     /// output plugged.
+    ///
+    /// sill writes no such file yet (its `look.rs` says quire has no store), so the shape is
+    /// the minimal one the codec pins: `{"by_id": {"<space id>": {"output": "<output key>",
+    /// "index": 0}}}`, both record fields optional, unknown keys ignored.
     pub fn import_sill_json(text: &str) -> Result<SpaceFile, SpaceFileError> {
-        let _ = text;
-        todo!("P1-M2: SpaceFile::import_sill_json")
+        let parsed: SillFile = serde_json::from_str(text)?;
+        let mut spaces = Vec::with_capacity(parsed.by_id.len());
+        for (at, (key, record)) in parsed.by_id.into_iter().enumerate() {
+            let id = SpaceId::parse(&key).map_err(|error| {
+                <serde_json::Error as serde::de::Error>::custom(format!(
+                    "space id {key:?}: {error:?}"
+                ))
+            })?;
+            let position = SpaceIndex(
+                record
+                    .index
+                    .unwrap_or_else(|| u32::try_from(at).unwrap_or(u32::MAX)),
+            );
+            spaces.push(match record.output {
+                Some(output) => StoredSpace::new(id, output, position),
+                None => StoredSpace::homeless(id, position),
+            });
+        }
+        Ok(SpaceFile::new(spaces, Vec::new()))
     }
 
     /// What `book` stores: its desktop Spaces and what each output shows.
     pub fn of_book(book: &SpaceBook) -> SpaceFile {
-        let _ = book;
-        todo!("P1-M2: SpaceFile::of_book")
+        let is_desktop = |id: &SpaceId| {
+            book.get(id)
+                .is_some_and(|space| matches!(space.content, SpaceContent::Desktop))
+        };
+        let spaces = book
+            .iter()
+            .filter(|space| is_desktop(&space.id))
+            .map(|space| StoredSpace::new(space.id.clone(), space.output.clone(), space.position))
+            .collect();
+        let shown = book
+            .shown()
+            .filter(|(_, id)| is_desktop(id))
+            .map(|(output, id)| StoredShown::new(output.clone(), id.clone()))
+            .collect();
+        SpaceFile::new(spaces, shown)
     }
+}
+
+/// The interim `spaces.json` of sill (read once).
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct SillFile {
+    by_id: BTreeMap<String, SillRecord>,
+}
+
+/// One record of it.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct SillRecord {
+    output: Option<OutputKey>,
+    index: Option<u32>,
 }

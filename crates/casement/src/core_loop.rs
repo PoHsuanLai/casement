@@ -336,6 +336,7 @@ pub fn sample_scene(state: &State) -> FrameScene {
 /// Reports the outputs the backend plugged at start (the caller does it once, after the
 /// clock and display are attached, so start-up and hotplug are one path).
 pub fn announce_outputs(state: &mut State) {
+    load_stored_spaces(state);
     let events = match &mut state.backend {
         BackendKind::Headless(backend) => backend.announce(),
         BackendKind::Winit(winit) => winit.announce(),
@@ -344,6 +345,16 @@ pub fn announce_outputs(state: &mut State) {
     };
     for event in events {
         connector(state, event);
+    }
+}
+
+/// Reads the Spaces file through the injected store and tells the model, so a Space keeps its
+/// id across a restart (P1-M2). A file that cannot be read is logged and the run goes on with
+/// fresh ids.
+fn load_stored_spaces(state: &mut State) {
+    match crate::space_store::load_spaces(state.seams.space_store.as_ref()) {
+        Ok(file) => feed(state, vec![Event::SpacesLoaded(Box::new(file))]),
+        Err(error) => tracing::warn!(%error, "the Spaces file could not be read"),
     }
 }
 

@@ -126,10 +126,10 @@ impl Model {
         let (Some(restore), Some(output)) = (window.state.restore(), self.output_of(window)) else {
             return Moved::of(self);
         };
-        let Some(target) = self
-            .output_rect(&output)
-            .map(|full| dock_tile(&output, full))
-        else {
+        let Some(target) = self.set_minimise_target(window.id).or_else(|| {
+            self.output_rect(&output)
+                .map(|full| dock_tile(&output, full))
+        }) else {
             return Moved::of(self);
         };
         let shown = self.spaces.shown_on(&output).cloned();

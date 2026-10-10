@@ -16,6 +16,8 @@ const HIDDEN: &[&str] = &[
     "wp_security_context_manager_v1",
     "zwlr_layer_shell_v1",
     "ext_session_lock_manager_v1",
+    "zwlr_foreign_toplevel_manager_v1",
+    "ext_workspace_manager_v1",
 ];
 
 #[test]
