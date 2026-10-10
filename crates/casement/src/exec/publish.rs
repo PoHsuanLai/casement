@@ -18,8 +18,11 @@ pub(super) fn persist_spaces(state: &mut State) {
     }
 }
 
-/// Sends `ext_workspace` clients the Spaces as the model now has them.
+/// Sends `ext_workspace` clients the Spaces as the model now has them, and registers the new
+/// ones with the account service.
 pub(super) fn publish_workspaces(state: &mut State) {
+    // A Space made now is registered with the account service too (queued, never waited for).
+    state.seams.space_sync.sync(state.core.model.spaces());
     log(workspace::apply_spaces(
         &mut state.wl.workspace,
         state.core.model.spaces(),

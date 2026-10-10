@@ -1,6 +1,7 @@
 //! The `casement` binary: arguments, the environment and an exit code around [`casement::run`].
 
 use casement::cli::{self, Command};
+use casement::notify::{NotifySocket, Watchdog};
 use casement::space_store::{StateDirs, StateHome};
 use casement::{CompositorBus, DebugBus, RunConfig};
 use casement_backend::BackendChoice;
@@ -65,7 +66,16 @@ fn main() -> ExitCode {
             let debug_bus = session_bus.clone().map_or(DebugBus::Unset, DebugBus::At);
             // Compositor1, which hands the shell its connection, lives on the session bus.
             let compositor_bus = session_bus.map_or(CompositorBus::Unset, CompositorBus::At);
+            // systemd's service protocol: where to say "ready", and how often to say "alive".
+            let notify = NotifySocket::of(std::env::var("NOTIFY_SOCKET").ok().as_deref());
+            let watchdog = Watchdog::from_env(
+                std::env::var("WATCHDOG_USEC").ok().as_deref(),
+                std::env::var("WATCHDOG_PID").ok().as_deref(),
+                std::process::id(),
+            );
             let config = RunConfig::new(start)
+                .with_notify(notify)
+                .with_watchdog(watchdog)
                 .with_debug_bus(debug_bus)
                 .with_compositor_bus(compositor_bus);
             match casement::run(config) {

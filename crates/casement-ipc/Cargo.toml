@@ -15,6 +15,9 @@ casement-core = { workspace = true }
 casement-backend = { workspace = true, optional = true }
 # `Fraction`, the pinch scale in the inject grammar.
 ds-core = { workspace = true }
+porter-core = { workspace = true }
+# `SpacesProxy::register`: the compositor registers the Spaces it mints with accountd.
+porter-dbus = { workspace = true }
 ds-settings = { workspace = true }
 calloop = { workspace = true }
 zbus = { workspace = true }

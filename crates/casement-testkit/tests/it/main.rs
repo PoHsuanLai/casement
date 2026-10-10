@@ -10,6 +10,7 @@ mod input_convert;
 mod logind;
 mod protocol;
 mod scene;
+mod space_sync;
 mod topology;
 mod tty;
 mod writeback;

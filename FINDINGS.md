@@ -1633,3 +1633,52 @@ ignored tests of this lane; two tests were rewritten (below).
   `casement/src/connect.rs` (partial moves out of `handed`), `casement-testkit/tests/it/protocol/quire_shell.rs`
   (the key code 125 reaching `logo` -> Command; `Anchor::Bottom` dock placement; `fixture.client(id).create_surface()`).
 
+
+## csvc
+
+casement as a systemd service, and its Spaces registered with accountd. Nothing here was compiled or run.
+
+- **New dependency.** `porter-dbus = { path = "../porter/crates/porter-dbus" }` in the workspace table (beside
+  `porter-core`, the same layout), named by `casement-ipc` only; `casement-ipc` also names `porter-core` (`SpaceId`).
+  `Cargo.lock` needs `cargo update -w`/a build to gain porter-dbus and whatever it adds (its `zbus`, `serde_json`,
+  `tokio` are already in the graph). porter must be at 71f779a2 or later (`SpacesProxy::register`). B1's allowed list
+  covers core only, so no boundary row changes; check-boundary was not run.
+- **Readiness.** `Notify` seam (`casement::notify`), real `SocketNotify` over std's `UnixDatagram` (a path or `@abstract`
+  `$NOTIFY_SOCKET`), no-op when unset, no new crate. `run` sends `Ready { status: "listening on wayland-N" }` after
+  `keymap::attach` (socket listening, outputs announced, Spaces loaded and the first registration queued) and `Stopping`
+  after the loop returns, error or not. `main` reads `NOTIFY_SOCKET`, `WATCHDOG_USEC` and `WATCHDOG_PID` once
+  (`Watchdog::from_env`: half the period; off when the pid names another process).
+  The ping is a calloop timer in `time/watchdog.rs` (B8 keeps timers there); it fires only while the loop turns.
+  `RunConfig` gained `notify` and `watchdog` (builders `with_notify`, `with_watchdog`).
+- **Registration.** `SpaceRegistry` seam in `casement-ipc` (a background thread with its own runtime, one call at a time,
+  queue of 64, `Pace`: eight calls then a 60 s wait, no clock read; the service allows ten new a minute). `SpaceSync`
+  (`casement::space_sync`) registers each Desktop-content Space once, named `Space::plain_name()` ("Desktop N", a new core
+  method now also used by `workspace.rs`), look `""` (porter: empty is the default look). Triggered by
+  `Effect::PublishWorkspaces` (creation, renumbering) and once at startup; `poll()` runs every turn.
+  Full Screen, Split View and Agent Spaces are not registered (transient, nothing to link to).
+- **Outcomes.** AccessDenied -> logged once, no more calls this run. Service not on the bus, or `LimitsExceeded` -> the
+  Space leaves the sent set and is asked again at the next Spaces change (so an accountd that starts later is only met at
+  the next change; a retry timer is a possible follow-up). Anything else is logged and dropped.
+- **Seams.** `Seams` gained `space_sync` and `notify` with no-op defaults in `Seams::new`, plus `with_space_sync` and
+  `with_notify`, so the test kit's `Seams::new` call compiles unchanged. `run` installs the real ones: the registry only
+  when `RunConfig::compositor_bus` is `At(address)` (the session bus), so a run without a bus registers nothing.
+  A jail run with `DBUS_SESSION_BUS_ADDRESS` set to its private bus registers there and logs a "later" at debug.
+- **Tests.** Private-bus: `casement-ipc/src/space_registry/tests.rs` (stand-in `org.quire.Accounts1` serving
+  `Spaces1.Register`: arrival with the default look, refusal once and then silence, no service -> `Later`; needs
+  `dbus-daemon`). Pure: `Pace`, the datagram text, a real datagram socket in a tempdir (path and abstract), `Watchdog`,
+  `Space::plain_name`, `FakeNotify`; `casement-testkit/tests/it/space_sync.rs` over `FakeSpaceRegistry`.
+  Not tested: `run` ordering (ready after the outputs), the timer.
+- **Unit.** `dist/casement.service` (Type=notify, NotifyAccess=main, PartOf and After the graphical-session targets,
+  WatchdogSec=30, Restart=on-failure with a start limit). The expected ExecStart and environment are in its header.
+- **Only a real login proves:** that accountd's cgroup check gives the `compositor` role to the unit's main process (the
+  Register then succeeds and `Changed(id, "created")` goes out once per new Space); that systemd accepts READY=1 within
+  TimeoutStartSec on the tty backend; the watchdog under `WatchdogSec=30` over a long session; that the session bus is
+  reachable from the unit (`DBUS_SESSION_BUS_ADDRESS` imported into the user manager), else registration and Compositor1
+  are skipped silently.
+- **Spots most likely not to compile.** `casement-ipc/src/space_registry/worker.rs` (`zbus::Error::FDO(inner)` with
+  `&**inner`, `fdo::Error::{AccessDenied, ServiceUnknown, NameHasNoOwner}` tuple variants, `MethodError(name, _, _)` arity,
+  `tokio::sync::mpsc::error::TrySendError`, `Builder::address(..)?.build()`); `space_registry/tests.rs` (`#[zbus::interface]`
+  on a struct with `fdo::Result`, `.name(..)?.serve_at(..)?` chain order); `casement/src/notify.rs`
+  (`SocketAddrExt::from_abstract_name`, `UnixDatagram::{bind_addr, send_to_addr}`, the `wrap` closure used three times,
+  `Option::is_none_or`); `run.rs` (`ran` result after the borrow by the loop closure, `Ok(ran?)`); the doctests in
+  `notify.rs`; `casement-core/src/space/space.rs` test imports (`crate::ids::OutputName`).

@@ -1,0 +1,64 @@
+# casement.service: the compositor as a systemd user unit, started by the desktop's session.
+#
+# The account service (accountd) gives the `compositor` caller role, which lets casement register
+# the Spaces it mints (`org.quire.Spaces1.Register`), only to the MAIN process of a unit named
+# exactly `casement.service`. Until casement runs as this unit it is an ordinary app to accountd,
+# Register is refused (logged once, the session carries on) and Spaces stay local to the machine.
+#
+# Install as ~/.config/systemd/user/casement.service or /usr/lib/systemd/user/casement.service.
+#
+# What the session (desktop-session) provides before it starts this unit:
+#   - the user manager has the login session's environment imported (`systemctl --user
+#     import-environment`): XDG_RUNTIME_DIR, DBUS_SESSION_BUS_ADDRESS (the session bus; casement
+#     serves org.quire.Compositor1 and registers Spaces there), XDG_SEAT / XDG_SESSION_ID for the
+#     tty backend's logind session;
+#   - graphical-session-pre.target is reached (or started by the session) before this unit.
+# What casement reads itself: $NOTIFY_SOCKET and $WATCHDOG_USEC / $WATCHDOG_PID (set by systemd
+# for Type=notify), $XDG_STATE_HOME or $HOME (spaces.toml), $CASEMENT_LOG (log filter, default
+# info). It sets nothing for its clients: the Wayland socket name is announced on stderr and
+# in the unit's STATUS= (`systemctl --user status casement`).
+#
+# Expected ExecStart: the installed binary, the real backend, no other arguments:
+#   /usr/bin/casement            (the `tty` backend on a seat; add `--backend winit` to nest
+#                                 under another compositor when developing)
+#
+# Type=notify: casement says READY=1 once its Wayland socket listens and the first outputs are
+# announced, STOPPING=1 when it leaves, and WATCHDOG=1 at half of WatchdogSec while its loop
+# turns. NotifyAccess=main: only the main process may speak for the unit, which is the process
+# accountd sees as the compositor.
+#
+# Ordering: PartOf= graphical-session.target so the session's end stops it; After=
+# graphical-session-pre.target. It is Wants-ed (not Requires/BindsTo) by the session's target
+# so nothing here pulls the target back up: a crash restarts casement alone (Restart=on-failure)
+# and the session decides whether to keep going.
+
+[Unit]
+Description=casement, the desktop compositor
+Documentation=https://github.com/PoHsuanLai/casement
+PartOf=graphical-session.target
+After=graphical-session-pre.target
+Before=graphical-session.target
+# A crash loop stops here instead of restarting forever (the session then ends cleanly).
+StartLimitIntervalSec=60
+StartLimitBurst=4
+
+[Service]
+Type=notify
+NotifyAccess=main
+ExecStart=/usr/bin/casement
+# The tty backend takes the seat through logind; a clean exit (the person logged out) is not a
+# failure and is not restarted.
+Restart=on-failure
+RestartSec=1
+# A compositor that stops turning its loop is killed and restarted.
+WatchdogSec=30
+TimeoutStartSec=30
+TimeoutStopSec=10
+# The whole cgroup goes with the compositor: its clients cannot outlive their display server.
+KillMode=control-group
+# The compositor's own log goes to the journal.
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+# Started by the session (desktop-session), not enabled globally.

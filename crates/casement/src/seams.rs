@@ -4,7 +4,9 @@
 //! kit's `Fixture` builds the fakes and calls `State::with_seams`. Nothing in the loop opens a
 //! file, calls a bus or starts a process any other way.
 
+use crate::notify::{NoNotify, Notify};
 use crate::space_store::{EphemeralSpaceStore, FileSpaceStore, SpaceStore, StateHome};
+use crate::space_sync::SpaceSync;
 use crate::spawn::{ProcessSpawner, Spawner};
 use casement_backend::tty::TtySeams;
 use casement_ipc::shell_calls::{ShellCalls, ZbusShellCalls};
@@ -19,6 +21,10 @@ pub struct Seams {
     pub shell_calls: Box<dyn ShellCalls>,
     /// How a program is started.
     pub spawner: Box<dyn Spawner>,
+    /// The Spaces registered with the account service (none until `run` is given a bus).
+    pub space_sync: SpaceSync,
+    /// How the service manager is told casement is ready (nothing until `run` is given a socket).
+    pub notify: Box<dyn Notify>,
     /// The tty backend's seams, when they are injected (a test); none builds the real ones.
     pub tty: Option<TtySeams>,
 }
@@ -34,8 +40,22 @@ impl Seams {
             space_store,
             shell_calls,
             spawner,
+            space_sync: SpaceSync::none(),
+            notify: Box::new(NoNotify),
             tty: None,
         }
+    }
+
+    /// The same with Spaces registered through `space_sync`.
+    #[must_use]
+    pub fn with_space_sync(self, space_sync: SpaceSync) -> Seams {
+        Seams { space_sync, ..self }
+    }
+
+    /// The same with the service manager told through `notify`.
+    #[must_use]
+    pub fn with_notify(self, notify: Box<dyn Notify>) -> Seams {
+        Seams { notify, ..self }
     }
 
     /// The same with the tty backend's seams injected (the FakeKms suite).

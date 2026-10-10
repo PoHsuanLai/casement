@@ -49,11 +49,13 @@ mod handlers;
 pub mod jail_check;
 pub mod keymap;
 pub mod log;
+pub mod notify;
 #[cfg(feature = "testing")]
 pub mod relax;
 mod run;
 pub mod seams;
 pub mod space_store;
+pub mod space_sync;
 pub mod spawn;
 mod state;
 pub mod suspend;

@@ -5,11 +5,14 @@
 #[cfg(feature = "debug-inject")]
 use crate::debug;
 use crate::display::{self, attach_display};
+use crate::notify::{Notice, NotifySocket, SocketNotify, Watchdog};
+use crate::space_sync::SpaceSync;
 use crate::test_mode::{HookError, TestHooks};
 use crate::{StartError, State, cli, clients, core_loop};
 use casement_backend::BackendKind;
 use casement_ipc::IpcError;
 use casement_ipc::sleep::SleepBus;
+use casement_ipc::space_registry::ZbusSpaceRegistry;
 use porter_core::PeerIdentity;
 use smithay::reexports::calloop::{Error as LoopError, EventLoop};
 use smithay::reexports::wayland_server::backend::InitError;
@@ -53,6 +56,10 @@ pub struct RunConfig {
     pub sleep_bus: SleepBus,
     /// Where `org.quire.Compositor1` is served.
     pub compositor_bus: CompositorBus,
+    /// Where the service manager is told casement is ready (`$NOTIFY_SOCKET`).
+    pub notify: NotifySocket,
+    /// How often the service manager wants a ping.
+    pub watchdog: Watchdog,
 }
 
 impl RunConfig {
@@ -63,6 +70,8 @@ impl RunConfig {
             debug_bus: DebugBus::Unset,
             sleep_bus: SleepBus::System,
             compositor_bus: CompositorBus::Unset,
+            notify: NotifySocket::Unset,
+            watchdog: Watchdog::Off,
         }
     }
 
@@ -79,6 +88,18 @@ impl RunConfig {
             compositor_bus,
             ..self
         }
+    }
+
+    /// The same run telling the service manager through `notify`.
+    #[must_use]
+    pub fn with_notify(self, notify: NotifySocket) -> RunConfig {
+        RunConfig { notify, ..self }
+    }
+
+    /// The same run pinging the service manager's watchdog as `watchdog` says.
+    #[must_use]
+    pub fn with_watchdog(self, watchdog: Watchdog) -> RunConfig {
+        RunConfig { watchdog, ..self }
     }
 
     /// The same run hearing login1 on `sleep_bus`.
@@ -187,6 +208,8 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
         debug_bus,
         sleep_bus,
         compositor_bus,
+        notify,
+        watchdog,
     } = config;
     let mut event_loop: EventLoop<'static, State> = EventLoop::try_new()?;
     let handle = event_loop.handle();
@@ -195,6 +218,11 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
     let tty_mode = start.tty.clone();
     let xwayland_config = start.xwayland.clone();
     let mut state = State::new(start, &mut display, &handle)?;
+    state.seams.notify = Box::new(SocketNotify::new(notify));
+    if let CompositorBus::At(address) = &compositor_bus {
+        let registry = ZbusSpaceRegistry::at(address.clone());
+        state.seams.space_sync = SpaceSync::new(Box::new(registry));
+    }
     let display = attach_display(display, &handle)?;
     let socket = ListeningSocketSource::new_auto()?;
     eprintln!(
@@ -202,6 +230,7 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
         socket.socket_name().to_string_lossy()
     );
     let socket_name = socket.socket_name().to_string_lossy().into_owned();
+    let status = format!("listening on {socket_name}");
     handle
         .insert_source(socket, |stream, (), state: &mut State| {
             let role = casement_core::policy::ConnectionRole::Public;
@@ -227,13 +256,23 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
     let mut hooks = TestHooks::attach(&mut state, &tty_mode)?;
     core_loop::announce_outputs(&mut state);
     crate::keymap::attach(&mut state, &config_home)?;
+    // The Spaces are loaded and the outputs announced: register them (queued, not waited for),
+    // then tell the service manager the compositor is ready.
+    state.seams.space_sync.sync(state.core.model.spaces());
+    if let Err(error) = state.seams.notify.send(&Notice::Ready { status }) {
+        tracing::warn!(%error, "the service manager could not be told casement is ready");
+    }
+    if let Watchdog::Every(every) = watchdog {
+        crate::time::ping_every(&handle, every);
+    }
     let stop = event_loop.get_signal();
     #[cfg(feature = "debug-inject")]
     let wake = Some(debug::WAITING_TURN);
     #[cfg(not(feature = "debug-inject"))]
     let wake = hooks.wake();
-    event_loop.run(wake, &mut state, |state| {
+    let ran = event_loop.run(wake, &mut state, |state| {
         core_loop::turn(state);
+        state.seams.space_sync.poll();
         hooks.turn(state);
         crate::xwayland::turn(state, &xwayland_config, &wayland);
         #[cfg(feature = "debug-inject")]
@@ -244,6 +283,9 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
             stop.stop();
         }
         display::flush(&display);
-    })?;
-    Ok(())
+    });
+    if let Err(error) = state.seams.notify.send(&Notice::Stopping) {
+        tracing::warn!(%error, "the service manager could not be told casement is stopping");
+    }
+    Ok(ran?)
 }

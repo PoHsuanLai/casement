@@ -49,6 +49,8 @@ casement-protocols = { path = "../casement-protocols" }
 # shot` uses its wire layer, the test client its reducer and Frame.
 desktop-client = { path = "../casement-protocols/desktop-client" }
 porter-core        = { path = "../porter/crates/porter-core" }
+# accountd's D-Bus proxies: casement-ipc registers the Spaces it mints (`Spaces1.Register`).
+porter-dbus        = { path = "../porter/crates/porter-dbus" }
 # quire's pure crates without dioxus (S0-QM1): the compositor never links a UI framework.
 ds-core   = { path = "../quire/crates/ds-core", default-features = false }
 ds-style  = { path = "../quire/crates/ds-style", default-features = false }

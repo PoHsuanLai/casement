@@ -9,7 +9,9 @@
 mod calloop;
 mod source;
 mod virtual_clock;
+mod watchdog;
 
 pub use calloop::arm;
 pub use source::ClockSource;
 pub use virtual_clock::{SharedClock, VirtualTimerSource};
+pub use watchdog::ping_every;

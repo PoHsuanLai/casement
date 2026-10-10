@@ -380,12 +380,7 @@ impl Layout {
                 .shown_on(&space.output)
                 .is_some_and(|shown| shown.id == space.id);
             let kind = space.content.kind();
-            let name = match kind {
-                SpaceKind::Desktop => format!("Desktop {}", space.position.0.saturating_add(1)),
-                SpaceKind::FullScreen => "Full Screen".to_owned(),
-                SpaceKind::SplitView => "Split View".to_owned(),
-                _ => "Agent".to_owned(),
-            };
+            let name = space.plain_name();
             let activity = match active {
                 true => Activity::Active,
                 false => Activity::Inactive,

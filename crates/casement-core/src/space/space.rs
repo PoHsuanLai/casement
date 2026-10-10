@@ -19,6 +19,19 @@ pub struct Space {
     pub position: SpaceIndex,
 }
 
+impl Space {
+    /// The name a person sees for it: "Desktop 1" for the first desktop of a row, and the kind
+    /// for the others (ext-workspace's name; also what the account service is registered with).
+    pub fn plain_name(&self) -> String {
+        match self.content.kind() {
+            SpaceKind::Desktop => format!("Desktop {}", self.position.0.saturating_add(1)),
+            SpaceKind::FullScreen => "Full Screen".to_owned(),
+            SpaceKind::SplitView => "Split View".to_owned(),
+            _ => "Agent".to_owned(),
+        }
+    }
+}
+
 /// What a Space holds.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "v", rename_all = "snake_case")]
@@ -64,4 +77,37 @@ pub struct SplitPair {
     pub trailing: WindowId,
     /// The leading window's share of the width.
     pub divider: Fraction,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ids::OutputName;
+    use crate::output::{EdidFacts, EdidSerial};
+
+    fn space(content: SpaceContent, position: u32) -> Space {
+        let edid = EdidFacts {
+            make: String::new(),
+            model: String::new(),
+            serial: EdidSerial::Unknown,
+        };
+        Space {
+            id: SpaceId::parse("s-a").expect("an id"),
+            output: OutputKey::of(&edid, &OutputName::parse("HDMI-A-1").expect("name")),
+            content,
+            position: SpaceIndex(position),
+        }
+    }
+
+    #[test]
+    fn a_desktop_is_named_by_its_place_and_the_others_by_their_kind() {
+        let cases = [
+            (SpaceContent::Desktop, 0, "Desktop 1"),
+            (SpaceContent::Desktop, 1, "Desktop 2"),
+            (SpaceContent::Agent(TaskToken("t".to_owned())), 3, "Agent"),
+        ];
+        for (content, position, want) in cases {
+            assert_eq!(space(content, position).plain_name(), want);
+        }
+    }
 }
