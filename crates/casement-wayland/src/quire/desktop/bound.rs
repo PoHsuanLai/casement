@@ -10,7 +10,7 @@ use casement_core::desktop::DesktopRef;
 use casement_protocols::server::quire_desktop_v1::quire_desktop_manager_v1::ActorKind;
 use casement_protocols::server::quire_desktop_v1::quire_desktop_window_v1::QuireDesktopWindowV1;
 use porter_core::SpaceId;
-use smithay::utils::IsAlive;
+use smithay::reexports::wayland_server::Resource;
 use std::collections::BTreeMap;
 
 /// What each of a manager's objects was last told.
