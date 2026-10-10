@@ -247,3 +247,18 @@ fn a_step_publishes_exactly_what_changed() {
         "a Space is not named when it did not change, and the notes come in the order a client needs"
     );
 }
+
+#[test]
+fn a_change_of_placement_within_one_state_is_published() {
+    let mail = proven("org.quire.Mail");
+    let left = run(vec![
+        plug("HEADLESS-1"),
+        map(1, &mail, TokenCheck::Missing),
+        window_ask(1, WindowAsk::Place(PlaceTarget::Left)),
+    ]);
+    let right = run_from(
+        left.model,
+        vec![window_ask(1, WindowAsk::Place(PlaceTarget::Right))],
+    );
+    assert!(last(&right).contains(&Effect::PublishToplevel(WindowId(1))));
+}

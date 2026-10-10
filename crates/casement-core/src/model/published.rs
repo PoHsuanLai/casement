@@ -13,7 +13,7 @@ use super::space_persist::stored_file;
 use crate::effect::Effect;
 use crate::ids::{OutputKey, WindowId};
 use crate::space::{SpaceBook, SpaceFile};
-use casement_protocols::vocab::{Emphasis, WindowStateKind};
+use casement_protocols::vocab::{Emphasis, PlacementMark, WindowStateKind};
 use porter_core::ClaimedId;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -24,6 +24,7 @@ struct Listing {
     claimed: ClaimedId,
     state: WindowStateKind,
     key: bool,
+    mark: PlacementMark,
     output: Option<OutputKey>,
 }
 
@@ -53,6 +54,7 @@ impl Published {
                         claimed: window.claimed_id.clone(),
                         state: window.state.kind(),
                         key: window.emphasis == Emphasis::Key,
+                        mark: window.state.mark(),
                         output: model.output_of(window),
                     };
                     (window.id, listing)
