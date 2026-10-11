@@ -118,7 +118,7 @@ fn configure(state: &mut State, device: &FedDevice) {
 }
 
 /// The union of the outputs in global logical coordinates (an absolute device covers it).
-fn desktop_extent(state: &State) -> LogicalRect {
+pub(crate) fn desktop_extent(state: &State) -> LogicalRect {
     let rects = state
         .core
         .model

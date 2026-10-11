@@ -4,6 +4,7 @@
 
 use super::{ClientId, Fixture};
 use casement::connect;
+use casement_core::input::InputEvent;
 use casement_core::policy::ConnectionRole;
 use casement_ipc::dbus::{ConnectAsk, ConnectRefusal, ConnectReply, PeerCgroups};
 use casement_testclient::TestClient;
@@ -41,5 +42,35 @@ impl Fixture {
             ConnectReply::Refused(why) => Err(why),
             _ => Err(ConnectRefusal::Unavailable),
         }
+    }
+
+    /// The portal asking for a remote EIS socket as process `pid` (`ConnectEis`'s decision,
+    /// `casement::connect::answer`) for portal session `session` with the `devices` bit set.
+    /// Granted, the client end of the socket; refused, the reason the D-Bus caller is told.
+    pub fn connect_remote_eis(
+        &mut self,
+        cgroups: &dyn PeerCgroups,
+        pid: u32,
+        session: u64,
+        devices: u32,
+    ) -> Result<OwnedFd, ConnectRefusal> {
+        let text = cgroups
+            .cgroup_of(pid)
+            .map_err(|_| ConnectRefusal::UnknownUnit)?;
+        match connect::answer(
+            &mut self.state,
+            ConnectAsk::remote_eis(session, devices, text),
+        ) {
+            ConnectReply::Granted(fd) => Ok(fd),
+            ConnectReply::Refused(why) => Err(why),
+            _ => Err(ConnectRefusal::Unavailable),
+        }
+    }
+
+    /// An input event from a remote session, by the path a remote socket's input takes into
+    /// the model, then a pump.
+    pub fn deliver_remote(&mut self, event: InputEvent) {
+        connect::deliver_remote(&mut self.state, event);
+        self.pump();
     }
 }

@@ -9,8 +9,14 @@
 
 use crate::State;
 use crate::clients::insert_client;
-use casement_agent::{CallerUnit, HandOut, RefuseWhy, hand_out};
-use casement_ipc::dbus::{ConnectAsk, ConnectCall, ConnectRefusal, ConnectReply};
+use crate::core_loop::{feed, tty::desktop_extent};
+use casement_agent::{
+    CallerUnit, HandOut, RefuseWhy, RemoteEvent, RemoteKinds, hand_out, open_remote_eis,
+    portal_may_connect,
+};
+use casement_core::Event;
+use casement_core::input::{InputEvent, PortalSessionId};
+use casement_ipc::dbus::{ConnectAsk, ConnectCall, ConnectRefusal, ConnectReply, RemoteAsk};
 use casement_wayland::ClientState;
 use porter_core::PeerIdentity;
 use smithay::reexports::calloop::channel::{Channel, Event};
@@ -37,6 +43,9 @@ pub fn attach(
 /// server end of a new socket pair is inserted as a client with that role (the model hears
 /// `ClientConnected`), and the client end is the reply.
 pub fn answer(state: &mut State, ask: ConnectAsk) -> ConnectReply {
+    if let Some(remote) = ask.remote {
+        return answer_remote(state, remote, &ask.caller_cgroup);
+    }
     let Some(unit) = CallerUnit::of_cgroup(&ask.caller_cgroup) else {
         return ConnectReply::Refused(ConnectRefusal::UnknownUnit);
     };
@@ -69,4 +78,50 @@ fn refusal_of(why: RefuseWhy) -> ConnectRefusal {
             ConnectRefusal::Unavailable
         }
     }
+}
+
+/// Decides one `ConnectEis`: only the portal's unit may have a remote EIS socket. On a grant
+/// the server end becomes an event-loop source whose input is fed to the model tagged as the
+/// remote origin of portal session `remote.session`; the client end is the reply.
+pub fn answer_remote(state: &mut State, remote: RemoteAsk, caller_cgroup: &str) -> ConnectReply {
+    match CallerUnit::of_cgroup(caller_cgroup) {
+        None => return ConnectReply::Refused(ConnectRefusal::UnknownUnit),
+        Some(unit) if !portal_may_connect(&unit) => {
+            return ConnectReply::Refused(ConnectRefusal::RoleNotAllowed);
+        }
+        Some(_) => {}
+    }
+    let extent = desktop_extent(state);
+    let grant = match open_remote_eis(
+        PortalSessionId(remote.session),
+        RemoteKinds::from_wire(remote.devices),
+        extent,
+    ) {
+        Ok(grant) => grant,
+        Err(error) => {
+            tracing::warn!(%error, "a remote input socket could not be made");
+            return ConnectReply::Refused(ConnectRefusal::Unavailable);
+        }
+    };
+    let inserted = state
+        .event_loop
+        .insert_source(grant.source, |event, (), state: &mut State| {
+            if let RemoteEvent::Input(input) = event {
+                let at = state.clock.now();
+                deliver_remote(state, input.at(at));
+            }
+        });
+    match inserted {
+        Ok(_token) => ConnectReply::Granted(grant.client),
+        Err(error) => {
+            tracing::warn!(%error, "a remote input source could not be inserted");
+            ConnectReply::Refused(ConnectRefusal::Unavailable)
+        }
+    }
+}
+
+/// One input event from a remote session into the model, by the path every input takes. Its
+/// origin was set where it entered (`casement-agent`'s EIS) and is not changed here.
+pub fn deliver_remote(state: &mut State, event: InputEvent) {
+    feed(state, vec![Event::Input(event)]);
 }

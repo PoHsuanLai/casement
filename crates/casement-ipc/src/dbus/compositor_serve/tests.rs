@@ -110,6 +110,14 @@ impl StandInLoop {
 }
 
 fn decide(ask: &ConnectAsk) -> ConnectReply {
+    if ask.remote.is_some() {
+        let portal = ask.caller_cgroup.trim_end().ends_with("/transom.service");
+        return match (portal, UnixStream::pair()) {
+            (true, Ok((_server, client))) => ConnectReply::Granted(client.into()),
+            (true, Err(_)) => ConnectReply::Refused(ConnectRefusal::Unavailable),
+            (false, _) => ConnectReply::Refused(ConnectRefusal::UnknownUnit),
+        };
+    }
     let sill = ask.caller_cgroup.trim_end().ends_with("/sill.service");
     match (sill, &ask.role) {
         (true, ConnectionRole::Shell) => match UnixStream::pair() {
@@ -209,4 +217,45 @@ async fn connect_is_decided_by_the_callers_unit_over_a_private_bus() {
     );
     assert_eq!(asks[0].role, ConnectionRole::Shell);
     assert_eq!(asks[0].caller_cgroup, sill);
+}
+
+/// What `ConnectEis(session, devices)` came to: the error's D-Bus name, or `granted`.
+async fn connect_eis_as(proxy: &zbus::Proxy<'_>, session: u64, devices: u32) -> String {
+    match proxy
+        .call::<_, _, zbus::zvariant::OwnedFd>("ConnectEis", &(session, devices))
+        .await
+    {
+        Ok(_) => "granted".to_owned(),
+        Err(zbus::Error::MethodError(name, ..)) => name.to_string(),
+        Err(other) => format!("{other}"),
+    }
+}
+
+#[tokio::test]
+async fn connect_eis_reaches_the_loop_as_a_remote_ask_with_the_callers_unit() {
+    let bus = PrivateBus::start();
+    let cgroups = Arc::new(Table::default());
+    let (channel, _connection) = serve_compositor_at(&bus.address, cgroups.clone()).expect("serve");
+    let event_loop = StandInLoop::run(channel);
+    let proxy = proxy(&bus.address).await;
+
+    let portal = "0::/user.slice/user@1000.service/app.slice/transom.service\n";
+    let firefox = "0::/user.slice/user@1000.service/app.slice/firefox.service\n";
+    cgroups.runs_in(Some(portal));
+    assert_eq!(connect_eis_as(&proxy, 7, 3).await, "granted");
+    cgroups.runs_in(Some(firefox));
+    assert_eq!(
+        connect_eis_as(&proxy, 8, 7).await,
+        "org.freedesktop.DBus.Error.AccessDenied"
+    );
+    let asks = event_loop.asks();
+    assert_eq!(asks.len(), 2);
+    assert_eq!(
+        asks[0].remote,
+        Some(crate::dbus::RemoteAsk {
+            session: 7,
+            devices: 3
+        })
+    );
+    assert_eq!(asks[0].caller_cgroup, portal);
 }

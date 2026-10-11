@@ -2,6 +2,12 @@
 //! connections, and from P4 the agent seat, EIS, masked capture, the trusted surface and the
 //! kill chord. At P2-Z the hand-out's types and signatures; bodies at P2 (P2-Q2).
 
+mod eis;
 mod socket;
+
+pub use eis::{
+    PORTAL_UNIT, RemoteEisSource, RemoteEvent, RemoteGrant, RemoteInput, RemoteKind, RemoteKinds,
+    device_id as remote_device_id, open as open_remote_eis, portal_may_connect,
+};
 
 pub use socket::{CallerUnit, HandOut, Handed, RefuseWhy, hand_out, role_for};

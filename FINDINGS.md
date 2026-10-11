@@ -1758,3 +1758,33 @@ Test unit overrides for jailed desktop scenarios (no systemd, so no unit in `/pr
   PeerCgroups` coercions in `attach_compositor`); `main.rs` (the `return` inside the cfg'd `let ... = match` and the shadowed
   `config`; the `include_str!("main.rs")` gate string with escapes); `debug_units.rs` (`PeerMatch` closure borrow in
   `unit_of`, `assert_eq!(ok.rules(), [..])` comparing a slice with an array).
+
+
+## p2-t3: remote input over EIS (2026-10-11)
+
+Lane P2-T3, casement half (not compiled; the orchestrator gates). No `todo!()` was in `eis.rs` (it did not exist).
+
+- **Crate.** `reis` 0.7.1 (MIT), already pinned in the workspace table and in `Cargo.lock` through smithay. The only manifest
+  edit: `reis = { workspace = true, features = ["calloop"] }` in `casement-agent` (the event-loop source), plus the matching
+  `"reis"` line under `casement-agent` in `Cargo.lock`. No other crate was added; calloop is smithay's re-export.
+- **Shape.** `casement-agent/src/eis.rs`: `open(session, kinds, extent) -> RemoteGrant { source, client }`. The source is a
+  calloop `EventSource` (`RemoteEisSource`) yielding `RemoteEvent::{Input(RemoteInput), Ended}`; `RemoteInput` carries
+  `Origin::Remote(PortalSessionId)`, a virtual `DeviceId` (high bit set) and the `InputKind`; the root stamps the time with
+  `RemoteInput::at`. Devices: keyboard, relative pointer, absolute pointer and touchscreen, each only if the portal's `types`
+  bits allow it and the app binds it; absolute ones have one region at (0, 0) of the desktop's size at connect time, mapped
+  back onto the desktop (the extent is not updated if outputs change during a session). An app that asks to receive input gets
+  no devices. Keys and buttons still held when the app goes are released before `Ended`.
+- **Hand-out.** `org.quire.Compositor1.ConnectEis(session: t, devices: u) -> (h)`. `ConnectAsk` gained `remote:
+  Option<RemoteAsk>` (and `ConnectAsk::remote_eis`); `casement::connect::answer` branches to `answer_remote`, which checks
+  `portal_may_connect` (`transom.service`; `role_for` is unchanged, the portal has no Wayland role: sill gets
+  `RoleNotAllowed`, an unknown unit `UnknownUnit`) and inserts the source into `state.event_loop`. `State` is not edited.
+- **Visibility changes.** `core_loop::tty` is `pub(crate)` and `desktop_extent` is `pub(crate)` (the extent for absolute devices).
+- **Tests.** Pure: the translation functions, the device bits, the origin tag, release on end, `open` in `eis.rs`. Private
+  bus: `connect_eis_reaches_the_loop_as_a_remote_ask_with_the_callers_unit`. Fixture: `tests/it/remote_eis.rs` (the unit check
+  through `Fixture::connect_remote_eis`; remote keys of a bound chord fire nothing, through `Fixture::deliver_remote`).
+  Not tested: a real EIS client talking to the source (no crate outside `casement-agent` may name `reis`, B14); the `transom`
+  acceptance script `dev/accept/remote-desktop.sh` does that against a real compositor.
+- **Spots most likely not to compile.** `eis.rs`: `inner.process_events(...)` closure types against reis' `EisRequestSource`,
+  `smithay::reexports::calloop::Result`, `caps.into_iter().collect()` into `BitFlags`, the `before_done_cb` closure typed as
+  `for<'a> FnOnce(&'a Device)`, `eis::handshake::ContextType` comparison, the `KeyState`/`ButtonState` paths and a
+  `_` arm over them. `connect.rs`: `insert_source` with a `RemoteEisSource` whose `Ret` is `()`.

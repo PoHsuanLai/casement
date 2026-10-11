@@ -9,6 +9,7 @@ mod globals;
 mod input_convert;
 mod logind;
 mod protocol;
+mod remote_eis;
 mod scene;
 mod space_sync;
 mod topology;

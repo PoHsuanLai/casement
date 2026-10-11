@@ -33,7 +33,7 @@ mod input;
 mod presence;
 mod scene;
 mod surfaces;
-mod tty;
+pub(crate) mod tty;
 mod windows;
 
 pub(crate) use grab::start as start_grab;

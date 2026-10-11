@@ -4,6 +4,11 @@
 //! ```text
 //! Connect(role: s) -> (h)    role is "shell" or "agent"; the reply is the client end of a
 //!                            new connection that has that role (I7)
+//! ConnectEis(session: t, devices: u) -> (h)
+//!                            only the desktop portal's unit may ask: the reply is the client
+//!                            end of an EIS socket whose input arrives tagged as remote input
+//!                            of portal session `session`; `devices` is the portal's `types`
+//!                            bit set (1 keyboard, 2 pointer, 4 touchscreen)
 //! ```
 //!
 //! The caller's systemd unit decides: this object reads the caller's cgroup (through the
@@ -82,6 +87,18 @@ pub struct ConnectAsk {
     pub role: ConnectionRole,
     /// The text of the caller's `/proc/<pid>/cgroup`, from which the loop reads its unit.
     pub caller_cgroup: String,
+    /// Set for `ConnectEis`: the question is for a remote EIS socket, not a Wayland
+    /// connection, and `role` is not read.
+    pub remote: Option<RemoteAsk>,
+}
+
+/// What the portal asked of `ConnectEis`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RemoteAsk {
+    /// The portal session the input belongs to.
+    pub session: u64,
+    /// The device kinds, as the portal's `types` bit set.
+    pub devices: u32,
 }
 
 impl ConnectAsk {
@@ -99,6 +116,25 @@ impl ConnectAsk {
         ConnectAsk {
             role,
             caller_cgroup,
+            remote: None,
+        }
+    }
+
+    /// The question of a caller whose control group file reads `caller_cgroup`, asking for a
+    /// remote EIS socket for portal session `session` with the `devices` bit set.
+    ///
+    /// ```
+    /// use casement_ipc::dbus::ConnectAsk;
+    ///
+    /// let ask = ConnectAsk::remote_eis(7, 3, "0::/app.slice/transom.service\n".to_owned());
+    /// assert_eq!(ask.remote.map(|remote| remote.session), Some(7));
+    /// ```
+    pub fn remote_eis(session: u64, devices: u32, caller_cgroup: String) -> ConnectAsk {
+        ConnectAsk {
+            // Not read: `remote` decides.
+            role: ConnectionRole::Public,
+            caller_cgroup,
+            remote: Some(RemoteAsk { session, devices }),
         }
     }
 }
@@ -171,6 +207,34 @@ impl Compositor1 {
     ) -> fdo::Result<zbus::zvariant::OwnedFd> {
         let role = parse_connect_role(&role)
             .map_err(|error| fdo::Error::InvalidArgs(error.to_string()))?;
+        let caller_cgroup = self.caller_cgroup(&header, connection).await?;
+        self.ask(ConnectAsk::new(role, caller_cgroup)).await
+    }
+
+    /// `ConnectEis(session: t, devices: u) -> h`: an EIS socket for the RemoteDesktop portal
+    /// session `session`, offering the device kinds in `devices` (1 keyboard, 2 pointer, 4
+    /// touchscreen). Only the portal's unit may ask. Input sent down the socket reaches the
+    /// desktop tagged as remote.
+    async fn connect_eis(
+        &self,
+        session: u64,
+        devices: u32,
+        #[zbus(header)] header: Header<'_>,
+        #[zbus(connection)] connection: &Connection,
+    ) -> fdo::Result<zbus::zvariant::OwnedFd> {
+        let caller_cgroup = self.caller_cgroup(&header, connection).await?;
+        self.ask(ConnectAsk::remote_eis(session, devices, caller_cgroup))
+            .await
+    }
+}
+
+impl Compositor1 {
+    /// The control group text of the process that made the call.
+    async fn caller_cgroup(
+        &self,
+        header: &Header<'_>,
+        connection: &Connection,
+    ) -> fdo::Result<String> {
         let sender = header
             .sender()
             .ok_or_else(|| fdo::Error::Failed("the call has no sender".to_owned()))?;
@@ -178,17 +242,16 @@ impl Compositor1 {
             .await?
             .get_connection_unix_process_id(BusName::from(sender.clone()))
             .await?;
-        let caller_cgroup = self
-            .cgroups
+        self.cgroups
             .cgroup_of(pid)
-            .map_err(|error| fdo::Error::Failed(error.to_string()))?;
+            .map_err(|error| fdo::Error::Failed(error.to_string()))
+    }
+
+    /// Hands `ask` to the event loop and turns its answer into the reply or a D-Bus error.
+    async fn ask(&self, ask: ConnectAsk) -> fdo::Result<zbus::zvariant::OwnedFd> {
         let (reply, answer) = tokio::sync::oneshot::channel();
-        let call = ConnectCall {
-            ask: ConnectAsk::new(role, caller_cgroup),
-            reply,
-        };
         self.calls
-            .send(call)
+            .send(ConnectCall { ask, reply })
             .map_err(|_| ConnectRefusal::Unavailable.to_error())?;
         match answer.await {
             Ok(ConnectReply::Granted(fd)) => Ok(zbus::zvariant::OwnedFd::from(fd)),
