@@ -7,8 +7,8 @@ mod compositor_serve;
 pub use compositor_serve::serve_compositor_at;
 pub use compositor1::{
     BUS_NAME as COMPOSITOR_BUS_NAME, Compositor1, ConnectAsk, ConnectCall, ConnectRefusal,
-    ConnectReply, OBJECT_PATH as COMPOSITOR_OBJECT_PATH, PeerCgroups, ProcCgroups,
-    RemoteAsk, parse_connect_role,
+    ConnectReply, OBJECT_PATH as COMPOSITOR_OBJECT_PATH, PeerCgroups, ProcCgroups, RemoteAsk,
+    parse_connect_role,
 };
 
 #[cfg(feature = "debug-inject")]
