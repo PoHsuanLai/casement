@@ -252,6 +252,7 @@ name = "casement-agent"
 version = "0.1.0"
 dependencies = [
  "casement-core",
+ "reis",
  "smithay",
 ]
 
@@ -292,6 +293,8 @@ dependencies = [
  "casement-core",
  "ds-core",
  "ds-settings",
+ "porter-core",
+ "porter-dbus",
  "serde_json",
  "thiserror 2.0.21",
  "tokio",
@@ -360,12 +363,14 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+ "tokio",
  "wayland-backend",
  "wayland-client",
  "wayland-protocols",
  "wayland-protocols-misc",
  "wayland-protocols-wlr",
  "x11rb",
+ "zbus",
 ]
 
 [[package]]
@@ -513,6 +518,7 @@ checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
 name = "desktop-client"
 version = "0.1.0"
 dependencies = [
+ "casement-protocols",
  "thiserror 2.0.21",
 ]
 
@@ -1711,6 +1717,18 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "zeroize",
+]
+
+[[package]]
+name = "porter-dbus"
+version = "0.1.0"
+dependencies = [
+ "porter-core",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "zbus",
 ]
 
 [[package]]
