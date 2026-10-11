@@ -19,7 +19,7 @@ use casement_core::input::{InputEvent, PortalSessionId};
 use casement_ipc::dbus::{ConnectAsk, ConnectCall, ConnectRefusal, ConnectReply, RemoteAsk};
 use casement_wayland::ClientState;
 use porter_core::PeerIdentity;
-use smithay::reexports::calloop::channel::{Channel, Event};
+use smithay::reexports::calloop::channel::{Channel, Event as ChannelEvent};
 use smithay::reexports::calloop::{Error as LoopError, LoopHandle};
 
 /// Starts answering `calls` on `handle`'s loop.
@@ -29,7 +29,7 @@ pub fn attach(
 ) -> Result<(), LoopError> {
     handle
         .insert_source(calls, |event, (), state: &mut State| {
-            if let Event::Msg(call) = event {
+            if let ChannelEvent::Msg(call) = event {
                 let reply = answer(state, call.ask);
                 // A caller that gave up has dropped the receiver; nothing to tell it.
                 let _ = call.reply.send(reply);
