@@ -121,15 +121,22 @@ impl Model {
             .then(|model| model.relaid_out(window.id, Cause::Configure))
     }
 
+    /// Where `window` travels when it is minimised: the dock tile its client or the shell set,
+    /// else the bottom centre of its output (a point). None when it is on no plugged output.
+    pub fn minimise_destination(&self, window: &Window) -> Option<MinimiseTarget> {
+        let output = self.output_of(window)?;
+        self.set_minimise_target(window.id).or_else(|| {
+            self.output_rect(&output)
+                .map(|full| dock_tile(&output, full))
+        })
+    }
+
     /// The window goes to the dock; focus looks again at what the person can see.
     pub(super) fn minimise(self, window: &Window) -> Moved {
         let (Some(restore), Some(output)) = (window.state.restore(), self.output_of(window)) else {
             return Moved::of(self);
         };
-        let Some(target) = self.set_minimise_target(window.id).or_else(|| {
-            self.output_rect(&output)
-                .map(|full| dock_tile(&output, full))
-        }) else {
+        let Some(target) = self.minimise_destination(window) else {
             return Moved::of(self);
         };
         let shown = self.spaces.shown_on(&output).cloned();

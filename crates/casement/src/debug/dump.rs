@@ -183,8 +183,27 @@ pub(super) fn windows(state: &State) -> String {
                     )
                 },
             );
+            let minimised = matches!(
+                window.state,
+                casement_core::window::WindowState::Minimised { .. }
+            );
+            let minimise_destination = model.minimise_destination(window).map_or_else(
+                || "null".to_owned(),
+                |target| {
+                    let rect = target.rect;
+                    format!(
+                        "{:?}",
+                        [
+                            i64::from(rect.origin.x),
+                            i64::from(rect.origin.y),
+                            i64::from(rect.size.w),
+                            i64::from(rect.size.h),
+                        ]
+                    )
+                },
+            );
             format!(
-                "{{\"identifier\":\"w{}\",\"class\":{},\"caption\":{},\"frame\":{:?},\"buffer\":{:?},\"maximize\":{},\"fullscreen\":{},\"active\":{},\"minimise_target\":{}}}",
+                "{{\"identifier\":\"w{}\",\"class\":{},\"caption\":{},\"frame\":{:?},\"buffer\":{:?},\"maximize\":{},\"fullscreen\":{},\"active\":{},\"minimise_target\":{},\"minimised\":{},\"minimise_destination\":{}}}",
                 window.id.0,
                 quoted(window.claimed_id.as_str()),
                 quoted(&window.title.0),
@@ -194,6 +213,8 @@ pub(super) fn windows(state: &State) -> String {
                 fullscreen,
                 active,
                 minimise_target,
+                minimised,
+                minimise_destination,
             )
         })
         .collect();

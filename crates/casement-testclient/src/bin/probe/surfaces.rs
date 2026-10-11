@@ -172,6 +172,11 @@ impl Surfaces {
         Ok(())
     }
 
+    pub(crate) fn minimise(&mut self, name: &str) -> Result<(), String> {
+        self.window(name)?.top.set_minimized();
+        Ok(())
+    }
+
     pub(crate) fn move_request(
         &mut self,
         name: &str,

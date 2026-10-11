@@ -119,6 +119,7 @@ impl Session {
                 return self.surfaces.redraw(&mut self.client, &name, size);
             }
             Command::Maximise(name) => self.surfaces.maximise(&name, true)?,
+            Command::Minimise(name) => self.surfaces.minimise(&name)?,
             Command::Unmaximise(name) => self.surfaces.maximise(&name, false)?,
             Command::MoveRequest(name) => {
                 let serial = press.ok_or("no button press has reached this client")?;

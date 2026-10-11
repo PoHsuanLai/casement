@@ -3,7 +3,7 @@
 //!
 //! ```text
 //! toplevel NAME [app=ID] [size=WxH] [pattern=checker:N|gradient|solid:HEX] [scale=1|1.5|2] [maximised]
-//! redraw NAME [size=WxH] | maximise NAME | unmaximise NAME | move-request NAME | resize-request NAME EDGE
+//! redraw NAME [size=WxH] | maximise NAME | unmaximise NAME | minimise NAME | move-request NAME | resize-request NAME EDGE
 //! popup NAME PARENT [size=WxH] [at=X,Y] [grab] | popup-close NAME
 //! layer NAME [level=background|bottom|top|overlay] [kbd=none|exclusive|ondemand] [size=WxH] [anchor=top,left,...]
 //! layer-close NAME | lock NAME | unlock NAME | close NAME
@@ -97,6 +97,8 @@ pub(crate) enum Command {
     Redraw(String, Option<Size>),
     Maximise(String),
     Unmaximise(String),
+    /// `xdg_toplevel.set_minimized` on the session's toplevel `NAME`.
+    Minimise(String),
     MoveRequest(String),
     ResizeRequest(String, ResizeEdge),
     Popup(PopupAsk),
@@ -297,6 +299,7 @@ pub(crate) fn parse(line: &str) -> Result<Command, String> {
         )),
         "maximise" => Ok(Command::Maximise(named()?)),
         "unmaximise" => Ok(Command::Unmaximise(named()?)),
+        "minimise" => Ok(Command::Minimise(named()?)),
         "move-request" => Ok(Command::MoveRequest(named()?)),
         "resize-request" => match words.bare.as_slice() {
             [name, edge_word] => Ok(Command::ResizeRequest((*name).to_owned(), edge(edge_word)?)),
@@ -469,6 +472,8 @@ mod tests {
 
     #[test]
     fn the_shell_verbs_parse_their_words() {
+        assert!(matches!(parse("minimise a"), Ok(Command::Minimise(name)) if name == "a"));
+        assert!(parse("minimise").is_err());
         assert!(matches!(parse("shell-connect"), Ok(Command::ShellConnect)));
         assert!(matches!(
             parse("shell-role dock d"),
