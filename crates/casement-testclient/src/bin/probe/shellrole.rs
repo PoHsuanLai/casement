@@ -40,8 +40,9 @@ fn hand_out() -> Result<OwnedFd, String> {
         let fd: zbus::zvariant::OwnedFd = proxy.call("Connect", &("shell",)).await?;
         Ok::<OwnedFd, zbus::Error>(fd.into())
     };
+    // The timeout's timer is made inside the runtime: tokio's timers need its context.
     runtime
-        .block_on(tokio::time::timeout(CALL_PATIENCE, call))
+        .block_on(async { tokio::time::timeout(CALL_PATIENCE, call).await })
         .map_err(|_| "Connect did not answer".to_owned())?
         .map_err(|e| e.to_string())
 }
