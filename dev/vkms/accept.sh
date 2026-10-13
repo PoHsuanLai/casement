@@ -65,7 +65,13 @@ for dir in /sys/class/drm/card[0-9]*; do
   [ -d "$dir" ] || continue
   case "$(basename "$dir")" in card[0-9]*-*) continue ;; esac
   driver=$(basename "$(readlink -f "$dir/device/driver" 2>/dev/null || echo none)")
-  if [ "$driver" = vkms ]; then vkms_cards+=("$(basename "$dir")"); fi
+  device=$(readlink -f "$dir/device" 2>/dev/null || echo none)
+  # Older kernels: a platform device bound to the vkms driver. Newer ones (7.x): the configfs
+  # device on the faux bus, named after its configfs directory (casement checks the DRM driver
+  # name itself before it builds anything).
+  if [ "$driver" = vkms ] || [ "$device" = "/sys/devices/faux/$device_name" ]; then
+    vkms_cards+=("$(basename "$dir")")
+  fi
 done
 [ "${#vkms_cards[@]}" -gt 0 ] || absent "no vkms DRM device (README: one-time setup)"
 [ "${#vkms_cards[@]}" -eq 1 ] || refuse "more than one vkms card (${vkms_cards[*]}); unload the extra ones"

@@ -42,9 +42,13 @@ chown -R '"$USER"' "$d"
 '
 
 # 3. Let your user open the card node, and keep your desktop from adopting it as a screen.
+#    Older kernels put a vkms device on the platform bus (driver vkms); newer ones (7.x) put a
+#    configfs device on the faux bus under its own name, so the last two rules match `casement`.
 sudo tee /etc/udev/rules.d/99-casement-vkms.rules >/dev/null <<'RULE'
 SUBSYSTEM=="drm", KERNEL=="card[0-9]*", SUBSYSTEMS=="platform", DRIVERS=="vkms", GROUP="video", MODE="0660", TAG-="uaccess", TAG-="seat", TAG-="master-of-seat"
 SUBSYSTEM=="drm", KERNEL=="renderD[0-9]*", SUBSYSTEMS=="platform", DRIVERS=="vkms", GROUP="video", MODE="0660", TAG-="uaccess"
+SUBSYSTEM=="drm", KERNEL=="card[0-9]*", SUBSYSTEMS=="faux", KERNELS=="casement", GROUP="video", MODE="0660", TAG-="uaccess", TAG-="seat", TAG-="master-of-seat"
+SUBSYSTEM=="drm", KERNEL=="renderD[0-9]*", SUBSYSTEMS=="faux", KERNELS=="casement", GROUP="video", MODE="0660", TAG-="uaccess"
 RULE
 sudo udevadm control --reload
 sudo udevadm trigger --subsystem-match=drm --action=change
@@ -52,7 +56,10 @@ id -nG | grep -qw video || { sudo usermod -aG video "$USER"; echo "log out and i
 ```
 
 Check: `ls -l /dev/dri/` shows a `card*` with group `video` mode `crw-rw----` for the vkms one,
-and `readlink -f /sys/class/drm/card*/device/driver` lists `.../vkms` for exactly one card.
+and `readlink -f /sys/class/drm/card*/device` lists `/sys/devices/faux/casement` (newer kernels) or a
+platform device whose `driver` is `.../vkms` (older ones) for exactly one card. `udevadm info
+/dev/dri/<that card>` must not list the `seat` tag: if your desktop shows an extra screen (KDE calls
+it `Virtual-1`), the rule did not match.
 
 To undo: `sudo rmmod vkms` (remove the configfs device first with `sudo rmdir` of its items, or
 reboot) and `sudo rm /etc/udev/rules.d/99-casement-vkms.rules`.
