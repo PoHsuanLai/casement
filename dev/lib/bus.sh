@@ -82,7 +82,12 @@ casement_env_load() {
 # bus_up: starts the private bus (once per run). Needs the jail.
 bus_up() {
   require_jail
-  if [ -n "${CASEMENT_BUS_PID:-}" ] && kill -0 "$CASEMENT_BUS_PID" 2>/dev/null; then return 0; fi
+  # A bus the caller started and recorded in this run's env file (a scenario with its own service
+  # directory): its addresses come from that file, so the caller's shell need not export them.
+  if [ -n "${CASEMENT_BUS_PID:-}" ] && kill -0 "$CASEMENT_BUS_PID" 2>/dev/null; then
+    casement_env_load
+    return
+  fi
   command -v dbus-daemon >/dev/null || { echo "bus_up: dbus-daemon is not installed" >&2; return 3; }
   local state out address pid
   state=$(casement_state_dir)
