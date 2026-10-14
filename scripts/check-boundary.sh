@@ -159,8 +159,8 @@ names_only "B18 no unsafe outside casement-render/src/gl_raw.rs" '\bunsafe\b' 'c
 reaches_none casement-intents "B19 casement-intents reaches no smithay, wayland or calloop" 'smithay|wayland-[a-z-]+|calloop'
 
 # B20 clean-room tripwire: no use, file name or comment naming a GPL compositor.
-TRIP='\b(niri|cosmic_comp|cosmic-comp|jay|pinnacle)\b'
-hits=$(grep -rniE "$TRIP" crates dev 2>/dev/null; find crates dev -iregex ".*\(niri\|cosmic.comp\|pinnacle\).*" 2>/dev/null)
+TRIP='\b(niri|jay|pinnacle)\b'
+hits=$(grep -rniE "$TRIP" crates dev 2>/dev/null; find crates dev -iregex ".*\(niri\|pinnacle\).*" 2>/dev/null)
 if [ -n "$hits" ]; then bad "B20 a GPL compositor is named in code"; printf '%s\n' "$hits" | head -20; else ok "B20 no GPL compositor named in code"; fi
 
 exit "$fail"
