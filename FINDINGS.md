@@ -693,7 +693,7 @@ W13 8 to 0.
   are not in `ROWS` (a test asserts none of those chords is bound), and `DesktopCommand::ToggleFullScreenKey`, added
   for full screen and used by nothing else, is dropped. ForceQuit (Cmd+Opt+Esc, system-level), Space switching and
   the sill hand-offs stay.
-- **Dependencies**: `chordkit` (rev ba094c62) and `keycap-client` (rev 95f41dc4) are git dependencies of the
+- **Dependencies**: `chordkit` (rev ba094c62) and `keycap-client` (rev 31e21db1) are git dependencies of the
   workspace and of `casement`; `Cargo.lock` must be regenerated (`cargo metadata`) with network access.
 - Caps Lock no longer blocks bindings: `deliver::chord_mods` leaves it out of the chord (Num Lock was never in `MacMods`).
 
