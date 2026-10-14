@@ -22,9 +22,11 @@
 mod cursor_plane;
 mod outcome;
 mod predict;
+mod repeat;
 mod schedule;
 
 pub use cursor_plane::{CursorPlaneCaps, CursorPlaneChoice, cursor_plane_for};
 pub use outcome::{FrameOutcome, judge};
 pub use predict::{RenderHistory, predict};
+pub use repeat::{Repeat, RepeatGate};
 pub use schedule::{Deadline, next_deadline};

@@ -346,6 +346,9 @@ pub enum KmsError {
     /// The device went away (an unplugged eGPU, a revoked session).
     #[error("device {} is gone", .0.display())]
     DeviceGone(PathBuf),
+    /// The device is a virtual test display (vkms), which only `--drm-node` drives.
+    #[error("{} is a virtual test display; only --drm-node drives one", .0.display())]
+    VirtualDisplay(PathBuf),
     /// No open device drives the output of this name.
     #[error("no device drives the output {0}")]
     NoDriver(String),

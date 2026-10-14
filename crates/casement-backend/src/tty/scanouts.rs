@@ -22,6 +22,25 @@ pub struct FrameTally {
     pub missed: u64,
 }
 
+/// What asking an output for a frame came to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum PresentOutcome {
+    /// A frame was queued for this vblank; its flip will be reported.
+    Flipped(VblankSeq),
+    /// The frame changed nothing on the glass, so none was queued: clients still get their
+    /// frame callbacks, but there is no presentation to report.
+    Unchanged,
+    /// Nothing was drawn: a flip is pending, the seat is lent, the output is dark or unlit.
+    Waiting,
+}
+
+impl From<Option<VblankSeq>> for PresentOutcome {
+    fn from(shown: Option<VblankSeq>) -> PresentOutcome {
+        shown.map_or(PresentOutcome::Waiting, PresentOutcome::Flipped)
+    }
+}
+
 /// One output's scanout.
 #[derive(Debug)]
 pub struct Scanout {
@@ -60,22 +79,24 @@ impl Scanout {
             .collect()
     }
 
-    /// Draws `source` and queues it; the vblank it is for, or none while a flip is pending.
+    /// Draws `source` and queues it: the vblank it is for, unchanged, or waiting while a flip is
+    /// pending.
     pub fn present(
         &mut self,
         source: &dyn FrameSource,
         now: Mono,
-    ) -> Result<Option<VblankSeq>, BackendError> {
+    ) -> Result<PresentOutcome, BackendError> {
         let _ = self.settle(now);
         if self.flip.wanted.is_some() {
-            return Ok(None);
+            return Ok(PresentOutcome::Waiting);
         }
         match self.surface.queue(QueuedFrame::Draw(source)) {
             QueueOutcome::Queued(wanted) => {
                 self.flip = self.flip.queued(wanted);
-                Ok(Some(wanted))
+                Ok(PresentOutcome::Flipped(wanted))
             }
-            QueueOutcome::Busy => Ok(None),
+            QueueOutcome::Busy => Ok(PresentOutcome::Waiting),
+            QueueOutcome::Unchanged => Ok(PresentOutcome::Unchanged),
             QueueOutcome::Failed(error) => Err(error.into()),
         }
     }
@@ -183,10 +204,10 @@ impl ScanoutSet {
         name: &OutputName,
         source: &dyn FrameSource,
         now: Mono,
-    ) -> Result<Option<VblankSeq>, BackendError> {
+    ) -> Result<PresentOutcome, BackendError> {
         match (self.flow, self.outputs.get_mut(name)) {
             (Flow::Running, Some(scanout)) => scanout.present(source, now),
-            _ => Ok(None),
+            _ => Ok(PresentOutcome::Waiting),
         }
     }
 

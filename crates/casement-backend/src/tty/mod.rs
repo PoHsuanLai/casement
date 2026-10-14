@@ -19,6 +19,7 @@
 mod connector;
 mod device;
 mod direct;
+mod firmware;
 mod flip;
 mod hotplug;
 mod judge;
@@ -55,6 +56,7 @@ pub use device::{Announced, OpenDevice, TtyDevices};
 pub use direct::{
     DirectSession, DriverRefusal, FixedNode, NoGpus, POLL_EVERY, VKMS_DRIVER, require_vkms,
 };
+pub use firmware::{DeviceKinds, SysDeviceKinds};
 pub use flip::FlipTracker;
 pub use hotplug::{KnownConnectors, reconcile};
 pub use judge::{Lit, judge};
@@ -67,7 +69,7 @@ pub use lit::{Lighting, LitOutput};
 pub use offer::scanout_formats;
 pub use readback::{Readback, Watch};
 pub use report::{Due, KmsReport, REPORT_EVERY, ReportPacer, ReportedOutput};
-pub use scanouts::{Flow, FrameTally, Scanout, ScanoutSet};
+pub use scanouts::{Flow, FrameTally, PresentOutcome, Scanout, ScanoutSet};
 pub use session::{SeatState, SessionNote, TtySession};
 pub use sleep::{SleepInbox, SleepLink, SleepSettled, sleep_channel};
 pub use surface::{DirectCandidate, Presented, QueueOutcome, QueuedFrame, ScanoutSurface};
@@ -78,7 +80,7 @@ pub use writeback::{FLIPS_TO_WAIT, RawCapture, Writeback, WritebackError, Writeb
 #[cfg(feature = "tty")]
 pub use direct_real::direct_seams;
 #[cfg(feature = "tty")]
-pub use kms_real::{FdSource, RealKms, RealKmsOpener};
+pub use kms_real::{FdSource, RealKms, RealKmsOpener, VirtualDisplays};
 #[cfg(feature = "tty")]
 pub use real::real_seams;
 #[cfg(feature = "tty")]
@@ -92,10 +94,10 @@ use crate::backend::BackendError;
 use crate::gpu::{FormatSource, RenderNodes};
 use crate::headless::{ConnectorEvent, FrameSource, PresentedFrame};
 use crate::input::{Applied, DeviceSettings, FedInput, InputFeed, PollContext};
-use casement_core::gpu::{GpuChoice, RenderPlan, plan_for};
+use casement_core::gpu::{DisplayKind, GpuChoice, RenderPlan, keep_displays, plan_for};
 use casement_core::input::Keysym;
 use casement_core::output::{OutputConfig, OutputPower};
-use casement_core::time::{Mono, VblankSeq};
+use casement_core::time::Mono;
 use casement_core::{DeviceId, OutputName};
 use std::collections::BTreeMap;
 
@@ -122,6 +124,9 @@ pub struct TtySeams {
     /// The device's writeback connector (none: a real seat, which never reads the screen back
     /// this way; `--drm-node` mode on vkms has one).
     pub writeback: Option<Box<dyn Writeback>>,
+    /// What each display device is, so a firmware framebuffer is left out beside a real GPU
+    /// (none: every device is driven).
+    pub kinds: Option<Box<dyn DeviceKinds>>,
 }
 
 impl TtySeams {
@@ -142,6 +147,7 @@ impl TtySeams {
             formats: None,
             input: None,
             writeback: None,
+            kinds: None,
         }
     }
 
@@ -159,6 +165,15 @@ impl TtySeams {
     pub fn with_writeback(self, writeback: Box<dyn Writeback>) -> TtySeams {
         TtySeams {
             writeback: Some(writeback),
+            ..self
+        }
+    }
+
+    /// The same with this reader of device kinds.
+    #[must_use]
+    pub fn with_kinds(self, kinds: Box<dyn DeviceKinds>) -> TtySeams {
+        TtySeams {
+            kinds: Some(kinds),
             ..self
         }
     }
@@ -206,6 +221,8 @@ pub struct TtyBackend {
     queued: u64,
     /// The writeback job, when one is queued.
     writeback_job: writeback::WritebackJob,
+    /// What each device present or added is (all `Gpu` without a reader of kinds).
+    kinds: BTreeMap<DevicePath, DisplayKind>,
 }
 
 impl TtyBackend {
@@ -232,7 +249,18 @@ impl TtyBackend {
             }
         };
         let mut devices = TtyDevices::empty();
-        for path in seams.udev.present() {
+        let mut kinds = BTreeMap::new();
+        let found: Vec<(DevicePath, DisplayKind)> = seams
+            .udev
+            .present()
+            .into_iter()
+            .map(|path| {
+                let kind = kind_of(seams.kinds.as_deref(), &path);
+                kinds.insert(path.clone(), kind);
+                (path, kind)
+            })
+            .collect();
+        for path in keep_displays(&found) {
             if let Err(error) = devices.added(path.clone(), &mut *seams.opener) {
                 tracing::warn!(path = %path.as_path().display(), %error, "a display device did not open");
             }
@@ -248,6 +276,7 @@ impl TtyBackend {
             vrr: VrrPolicy::default(),
             queued: 0,
             writeback_job: writeback::WritebackJob::default(),
+            kinds,
         })
     }
 
@@ -352,6 +381,10 @@ impl TtyBackend {
         while let Some(event) = self.seams.udev.next_event() {
             let (path, result) = match event {
                 DeviceEvent::Added(path) => {
+                    if !self.admits(&path) {
+                        tracing::info!(path = %path.as_path().display(), "a firmware framebuffer is left out beside a GPU");
+                        continue;
+                    }
                     let result = self.devices.added(path.clone(), &mut *self.seams.opener);
                     (path, result)
                 }
@@ -369,25 +402,44 @@ impl TtyBackend {
         notes
     }
 
+    /// Whether an added device is driven: not a firmware framebuffer while any device is open.
+    fn admits(&mut self, path: &DevicePath) -> bool {
+        let kind = kind_of(self.seams.kinds.as_deref(), path);
+        self.kinds.insert(path.clone(), kind);
+        let found: Vec<(DevicePath, DisplayKind)> = self
+            .devices
+            .devices
+            .keys()
+            .map(|open| {
+                (
+                    open.clone(),
+                    self.kinds.get(open).copied().unwrap_or(DisplayKind::Gpu),
+                )
+            })
+            .chain(std::iter::once((path.clone(), kind)))
+            .collect();
+        keep_displays(&found).contains(path)
+    }
+
     /// Draws `source` for `output` and queues it for the next vblank (`now` is the session
-    /// clock's instant); the number of the frame queued (none while the seat is paused, the
-    /// output is dark or a flip is pending). While a capture is open on the output the frame is
+    /// clock's instant); the frame queued (waiting while the seat is paused, the output is
+    /// dark or a flip is pending; unchanged when it would show nothing new). While a capture is open on the output the frame is
     /// also drawn into its shadow.
     pub fn present(
         &mut self,
         output: &OutputName,
         source: &dyn FrameSource,
         now: Mono,
-    ) -> Result<Option<VblankSeq>, BackendError> {
+    ) -> Result<PresentOutcome, BackendError> {
         let dark = self
             .lit
             .get(output)
             .is_some_and(|lit| lit.power() == OutputPower::Off);
         if self.seat == SeatState::Lent || dark {
-            return Ok(None);
+            return Ok(PresentOutcome::Waiting);
         }
         let shown = self.scanouts.present(output, source, now)?;
-        if let Some(seq) = shown {
+        if let PresentOutcome::Flipped(seq) = shown {
             self.queued = self.queued.saturating_add(1);
             self.readback.draw(output, seq, now, source)?;
         }
@@ -447,6 +499,11 @@ impl TtyBackend {
 }
 
 /// What a device reported, as notes; a device that refused is logged and reports nothing.
+/// The kind of the device at `path` under `kinds`; a GPU when nothing says otherwise.
+fn kind_of(kinds: Option<&dyn DeviceKinds>, path: &DevicePath) -> DisplayKind {
+    kinds.map_or(DisplayKind::Gpu, |kinds| kinds.kind(path))
+}
+
 fn connector_notes(
     path: &DevicePath,
     result: Result<Vec<ConnectorEvent>, KmsError>,

@@ -9,7 +9,9 @@ use self::scene::{SceneSource, empty_frame, layers_on, sample_scene_at};
 use crate::exec;
 use crate::state::State;
 use casement_backend::headless::Shown;
+use casement_backend::tty::PresentOutcome;
 use casement_backend::{BackendKind, ConnectorEvent, HeadlessBackend};
+use casement_core::frame::Repeat;
 use casement_core::output::OutputConfig;
 use casement_core::settings::CasementSettings;
 use casement_core::space::SpaceSeed;
@@ -138,16 +140,30 @@ pub fn frame(state: &mut State, output: &OutputKey) {
         chrome: &state.render.chrome,
     };
     let shown = match &mut state.backend {
-        BackendKind::Headless(backend) => present_headless(backend, &name, now, &source),
-        BackendKind::Winit(winit) => winit.present(&source),
+        BackendKind::Headless(backend) => {
+            present_headless(backend, &name, now, &source).map(PresentOutcome::from)
+        }
+        BackendKind::Winit(winit) => winit.present(&source).map(PresentOutcome::from),
         BackendKind::Tty(seat) => tty::present(seat, &name, &config, capture, now, &source),
         // A backend this build does not know presents nothing.
-        _ => Ok(None),
+        _ => Ok(PresentOutcome::Waiting),
     };
     match shown {
-        Ok(Some(seq)) => presented(state, output, &frame, config, now, seq),
-        Ok(None) => {}
-        Err(error) => tracing::warn!(output = name.as_str(), %error, "a frame failed"),
+        Ok(PresentOutcome::Flipped(seq)) => {
+            state.render.frame_faults.clear(&name);
+            presented(state, output, &frame, config, now, seq);
+        }
+        Ok(PresentOutcome::Unchanged) => {
+            state.render.frame_faults.clear(&name);
+            send_callbacks(state, output, &frame, now);
+        }
+        Ok(_) => {}
+        Err(error) => {
+            let repeat = state.render.frame_faults.admit(name.clone(), now);
+            if let Repeat::Report { suppressed } = repeat {
+                tracing::warn!(output = name.as_str(), %error, suppressed, "a frame failed");
+            }
+        }
     }
 }
 
@@ -181,14 +197,7 @@ fn presented(
     now: Mono,
     seq: VblankSeq,
 ) {
-    let roots = drawn_roots(state, output, frame);
-    let sent: u64 = roots
-        .iter()
-        .map(|root| send_frame_callbacks(root, now))
-        .sum();
-    if let BackendKind::Headless(backend) = &mut state.backend {
-        backend.note_callbacks(sent);
-    }
+    send_callbacks(state, output, frame, now);
     let at = presentation::Presented {
         seq,
         at: now,
@@ -203,6 +212,23 @@ fn presented(
         tracing::warn!(%fault, "presentation feedback failed");
     }
     state.release_blockers();
+}
+
+/// Frame callbacks to the surfaces a frame of `output` drew, at the frame's instant.
+fn send_callbacks(
+    state: &mut State,
+    output: &OutputKey,
+    frame: &casement_motion::OutputFrame,
+    now: Mono,
+) {
+    let roots = drawn_roots(state, output, frame);
+    let sent: u64 = roots
+        .iter()
+        .map(|root| send_frame_callbacks(root, now))
+        .sum();
+    if let BackendKind::Headless(backend) = &mut state.backend {
+        backend.note_callbacks(sent);
+    }
 }
 
 /// The root surfaces a frame of `output` drew: its windows, its layers, their popups, its lock

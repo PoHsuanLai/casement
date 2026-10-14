@@ -11,11 +11,13 @@ use casement_backend::headless::FrameSource;
 use casement_backend::input::{
     Applied, FedDevice, FedInput, PollContext, device_settings, scaled_scroll,
 };
-use casement_backend::tty::{SessionNote, TtyBackend, TtyNote, VtNumber, Watch, vt_of_keysym};
+use casement_backend::tty::{
+    PresentOutcome, SessionNote, TtyBackend, TtyNote, VtNumber, Watch, vt_of_keysym,
+};
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::input::{DeviceClass, Edge, InputEvent, Keysym, Origin};
 use casement_core::output::OutputConfig;
-use casement_core::time::{Mono, VblankSeq};
+use casement_core::time::Mono;
 use casement_core::{Effect, Event, OutputKey, OutputName};
 use casement_wayland::image_capture::CaptureBook;
 use smithay::input::keyboard::Keysym as XkbKeysym;
@@ -168,7 +170,7 @@ pub(super) fn present(
     capture: Watch,
     now: Mono,
     source: &dyn FrameSource,
-) -> Result<Option<VblankSeq>, BackendError> {
+) -> Result<PresentOutcome, BackendError> {
     tty.watch(name, config, capture)?;
     tty.present(name, source, now)
 }

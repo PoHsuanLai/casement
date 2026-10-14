@@ -10,11 +10,12 @@ use casement_backend::{
     BackendChoice, BackendError, BackendKind, DmabufMode, HeadlessBackend, HeadlessConfig,
     TtyBackend, WinitBackend,
 };
+use casement_core::frame::RepeatGate;
 use casement_core::geometry::LogicalPoint;
 use casement_core::gpu::GpuChoice;
 use casement_core::settings::CasementSettings;
 use casement_core::space::SpaceSeed;
-use casement_core::{IdMint, Model, OutputKey};
+use casement_core::{IdMint, Model, OutputKey, OutputName};
 use casement_layout::{Arrangement, LayoutKnobs, RustScene};
 use casement_motion::MotionBook;
 use casement_render::{ChromeLayer, CursorDraw, CursorShape, TextureBook};
@@ -33,6 +34,9 @@ use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::reexports::calloop::LoopHandle;
 use smithay::reexports::wayland_server::{Display, DisplayHandle};
 use std::collections::BTreeMap;
+
+/// How often a fault that repeats at every frame is logged again.
+const FAULT_LOG_EVERY: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// Everything casement holds, as typed sub-states.
 #[derive(Debug)]
@@ -96,6 +100,8 @@ pub struct RenderState {
     pub pointer: PointerStart,
     /// The surfaces told which outputs they are on.
     pub presence: crate::core_loop::Presence,
+    /// Frame failures, so one that repeats every vblank is logged once per window.
+    pub frame_faults: RepeatGate<OutputName>,
 }
 
 /// Whether the pointer has been put where it starts: the centre of the primary output, once an
@@ -298,6 +304,7 @@ impl State {
             },
             pointer: PointerStart::Unplaced,
             presence: crate::core_loop::Presence::default(),
+            frame_faults: RepeatGate::new(FAULT_LOG_EVERY),
         };
         Ok(State {
             core,

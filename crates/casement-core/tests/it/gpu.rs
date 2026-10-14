@@ -271,3 +271,64 @@ fn feedback_has_no_scanout_tranche_for_planes_of_another_gpu() {
     let purposes: Vec<_> = feedback.tranches.iter().map(|t| t.purpose).collect();
     assert_eq!(purposes, vec![TrancheUse::Render, TrancheUse::Import]);
 }
+
+#[test]
+fn display_kind_reads_firmware_and_virtual_drivers() {
+    use casement_core::gpu::DisplayKind;
+    use casement_core::gpu::DisplayKind::{Firmware, Gpu, Virtual};
+    let faux = Some("faux");
+    let pci = Some("pci");
+    let platform = Some("platform");
+    let table = [
+        (Some("faux_driver"), Some("casement"), faux, Virtual),
+        (None, None, faux, Virtual),
+        (Some("vkms"), None, None, Virtual),
+        (Some("simpledrm"), None, platform, Firmware),
+        (
+            Some("simple-framebuffer"),
+            Some("simple-framebuffer.0"),
+            platform,
+            Firmware,
+        ),
+        (None, Some("simple-framebuffer.0"), None, Firmware),
+        (Some("efidrm"), None, None, Firmware),
+        (Some("vesadrm"), None, None, Firmware),
+        (Some("ofdrm"), None, None, Firmware),
+        (Some("nvidia"), Some("0000:01:00.0"), pci, Gpu),
+        (Some("amdgpu"), Some("0000:10:00.0"), pci, Gpu),
+        (Some("i915"), None, None, Gpu),
+        (None, None, None, Gpu),
+    ];
+    for (driver, device, bus, want) in table {
+        assert_eq!(
+            DisplayKind::of_names(driver, device, bus),
+            want,
+            "{driver:?} {device:?} {bus:?}"
+        );
+    }
+}
+
+#[test]
+fn firmware_displays_are_kept_only_when_nothing_else_is() {
+    use casement_core::gpu::DisplayKind::{Firmware, Gpu, Virtual};
+    use casement_core::gpu::keep_displays;
+    let table: [(&[(&str, _)], &[&str]); 8] = [
+        (&[("card0", Virtual), ("card1", Gpu)], &["card1"]),
+        (&[("card0", Virtual)], &[]),
+        (&[], &[]),
+        (&[("card0", Firmware)], &["card0"]),
+        (&[("card0", Gpu)], &["card0"]),
+        (
+            &[("card0", Firmware), ("card1", Gpu), ("card2", Gpu)],
+            &["card1", "card2"],
+        ),
+        (
+            &[("card0", Firmware), ("card1", Firmware)],
+            &["card0", "card1"],
+        ),
+        (&[("card0", Gpu), ("card1", Gpu)], &["card0", "card1"]),
+    ];
+    for (found, want) in table {
+        assert_eq!(keep_displays(found), want, "{found:?}");
+    }
+}

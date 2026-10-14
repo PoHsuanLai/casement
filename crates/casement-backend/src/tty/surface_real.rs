@@ -170,11 +170,17 @@ impl ScanoutSurface for RealScanout {
         };
         let mut renderer = self.renderer.borrow_mut();
         let elements = source.gles(&mut renderer);
-        let queued = self
+        let rendered = self
             .compositor
             .render_frame(&mut *renderer, &elements, CLEAR, FrameFlags::DEFAULT)
-            .map_err(refused)
-            .and_then(|_| self.compositor.queue_frame(()).map_err(refused));
+            .map(|result| result.is_empty)
+            .map_err(refused);
+        // A frame with no change is not queued: `queue_frame` refuses it as empty.
+        let queued = match rendered {
+            Ok(true) => return QueueOutcome::Unchanged,
+            Ok(false) => self.compositor.queue_frame(()).map_err(refused),
+            Err(error) => Err(error),
+        };
         match queued {
             Ok(()) => {
                 self.pending = Some(self.next);

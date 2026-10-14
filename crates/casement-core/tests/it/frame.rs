@@ -111,3 +111,28 @@ fn a_fractional_scale_grows_the_cursor_before_the_fit_test() {
         "40 logical px at 2x is 80 physical"
     );
 }
+
+#[test]
+fn a_repeating_fault_is_reported_once_per_window_with_the_count_held_back() {
+    use casement_core::frame::{Repeat, RepeatGate};
+    let mut gate = RepeatGate::new(Duration::from_secs(30));
+    let at = |s: u64| Mono(Duration::from_secs(s));
+    let steps = [
+        ("a", 0, Repeat::Report { suppressed: 0 }),
+        ("a", 1, Repeat::Quiet),
+        ("b", 1, Repeat::Report { suppressed: 0 }),
+        ("a", 29, Repeat::Quiet),
+        ("a", 30, Repeat::Report { suppressed: 2 }),
+        ("a", 31, Repeat::Quiet),
+        ("a", 61, Repeat::Report { suppressed: 1 }),
+    ];
+    for (key, second, want) in steps {
+        assert_eq!(gate.admit(key, at(second)), want, "{key} at {second}s");
+    }
+    gate.clear(&"a");
+    assert_eq!(
+        gate.admit("a", at(62)),
+        Repeat::Report { suppressed: 0 },
+        "a fault after a good frame is a first one"
+    );
+}

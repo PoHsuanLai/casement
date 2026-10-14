@@ -2,6 +2,7 @@
 //! no device; `integration` runs the whole `State` over them.
 
 mod direct;
+mod firmware;
 mod integration;
 mod kms;
 mod scanout;

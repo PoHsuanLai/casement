@@ -46,7 +46,8 @@ fn state_home(flag: StateHome, backend: BackendChoice, env: &StateEnv) -> StateH
 }
 
 fn main() -> ExitCode {
-    let filter = std::env::var("CASEMENT_LOG").unwrap_or_else(|_| "info".to_owned());
+    let filter =
+        std::env::var("CASEMENT_LOG").unwrap_or_else(|_| casement::log::DEFAULT_FILTER.to_owned());
     casement::log::init(&filter);
     let args: Vec<String> = std::env::args().skip(1).collect();
     match cli::parse_args(&args) {

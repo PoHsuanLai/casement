@@ -2,6 +2,7 @@
 //! nodes under the host's `/sys` and `/dev`, the formats each render node draws into, and (with
 //! feature `libinput`) the seat's input devices opened through the same session.
 
+use super::SysDeviceKinds;
 use super::TtySeams;
 use super::kms_real::RealKmsOpener;
 use super::session_real::RealSession;
@@ -30,14 +31,16 @@ pub fn real_seams<D: 'static>(
         .map_err(|error| SessionFault::Unavailable(format!("udev: {error}")))?;
     let fds = session.fds();
     let formats = RealFormats::new(root.clone());
+    let kinds = SysDeviceKinds::new(root.clone());
     let seams = TtySeams::new(
         Box::new(session),
         Box::new(udev),
-        Box::new(RealKmsOpener::new(Box::new(fds), handle.clone())),
+        Box::new(RealKmsOpener::new(Box::new(fds), handle.clone()).refusing_virtual()),
         Box::new(SysRenderNodes::new(root)),
         choice,
     )
-    .with_formats(Box::new(formats));
+    .with_formats(Box::new(formats))
+    .with_kinds(Box::new(kinds));
     with_input(seams, &seat, input_session, handle)
 }
 

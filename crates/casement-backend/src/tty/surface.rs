@@ -50,6 +50,8 @@ pub enum QueueOutcome {
     Queued(VblankSeq),
     /// A flip is still pending; try at the next vblank.
     Busy,
+    /// The frame changed nothing on the glass, so none was queued (not a failure).
+    Unchanged,
     /// The device refused.
     Failed(KmsError),
 }

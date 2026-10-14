@@ -12,6 +12,7 @@
 //! compositor that owns the surface keeps its mode, and a new mode is a new surface (the
 //! backend drops the old one first).
 
+use super::direct::require_vkms;
 use super::hotplug::{KnownConnectors, reconcile};
 use super::judge::{Lit, judge};
 use super::kms::{
@@ -33,6 +34,7 @@ use casement_core::time::Millihertz;
 use smithay::backend::drm::{DrmDevice, DrmDeviceFd, DrmEvent, DrmSurface};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::reexports::calloop::LoopHandle;
+use smithay::reexports::drm::Device as BasicDevice;
 use smithay::reexports::drm::control::{
     self, Device as ControlDevice, ModeTypeFlags, PlaneType, ResourceHandle, connector, crtc,
 };
@@ -452,12 +454,36 @@ fn planes(device: &DrmDevice, crtcs: &[crtc::Handle]) -> Result<Vec<PlaneFacts>,
 pub struct RealKmsOpener<D: 'static> {
     fds: Box<dyn FdSource>,
     handle: LoopHandle<'static, D>,
+    virtual_displays: VirtualDisplays,
+}
+
+/// Whether a virtual test display (a device whose DRM driver is vkms) may be opened.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum VirtualDisplays {
+    /// It may: `--drm-node` mode, which checks the driver itself.
+    Allow,
+    /// It may not: a session drives real displays only.
+    Refuse,
 }
 
 impl<D: 'static> RealKmsOpener<D> {
     /// An opener that gets descriptors from `fds` and has `handle`'s loop read each device.
     pub fn new(fds: Box<dyn FdSource>, handle: LoopHandle<'static, D>) -> RealKmsOpener<D> {
-        RealKmsOpener { fds, handle }
+        RealKmsOpener {
+            fds,
+            handle,
+            virtual_displays: VirtualDisplays::Allow,
+        }
+    }
+
+    /// The same, refusing to open a virtual test display (a session's opener).
+    #[must_use]
+    pub fn refusing_virtual(self) -> RealKmsOpener<D> {
+        RealKmsOpener {
+            virtual_displays: VirtualDisplays::Refuse,
+            ..self
+        }
     }
 }
 
@@ -472,6 +498,17 @@ impl<D: 'static> std::fmt::Debug for RealKmsOpener<D> {
 impl<D: 'static> KmsOpener for RealKmsOpener<D> {
     fn open(&mut self, path: &DevicePath) -> Result<Box<dyn Kms>, KmsError> {
         let fd = self.fds.fd(path)?;
+        if self.virtual_displays == VirtualDisplays::Refuse && is_vkms(&fd)? {
+            return Err(KmsError::VirtualDisplay(path.0.clone()));
+        }
         Ok(Box::new(RealKms::open(fd, &self.handle)?))
     }
+}
+
+/// Whether the DRM version ioctl on `fd` names the vkms driver (the same reading `--drm-node`
+/// checks with [`require_vkms`]).
+fn is_vkms(fd: &OwnedFd) -> Result<bool, KmsError> {
+    let device = DrmDeviceFd::new(DeviceFd::from(fd.try_clone()?));
+    let driver = device.get_driver()?;
+    Ok(require_vkms(driver.name()).is_ok())
 }

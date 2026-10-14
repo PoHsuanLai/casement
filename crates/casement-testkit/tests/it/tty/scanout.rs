@@ -3,7 +3,8 @@
 use casement_backend::RenderCostModel;
 use casement_backend::headless::FrameSource;
 use casement_backend::tty::{
-    FlipTracker, Presented, QueueOutcome, QueuedFrame, Scanout, ScanoutSet, ScanoutSurface,
+    FlipTracker, PresentOutcome, Presented, QueueOutcome, QueuedFrame, Scanout, ScanoutSet,
+    ScanoutSurface,
 };
 use casement_core::OutputName;
 use casement_core::frame::{CursorPlaneCaps, CursorPlaneChoice, FrameOutcome};
@@ -84,7 +85,7 @@ fn run(frames: u64, cost: &RenderCostModel) -> (u64, u64) {
         }
         scanout.record_cost(spent);
         let queued = set.present(&output(), &Empty, now).expect("present");
-        assert_eq!(queued, Some(wanted), "frame {n}");
+        assert_eq!(queued, PresentOutcome::Flipped(wanted), "frame {n}");
         now = shown_at;
     }
     let tally = set.get_mut(&output()).map(|scanout| {
@@ -151,12 +152,12 @@ fn a_busy_surface_defers_the_frame_to_the_next_vblank() {
     set.attach(output(), Scanout::new(Box::new(shared.clone()), clock()));
     assert_eq!(
         set.present(&output(), &Empty, Mono(ms(0))).expect("first"),
-        Some(VblankSeq(0))
+        PresentOutcome::Flipped(VblankSeq(0))
     );
     shared.0.borrow_mut().script.clear();
     assert_eq!(
         set.present(&output(), &Empty, Mono(ms(1))).expect("second"),
-        None
+        PresentOutcome::Waiting
     );
     assert_eq!(shared.0.borrow().queued, 1);
 }
@@ -178,5 +179,35 @@ fn the_cursor_plane_decision_follows_the_caps() {
     assert_eq!(
         planed.cursor_choice(large, Scale::ONE),
         CursorPlaneChoice::Composited
+    );
+}
+
+/// A surface whose every frame changes nothing on the glass.
+#[derive(Debug)]
+struct Idle;
+
+impl ScanoutSurface for Idle {
+    fn queue(&mut self, _frame: QueuedFrame<'_>) -> QueueOutcome {
+        QueueOutcome::Unchanged
+    }
+    fn presented(&mut self, _now: Mono) -> Option<Presented> {
+        None
+    }
+}
+
+#[test]
+fn a_frame_that_changes_nothing_is_unchanged_not_waiting_and_not_an_error() {
+    let mut set = ScanoutSet::empty();
+    set.attach(output(), Scanout::new(Box::new(Idle), clock()));
+    assert_eq!(
+        set.present(&output(), &Empty, Mono(ms(0)))
+            .expect("present"),
+        PresentOutcome::Unchanged
+    );
+    let other = OutputName::parse("DP-2").expect("a name");
+    assert_eq!(
+        set.present(&other, &Empty, Mono(ms(1))).expect("present"),
+        PresentOutcome::Waiting,
+        "an unlit output waits"
     );
 }

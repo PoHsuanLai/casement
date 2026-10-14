@@ -14,11 +14,13 @@
 //! assert!(plan.is_err(), "no GPU, no plan");
 //! ```
 
+mod display;
 mod feedback;
 mod node;
 mod plan;
 mod policy;
 
+pub use display::{DisplayKind, keep_displays};
 pub use feedback::{
     FeedbackPlan, FormatEntry, FormatTable, Fourcc, Modifier, Tranche, TrancheUse, feedback_for,
 };
