@@ -33,7 +33,7 @@ fn defaults_follow_the_mac_rows() {
     assert_eq!(settings.outputs.first_sight, ScalePolicy::WholeLikeMac);
     assert_eq!(settings.pointer, PointerSettings::defaults());
     assert_eq!(settings.pointer.touchpad.natural_scroll, Enabled::On);
-    assert_eq!(settings.pointer.mouse.natural_scroll, Enabled::Off);
+    assert_eq!(settings.pointer.mouse.natural_scroll, Enabled::On);
 }
 
 #[test]

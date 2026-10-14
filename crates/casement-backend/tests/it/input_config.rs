@@ -10,7 +10,7 @@ fn a_touchpad_gets_the_touchpad_profile_and_a_mouse_the_mouse_profile() {
     let touchpad = device_settings(&settings, DeviceClass::Touchpad);
     let mouse = device_settings(&settings, DeviceClass::Pointer);
     assert_eq!(touchpad.natural_scroll, Enabled::On);
-    assert_eq!(mouse.natural_scroll, Enabled::Off);
+    assert_eq!(mouse.natural_scroll, Enabled::On);
     assert_eq!(touchpad.accel, AccelProfile::Adaptive);
 }
 

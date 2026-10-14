@@ -25,7 +25,7 @@ pub enum AccelProfile {
 pub struct PointerProfile {
     /// The acceleration curve.
     pub accel: AccelProfile,
-    /// Scroll content with the fingers (the Mac's default for a touchpad).
+    /// Scroll content with the fingers (the Mac's default for every pointer, mice included).
     pub natural_scroll: Enabled,
     /// Tap to click.
     pub tap: Enabled,
@@ -70,14 +70,15 @@ impl PointerSettings {
         PointerSettings { mouse, touchpad }
     }
 
-    /// The Mac's defaults: adaptive acceleration, natural scrolling and tap-to-click on the
-    /// touchpad, a plain mouse, scroll at the device's own step.
+    /// The Mac's defaults: adaptive acceleration and natural scrolling on every pointer,
+    /// tap-to-click and disable-while-typing on the touchpad only, scroll at the device's own
+    /// step.
     pub fn defaults() -> PointerSettings {
         let step = Fraction(1000);
         PointerSettings {
             mouse: PointerProfile::new(
                 AccelProfile::Adaptive,
-                Enabled::Off,
+                Enabled::On,
                 Enabled::Off,
                 step,
                 Enabled::Off,
