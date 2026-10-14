@@ -687,7 +687,7 @@ W13 8 to 0.
 - **Known gaps**: `Spawn` and `Call` bindings are still only logged by `carry_out` ("from P2"), so the launcher,
   switcher, screenshot and power-menu chords resolve and are swallowed but do nothing yet. LockScreen,
   MissionControl, AppWindows, NextWindow, NextInputSource and EmojiAndSymbols have no casement or sill command
-  and are not bound. `ScreenshotTools` runs `sill screenshot area` (dist/cosmic's Screenshot).
+  and are not bound. `ScreenshotTools` runs `sill screenshot area`.
 - **Mac semantics (follow-up)**: Cmd+W, Cmd+M, Cmd+H, Cmd+Opt+H, Cmd+Q and Ctrl+Cmd+F are app menu commands on macOS,
   not window-server ones, so the focused app must receive them. Close, Minimise, Hide, HideOthers, Quit and FullScreen
   are not in `ROWS` (a test asserts none of those chords is bound), and `DesktopCommand::ToggleFullScreenKey`, added
