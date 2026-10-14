@@ -10,9 +10,9 @@ What casement adds, each with its reason (the first twelve are the freeze plan's
 
 1. **Clean room.** smithay and its `anvil`, `smallvil` and `wlcs_anvil` examples (MIT) are the
    only compositor code anyone working here may read or port; a ported piece keeps an
-   attribution line in its file header and a row in a `THIRD-PARTY.md`. niri, cosmic-comp, jay,
+   attribution line in its file header and a row in a `THIRD-PARTY.md`. niri, jay,
    pinnacle, catacomb, strata, labwc, KWin, mutter, wlroots, sway, Hyprland, Wayfire, scenefx,
-   xdg-desktop-portal-cosmic or -luminous and Otto's lay-rs are never opened as source: their
+   the other desktops' portal backends and Otto's lay-rs are never opened as source: their
    issues, wikis and release notes are facts, nothing more. Behaviour facts go into `QUIRKS.md`
    in our own words, keyed by facts (driver, PCI class, connector type, toolkit) with the issue
    link. `scripts/check-boundary.sh` (row B20) trips on any of their names in code.
