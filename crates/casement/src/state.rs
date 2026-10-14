@@ -273,7 +273,7 @@ impl State {
                 )?;
                 let mut tty = TtyBackend::start(seams)?;
                 offer_dmabuf(&mut wl.dmabuf, &dh, &mut tty)?;
-                BackendKind::Tty(tty)
+                BackendKind::Tty(Box::new(tty))
             }
         };
         let clock = ClockSource::start(config.clock, event_loop)?;

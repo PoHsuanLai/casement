@@ -21,7 +21,7 @@ pub enum BackendKind {
     Winit(WinitBackend),
     /// A real seat: DRM devices, libseat, udev (P1; the seams are injected, so the FakeKms
     /// suite runs it in the jail).
-    Tty(TtyBackend),
+    Tty(Box<TtyBackend>),
 }
 
 /// The backend `--backend` asks for.
