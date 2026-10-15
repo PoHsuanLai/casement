@@ -9,6 +9,7 @@ members = [
   "crates/casement-motion",
   "crates/casement-render",
   "crates/casement-chrome",
+  "crates/casement-icons",
   "crates/casement-wayland",
   "crates/casement-backend",
   "crates/casement-agent",
@@ -35,6 +36,7 @@ casement-layout = { path = "crates/casement-layout" }
 casement-motion = { path = "crates/casement-motion" }
 casement-render = { path = "crates/casement-render" }
 casement-chrome = { path = "crates/casement-chrome" }
+casement-icons = { path = "crates/casement-icons" }
 casement-wayland = { path = "crates/casement-wayland" }
 casement-backend = { path = "crates/casement-backend" }
 casement-agent = { path = "crates/casement-agent" }
@@ -76,6 +78,9 @@ toml       = "1"
 proptest   = "1"
 tempfile   = "3"
 image = { version = "0.25.6", default-features = false, features = ["png", "jpeg"] }
+# App icons by theme name (casement-icons): the XDG icon-theme lookup, and SVG to pixels.
+freedesktop-icons = "0.4"
+resvg = { version = "0.48.1", default-features = false }
 wayland-client = "0.31"
 wayland-backend = { version = "0.3", features = ["client_system"] }
 wayland-protocols = { version = "0.32.13", features = ["client", "staging", "unstable"] }

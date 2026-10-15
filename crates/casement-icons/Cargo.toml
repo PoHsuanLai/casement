@@ -1,0 +1,21 @@
+[package]
+name = "casement-icons"
+description = "App icons for casement's own drawing (Mission Control): an app id to its desktop entry's Icon, the XDG icon-theme lookup, and PNG or SVG decoded to straight RGBA at a pixel size."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+freedesktop-icons = { workspace = true }
+image = { workspace = true }
+resvg = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

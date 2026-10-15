@@ -23,6 +23,7 @@ casement-core = { workspace = true }
 casement-layout = { workspace = true }
 casement-motion = { workspace = true }
 casement-render = { workspace = true }
+casement-icons = { workspace = true }
 casement-chrome = { workspace = true }
 casement-wayland = { workspace = true, features = ["quire"] }
 casement-backend = { workspace = true }
