@@ -5,17 +5,19 @@
 //! Every test drives the real `State` through the `Fixture` and is ignored until the fixture
 //! (P0-B-headless) and the core loop (P0-B-loop) are filled: they could not be run in this lane.
 
+use casement_core::app::AppLife;
 use casement_core::geometry::{LogicalPoint, LogicalRect, PhysicalSize};
-use casement_core::input::{ButtonCode, DeviceClass, Edge};
+use casement_core::input::{ButtonCode, DeviceClass, Edge, KeyCode};
 use casement_core::policy::ConnectionRole;
 use casement_core::{DeviceId, WindowId};
 use casement_layout::{LayoutKnobs, RustScene, SceneLayout, spec_of};
 use casement_testclient::surface::popup::{Popup, PopupSpec};
 use casement_testclient::surface::toplevel::shell::{xdg_surface, xdg_wm_base};
 use casement_testclient::surface::toplevel::{Pings, State, Toplevel, WmBase, bind_pointer};
-use casement_testclient::{ClientError, Pattern, shm_buffer};
+use casement_testclient::{ClientError, ClientState, Pattern, shm_buffer};
 use casement_testkit::{ClientId, Env, Fixture, FixtureSpec, TestOrigin};
 use std::path::PathBuf;
+use std::time::Duration;
 
 /// Whether the golden files are replaced (`CASEMENT_BLESS=1`, deliberate).
 pub(crate) fn blessing() -> bool {
@@ -557,4 +559,78 @@ fn destroying_the_surface_before_its_role_disconnects_only_that_client() {
     assert!(fixture.client(id).protocol_error().is_some());
     assert!(!fixture.client(id).is_connected());
     assert!(fixture.client(bystander).is_connected());
+}
+
+/// An `xdg_wm_base` that hears pings and never answers: a client whose main loop is stuck.
+#[derive(Debug)]
+struct Deaf;
+
+impl wayland_client::Dispatch<xdg_wm_base::XdgWmBase, Deaf> for ClientState {
+    fn event(
+        _: &mut Self,
+        _: &xdg_wm_base::XdgWmBase,
+        _: xdg_wm_base::Event,
+        _: &Deaf,
+        _: &wayland_client::Connection,
+        _: &wayland_client::QueueHandle<Self>,
+    ) {
+    }
+}
+
+/// Typing into a window whose client stops answering pings marks its app not responding once
+/// the deadline passes (P3-QU); typing with an answering client does not.
+#[test]
+fn a_client_that_stops_answering_pings_is_not_responding() {
+    let (mut fixture, id) = boot();
+    let base = fixture
+        .client(id)
+        .bind::<xdg_wm_base::XdgWmBase, _>(1..=7, Deaf)
+        .expect("xdg_wm_base");
+    let base = WmBase {
+        base,
+        pings: Pings::default(),
+    };
+    map_toplevel(&mut fixture, id, &base, (400, 300));
+    let app = fixture
+        .model()
+        .windows()
+        .values()
+        .next()
+        .map(|window| window.app.clone())
+        .expect("a window");
+    let keyboard = fixture.input().plug(
+        DeviceClass::Keyboard,
+        TestOrigin::Physical(DeviceClass::Keyboard),
+    );
+    fixture.input().key(keyboard, KeyCode(30), Edge::Press);
+    fixture.advance(Duration::from_secs(1));
+    assert_eq!(fixture.model().apps()[&app].life, AppLife::Running);
+    fixture.advance(Duration::from_secs(5));
+    assert!(matches!(
+        fixture.model().apps()[&app].life,
+        AppLife::NotResponding { .. }
+    ));
+}
+
+/// The same typing with a client that answers leaves its app running.
+#[test]
+fn a_client_that_answers_pings_stays_responding() {
+    let (mut fixture, id) = boot();
+    let base = WmBase::bind(fixture.client(id), 7);
+    map_toplevel(&mut fixture, id, &base, (400, 300));
+    let app = fixture
+        .model()
+        .windows()
+        .values()
+        .next()
+        .map(|window| window.app.clone())
+        .expect("a window");
+    let keyboard = fixture.input().plug(
+        DeviceClass::Keyboard,
+        TestOrigin::Physical(DeviceClass::Keyboard),
+    );
+    fixture.input().key(keyboard, KeyCode(30), Edge::Press);
+    fixture.advance(Duration::from_secs(6));
+    assert_eq!(fixture.model().apps()[&app].life, AppLife::Running);
+    assert!(!base.pings.with(|seen| seen.is_empty()), "it was pinged");
 }

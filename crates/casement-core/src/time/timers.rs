@@ -22,6 +22,8 @@ pub enum TimerKey {
     KeyRepeat(DeviceId),
     /// A ping to this client went unanswered for the not-responding interval.
     Ping(ClientKey),
+    /// A ping to this client went a moment ago: no other goes before this fires.
+    PingGap(ClientKey),
     /// The text-input gate has held a key for the input method's grab as long as it may.
     ImeHold,
     /// A client's idle notification is due.
@@ -104,6 +106,11 @@ impl TimerBook {
             armed,
             issued: issued.saturating_add(1),
         }
+    }
+
+    /// Whether a timer for `key` is armed.
+    pub fn is_armed(&self, key: &TimerKey) -> bool {
+        self.armed.contains_key(key)
     }
 
     /// The book without the timer for `key`.
