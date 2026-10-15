@@ -8,6 +8,7 @@
 //! note sends (`apply_note`) are the lane's. The switcher, overview and show-desktop requests
 //! are ignored until P3-Z gives them their machines.
 
+use super::shell_split;
 use super::{Advertised, code_of};
 use crate::foreign_toplevel_list::{identifier_of, window_of_identifier};
 use crate::states::{GlobalFilter, WaylandFault};
@@ -204,6 +205,17 @@ where
                 let entry = code_of(entry).and_then(MenuEntry::from_code);
                 state.quire_shell_events(on_window_menu_pick(window, entry));
             }
+            quire_shell_v1::Request::SplitPick { toplevel } => {
+                let window = window_of_identifier(&toplevel).filter(|id| state.window_known(*id));
+                state.quire_shell_events(shell_split::on_split_pick(window));
+            }
+            quire_shell_v1::Request::SplitCancel => {
+                state.quire_shell_events(shell_split::on_split_cancel());
+            }
+            quire_shell_v1::Request::SplitDivide { toplevel, share } => {
+                let window = window_of_identifier(&toplevel).filter(|id| state.window_known(*id));
+                state.quire_shell_events(shell_split::on_split_divide(window, share));
+            }
             // The switcher, overview and show-desktop requests arrive with P3-Z.
             _ => {}
         }
@@ -359,9 +371,8 @@ pub fn apply_note(part: &mut QuireShellPart, note: &ShellNote) -> Result<(), Way
                 shell.window_menu(identifier.clone(), show.at.x, show.at.y, show.enabled());
             }
         }
-        // The Split View picker has no event or request in the XML yet: the model asks for it
-        // and the shell is told nothing until the protocol lands (FINDINGS, wave-2026-10-15/split).
-        ShellNote::SplitChoose(_) | ShellNote::SplitChoiceEnd(_) => {}
+        ShellNote::SplitChoose(choices) => shell_split::send_choose(part, choices),
+        ShellNote::SplitChoiceEnd(first) => shell_split::send_choice_end(part, *first),
         _ => {}
     }
     Ok(())

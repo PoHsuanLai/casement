@@ -13,6 +13,7 @@
 
 pub mod desktop;
 pub mod shell;
+pub mod shell_split;
 
 use smithay::reexports::wayland_server::WEnum;
 
