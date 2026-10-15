@@ -64,6 +64,18 @@ pub struct WinitBackend {
     devices: Vec<FedInput>,
     /// Keys and buttons held, released when the window loses focus.
     held: HeldInput,
+    /// Whether the host asked for the next frame: a swap before it blocks until it does, and a
+    /// hidden window is never asked.
+    paced: Paced,
+}
+
+/// The host's pacing of the window's frames.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Paced {
+    /// A frame was shown; the next waits for the host's redraw.
+    Waiting,
+    /// The host asked for a frame.
+    Granted,
 }
 
 impl fmt::Debug for WinitBackend {
@@ -98,6 +110,7 @@ impl WinitBackend {
             announce,
             devices: seat_devices(),
             held: HeldInput::new(),
+            paced: Paced::Granted,
         })
     }
 
@@ -158,6 +171,7 @@ impl WinitBackend {
                 );
             }
             WinitEvent::Input(raw) => turn.fed.extend(self.converted(&raw, context)),
+            WinitEvent::Redraw => self.paced = Paced::Granted,
             _ => {}
         }
     }
@@ -184,8 +198,13 @@ impl WinitBackend {
         Some(fed)
     }
 
-    /// Draws `source` into the window and swaps; the number of the frame shown.
+    /// Draws `source` into the window and swaps; the number of the frame shown. None while the
+    /// host has not asked for a frame: swapping then would block the whole loop (a hidden window
+    /// is never asked).
     pub fn present(&mut self, source: &dyn FrameSource) -> Result<Option<VblankSeq>, BackendError> {
+        if self.paced == Paced::Waiting {
+            return Ok(None);
+        }
         let age = self.graphics.buffer_age().unwrap_or(0);
         let damage = {
             let (renderer, mut framebuffer) = self.graphics.bind().map_err(BackendError::from)?;
@@ -203,6 +222,8 @@ impl WinitBackend {
         self.graphics
             .submit(Some(&damage))
             .map_err(BackendError::from)?;
+        self.paced = Paced::Waiting;
+        self.graphics.window().request_redraw();
         self.presented = self.presented.saturating_add(1);
         Ok(Some(VblankSeq(self.presented)))
     }
