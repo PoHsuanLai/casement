@@ -322,8 +322,9 @@ fn the_key_command_tiles_the_key_window_like_the_menu_entry() {
     ];
     for (name, wanted, side) in cases {
         let got = then(desktop(2), vec![command(wanted)]);
-        assert!(full(&got, 1), "{name}");
-        assert_eq!(notes(&got), vec![choose(1, side, &[2])], "{name}");
+        // The second window mapped is the key window, so it is the one tiled.
+        assert!(full(&got, 2), "{name}");
+        assert_eq!(notes(&got), vec![choose(2, side, &[1])], "{name}");
     }
     let nobody = then(
         vec![plug("HEADLESS-1")],
