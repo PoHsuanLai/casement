@@ -173,10 +173,12 @@ fn option_arms_the_thirds_of_the_output() {
         case("bottom left", at(100, 1000), Some(zone(Z::BottomLeft))),
         case("bottom right", at(1800, 1000), Some(zone(Z::BottomRight))),
         case("the centre arms nothing", at(960, 540), None),
-        case(
+        (
             "option and shift",
             at(100, 540),
             MacMods::OPTION.with(MacMods::SHIFT),
+            vec![],
+            ALL_ON,
             Some(zone(Z::Left)),
         ),
     ]);
