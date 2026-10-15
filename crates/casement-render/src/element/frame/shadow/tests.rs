@@ -63,7 +63,7 @@ fn the_tiles_hold_no_window_sized_buffer() {
         .sum();
     let side = 2 * (MARGIN + made.inner) as usize;
     assert!(
-        bytes <= 4 * side * side * 4 + 4 * 2 * 2 * 100 * 4,
+        bytes <= 4 * side * side * 4 + 4 * STRIP_ACROSS as usize * 2 * 2 * 100 * 4,
         "{bytes}"
     );
 }
