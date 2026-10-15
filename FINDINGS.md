@@ -2484,3 +2484,67 @@ The window shadow stops re-rastering per frame. Written without a compiler (wave
   frame time (no per-frame raster, only the elements' rectangles change); the shadow is sharp at 2x, follows the rounded
   bottom corners, and has no seam where a strip meets a corner (look at light and dark); the dim shadow under a fade (`opacity`)
   fades with the window; a very small window (a 100x60 dialog) has a plausible shadow.
+
+## wave-2026-10-15/capture3
+
+Nothing here compiled or ran (the lane does not build). Closes the four "Capture limits" of `capture` and `capture2`.
+
+- **dma-buf capture (offer).** An ext output session, an ext window session, a cursor session and a `zwlr_screencopy`
+  frame now offer dma-buf beside shm. The set is `casement_wayland::image_capture::dma_offer(renderable, accepted)` (pure,
+  table-tested): the formats the backend's renderer can draw a capture into (`HeadlessRenderer::capture_formats`: `Argb8888`
+  and `Xrgb8888` of the set `Bind<Dmabuf>::supported_formats` reports; pixman is linear only) among the formats the dma-buf
+  global accepts (`DmabufPart::accepted`), so a client can always create the buffer it allocates. ext sends
+  `dmabuf_device` (the dma-buf global's main device) and `dmabuf_format` per format with its modifiers; wlr sends
+  `linux_dmabuf` per format (no modifiers on that wire) before `buffer_done`. smithay's `DmabufConstraints.node` is a
+  `DrmNode`, made with `DrmNode::from_dev_id` (reads no file): in a jail without `--fabricate-gpus` the node cannot be typed
+  and the ext offer is shm only (the tests allow both); wlr needs no node. No dma-buf global (`--dmabuf none`, the default
+  in the jail) means no dma-buf offer at all.
+- **dma-buf capture (drawing).** `casement_render::pass::write_dmabuf<R: Renderer + ImportMem + Bind<Dmabuf>>` uploads the
+  frame as a texture, binds the client's dma-buf as the framebuffer, clears it, draws the texture 1:1 at the corner and waits
+  for the fence. The composition root's `handlers/image_capture/dma.rs::deliver` writes shm directly and sends a dma-buf to
+  `{HeadlessBackend, TtyBackend}::write_dmabuf`; all four ways to answer a frame (ext output, ext window, ext cursor, wlr)
+  call it. Shm stays the fallback and the answer to an unknown buffer type is a failed frame.
+  Departures: (1) **the renderer that draws is the backend's software one**, not a hardware GLES renderer. Headless: its own
+  renderer (pixman, or GLES on llvmpipe, whose render-format set may be empty). Tty: the capture shadow's pixman, so the
+  offer on a real seat is **linear only** (what OBS asks for when a GPU modifier is refused); a client buffer on another GPU is
+  mapped by pixman through the dma-buf, which is correct for linear buffers only. Drawing into the hardware renderer needs
+  its `GlesRenderer` handed out by `RealScanout` (not done: it lives behind the `tty` adapters and a frame in flight owns it).
+  (2) The dummy renderer binds no dma-buf: it offers none and fails a dma-buf frame. (3) The winit backend offers none.
+  (4) Needs a real run (below): the rows' orientation (the framebuffer is bound as smithay binds a scanout buffer) and the
+  fence wait.
+- **A client-drawn cursor (`CursorDraw::ClientSurface`).** The cursor session's frame no longer fails. `raw_image` takes the
+  surface's buffer from its renderer state: shm is read straight from the pool (`ArgbImage::from_shm`; `Argb8888` kept,
+  `Xrgb8888` made opaque; any other format fails the frame), a dma-buf through the renderer (`read_dmabuf`, import then
+  `copy_texture`). The image is cut to the announced size (nearest neighbour, pixel centres: `ArgbImage::fitted`) and turned
+  with the output. Departures: the surface's viewport crop and `buffer_transform` are not applied (a cursor with a cropped
+  viewport or a rotated buffer is read as its whole buffer); a single-pixel or other non-shm, non-dma buffer fails the frame
+  (`Renderer`). The one new `unsafe` is `gl_raw::with_shm_pool`, the read-only twin of the capture write's slice.
+- **Rotated outputs.** The image is sent turned with the frame (`ArgbImage::turned`, `casement_core::geometry::turn_point`,
+  the rule of smithay's `Transform::transform_point_in`, now one home with `turn_size`), the announced buffer size is
+  `sent_image_size` (width and height swapped under a quarter turn), and the hotspot is turned inside the image so that
+  `position - hotspot` is the turned image's corner. The frame's transform event stays `normal` (the image is already turned),
+  as the capture frames' do. Pixel (x, y) moves with the index rule: `turn_point(t, (x, y), (w - 1, h - 1))`.
+- **Fractional scales.** `place` now finds the image's corner as the element does: `round((at - hotspot - origin) x scale)` once
+  (`on_output` in `casement-render/src/scene/convert.rs`, the rule of `to_physical`), the hotspot offset is `round(hotspot x
+  scale)` and the position is their sum. Before, position and hotspot were rounded separately, which put the corner a pixel
+  off whenever both fractions round the same way (the arrow at (100, 50) and 1.5x was at (142, 70); the screen draws it at
+  (143, 71)). Changed values: the 1.5x protocol test now expects `Position(151, 76)`; the hotspot is still `(8, 5)`.
+- **Tests.** Table: `turn_point`/`turn_size` (casement-core); `place` (1x, 1.5x, 2x, the corner equals the element's for scales
+  130 to 270 and three origins, every transform's position and turned hotspot, the turned corner equals the turned box, scaled
+  plus turned, the sent size); `dma_offer`; `ArgbImage` (strided unpack, xrgb opaque, short pool, nearest resampling up and
+  down, an empty source, all eight turns, rgba order). Protocol (`capture_dma.rs`, `capture_cursor.rs`): an ext session's
+  dma-buf formats and device (with `--dmabuf soft`; none without, none when the jail typed no node), a wlr frame's
+  `linux_dmabuf` (ARGB8888 and XRGB8888 at the mode size, none without a global), a client-drawn cursor is a 16 x 16 frame of
+  its own pixels with its hotspot and position, a turned output's events and image for all eight transforms (the image equals
+  the straight one moved by the index rule), and at 1.5x every opaque pixel of the cursor image is in the painted frame at
+  `position - hotspot`. The test clients got `OutputCapture::{dmabuf_formats, dmabuf_device}` and `ScreenCopy::dmabuf_offers`.
+  **Not covered**: a frame actually drawn into a client dma-buf (the side-queue clients have no dma-buf import; a test needs a
+  udmabuf-backed `wl_buffer` on the capture's queue), and reading a client dma-buf cursor.
+- **Gate and real run.** Likeliest compile faults: `Bind::<Dmabuf>::supported_formats(&**renderer)` on the boxed renderers;
+  `write_dmabuf`'s `Frame`/`Texture` trait imports and the `render` borrow of the framebuffer; the `DmabufConstraints` and
+  `DrmNode` paths in `handlers/image_capture/dma.rs`; closures-to-`fn` in the `TURNS` const of `capture_cursor.rs`; the doc tests
+  of `write_dmabuf`/`read_dmabuf` (`no_run`, GLES renderer types). Real run: OBS through the portal on the tty session
+  negotiates dma-buf (linear) and shows the desktop right way up and not green or black (if it is upside down, `flipped` on
+  the bind in `write_dmabuf` is the lever); the cursor of a toolkit that draws its own (GTK/Qt apps set one) follows in a
+  cursor capture; on a rotated output a remote-desktop viewer's cursor points the right way; at 1.5x the cursor in a
+  screencast sits exactly where it does on screen.
