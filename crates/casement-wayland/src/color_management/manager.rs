@@ -17,7 +17,7 @@ use smithay::reexports::wayland_protocols::wp::color_management::v1::server::{
     wp_image_description_v1::{Cause, WpImageDescriptionV1},
 };
 use smithay::reexports::wayland_server::{
-    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
+    Client, DataInit, Dispatch, DisplayHandle, New, Resource,
 };
 use smithay::wayland::{Dispatch2, GlobalDispatch2};
 

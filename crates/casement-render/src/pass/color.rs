@@ -103,7 +103,7 @@ impl ColorTransform {
 
     /// Premultiplied 8-bit RGBA pixels (`pixels` is groups of four) converted in place.
     pub fn apply_premultiplied(&self, pixels: &mut [u8]) {
-        for pixel in pixels.chunks_exact_mut(4) {
+        for pixel in pixels.as_chunks_mut::<4>().0 {
             let alpha = f64::from(pixel[3]) / 255.0;
             if alpha <= 0.0 {
                 continue;
