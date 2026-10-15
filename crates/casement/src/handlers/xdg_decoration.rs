@@ -19,6 +19,16 @@ impl State {
         if let Err(error) = apply_mode(&mut self.wl.xdg_decoration, toplevel, mode_for(wish)) {
             tracing::debug!(%error, "a decoration answer reached a toplevel that is gone");
         }
+        // A37: the decoration's configure is its first word and rides on an xdg_surface
+        // configure; wlcs' decoration tests wait for it without ever committing, so under the
+        // lenient policy the initial configure goes out with it (`testing` builds only).
+        #[cfg(feature = "testing")]
+        if self.ack_policy == crate::relax::AckPolicy::Lenient
+            && toplevel.alive()
+            && !toplevel.is_initial_configure_sent()
+        {
+            toplevel.send_configure();
+        }
     }
 }
 

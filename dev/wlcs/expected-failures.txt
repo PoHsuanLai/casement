@@ -7,7 +7,9 @@
 # one jailed run of about 80 s, after P0-smithay: 871 pass, 23 fail (listed here), 331 skip (wl_shell
 # and zxdg_shell_v6 are not served, wlcs' own xfail self-tests). Before it (P0-popups): 857 pass,
 # 37 fail; before that (P0-layer-geom): 829 pass, 65 fail; before that: 596 pass, 298 fail. The list
-# may only shrink.
+# may only shrink. Lane wlcs of wave 2026-10-15 removed six rows (17 left): the two text-input
+# ordering tests, the three decoration configure tests and the W9 touch test; unrun until the
+# orchestrator's wlcs run confirms them.
 # `CopyCutPaste.given_source_has_offered_when_sink_gets_focus_it_sees_offer` failed now and then in a
 # 12-way shard run: the shim activated a mapped window a pass after the commit that mapped it, and a
 # client that set the selection right after its roundtrip could be ahead of that (11 failures in 300
@@ -36,6 +38,12 @@
 #       - xdg_wm_base error tests: smithay raises no error for get_xdg_surface on a surface that has a
 #         role or a buffer, and attaching_buffer_to_unconfigured is the very rule the A37 relaxation
 #         switches off for wlcs.
+#     Not reachable from casement: smithay answers get_xdg_surface itself and offers no hook for it
+#     (the request creates the xdg_surface and nothing calls the handler), so the error has to be
+#     raised in the fork (wayland/shell/xdg/handlers/wm_base.rs, Request::GetXdgSurface: `role` when
+#     compositor::get_role(&surface) is some, `invalid_surface_state` when the surface has a
+#     buffer attached or committed). attaching_buffer_to_unconfigured also expects the error at the
+#     attach, before any commit, where the protocol raises it at the commit.
 #     The zero-size anchor (set_anchor_rect), the fractional-scale and viewporter error objects, the
 #     viewporter bad_size hook and out_of_buffer are FIXED in the fork (P0-smithay, branch
 #     casement-textinput; FINDINGS.md "P0-smithay"); only the xdg_wm_base rows above remain.
@@ -43,21 +51,44 @@
 #       - xdg_toplevel.wm_capabilities is expected after a roundtrip with no commit. The protocol sends
 #         it with the first configure, which follows the first commit (xdg-shell.xml: once before the
 #         first xdg_surface.configure).
-#       - XdgDecorationV1Test.set_mode_client/server and unset_mode "results in a configure event":
-#         the toplevel never commits, so no xdg_surface.configure is due yet (xdg_surface: the
-#         compositor replies to the initial commit); the decoration's configure rides on that one.
+#       - XdgDecorationV1Test.set_mode_client/server and unset_mode "results in a configure event"
+#         were W4 too: the toplevel never commits, so no xdg_surface.configure is due yet. FIXED in
+#         the shim's policy (casement::relax, `testing` only): under the lenient policy the initial
+#         configure goes out with the decoration's answer, as the decoration XML allows ("a
+#         configure event can be sent at any time"). Not listed.
 #       - XdgDecorationV1Test.destroying_toplevel_before_decoration_throws_orphaned: wlcs expects the
 #         error on zxdg_decoration_manager_v1; xdg-decoration-unstable-v1.xml defines `orphaned` in
 #         zxdg_toplevel_decoration_v1's own enum, and smithay raises it there.
-# W7: subsurface tests on an xdg parent: input stacking ignores place_above/place_below, and sync/desync
-#     commit caching expectations differ (subsurfaces.cpp). Not diagnosed further.
+# W7: subsurface tests on an xdg parent. Diagnosed 2026-10-15 from subsurfaces.cpp and smithay's
+#     wayland/compositor (tree.rs, handlers.rs); all six are in smithay, none in casement:
+#       - wl_subsurface.set_position is kept in the SUBSURFACE's own double-buffered state and applies
+#         when that surface commits (cached while it is sync). The protocol applies it with the
+#         PARENT's next commit ("takes effect whenever the state of the parent surface is applied").
+#         desync_subsurface_moves_when_only_parent_committed (parent commits, the position must apply)
+#         and subsurface_does_not_move_when_parent_not_committed (the desync child commits, the
+#         position must not apply) fail on that.
+#       - PrivateSurfaceData::commit calls commit_sync_surface_tree for a sync child of a non-sync
+#         parent, which commits the whole sync subtree's PENDING state, a position nobody committed
+#         included. So a grandchild's set_position applies at the toplevel's commit
+#         (sync_parent_does_not_move_when_only_grandparent_committed, and
+#         does_not_move_when_grandparent_commit_is_before_sync_parent_commit, whose order is the
+#         same bug seen from the other side).
+#       Fix in the fork: take location out of SubsurfaceCachedState into a cacheable of the PARENT
+#       (child id -> position), applied when the parent's state is, and have commit_sync_surface_tree
+#       move only what a surface committed. place_below_simple and place_above_simple are a
+#       different matter: both assert the focused surface is neither of the two subsurfaces that
+#       cover the pointer (Ne(a), Ne(b)), which no compositor that gives a subsurface the pointer can
+#       satisfy; wlcs-side, kept as such.
 # W8: FIXED by P0-popups: popup grabs (a release, a press, a key or a touch is the proof, if it is the
 #     client's latest input), the grab of a nested popup with its parent's serial, popup_done when
 #     another toplevel is activated, the pointer's leave when a popup is destroyed under it, reactive
 #     popups, a reposition taking effect at the ack. The one entry left (zero-size anchor) is W3.
-# W9: touch_on_surface_seen/subsurface_at_x7_y12: wlcs puts the parent at y = -5 (the subsurface's
-#     offset 12 below the window top 7); casement keeps a toplevel's top edge inside the usable area,
-#     so the parent sits at y = 0 and the touch lands 5 px high. A placement rule, not a bug.
+# W9: FIXED 2026-10-15 (lane wlcs). wlcs puts the parent at y = -5 for touch_on_surface_seen/
+#     subsurface_at_x7_y12; casement keeps a floating window inside the usable area, which is the
+#     person-facing rule (a drag never hides a title bar under the bar) and stays. A position a test
+#     asks for is a different thing: the shim's placement is Event::WindowPlaced, which layout
+#     takes as given (WindowPlacement::Placed, size still fitted) until the person drags the window
+#     or it unmaps. Not listed.
 # W10: FIXED by P0-popups: a move or resize takes the pointer from the window (xdg_toplevel.move:
 #     "the surface will lose the focus of the device") and gives it back at the release; the shim lets
 #     a dropped window glide to rest.
@@ -67,31 +98,27 @@
 #         focus sets the selection (with serial 0); smithay ignores set_selection from a client that
 #         does not have the keyboard focus (data_device/device.rs and primary_selection/device.rs).
 #         The protocols allow either; the sink never sees an offer.
+#       - A kept decision, not a gap: a program the person is not using (no keyboard focus) cannot
+#         replace the selection or the clipboard. The row stays until smithay offers a policy hook.
 #       - TextInputV3WithInputMethodV2Test: nine of eleven FIXED in the fork by P0-smithay (enter with
 #         keyboard focus whether or not an input method exists; an input method that binds after the
-#         field was enabled is activated for it). Two are left, text_input_enters_grabbing_popup and
-#         text_input_enters_parent_surface_after_child_destroyed: they run under gmock InSequence with
-#         `enter` expected BEFORE the toplevel's first configure, but the shim's lenient policy keys a
-#         window in the commit that maps it, after the initial configure went out (A37). A shim
-#         ordering, not a protocol or smithay rule.
+#         field was enabled is activated for it); the last two (text_input_enters_grabbing_popup and
+#         text_input_enters_parent_surface_after_child_destroyed, gmock InSequence with `enter`
+#         expected BEFORE the toplevel's first configure) FIXED 2026-10-15 in the shim: under the
+#         lenient policy a first commit that carries a buffer maps the window keyed and sends its one
+#         configure after the keyboard enter (xdg_shell::map_keyed_on_first_buffer). Not listed.
 # W13: FIXED in the shim (casement was right: a toplevel unmapped by a null buffer is configured again
 #     and maps again with fresh state; xdg_toplevel's "Unmapping" says it returns to its initial state).
 #     wlcs puts the surface back where it was and re-attaches at once; the shim now remembers where
 #     wlcs put each toplevel and puts a window that maps again there. Test:
 #     casement-testkit/tests/relax.rs (passes with and without the shim: casement needed no change).
 
-AllSurfaceTypes/TouchTest.touch_on_surface_seen/subsurface_at_x7_y12  # W9
 CopyCutPaste.given_sink_has_focus_when_source_makes_offer_sink_sees_offer  # W12
 PrimarySelection.sink_can_listen  # W12
 PrimarySelection.sink_can_request  # W12
 PrimarySelection.source_can_supply_request  # W12
 PrimarySelection.source_sees_request  # W12
-TextInputV3WithInputMethodV2Test.text_input_enters_grabbing_popup  # W12 (shim ordering)
-TextInputV3WithInputMethodV2Test.text_input_enters_parent_surface_after_child_destroyed  # W12 (shim ordering)
 XdgDecorationV1Test.destroying_toplevel_before_decoration_throws_orphaned  # W4
-XdgDecorationV1Test.set_mode_client_results_in_a_configure_event  # W4
-XdgDecorationV1Test.set_mode_server_results_in_a_configure_event  # W4
-XdgDecorationV1Test.unset_mode_results_in_a_configure_event  # W4
 XdgShellStableSubsurfaces/SubsurfaceMultilevelTest.subsurface_does_not_move_when_grandparent_commit_is_before_sync_parent_commit/0  # W7
 XdgShellStableSubsurfaces/SubsurfaceMultilevelTest.subsurface_with_sync_parent_does_not_move_when_only_grandparent_committed/0  # W7
 XdgShellStableSubsurfaces/SubsurfaceTest.desync_subsurface_moves_when_only_parent_committed/0  # W7

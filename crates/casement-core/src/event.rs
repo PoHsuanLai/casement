@@ -74,6 +74,16 @@ pub enum Event {
         /// Where it now is, in global logical coordinates.
         rect: LogicalRect,
     },
+    /// A window was put by hand with its top-left at `rect`'s, wherever that is, even partly
+    /// outside the usable area: the wlcs shim's `position_window_absolute`. No protocol sends
+    /// it. Layout takes the rectangle as given (the size is still held to the window's limits
+    /// and the area) until the person drags the window or it unmaps.
+    WindowPlaced {
+        /// The window.
+        window: WindowId,
+        /// Where it goes, in global logical coordinates.
+        rect: LogicalRect,
+    },
     /// A window's `quire_window_v1` hint changed (C50).
     WindowHint {
         /// The window.

@@ -103,9 +103,12 @@ fn window_spec(model: &Model, window: &Window, stack: StackIndex) -> WindowSpec 
     WindowSpec {
         window: window.id,
         app: window.app.clone(),
-        placement: match hidden {
-            true => WindowPlacement::Minimised,
-            false => placement_of(&window.state),
+        placement: match (hidden, placement_of(&window.state)) {
+            (true, _) => WindowPlacement::Minimised,
+            (false, WindowPlacement::Floating(rect)) if model.is_placed_by_hand(window.id) => {
+                WindowPlacement::Placed(rect)
+            }
+            (false, placement) => placement,
         },
         limits: window.limits,
         stack,

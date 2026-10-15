@@ -92,6 +92,14 @@ impl Published {
 }
 
 impl Model {
+    /// The hand placements of windows that are gone are forgotten (a window that maps again
+    /// is a new window, placed by layout until it is put by hand again).
+    pub(super) fn forget_gone_placements(&mut self) {
+        let windows = &self.windows;
+        self.hand_placed
+            .retain(|window| windows.contains_key(window));
+    }
+
     /// The minimise rectangles of windows that are gone are forgotten.
     pub(super) fn forget_gone_minimise_rects(&mut self) {
         let windows = &self.windows;

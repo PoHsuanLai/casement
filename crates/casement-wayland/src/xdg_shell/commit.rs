@@ -268,7 +268,7 @@ pub fn on_toplevel_destroyed(part: &mut XdgShellPart, surface: &ToplevelSurface)
 
 /// The events a map is: `ToplevelMapped` (what the client declared before it mapped), then its
 /// title. The record learns what the model was told.
-fn mapped_events(
+pub(super) fn mapped_events(
     window: WindowId,
     client: &ClientState,
     declared: &Declared,

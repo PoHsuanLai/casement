@@ -88,3 +88,27 @@ fn a_buffer_after_a_null_buffer_maps_the_window_again_under_the_lenient_policy()
         "the pointer entered the remapped window"
     );
 }
+
+/// The window that maps with its first commit is keyed before its one configure goes out (wlcs'
+/// text-input tests hear the keyboard enter first), so that configure already says activated.
+#[test]
+fn the_first_configure_of_a_lenient_map_already_says_activated() {
+    use casement_testclient::surface::toplevel::State;
+    let mut fixture = lenient();
+    let id = fixture.connect(ConnectionRole::Public);
+    let base = WmBase::bind(fixture.client(id), 7);
+    let top = base.toplevel(fixture.client(id));
+    let buffer = shm_buffer(
+        fixture.client(id),
+        PhysicalSize { w: 64, h: 48 },
+        Pattern::Gradient,
+    );
+    top.show(&buffer);
+    fixture.pump();
+    let configures = top.configures();
+    let first = configures.first().expect("a configure");
+    assert!(
+        first.states.contains(&State::Activated),
+        "keyed before it went out"
+    );
+}

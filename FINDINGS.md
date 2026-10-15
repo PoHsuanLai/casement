@@ -1845,3 +1845,25 @@ Lane `session` (not compiled; the orchestrator gates). Three findings from the f
   forwarded, so the switcher hears the Cmd release. Test:
   `a_chord_fires_while_an_exclusive_layer_holds_the_keyboard_and_it_hears_the_modifier_release`
   (casement-testkit tests/it/bindings.rs).
+## wave-2026-10-15/wlcs
+
+Written without a build or a wlcs run (wave rules); every claim below is from reading the wlcs tests,
+smithay's source at fork rev 9c8f762 and our code. The orchestrator's run settles them.
+
+| Finding | Root cause | What changed |
+|---|---|---|
+| Text-input `enter` must precede the toplevel's first configure (2 tests) | The lenient policy sent a bare initial configure at the first commit and mapped (keyed) at a second pass, so every configure was ahead of the keyboard enter. | `casement_wayland::xdg_shell::keyed` (`map_keyed_on_first_buffer`, `send_initial_configure`), used by `handlers/compositor.rs` under `testing` + `Lenient`: a first commit that carries a buffer maps the window with a valid token, the model keys it and queues its state, then the one configure goes out. Test: `casement-testkit/tests/relax.rs`. |
+| Decoration `configure` expected after `set_mode` with no commit (3 tests) | The reply rides on an `xdg_surface.configure`, and none is due before the first commit. The decoration XML allows a configure at any time. | `handlers/xdg_decoration.rs`: under `Lenient` (`testing` only) the initial configure goes out with the decoration's answer. Production is unchanged. |
+| W9: window at y = -5 | Layout pushes a floating window inside the usable area (the person-facing rule). A test-requested position is not the person's drag. | `Event::WindowPlaced`, `WindowPlacement::Placed`, `Model::is_placed_by_hand`: a hand placement is kept as given (size still fitted) until a drag or the unmap; the shim uses `Fixture::place_window_by_hand`. The drag rule is unchanged. Tests: `rust_scene.rs`, `model/tests.rs`. |
+
+Kept, with reasons (also in `dev/wlcs/expected-failures.txt`):
+
+- W3 (4 xdg_wm_base tests): smithay's `get_xdg_surface` has no hook; the error must be raised in the fork.
+- W4 `wm_capabilities_are_sent`, decoration `orphaned`: smithay's send point and error object; a configure at creation would break the text-input order. Fork patches.
+- W7 (6 tests): four are smithay's subsurface position model (applied at the child's commit and by `commit_sync_surface_tree`, not at the parent's state); two (`place_above/below_simple`) assert a focus no compositor can give. Fork patch described in the file.
+- W12 primary selection (5): kept policy, a program that is not used cannot replace the selection.
+- `#[ignore]`: `casement-layout/tests/it/spread.rs` (P3-Z) and `casement-scene-css/tests/parity.rs` (P3-CSS) wait for code that is not written (`rust_scene/spread.rs` does not exist; CssScene bodies are `todo!`); they stay ignored.
+
+To check in a real run: wlcs counts (expect 6 more passes, no new failures; the first configure of every
+lenient toplevel now carries its final state, so a wlcs test that counts configures could move); that
+`Event::WindowPlaced` windows stay put through other windows mapping.
