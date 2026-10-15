@@ -18,10 +18,12 @@
 mod guard;
 mod listen;
 pub mod owners;
+mod resolve;
 pub mod xres;
 
 pub use guard::{MAX_STARTS, Permit, Restarts, WINDOW};
 pub use listen::{Listening, X11Dir};
+pub use resolve::{SATELLITE, from_file, on_path};
 
 use crate::spawn::{EnvVar, SpawnError, SpawnSpec, Spawned, Spawner};
 use crate::state::State;

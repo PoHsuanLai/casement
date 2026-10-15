@@ -116,7 +116,7 @@ A1: `Instant::now`, `SystemTime::now`, smithay's `Clock::now` and calloop's `Tim
 | telling systemd ready, stopping, alive | `casement::notify::Notify` (csvc; real `SocketNotify` over `$NOTIFY_SOCKET` as `main` reads it; fake `FakeNotify`); the ping timer is `casement::time::ping_every` (B8) |
 | registering a Space with the account service | `casement-ipc::space_registry::SpaceRegistry` (csvc; real `ZbusSpaceRegistry` on the session bus address `run` is given; fake `FakeSpaceRegistry`), driven by `casement::space_sync::SpaceSync` from `Effect::PublishWorkspaces` and once after startup |
 | starting a program (a binding's, xwayland-satellite) | `casement::spawn::Spawner` (A5; fake `FakeSpawner`) |
-| X11 clients | `casement::xwayland` (`XwaylandConfig`: mode and satellite path from configuration, never the environment) |
+| X11 clients | `casement::xwayland` (`XwaylandConfig`: mode and satellite path from configuration, never read inside the crate: `main` resolves a flag, else `xwayland.*` in settings.toml, else `PATH`, through `xwayland::from_file`) |
 | libinput device settings and their fake | `casement-backend::input::{InputDevices, DeviceSettings}`; `casement-testkit::fakes::FakeInputDevices` |
 | reading an output's frame back | `casement-render::pass::capture_output` (P1-Z) |
 | virtual input devices and their events | `casement-backend::VirtualInput` |

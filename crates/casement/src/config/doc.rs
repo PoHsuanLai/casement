@@ -4,6 +4,7 @@ use super::ConfigError;
 use super::sections::{
     BindingsSection, GesturesSection, GpuSection, KeyboardSection, NightLightSection,
     OutputsSection, PointerSection, SpacesSection, TouchpadSection, WindowsSection,
+    XwaylandSection,
 };
 use super::version::Version;
 use crate::cli::ConfigHome;
@@ -39,6 +40,8 @@ pub struct CasementDoc {
     pub gpu: GpuSection,
     /// `night_light.*`.
     pub night_light: NightLightSection,
+    /// `xwayland.*` (older X11 apps; read at start).
+    pub xwayland: XwaylandSection,
 }
 
 impl SettingsDoc for CasementDoc {
@@ -64,6 +67,12 @@ pub fn load(home: &ConfigHome) -> Result<CasementDoc, ConfigError> {
         tracing::warn!("settings.toml: {key}");
     }
     Ok(loaded.value.migrated())
+}
+
+/// The `xwayland.*` keys of `home`'s document, read without the log lines `load` writes (the
+/// settings are loaded, and reported, once more when the compositor starts).
+pub fn xwayland_of(home: &ConfigHome) -> XwaylandSection {
+    store(home).load::<CasementDoc>().value.xwayland
 }
 
 /// `home` as the ds-settings store it names.

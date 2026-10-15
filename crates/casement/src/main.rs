@@ -3,10 +3,11 @@
 #[cfg(feature = "debug-inject")]
 mod debug_peer_units;
 
-use casement::cli::{self, Command};
+use casement::cli::{self, Command, StartConfig, XwaylandSource};
 use casement::icons::IconSearch;
 use casement::notify::{NotifySocket, Watchdog};
 use casement::space_store::{StateDirs, StateHome};
+use casement::xwayland::{self, XwaylandConfig, XwaylandMode};
 use casement::{CompositorBus, DebugBus, RunConfig};
 use casement_backend::BackendChoice;
 use std::path::PathBuf;
@@ -60,6 +61,21 @@ fn icon_search(backend: BackendChoice) -> IconSearch {
     )
 }
 
+/// How X11 apps are served: a flag wins; else the settings file; else the satellite when it is
+/// installed (`PATH`) and off when it is not. The headless backend (throwaway runs) keeps what
+/// the flags said, which is off without them.
+fn x11_setup(start: &StartConfig) -> XwaylandConfig {
+    if start.xwayland_source == XwaylandSource::Flag || start.backend == BackendChoice::Headless {
+        return start.xwayland.clone();
+    }
+    let path = std::env::var("PATH").unwrap_or_default();
+    xwayland::from_file(
+        &casement::config::xwayland_of(&start.config_home),
+        &path,
+        |file| file.is_file(),
+    )
+}
+
 fn main() -> ExitCode {
     let filter =
         std::env::var("CASEMENT_LOG").unwrap_or_else(|_| casement::log::DEFAULT_FILTER.to_owned());
@@ -81,6 +97,14 @@ fn main() -> ExitCode {
             start.state_home =
                 state_home(start.state_home.clone(), start.backend, &StateEnv::read());
             start.icons = icon_search(start.backend);
+            start.xwayland = x11_setup(&start);
+            match start.xwayland.mode {
+                XwaylandMode::Off => tracing::info!("older X11 apps: off"),
+                _ => tracing::info!(
+                    satellite = %start.xwayland.satellite.0.display(),
+                    "older X11 apps: served through xwayland-satellite"
+                ),
+            }
             // Debug1 lives on the jail's private bus, which the jail's scripts name here.
             let session_bus = std::env::var("DBUS_SESSION_BUS_ADDRESS").ok();
             let debug_bus = session_bus.clone().map_or(DebugBus::Unset, DebugBus::At);

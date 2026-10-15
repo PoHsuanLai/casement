@@ -5,8 +5,9 @@
 #                the compositor (headless backend, `debug-inject`), its control tool, the test
 #                client's probe and the fake logind, built with plain cargo (CARGO_TARGET_DIR
 #                is honoured, else ./target; --release builds the release profile)
-#   bin/foot     a terminal for the toolkit scripts: the one on PATH, else the Fedora packages
-#                foot and fcft through `dnf download` (no root) and unpacked
+#   bin/foot     a terminal for the toolkit scripts: the one on PATH, else (Fedora and its relatives
+#                only) the packages foot and fcft through `dnf download` (no root) and unpacked;
+#                on other distributions install foot from the distribution
 #   bin/xwayland-satellite
 #                cargo install --git https://github.com/Supreeeme/xwayland-satellite at the pinned
 #                rev (it is not on crates.io, SP6). Run with `-glamor none` (A10: `off` panics it)
@@ -26,6 +27,8 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"
 # shellcheck source=dev/lib/jail.sh
 source "$root/dev/lib/jail.sh"
+# shellcheck source=dev/lib/packages.sh
+source "$root/dev/lib/packages.sh"
 
 # The xwayland-satellite revision (v0.8.3, SP6): a full SHA, so a moved tag cannot change the build.
 SATELLITE_REPO=https://github.com/Supreeeme/xwayland-satellite
@@ -46,7 +49,7 @@ while [ $# -gt 0 ]; do
 done
 
 if [ -z "$(jail_violations)" ]; then
-  echo "bootstrap.sh: this builds and fetches (cargo, dnf, git, the network): run it outside the jail" >&2
+  echo "bootstrap.sh: this builds and fetches (cargo, git, the network): run it outside the jail" >&2
   exit 2
 fi
 
@@ -79,9 +82,14 @@ fetch_foot() {
     echo "bootstrap: foot is $(command -v foot)"
     return 0
   fi
-  need dnf "this needs Fedora's dnf (the packages foot and fcft are fetched, not installed)"
-  need rpm2cpio "sudo dnf install rpm"
-  need cpio "sudo dnf install cpio"
+  if [ "$(pkg_family)" != fedora ]; then
+    echo "bootstrap.sh: foot is not installed: install it from your distribution:" >&2
+    pkg_hint foot >&2
+    exit 3
+  fi
+  need dnf "the packages foot and fcft are fetched with dnf, not installed"
+  need rpm2cpio "$(pkg_hint rpm)"
+  need cpio "$(pkg_hint cpio)"
   local dir="$tools/foot-root" rpms="$tools/foot-rpms"
   rm -rf "$dir" "$rpms"
   mkdir -p "$dir" "$rpms"

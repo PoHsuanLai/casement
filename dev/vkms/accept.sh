@@ -43,6 +43,8 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+# shellcheck source=dev/lib/packages.sh
+source "$root/dev/lib/packages.sh"
 tools="${CASEMENT_TOOLS:-$root/dev/out/tools}/bin"
 idle_seconds="${CASEMENT_VKMS_IDLE_SECONDS:-600}"
 device_name="${CASEMENT_VKMS_DEVICE:-casement}"
@@ -86,7 +88,7 @@ fi
 
 # ---- tools --------------------------------------------------------------------------------
 for tool in jq wlopm; do
-  command -v "$tool" >/dev/null || absent "$tool is not installed (sudo dnf install $tool)"
+  command -v "$tool" >/dev/null || absent "$tool is not installed: $(pkg_hint "$tool")"
 done
 casement="$tools/casement"
 compare="$tools/writeback-compare"

@@ -15,6 +15,8 @@
 # shellcheck source=dev/lib/jail.sh
 source "$root/dev/lib/jail.sh"
 require_jail
+# shellcheck source=dev/lib/packages.sh
+source "$root/dev/lib/packages.sh"
 # shellcheck source=dev/lib/compositor.sh
 source "$root/dev/lib/compositor.sh"
 # shellcheck source=dev/lib/assert.sh
@@ -34,7 +36,7 @@ accept_cleanup() {
 }
 trap accept_cleanup EXIT
 
-command -v jq >/dev/null || { echo "accept: jq is not installed (sudo dnf install jq)" >&2; exit 2; }
+command -v jq >/dev/null || { echo "accept: jq is not installed: $(pkg_hint jq)" >&2; exit 2; }
 
 ctl() { "$(casement_tool casementctl)" "$@"; }
 

@@ -12,11 +12,12 @@ mod version;
 pub use action::ActionWords;
 pub use convert::to_core;
 pub(crate) use doc::watch;
-pub use doc::{CasementDoc, load};
+pub use doc::{CasementDoc, load, xwayland_of};
 pub use schema::{schema, write_schema};
 pub use sections::{
     BindingsSection, FirstSight, GesturesSection, GpuSection, KeyboardSection, NightLightSection,
     OutputsSection, PointerSection, SpacesSection, TouchpadSection, WindowsSection,
+    XwaylandSection, XwaylandUse,
 };
 pub use version::{Stamped, Version, stamp_version};
 

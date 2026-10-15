@@ -13,6 +13,7 @@ mod pointer;
 mod spaces;
 mod touchpad;
 mod windows;
+mod xwayland;
 
 pub use bindings::BindingsSection;
 pub use gestures::GesturesSection;
@@ -24,3 +25,4 @@ pub use pointer::PointerSection;
 pub use spaces::SpacesSection;
 pub use touchpad::TouchpadSection;
 pub use windows::WindowsSection;
+pub use xwayland::{XwaylandSection, XwaylandUse};

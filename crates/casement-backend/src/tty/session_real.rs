@@ -23,6 +23,16 @@ use std::cell::RefCell;
 use std::os::fd::OwnedFd;
 use std::rc::Rc;
 
+/// What the person is told when libseat could not open a seat: the reason, then the two ways to
+/// get one. The group is `seat` on some distributions and `video` on others.
+fn seat_refused(reason: &dyn std::fmt::Display) -> String {
+    format!(
+        "{reason}. casement needs a seat to draw on the screen and read the keyboard: log in from \
+         a display manager or from a text console (logind then gives the login one), or run seatd \
+         and join the seat or video group (log in again after joining)"
+    )
+}
+
 /// The libseat session casement runs in.
 #[derive(Debug)]
 pub struct RealSession {
@@ -37,7 +47,7 @@ impl RealSession {
     pub fn open<D: 'static>(handle: &LoopHandle<'static, D>) -> Result<RealSession, SessionFault> {
         let unavailable = SessionFault::Unavailable;
         let (seat, notifier) =
-            LibSeatSession::new().map_err(|error| unavailable(error.to_string()))?;
+            LibSeatSession::new().map_err(|error| unavailable(seat_refused(&error)))?;
         let pending = Rc::new(RefCell::new(Vec::new()));
         let queue = Rc::clone(&pending);
         handle
@@ -127,5 +137,24 @@ impl TtySession for RealSession {
 
     fn sleep_link(&mut self) -> Option<SleepLink> {
         self.link.take()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::seat_refused;
+
+    #[test]
+    fn a_refused_seat_names_the_reason_and_the_ways_to_get_one() {
+        let text = seat_refused(&"no backend available");
+        for part in [
+            "no backend available",
+            "display manager",
+            "text console",
+            "seatd",
+            "seat or video group",
+        ] {
+            assert!(text.contains(part), "{part}");
+        }
     }
 }
