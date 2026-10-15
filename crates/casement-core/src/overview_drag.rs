@@ -412,7 +412,7 @@ mod tests {
         targets.clear(&out);
         assert!(
             targets
-                .hit(at(10, 10), |_| true)
+                .hit(at(5, 5), |_| true)
                 .is_some_and(|o| o.output == other)
         );
         targets.clear_all();

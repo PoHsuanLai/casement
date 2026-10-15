@@ -238,10 +238,14 @@ fn a_window_dropped_on_a_target_moves_to_that_space() {
     press(&mut desk);
     move_to(&mut desk, LogicalPoint { x: 50, y: 50 });
     let output = desk.outputs[0].object.clone();
-    assert_eq!(
-        desk.shell.drop_targets().last(),
-        Some(&(output.clone(), Some(desk.second.as_str().to_owned())))
+    // One event per binding of the output: the client holds two, so look for this one's.
+    assert!(
+        desk.shell
+            .drop_targets()
+            .contains(&(output.clone(), Some(desk.second.as_str().to_owned()))),
+        "the Space under the window is named"
     );
+    let heard = desk.shell.drop_targets().len();
     release(&mut desk);
     assert_eq!(
         desk.fixture.model().windows()[&window].place,
@@ -252,9 +256,9 @@ fn a_window_dropped_on_a_target_moves_to_that_space() {
         Overview::Open,
         "stays in Mission Control"
     );
-    assert_eq!(
-        desk.shell.drop_targets().last(),
-        Some(&(output.clone(), None))
+    assert!(
+        desk.shell.drop_targets()[heard..].contains(&(output.clone(), None)),
+        "the drag's end clears the target"
     );
 }
 
