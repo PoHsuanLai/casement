@@ -46,7 +46,7 @@ fn arrival(full: u32, drawn: u32, rest: u32) -> f64 {
 ///
 /// ```
 /// use casement_core::WindowId;
-use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
+/// use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 /// use casement_render::{OverviewIcon, TitleDraw, icon_place};
 /// use std::sync::Arc;
 ///

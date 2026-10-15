@@ -92,7 +92,7 @@ fn main() -> ExitCode {
                 std::env::var("WATCHDOG_PID").ok().as_deref(),
                 std::process::id(),
             );
-            let config = RunConfig::new(start)
+            let config = RunConfig::new(*start)
                 .with_notify(notify)
                 .with_watchdog(watchdog)
                 .with_debug_bus(debug_bus)

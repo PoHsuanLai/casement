@@ -155,7 +155,7 @@ impl Entropy {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     /// Run the compositor.
-    Run(StartConfig),
+    Run(Box<StartConfig>),
     /// Write the settings schema (`casement.settings.toml`) into this directory and exit
     /// (detent reads it).
     WriteSchema(PathBuf),
@@ -305,7 +305,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, CliError> {
         config.renderer = SoftRenderer::Pixman;
         config.outputs.truncate(1);
     }
-    Ok(Command::Run(config))
+    Ok(Command::Run(Box::new(config)))
 }
 
 /// The tty mode the test flags ask for: they need each other and the tty backend.
@@ -384,7 +384,7 @@ mod tests {
 
     fn run(text: &str) -> StartConfig {
         match parse_args(&args(text)).expect(text) {
-            Command::Run(config) => config,
+            Command::Run(config) => *config,
             other => panic!("{text}: {other:?}"),
         }
     }

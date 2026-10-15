@@ -209,6 +209,45 @@ fn icons_of(state: &mut State, view: &OutputView) -> BTreeMap<WindowId, Overview
     found
 }
 
+/// `window`'s title as a label under its slot: as wide as the slot, within bounds.
+fn label_of(
+    state: &mut State,
+    window: WindowId,
+    view: &OutputView,
+) -> Option<(LogicalSize, TitleDraw)> {
+    let title = &state.core.model.windows().get(&window)?.title.0;
+    let slot = state
+        .core
+        .arrangement
+        .overview
+        .iter()
+        .find(|slot| slot.window == window)?;
+    let size = LogicalSize {
+        w: slot.rect.size.w.clamp(LABEL_MIN, LABEL_MAX),
+        h: LABEL_HEIGHT,
+    };
+    let raster = state
+        .render
+        .labels
+        .get_or_insert_with(|| TitleRaster::system(Margins { left: 0, right: 0 }));
+    let key = TitleKey::new(
+        title,
+        size.w,
+        size.h,
+        view.scale,
+        Scheme::Dark,
+        Activity::Active,
+    );
+    let pixels = raster.render(&key).ok()?;
+    let draw = TitleDraw {
+        id: pixels.id,
+        width: pixels.width,
+        height: pixels.height,
+        rgba: pixels.rgba,
+    };
+    Some((size, draw))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -29,7 +29,7 @@
 //! let Ok(Command::Run(start)) = cli::parse_args(&[]) else {
 //!     panic!("no arguments start the compositor");
 //! };
-//! let config = RunConfig::new(start);
+//! let config = RunConfig::new(*start);
 //! // Compiled, not called: `run` blocks until the compositor is asked to stop.
 //! let _serve = move || casement::run(config);
 //! ```
