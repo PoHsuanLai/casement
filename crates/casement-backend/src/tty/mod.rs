@@ -58,8 +58,8 @@ mod udev_real;
 mod writeback_real;
 
 pub use capture_gpu::{
-    CaptureGpu, CaptureRoute, Picture, SceneSupport, capture_fallback, capture_route,
-    merged_formats, renderable_formats,
+    BodyCopy, CaptureGpu, CaptureRoute, Picture, SceneSupport, body_copy, capture_fallback,
+    capture_route, merged_formats, renderable_formats,
 };
 pub use connector::{EdidError, VrrPolicy, output_facts, parse_edid, plan_outputs, vrr_state};
 pub use device::{Announced, OpenDevice, TtyDevices};

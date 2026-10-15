@@ -6,11 +6,13 @@
 //! left the motion scene; the number and the weight of what is kept are capped.
 
 use super::closing::Kept;
-use crate::handlers::capture_source::{content_and_scale, window_rgba};
+use crate::handlers::capture_source::{body_copy, content_and_scale, window_rgba, window_texture};
 use crate::state::State;
+use casement_backend::tty::BodyCopy;
 use casement_core::WindowId;
 use casement_core::geometry::LogicalSize;
 use casement_render::ClosingBody;
+use ds_core::geometry::scale::Scale;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::wayland::compositor::{BufferAssignment, SurfaceAttributes, with_states};
 use std::collections::VecDeque;
@@ -139,9 +141,20 @@ impl Bodies {
         self.kept.iter().map(|(_, body)| body.bytes()).sum()
     }
 
-    /// Frees the images of the windows `keep` refuses (the ones whose animation is over).
+    /// Frees the images of the windows `keep` refuses (the ones whose animation is over); a GPU
+    /// texture goes with its body.
     pub(super) fn retain(&mut self, keep: impl Fn(&WindowId) -> bool) {
         self.kept.retain(|(id, _)| keep(id));
+    }
+
+    /// Frees the images that are not for a window gone from the model that motion still fades:
+    /// one whose window is back (a client that hid and re-showed it), or whose fade is over.
+    pub(super) fn release_finished(
+        &mut self,
+        in_model: impl Fn(&WindowId) -> bool,
+        in_scene: impl Fn(&WindowId) -> bool,
+    ) {
+        self.retain(|id| !in_model(id) && in_scene(id));
     }
 
     /// How many images are kept.
@@ -171,16 +184,32 @@ pub(super) fn take(state: &mut State, window: WindowId) {
     let (Verdict::Take, Some(style)) = (verdict(facts), style) else {
         return;
     };
-    let Ok(frame) = window_rgba(state, window) else {
-        return;
-    };
     let id = state.render.bodies.next_id();
-    let Some(body) =
-        ClosingBody::from_rgba(id, frame.size, &frame.bytes, (style.look.radius, scale))
-    else {
+    let Some(body) = make_body(state, window, id, (style.look.radius, scale)) else {
         return;
     };
     state.render.bodies.admit(window, body);
+}
+
+/// The last image of `window` as a body: copied into a texture on the display GPU where the seat
+/// allows ([`body_copy`]), no read-back; read back through the offscreen pass otherwise, and when
+/// the GPU copy fails.
+fn make_body(
+    state: &mut State,
+    window: WindowId,
+    id: u64,
+    (radius, scale): (u32, Scale),
+) -> Option<ClosingBody> {
+    let on_gpu = match body_copy(state) {
+        BodyCopy::Gpu => window_texture(state, window, radius)
+            .ok()
+            .map(|(texture, size)| ClosingBody::from_texture(id, size, texture)),
+        _ => None,
+    };
+    on_gpu.or_else(|| {
+        let frame = window_rgba(state, window).ok()?;
+        ClosingBody::from_rgba(id, frame.size, &frame.bytes, (radius, scale))
+    })
 }
 
 /// A commit is about to take the buffer off `surface`: if it is a mapped toplevel's root, its
@@ -293,13 +322,14 @@ mod tests {
     }
 
     #[test]
-    fn the_images_of_finished_windows_are_freed() {
+    fn an_image_is_freed_when_its_fade_is_over_or_its_window_is_back() {
         let mut bodies = Bodies::default();
         for n in 1..=3 {
             bodies.admit(WindowId(n), body(n, 2));
         }
-        bodies.retain(|id| *id == WindowId(2));
+        // 1 is fading, 2 is back in the model, 3 has left the scene (its fade is over).
+        bodies.release_finished(|id| *id == WindowId(2), |id| *id != WindowId(3));
         assert_eq!(bodies.len(), 1);
-        assert!(bodies.get(&WindowId(2)).is_some());
+        assert!(bodies.get(&WindowId(1)).is_some());
     }
 }

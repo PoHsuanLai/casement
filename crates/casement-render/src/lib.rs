@@ -34,7 +34,7 @@ pub use compositor::{Compositor, EffectSupport};
 pub use damage::{RenderError, RenderSync, Rendered, render_output};
 pub use element::{
     BlurV0Element, CasementElement, ClipShape, ClipStripElement, ClosingBody, ClosingFrame,
-    CursorFace, FlightDraw, FrameDraw, GenieParts, GenieWindow, LockCoverElement, Margins,
+    CursorFace, FlightDraw, FrameDraw, GenieParts, GenieWindow, LockCoverElement, Margins, Pixels,
     PopupRide, Rgba8, RoundedClipElement, SharedElement, StripElement, StripPlan, TitleDraw,
     at_rest, choose, closing_content, closing_elements, cursor_elements, cursor_face,
     cursor_pixels, drawn_content, frame_elements, genie_elements, genie_window, geometry_size,

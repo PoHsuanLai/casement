@@ -25,7 +25,7 @@ mod window;
 pub use blur_v0::BlurV0Element;
 pub use clip_strip::ClipStripElement;
 pub use closing::{ClosingFrame, closing_content, closing_elements};
-pub use closing_body::ClosingBody;
+pub use closing_body::{ClosingBody, Pixels};
 pub use cursor::{CursorFace, cursor_elements, cursor_face, cursor_pixels};
 pub use flight::{
     FlightDraw, at_rest, choose, drawn_content, rest_place, scale_ratio, scaled_content,
@@ -41,6 +41,7 @@ pub use lock_cover::LockCoverElement;
 pub use overview::{OverviewLook, dim_elements, lift_last, ring_elements};
 pub use overview_icon::{IconPlace, OverviewIcon, icon_element, icon_place};
 pub use popup::{PopupRide, popup_elements, popup_elements_riding, popup_surfaces};
+pub(crate) use rounded_clip::bake_corners;
 pub use rounded_clip::{ClipShape, RoundedClipElement};
 pub use shared::SharedElement;
 pub use solid::{Rgba8, solid_rect};
@@ -51,7 +52,8 @@ pub use window::{window_content, window_drawn, window_elements, window_surfaces}
 use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
-use smithay::backend::renderer::{ImportAll, ImportMem};
+use smithay::backend::renderer::element::texture::TextureRenderElement;
+use smithay::backend::renderer::{ImportAll, ImportMem, RendererSuper};
 
 smithay::backend::renderer::element::render_elements! {
     /// Every element casement draws.
@@ -62,6 +64,8 @@ smithay::backend::renderer::element::render_elements! {
     Solid = SolidColorRenderElement,
     /// A CPU raster (chrome, the cursor theme).
     Memory = MemoryRenderBufferRenderElement<R>,
+    /// A GPU image kept by the compositor (a closing window's last image).
+    Texture = TextureRenderElement<<R as RendererSuper>::TextureId>,
     /// The P0 behind-surface blur (ext-background-effect).
     Blur = BlurV0Element,
     /// The cover over a locked output without a live lock surface.
