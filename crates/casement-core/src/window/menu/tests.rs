@@ -23,6 +23,16 @@ fn dimmed(items: &[MenuItem]) -> Vec<MenuEntry> {
         .collect()
 }
 
+/// A row of the enabled-entries table: name, window state, Split View support, the entries
+/// enabled and the entries dimmed.
+type EnabledCase = (
+    &'static str,
+    WindowState,
+    SplitSupport,
+    Vec<MenuEntry>,
+    Vec<MenuEntry>,
+);
+
 #[test]
 fn each_entry_means_one_action_and_one_label() {
     use MenuAction as A;
@@ -122,13 +132,7 @@ fn the_menu_is_enabled_per_window_state() {
         MenuEntry::Centre,
     ];
     let tile_pair = [MenuEntry::TileLeftOfScreen, MenuEntry::TileRightOfScreen];
-    let cases: Vec<(
-        &str,
-        WindowState,
-        SplitSupport,
-        Vec<MenuEntry>,
-        Vec<MenuEntry>,
-    )> = vec![
+    let cases: Vec<EnabledCase> = vec![
         (
             "floating, no Split View",
             WindowState::Floating(rect()),

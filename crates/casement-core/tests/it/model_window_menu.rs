@@ -22,6 +22,9 @@ fn mapped() -> casement_core::Model {
     run(vec![plug("HEADLESS-1"), map(1, &mail, TokenCheck::Valid)]).model
 }
 
+/// A row of the pick table: name, the entries picked in turn, and what the window's state must be.
+type PickCase = (&'static str, Vec<MenuEntry>, fn(&WindowState) -> bool);
+
 #[test]
 fn a_menu_request_tells_the_shell_the_entries() {
     let at = LogicalPoint { x: 40, y: 50 };
@@ -43,7 +46,7 @@ fn a_menu_request_tells_the_shell_the_entries() {
 
 #[test]
 fn a_pick_carries_out_the_entries_command() {
-    let cases: Vec<(&str, Vec<MenuEntry>, fn(&WindowState) -> bool)> = vec![
+    let cases: Vec<PickCase> = vec![
         ("left tiles to the left", vec![MenuEntry::Left], |s| {
             matches!(
                 s,
