@@ -2004,10 +2004,8 @@ without a compiler (wave rule); the orchestrator builds.
   and still 26 until quire's batch), `--shadow-window` (CSS string, hand-copied as two `ShadowLayer`s), the three light hues
   and their mark inks (stylesheet candy colours), and (until chrome2) the colour scheme.
 - **Not done.** (1) Title text: casement has no
-  text stack (`casement-chrome`, B15), so the titlebar title is empty. (2) The green light has no Move and Resize menu, and
-  the minimise animation target is untouched. (3) The frame is not drawn in the Mission Control and Space-slide passes (they
-  go through `output_elements` with the same `LayerDraw`, so it follows there only if `frames` is filled, which
-  `core_loop::frame` does for every output frame). (4) The shadow is a square-cornered blur at one raster pixel per logical
+  text stack (`casement-chrome`, B15), so the titlebar title is empty. (2) and (3) are done by winmenu (see `wave-2026-10-15/winmenu`: the green light's window menu, built up to the wire; the minimise target already
+  existed and is tested; the frame in the moving passes). (4) The shadow is a square-cornered blur at one raster pixel per logical
   pixel, scaled up; cost on a window being resized is a new raster per frame (cache limit 64 entries). (Done by
   chrome2: layout reserves the titlebar, lights act on release, Option-click zoom, the colour scheme from settings; done by
   clip: the rounded bottom corners.)
@@ -2116,6 +2114,71 @@ the orchestrator builds.
   them; there is no seam or light line between the titlebar and the content at the sides (both use the same rounded edges of
   `window_content`); a window moved or resized across a fractional scale keeps a one-pixel anti-aliased edge; a Qt app that
   insists on client-side decoration is unchanged.
+
+## wave-2026-10-15/winmenu
+
+The green light's window menu, the minimise target, and the frame in the moving passes (ssd's "Not done" 2 and 3). Written
+without a compiler (wave rule); the orchestrator builds.
+
+- **The menu, pure.** `casement_core::window::menu`: `MenuEntry` (15, `ALL` in menu order, `label()` in Mac words, `group()`
+  Top / Move & Resize / Full Screen Tile, `action()` -> `MenuAction::{FullScreen(Toggle), Place(PlaceTarget), SplitTile(SplitSide)}`,
+  `code()` / `from_code()` the wire numbers), `menu_for(&WindowState, SplitSupport) -> Vec<MenuItem>` (which entries are enabled:
+  full screen offers only Exit Full Screen, a window in the dock nothing, a tile zone it already fills and Fill when zoomed are
+  dimmed, Return to Previous Size only when tiled or zoomed), `enabled_mask` (bit per entry code), `menu_point` (left edge of the
+  light, 4 px under it). Table tests in `window/menu/tests.rs`.
+- **Hover intent, pure.** `window::menu_dwell`: `Dwell` machine (`Idle`, `Waiting`, `Shown`, `Spent`) stepped by `DwellInput::{Over,
+  Tick, Pressed, Lost}` with `DwellTiming::MAC` (500 ms) as data; answers `Arm(instant)`, `Cancel`, `Show(light)`. Only the zoom
+  light counts. A click spends the light until the pointer leaves, so a click never opens a menu a half second later. Table test
+  of 18 rows in `window/menu_dwell/tests.rs`.
+- **In the loop.** `core_loop/menu.rs`: `frames::hover` feeds the pointer's light to the machine, `frames::press` feeds `Pressed`;
+  the timer is `TimerKey::LightDwell` on the model's book (`Effect::ArmTimer` / `CancelTimer`, the way `ImeHold` is armed);
+  `feed` hears `Event::TimerFired(LightDwell)` (`menu::hear`) and, when the machine says `Show`, feeds
+  `ToplevelRequest::WindowMenu { at }` for the window. That is the same request `xdg_toplevel.show_window_menu` makes
+  (`handlers/xdg_shell.rs` already feeds it), so a client-drawn frame's menu and the green light's go one way.
+- **In the model.** `model/window_menu.rs`: `WindowMenu { at }` now answers `Effect::Shell(ShellNote::WindowMenu(WindowMenuShow
+  { window, at, items }))` (it was ignored). The shell's answer is `ShellRequest::WindowMenuPick { window, entry }`; the model
+  carries it out through `place` (tile zones, Fill, Centre, Return to Previous Size = `PlaceTarget::Restore`) and
+  `request(FullScreen)`, and only when the entry is enabled for the window's state now (a stale pick changes nothing). Tests:
+  `tests/it/model_window_menu.rs`.
+- **Departure: the wire step is not built.** The XML has no event for "show the window menu" or request for a pick, and
+  `casement-protocols` is not this lane's. `casement_wayland::quire::shell::apply_note` has an explicit empty arm for
+  `ShellNote::WindowMenu` naming this section; until the protocol lands the menu is asked for and nothing shows. No new
+  interface, so nothing was added to the test client catalogue (the ask below adds the event and the request; the catalogue's
+  `quire_shell_v1` root already binds the object).
+- **Departure: Full Screen Tile is dimmed.** "Left of Screen" and "Right of Screen" put two windows in a Split View; the model
+  has the Space kind (`SpaceContent::SplitView`) but no command that makes one. `window_menu.rs` passes
+  `SplitSupport::Unavailable`, so both entries are sent dimmed and a pick of one does nothing. Flip the const when a command exists.
+- **Minimise target (item 2).** It was already built: sill sends `set_minimise_target` (dock-local rectangle per toplevel,
+  `sill-services` `DesktopCommand::SetMinimiseTarget`), the model stores it in global pixels (`with_dock_target`; a window-list
+  client's `set_rectangle` only counts with no dock), `minimise_destination` picks the tile else a point at the bottom centre of
+  the window's output, and `casement-motion` flies a minimising window to it (`Cause::Minimise`, the `Move` spring, 380 ms
+  response; the window shrinks to the tile's size and fades). New: a table test of the choice
+  (`model_shell.rs::a_window_minimises_toward_its_tile_else_the_bottom_centre_of_its_output`). Not done: the setting
+  `windows.minimise_effect` (Genie / Scale) is stored but motion has one effect; and the renderer draws a surface at its
+  committed size (no rescaling wrapper, `window_elements`' note), so the flight is a move plus fade today and the shrink shows
+  only once that wrapper exists.
+- **Frame in Mission Control and Space-slide (item 3).** Both passes are `output_elements` over the sampled `FrameScene`
+  with the `LayerDraw` that `core_loop::frame` builds, so a framed window's frame, shadow and clip are drawn wherever motion
+  places it (a Space slide moves `at`; the frame follows). There is no separate overview pass in the loop yet (no overview
+  request is handled), and surfaces are not scaled, so there is no "scaled size" to draw the frame at: when the rescaling wrapper
+  lands, `scene.rs` computes `content` (`window_content`) from `placed.size` over `placed.committed` and the frame follows from
+  that one call. Two real gaps found and fixed: (a) `frame_elements` ignored the window's opacity, so a fading window kept an
+  opaque titlebar and shadow (now `Some(alpha)` on both memory elements); (b) `framed` is false for a minimised window, so the
+  frame vanished the instant a window was minimised instead of flying with its content (`frames::drawn` adds the dock state for
+  drawing only; hit, reserve and clip rules use `framed` as before). A window that closes still loses its frame at once (no
+  model entry to style it).
+- **Interface asks.** In the lane report: the `quire_shell_v1` XML (event `window_menu`, request `window_menu_pick`, enum
+  `window_entry`) and sill's side.
+- **Gate and real run.** Likeliest compile faults: `window/menu.rs` (`Toggle`/`PlaceTarget`/`TileZone` imports and the match on
+  `entry.action()` in `zone`), `menu_dwell.rs` or-pattern with bindings in `over`, `model/window_menu.rs` calling `self.request`
+  / `self.place` (both `pub(super)` in `requests.rs`; `request` consumes `self`), the new `TimerKey::LightDwell` variant (only
+  `model/timers.rs` matched it exhaustively), `core_loop/menu.rs` using `frames::{contents, styles}` now `pub(super)`,
+  `styles_where` taking a `fn` pointer built from a path, `frame_elements`' new argument. The 1920x1080 assumption in the
+  bottom-centre test (`rect(960, 1080, 0, 0)`). Real run (after the wire lands): hold the pointer on the green light for half
+  a second, the shell shows the menu under it; click at once and no menu appears; Option-click and plain click still act on
+  release; Left / Top Right / Fill / Center / Return to Previous Size move the window; Enter Full Screen works and a full-screen
+  window's menu (from a client-drawn frame) offers only Exit Full Screen; minimise a framed window and the bar and shadow fade
+  with it; open one and its bar fades in with the content.
 
 ## wave-2026-10-15/fork
 
