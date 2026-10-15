@@ -355,8 +355,8 @@ fn resting_on_the_green_light_shows_the_menu_and_a_pick_tiles_the_window() {
     assert!(on(MenuEntry::Left), "Left is offered");
     assert!(!on(MenuEntry::ReturnToPreviousSize), "nothing to return to");
     assert!(
-        !on(MenuEntry::TileLeftOfScreen),
-        "Split View is not built: dimmed"
+        on(MenuEntry::TileLeftOfScreen) && on(MenuEntry::TileRightOfScreen),
+        "Full Screen Tile is offered now that Split View is built"
     );
 
     shell.window_menu_pick(&identifier_of(window), WindowEntry::Left);

@@ -7,6 +7,7 @@ mod knobs;
 mod limits;
 mod of_model;
 mod rust_scene;
+mod split;
 mod spread;
 mod support;
 

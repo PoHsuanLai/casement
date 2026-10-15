@@ -23,6 +23,9 @@ pub use flight::{
     scaled_content, strip_plans,
 };
 pub use frame::{FrameDraw, TitleDraw, frame_elements};
+pub(crate) use frame::{ShadowKey, ShadowSet, Tiles};
+#[cfg(test)]
+pub(crate) use frame::{shadow_key, shadow_tiles};
 pub use geometry::{geometry_size, surface_origin, surface_origin_logical};
 pub use layer::layer_elements;
 pub use lock_cover::LockCoverElement;

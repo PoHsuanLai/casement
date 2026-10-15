@@ -174,7 +174,7 @@ impl Model {
     }
 
     /// The window takes a Space of its own on its output (or the output it asked for).
-    fn enter_full_screen(self, window: &Window, wanted: Option<OutputKey>) -> Moved {
+    pub(super) fn enter_full_screen(self, window: &Window, wanted: Option<OutputKey>) -> Moved {
         let output = wanted
             .filter(|output| self.outputs.0.contains_key(output))
             .or_else(|| self.output_of(window));
@@ -198,14 +198,27 @@ impl Model {
             .then(|model| model.relaid_out(id, Cause::Configure))
     }
 
-    /// The window leaves full screen: back to the state it had, its Space gone.
+    /// The window leaves full screen: back to the state it had, its Space gone. A Split View
+    /// ends with it: both windows go back to the states they had.
     fn leave_full_screen(self, window: &Window) -> Moved {
-        let WindowState::FullScreen { space, restore } = window.state.clone() else {
+        let WindowState::FullScreen { space, .. } = window.state.clone() else {
             return Moved::of(self);
         };
-        self.with_state(window.id, restore.into_state())
+        let members = self.full_screen_members(&space);
+        let ids: Vec<WindowId> = members.iter().map(|(id, _)| *id).collect();
+        let restored = members
+            .into_iter()
+            .fold(Moved::of(self), |moved, (id, back)| {
+                moved.then(|model| model.with_state(id, back.into_state()))
+            });
+        restored
+            .then(|model| model.choice_over_for(&ids))
             .then(|model| model.retire_full_screen(&space))
-            .then(|model| model.relaid_out(window.id, Cause::Configure))
+            .then(|model| {
+                ids.into_iter().fold(Moved::of(model), |moved, id| {
+                    moved.then(|model| model.relaid_out(id, Cause::Configure))
+                })
+            })
     }
 
     /// A window asked for activation. A valid token brings it back from the dock, shows its

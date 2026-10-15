@@ -25,6 +25,9 @@ impl Model {
                 Moved::of(self.with_minimise_rect(window, none))
             }
             ShellRequest::WindowMenuPick { window, entry } => self.window_menu_pick(window, entry),
+            ShellRequest::SplitPick { window } => self.split_pick(window),
+            ShellRequest::SplitCancel => self.split_cancel(),
+            ShellRequest::SplitDivide { window, share } => self.split_divide(window, share),
         }
     }
 

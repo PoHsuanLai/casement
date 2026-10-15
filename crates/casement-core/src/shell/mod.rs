@@ -5,5 +5,5 @@
 mod note;
 mod request;
 
-pub use note::{ShellNote, WindowMenuShow};
+pub use note::{ShellNote, SplitChoices, WindowMenuShow};
 pub use request::ShellRequest;

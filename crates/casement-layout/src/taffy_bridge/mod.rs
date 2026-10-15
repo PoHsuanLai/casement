@@ -2,10 +2,12 @@
 //! solving it, and rounding its float layout back to logical pixels.
 
 mod round;
+mod split;
 mod style;
 mod tree;
 
 pub(crate) use round::rect_of;
+pub(crate) use split::{SplitRects, split_rects};
 pub(crate) use style::fixed_size;
 pub(crate) use tree::{new_tree, solve};
 

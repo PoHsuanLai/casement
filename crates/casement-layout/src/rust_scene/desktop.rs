@@ -5,6 +5,7 @@ use super::cascade::cascade_rect;
 use super::floating::{
     filled_target, fit_size, floating_target, full_screen_target, placed, placed_target,
 };
+use super::split;
 use crate::{
     Arrangement, LayoutKnobs, OutputSpec, SceneMode, SpaceArrangement, SpaceSpec, SpaceTarget,
     WindowPlacement,
@@ -77,7 +78,8 @@ fn arrange_space(
     knobs: &LayoutKnobs,
     into: &mut Arrangement,
 ) {
-    if matches!(space.kind, SpaceArrangement::Split(_)) {
+    if let SpaceArrangement::Split(pair) = space.kind {
+        split::arrange_split(output, space, pair, into);
         return;
     }
     let mut new_so_far = 0;

@@ -1,13 +1,10 @@
 //! The server-side frame's rasters: the titlebar with its rounded top corners and its three
-//! lights, and the window's shadow. Pure functions of a [`FrameLook`], a size and a scale, so a
+//! lights (the window's shadow is `shadow.rs`). Pure functions of a [`FrameLook`], a size and a scale, so a
 //! golden holds. Analytic coverage (a signed distance per pixel), no sampling, no text.
 
 use casement_core::geometry::{LogicalSize, buffer_size};
 use casement_core::window::{FrameColour, FrameLook, FrameMetrics, Light};
 use ds_core::geometry::scale::Scale;
-
-/// How far the shadow reaches past the outline on each side, in logical pixels.
-pub(crate) const SHADOW_MARGIN: u32 = 80;
 
 /// A raster: ARGB8888 (little-endian, premultiplied), rows top to bottom.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,10 +18,10 @@ pub(crate) struct Raster {
 }
 
 /// A premultiplied pixel, 0 to 1.
-type Px = [f32; 4];
+pub(super) type Px = [f32; 4];
 
 /// `colour` laid over `dst` where `cover` (0 to 1) says.
-fn over(dst: &mut Px, colour: FrameColour, cover: f32) {
+pub(super) fn over(dst: &mut Px, colour: FrameColour, cover: f32) {
     let alpha = f32::from(colour.a) / 255.0 * cover.clamp(0.0, 1.0);
     let keep = 1.0 - alpha;
     let channels = [colour.r, colour.g, colour.b];
@@ -35,14 +32,14 @@ fn over(dst: &mut Px, colour: FrameColour, cover: f32) {
 }
 
 /// The pixel's bytes, B G R A.
-fn bytes(px: Px) -> [u8; 4] {
+pub(super) fn bytes(px: Px) -> [u8; 4] {
     let level = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
     [level(px[2]), level(px[1]), level(px[0]), level(px[3])]
 }
 
 /// How much of a pixel a shape covers, from the distance of its centre to the shape's edge in
 /// logical pixels (negative inside) and the pixels per logical pixel.
-fn cover(distance: f32, per_logical: f32) -> f32 {
+pub(super) fn cover(distance: f32, per_logical: f32) -> f32 {
     (0.5 - distance * per_logical).clamp(0.0, 1.0)
 }
 
@@ -128,68 +125,6 @@ pub(crate) fn titlebar(
                         .fold(f32::MAX, f32::min);
                     over(&mut px, ink, cover(near - STROKE, per));
                 }
-            }
-            bytes(px)
-        })
-        .collect();
-    Raster { w, h, argb }
-}
-
-/// The error function (Abramowitz and Stegun 7.1.26, error under 1.5e-7).
-fn erf(x: f32) -> f32 {
-    let t = 1.0 / (1.0 + 0.327_591_1 * x.abs());
-    let poly = t
-        * (0.254_829_6
-            + t * (-0.284_496_74 + t * (1.421_413_8 + t * (-1.453_152_1 + t * 1.061_405_4))));
-    let value = 1.0 - poly * (-x * x).exp();
-    value.copysign(x)
-}
-
-/// The share of a blurred bar (sigma `sigma`) from `low` to `high` that lies on `at`.
-fn bar(at: f32, low: f32, high: f32, sigma: f32) -> f32 {
-    let phi = |t: f32| 0.5 * (1.0 + erf(t / (sigma * std::f32::consts::SQRT_2)));
-    phi(at - low) - phi(at - high)
-}
-
-/// The shadow of an outline `width` by `height` logical pixels, one raster pixel to a logical
-/// pixel, the outline at `SHADOW_MARGIN` from the raster's edges. Each layer is the outline
-/// moved down by `dy`, grown by `spread` and blurred (sigma half the blur radius); the corners
-/// are taken square, which a blur this wide cannot show.
-pub(crate) fn shadow(look: &FrameLook, width: u32, height: u32) -> Raster {
-    let margin = SHADOW_MARGIN as f32;
-    let (w, h) = (width + 2 * SHADOW_MARGIN, height + 2 * SHADOW_MARGIN);
-    let layers: Vec<_> = look
-        .shadow
-        .iter()
-        .map(|layer| {
-            let sigma = (layer.blur as f32 / 2.0).max(0.5);
-            let grow = layer.spread as f32;
-            let across: Vec<f32> = (0..w)
-                .map(|x| {
-                    let left = margin + layer.dx as f32 - grow;
-                    bar(
-                        x as f32 + 0.5,
-                        left,
-                        left + width as f32 + 2.0 * grow,
-                        sigma,
-                    )
-                })
-                .collect();
-            let down: Vec<f32> = (0..h)
-                .map(|y| {
-                    let top = margin + layer.dy as f32 - grow;
-                    bar(y as f32 + 0.5, top, top + height as f32 + 2.0 * grow, sigma)
-                })
-                .collect();
-            (layer.colour, across, down)
-        })
-        .collect();
-    let argb = (0..h as usize)
-        .flat_map(|y| (0..w as usize).map(move |x| (x, y)))
-        .flat_map(|(x, y)| {
-            let mut px: Px = [0.0; 4];
-            for (colour, across, down) in &layers {
-                over(&mut px, *colour, across[x] * down[y]);
             }
             bytes(px)
         })
@@ -283,29 +218,5 @@ mod tests {
         assert_eq!(at(&plain, 19, 14), vec![255, 255, 255, 255]);
         assert_ne!(at(&marked, 19, 14), at(&plain, 19, 14));
         assert_eq!(at(&marked, 13, 8), at(&plain, 13, 8));
-    }
-
-    #[test]
-    fn the_shadow_is_darkest_under_the_window_and_fades_out() {
-        let raster = shadow(&look(None), 200, 100);
-        let (w, h) = (raster.w, raster.h);
-        assert_eq!((w, h), (360, 260));
-        let middle = alpha_at(&raster, w / 2, h / 2);
-        let edge = alpha_at(&raster, w / 2, 0);
-        assert!(middle > 200, "{middle}");
-        assert!(edge < 5, "{edge}");
-        let falls = alpha_at(&raster, w / 2, SHADOW_MARGIN + 100 + 5);
-        let rises = alpha_at(&raster, w / 2, SHADOW_MARGIN - 5);
-        assert!(
-            falls > rises,
-            "the shadow falls below the window: {falls} {rises}"
-        );
-    }
-
-    #[test]
-    fn erf_matches_known_values() {
-        for (x, want) in [(0.0, 0.0), (0.5, 0.5205), (1.0, 0.8427), (-1.0, -0.8427)] {
-            assert!((erf(x) - want).abs() < 1e-3, "{x}");
-        }
     }
 }

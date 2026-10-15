@@ -22,14 +22,6 @@ mod of_model;
 mod rust_scene;
 mod scene_layout;
 mod spec;
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        unused_imports,
-        reason = "Split View and Exposé call the bridge (P3-Z)"
-    )
-)]
 mod taffy_bridge;
 
 pub use arrangement::{

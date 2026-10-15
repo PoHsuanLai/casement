@@ -2,7 +2,7 @@
 
 use crate::geometry::{LogicalPoint, LogicalRect};
 use crate::ids::{LayerKey, WindowId};
-use crate::window::{MenuItem, enabled_mask};
+use crate::window::{MenuItem, SplitSide, enabled_mask};
 use casement_protocols::vocab::{Corner, MacMods, ScreenEdge, ShellRole, Shown};
 
 /// Something the shell's protocol layer records or sends.
@@ -25,6 +25,46 @@ pub enum ShellNote {
     /// Show the window menu: the shell draws it and answers with
     /// [`ShellRequest::WindowMenuPick`](super::ShellRequest::WindowMenuPick).
     WindowMenu(WindowMenuShow),
+    /// A window went full screen to share the screen in a Split View: the shell shows the other
+    /// windows of the desktop to pick from and answers with
+    /// [`ShellRequest::SplitPick`](super::ShellRequest::SplitPick) or
+    /// [`ShellRequest::SplitCancel`](super::ShellRequest::SplitCancel).
+    SplitChoose(SplitChoices),
+    /// The choosing for this first window is over (a pick, a cancel, or the window left): the
+    /// shell takes its picker away.
+    SplitChoiceEnd(WindowId),
+}
+
+/// The other half of a Split View is being chosen.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct SplitChoices {
+    /// The window already full screen on its half.
+    pub first: WindowId,
+    /// The half it took.
+    pub side: SplitSide,
+    /// The windows that can fill the other half, most recently used first.
+    pub candidates: Vec<WindowId>,
+}
+
+impl SplitChoices {
+    /// The choice for the half beside `first`, offering `candidates` in order.
+    ///
+    /// ```
+    /// use casement_core::WindowId;
+    /// use casement_core::shell::SplitChoices;
+    /// use casement_core::window::SplitSide;
+    ///
+    /// let choices = SplitChoices::new(WindowId(1), SplitSide::Left, vec![WindowId(2)]);
+    /// assert_eq!(choices.candidates, [WindowId(2)]);
+    /// ```
+    pub fn new(first: WindowId, side: SplitSide, candidates: Vec<WindowId>) -> Self {
+        Self {
+            first,
+            side,
+            candidates,
+        }
+    }
 }
 
 /// The window menu to show: for which window, where, and which entries can be picked.

@@ -11,9 +11,9 @@ use crate::ids::WindowId;
 use crate::shell::{ShellNote, WindowMenuShow};
 use crate::window::{MenuAction, MenuEntry, SplitSupport, Window, is_offered, menu_for};
 
-/// Whether the model can put a window in a Split View. It cannot yet: no model command makes
-/// one, so the Full Screen Tile entries are shown dimmed.
-const SPLIT: SplitSupport = SplitSupport::Unavailable;
+/// The model can put a window in a Split View (`model/split.rs`), so the Full Screen Tile
+/// entries are offered.
+const SPLIT: SplitSupport = SplitSupport::Available;
 
 impl Model {
     /// `window` asked for its menu at `at`: the shell is told which entries it has and which
@@ -45,7 +45,7 @@ impl Model {
                 },
             ),
             MenuAction::Place(target) => self.place(&window, target),
-            _ => Moved::of(self),
+            MenuAction::SplitTile(side) => self.split_view(&window, side),
         }
     }
 }
