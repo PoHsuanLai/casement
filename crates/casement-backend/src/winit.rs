@@ -170,7 +170,7 @@ impl WinitBackend {
         let area = size.w > 0 && size.h > 0;
         let changed = next.mode != self.output.mode || next.scale != self.output.scale;
         (area && changed).then(|| {
-            self.tracker = Box::new(tracker_of(&next));
+            *self.tracker = tracker_of(&next);
             self.output = next;
             ConnectorEvent::Changed(facts_of(&self.output))
         })
