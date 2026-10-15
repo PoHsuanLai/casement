@@ -95,6 +95,7 @@ fn roots() -> Vec<&'static Interface> {
         wlr::output_management::v1::client::zwlr_output_manager_v1::ZwlrOutputManagerV1,
         wlr::output_power_management::v1::client::zwlr_output_power_manager_v1::ZwlrOutputPowerManagerV1,
         wlr::gamma_control::v1::client::zwlr_gamma_control_manager_v1::ZwlrGammaControlManagerV1,
+        wlr::screencopy::v1::client::zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1,
         misc::zwp_input_method_v2::client::zwp_input_method_manager_v2::ZwpInputMethodManagerV2,
         misc::zwp_virtual_keyboard_v1::client::zwp_virtual_keyboard_manager_v1::ZwpVirtualKeyboardManagerV1,
         quire::quire_window_v1::quire_window_v1::QuireWindowV1,

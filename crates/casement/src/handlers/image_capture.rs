@@ -11,6 +11,8 @@
 
 mod frames;
 
+pub(super) use frames::{last_frame, release_waiting};
+
 use super::capture_source;
 use crate::state::State;
 use casement_core::OutputKey;

@@ -1,0 +1,111 @@
+//! `zwlr_screencopy_manager_v1`: `casement_wayland::screencopy` serves the wire; this file
+//! answers the copies it queued from the frame each output last presented, the one scanout
+//! shows and `ext_image_copy_capture` serves ([`super::image_capture`]).
+//!
+//! A copy is answered when it is queued and again after every presented frame
+//! ([`serve_captures`], which also wakes the `ext_image_copy_capture` frames that waited): one
+//! that finds no frame yet, or a `copy_with_damage` that finds nothing newer than the
+//! client's last, stays queued.
+
+use super::image_capture;
+use crate::state::State;
+use casement_render::pass::CapturedFrame;
+use casement_wayland::image_capture::CaptureFailure;
+use casement_wayland::screencopy::{
+    self, Freshness, PendingCopy, ScreencopyHandler, ScreencopyOutput, ScreencopyPart,
+};
+use smithay::output::Output;
+use smithay::reexports::wayland_server::Resource;
+use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
+
+impl ScreencopyHandler for State {
+    fn screencopy_part(&mut self) -> &mut ScreencopyPart {
+        &mut self.wl.screencopy
+    }
+
+    fn screencopy_output(&self, output: &WlOutput) -> Option<ScreencopyOutput> {
+        let output = &Output::from_resource(output)?;
+        let key = self
+            .wl
+            .output
+            .outputs
+            .iter()
+            .find(|(_, advertised)| *advertised == output)
+            .map(|(key, _)| key.clone())?;
+        let config = self.core.model.outputs().0.get(&key)?.config;
+        Some(ScreencopyOutput {
+            key,
+            mode: config.mode.size,
+            scale: config.scale,
+            transform: config.transform,
+        })
+    }
+
+    fn screencopy_wake(&mut self) {
+        serve(self);
+    }
+}
+
+/// Answers what waited for a frame: the `wlr` copies and the `ext` frames. Run after every
+/// frame the loop presents; cheap when nothing waits.
+pub(crate) fn serve_captures(state: &mut State) {
+    serve(state);
+    image_capture::release_waiting(state);
+}
+
+/// Whether a copy is over or waits for a later frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Outcome {
+    Done,
+    Wait,
+}
+
+/// Answers each queued copy that can be; the rest stay queued.
+fn serve(state: &mut State) {
+    for copy in state.wl.screencopy.take_pending() {
+        match answer(state, &copy) {
+            Outcome::Done => {}
+            Outcome::Wait => state.wl.screencopy.keep(copy),
+        }
+    }
+}
+
+/// Writes the frame into `copy`'s buffer and tells the client, or says why not.
+fn answer(state: &mut State, copy: &PendingCopy) -> Outcome {
+    if !copy.frame.is_alive() {
+        return Outcome::Done;
+    }
+    let (captured, at) = match image_capture::last_frame(state, &copy.target.output) {
+        Ok(Some(found)) => found,
+        Ok(None) => return Outcome::Wait,
+        Err(why) => return failed(copy, why),
+    };
+    if state.wl.screencopy.freshness(copy, at) == Freshness::Wait {
+        return Outcome::Wait;
+    }
+    match write(copy, &captured) {
+        Ok(()) => {
+            screencopy::apply_ready(&mut state.wl.screencopy, copy, at);
+            Outcome::Done
+        }
+        Err(why) => failed(copy, why),
+    }
+}
+
+/// The part of `captured` that `copy` names, written into its buffer.
+fn write(copy: &PendingCopy, captured: &CapturedFrame) -> Result<(), CaptureFailure> {
+    let part = captured
+        .cropped(copy.target.area)
+        .ok_or(CaptureFailure::BufferMismatch)?;
+    casement_render::pass::write_frame(&copy.buffer, &part).map_err(|error| {
+        tracing::warn!(%error, "a screencopy frame was not written");
+        CaptureFailure::BufferMismatch
+    })
+}
+
+/// Tells the client `failed`; the copy is over.
+fn failed(copy: &PendingCopy, why: CaptureFailure) -> Outcome {
+    tracing::debug!(?why, "a screencopy frame failed");
+    screencopy::apply_failed(copy);
+    Outcome::Done
+}

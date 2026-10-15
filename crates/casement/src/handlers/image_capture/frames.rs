@@ -20,7 +20,10 @@ pub(super) fn serve(state: &mut State, session: &SessionRef, frame: Frame) {
         return frame.fail(CaptureFailure::OutputGone.reason());
     };
     match capture(state, session, id, &frame) {
-        Ok((at, size)) => {
+        // No frame has been presented for the output yet (a first capture on a real seat waits
+        // for the shadow's first draw): keep the request until `release_waiting`.
+        Ok(None) => state.wl.image_capture.wait_frame(id, frame),
+        Ok(Some((at, size))) => {
             if let Err(fault) = image_capture::apply_ready(&mut state.wl.image_capture.book, id, at)
             {
                 tracing::debug!(%fault, "a capture frame was not pending");
@@ -46,7 +49,7 @@ fn capture(
     session: &SessionRef,
     id: CaptureSessionId,
     frame: &Frame,
-) -> Result<(Mono, Size<i32, Buffer>), CaptureFailure> {
+) -> Result<Option<(Mono, Size<i32, Buffer>)>, CaptureFailure> {
     let buffer = frame.buffer();
     let size = buffer_size(&buffer).ok_or(CaptureFailure::BufferMismatch)?;
     let request = image_capture::on_frame_request(&mut state.wl.image_capture.book, id, size)
@@ -59,7 +62,9 @@ fn capture(
         session.update_constraints(wanted);
         return Err(CaptureFailure::BufferMismatch);
     }
-    let (captured, at) = last_frame(state, &request.output)?;
+    let Some((captured, at)) = last_frame(state, &request.output)? else {
+        return Ok(None);
+    };
     write_frame(&buffer, &captured).map_err(|error| {
         tracing::warn!(%error, "a capture frame was not written");
         CaptureFailure::BufferMismatch
@@ -69,11 +74,15 @@ fn capture(
         i32::try_from(area.w).unwrap_or(i32::MAX),
         i32::try_from(area.h).unwrap_or(i32::MAX),
     ));
-    Ok((at, size))
+    Ok(Some((at, size)))
 }
 
-/// The frame `output` last presented, as a capture, and its instant.
-fn last_frame(state: &State, output: &OutputKey) -> Result<(CapturedFrame, Mono), CaptureFailure> {
+/// The frame `output` last presented, as a capture, and its instant; none while the output
+/// has presented none (or, on a real seat, the shadow has drawn none).
+pub(in crate::handlers) fn last_frame(
+    state: &State,
+    output: &OutputKey,
+) -> Result<Option<(CapturedFrame, Mono)>, CaptureFailure> {
     let name = state
         .core
         .model
@@ -87,9 +96,11 @@ fn last_frame(state: &State, output: &OutputKey) -> Result<(CapturedFrame, Mono)
     let presented = match &state.backend {
         BackendKind::Headless(backend) => backend.last_frame(&name),
         BackendKind::Tty(tty) => tty.last_frame(&name),
-        _ => None,
-    }
-    .ok_or(CaptureFailure::Renderer)?;
+        _ => return Err(CaptureFailure::Renderer),
+    };
+    let Some(presented) = presented else {
+        return Ok(None);
+    };
     let FramePixels::Rgba(pixels) = &presented.pixels else {
         return Err(CaptureFailure::Renderer);
     };
@@ -99,7 +110,20 @@ fn last_frame(state: &State, output: &OutputKey) -> Result<(CapturedFrame, Mono)
         w: pixels.size.w,
         h: pixels.size.h,
     };
-    Ok((CapturedFrame::from_rgba(area, &pixels.bytes), presented.at))
+    Ok(Some((
+        CapturedFrame::from_rgba(area, &pixels.bytes),
+        presented.at,
+    )))
+}
+
+/// Serves again the frame requests that waited for a first frame, now that one may exist.
+pub(in crate::handlers) fn release_waiting(state: &mut State) {
+    for (id, frame) in state.wl.image_capture.take_waiting() {
+        let Some(session) = state.wl.image_capture.session_ref(id) else {
+            continue;
+        };
+        serve(state, &session, frame);
+    }
 }
 
 /// The size of a shared-memory buffer, in pixels.

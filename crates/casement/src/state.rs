@@ -241,6 +241,7 @@ impl State {
             image_capture: image_capture::ImageCapturePart::new::<State>(&dh, filter),
             // P2-Z declares these three; P2-Q1, P2-Q2 and P2-Q3 create their globals.
             capture_source: capture_source::ToplevelCapturePart::new::<State>(&dh, filter),
+            screencopy: casement_wayland::screencopy::ScreencopyPart::new::<State>(&dh, filter),
             quire_desktop: quire::desktop::QuireDesktopPart::new::<State>(&dh, filter),
             quire_shell: quire::shell::QuireShellPart::new::<State>(&dh, filter),
         };

@@ -18,6 +18,7 @@ use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::ExportMem;
 use smithay::utils::{Buffer, Rectangle};
 
+mod crop;
 mod shm;
 
 pub use shm::{ShmWriteError, write_frame};

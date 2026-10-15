@@ -128,6 +128,8 @@ pub struct WaylandStates<D: SeatHandler + 'static> {
     /// `ext_foreign_toplevel_image_capture_source_manager_v1` (declared at P2-Z, advertised by
     /// P2-Q3).
     pub capture_source: capture_source::ToplevelCapturePart,
+    /// `zwlr_screencopy_manager_v1`: the older output capture (`grim`).
+    pub screencopy: crate::screencopy::ScreencopyPart,
     /// `quire_desktop_manager_v1` (declared at P2-Z, advertised by P2-Q1; shell and agent
     /// connections only).
     #[cfg(feature = "quire")]

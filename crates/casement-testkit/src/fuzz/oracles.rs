@@ -173,9 +173,9 @@ fn kind_of(interface: &str) -> Option<GlobalKind> {
         "zwlr_gamma_control_manager_v1" => GlobalKind::Gamma,
         "zwlr_foreign_toplevel_manager_v1" => GlobalKind::WlrToplevel,
         "ext_workspace_manager_v1" => GlobalKind::Workspace,
-        "ext_output_image_capture_source_manager_v1" | "ext_image_copy_capture_manager_v1" => {
-            GlobalKind::ImageCapture
-        }
+        "ext_output_image_capture_source_manager_v1"
+        | "ext_image_copy_capture_manager_v1"
+        | "zwlr_screencopy_manager_v1" => GlobalKind::ImageCapture,
         // P2-Z: the desktop and shell protocols (the shell and agent connections only) and
         // the toplevel capture source (declared; P2-Q3 advertises it).
         "quire_desktop_manager_v1" => GlobalKind::QuireDesktop,
