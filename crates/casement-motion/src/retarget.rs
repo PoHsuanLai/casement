@@ -9,9 +9,9 @@ use crate::pose::Pose;
 use crate::space_slide::SlideLeg;
 use crate::window_motion::{Fate, WindowLegs};
 use casement_core::Cause;
-use casement_core::WindowId;
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::time::Mono;
+use casement_core::{OutputKey, WindowId};
 use casement_layout::Arrangement;
 use ds_style::appearance::motion::MotionLevel;
 use std::collections::{BTreeMap, BTreeSet};
@@ -29,6 +29,22 @@ pub fn retarget(
     cause: &Cause,
     level: MotionLevel,
     now: Mono,
+) -> MotionBook {
+    retarget_driven(book, from, to, cause, level, now, &BTreeSet::new())
+}
+
+/// [`retarget`] while a swipe drives the Space strips of the outputs in `driven`: the renderer
+/// draws those rows at the swipe's own position (its rubber band and its ease-out finish), so
+/// their strip legs go to the new target at once instead of sliding as well, and a commit does
+/// not slide twice. Windows and the other outputs' strips travel as `retarget` has them.
+pub fn retarget_driven(
+    book: MotionBook,
+    from: &Arrangement,
+    to: &Arrangement,
+    cause: &Cause,
+    level: MotionLevel,
+    now: Mono,
+    driven: &BTreeSet<OutputKey>,
 ) -> MotionBook {
     let travel = travel_of(cause, level);
     let (before, after) = (Goals::of(from), Goals::of(to));
@@ -68,10 +84,14 @@ pub fn retarget(
             Some(Motion::Slide(leg)) => leg,
             _ => SlideLeg::still(before.strips.get(output).copied().unwrap_or(*target), now),
         };
-        let thrown = travel
+        let slide = match driven.contains(output) {
+            true => Travel::Snap,
+            false => travel,
+        };
+        let thrown = slide
             .spring()
             .map_or(0.0, |spec| spec.thrown(level).px_per_s());
-        let aimed = known.aimed(*target, thrown, travel, level, now);
+        let aimed = known.aimed(*target, thrown, slide, level, now);
         legs.insert(key, Motion::Slide(aimed));
     }
     MotionBook { legs }

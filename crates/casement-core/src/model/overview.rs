@@ -161,6 +161,26 @@ impl Model {
         .with(Effect::Shell(ShellNote::Overview(Overview::Leaving)))
     }
 
+    /// The fingers lifted short of a verdict and Mission Control stays as it was. The windows
+    /// were drawn where the fingers put them, so they are laid out again to return from there:
+    /// closed, they fly back to the desktop (the overview shows as leaving until they land, the
+    /// shell is told when it is closed); up, they return to their slots.
+    pub(super) fn fingers_stayed(self) -> Moved {
+        let outputs: Vec<OutputKey> = self.outputs.0.keys().cloned().collect();
+        match self.overview {
+            Overview::Closed if !outputs.is_empty() => {
+                let settle = self.settle_timer();
+                Model {
+                    overview: Overview::Leaving,
+                    ..self
+                }
+                .redrawn(Cause::Overview, outputs)
+                .with(Effect::ArmTimer(settle))
+            }
+            _ => self.redrawn(Cause::Overview, outputs),
+        }
+    }
+
     /// The pick raises and keys its window like a press on it, when it is still there.
     fn then_pick(self, picked: Option<OverviewPick>) -> Moved {
         match picked.filter(|pick| self.windows.contains_key(&pick.window)) {

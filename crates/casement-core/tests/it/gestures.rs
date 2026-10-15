@@ -3,6 +3,7 @@
 
 use crate::support;
 
+use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::geometry::{SubPoint, SubPx};
 use casement_core::input::gesture_route::{Axis, Drive, Fate, Route, route};
 use casement_core::input::lift::{Intent, Lift, LiftIn, LiftOut, Verdict};
@@ -13,7 +14,7 @@ use casement_core::overview::Overview;
 use casement_core::settings::{CasementSettings, Enabled, GestureSettings, SwipeFingers};
 use casement_core::space::{SpaceSeed, WorkspaceRequest};
 use casement_core::time::TimerKey;
-use casement_core::{DeviceId, Effect, Event, Model, PageMilli, SwipeOwner};
+use casement_core::{Cause, DeviceId, Effect, Event, Model, PageMilli, SwipeOwner};
 use ds_core::time::stamp::Stamp;
 use support::{headless, ms};
 
@@ -436,14 +437,47 @@ fn a_swipe_up_opens_mission_control_and_one_down_closes_it() {
     assert_eq!(model.overview(), Overview::Leaving);
 }
 
+/// A short swipe up drew the windows part-way: they fly back from there (Mission Control shows
+/// as leaving, with a laid-out-again scene, until they land) and it ends closed.
 #[test]
-fn a_short_swipe_up_leaves_mission_control_closed() {
+fn a_short_swipe_up_snaps_back_and_leaves_mission_control_closed() {
     let model = three_spaces(GestureSettings::defaults());
-    let (model, _) = swiped(
-        model,
-        vec![(T0, begin(4)), (T0 + 300, by(0, -60)), (T0 + 900, LIFT)],
+    let (model, _) = swiped(model, vec![(T0, begin(4)), (T0 + 300, by(0, -60))]);
+    assert_eq!(model.overview_progress(), Some(PageMilli(150)));
+    let (model, effects) = swipe(model, T0 + 900, LIFT);
+    assert_eq!(model.overview(), Overview::Leaving);
+    assert!(effects.contains(&Effect::Relayout(Cause::Overview)));
+    assert!(
+        effects
+            .iter()
+            .any(|e| matches!(e, Effect::ArmTimer(due) if due.key == TimerKey::OverviewSettle))
     );
+    let (model, _) = model.step(Event::TimerFired(TimerKey::OverviewSettle), ms(T0 + 1300));
     assert_eq!(model.overview(), Overview::Closed);
+}
+
+/// Nothing was drawn moved when the fingers never left the ends: no snap-back, no relayout.
+#[test]
+fn a_swipe_that_never_moved_the_windows_changes_nothing() {
+    let model = three_spaces(GestureSettings::defaults());
+    let (model, _) = swiped(model, vec![(T0, begin(4)), (T0 + 10, by(0, 12))]);
+    assert_eq!(model.overview_progress(), Some(PageMilli(0)));
+    let (model, effects) = swipe(model, T0 + 50, GestureStep::End(GestureEnd::Cancelled));
+    assert_eq!(model.overview(), Overview::Closed);
+    assert!(!effects.contains(&Effect::Relayout(Cause::Overview)));
+}
+
+/// A swipe down that stops short of closing returns the windows to their slots.
+#[test]
+fn a_short_swipe_down_returns_the_windows_to_their_slots() {
+    let model = three_spaces(GestureSettings::defaults());
+    let (model, _) = model.command(DesktopCommand::MissionControl, ms(T0));
+    let (model, _) = model.step(Event::TimerFired(TimerKey::OverviewSettle), ms(T0 + 400));
+    assert_eq!(model.overview(), Overview::Open);
+    let (model, _) = swiped(model, vec![(T0 + 1000, begin(4)), (T0 + 1300, by(0, 60))]);
+    let (model, effects) = swipe(model, T0 + 1900, LIFT);
+    assert_eq!(model.overview(), Overview::Open, "still up");
+    assert!(effects.contains(&Effect::Relayout(Cause::Overview)));
 }
 
 #[test]
@@ -456,4 +490,19 @@ fn mission_control_opened_by_a_key_is_not_opened_again_by_a_swipe() {
         vec![(T0 + 10, begin(4)), (T0 + 20, by(0, -300)), (T0 + 30, LIFT)],
     );
     assert_eq!(model.overview(), Overview::Entering);
+}
+
+/// The row's first Space starts where the position says, a page apart per thousand.
+#[test]
+fn the_row_starts_where_the_position_says() {
+    let usable = LogicalRect::new(
+        LogicalPoint { x: 10, y: 24 },
+        LogicalSize { w: 1000, h: 700 },
+    );
+    let model = three_spaces(GestureSettings::defaults());
+    let (model, _) = swiped(model, vec![(T0, begin(4)), (T0 + 10, by(-100, 0))]);
+    let strip = model.space_strip(ms(T0 + 10)).expect("following");
+    assert_eq!(strip.position, PageMilli(250));
+    // 10 px in, a quarter of 1000 px back: 1200 - 30 000 sub-pixels.
+    assert_eq!(strip.first_x(usable).0, 1_200 - 30_000);
 }
