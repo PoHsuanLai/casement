@@ -281,7 +281,8 @@ mod tests {
 
     #[test]
     fn the_lights_are_twelve_square_twenty_apart_and_centred() {
-        const CASES: &[(&str, Light, (i32, i32, u32, u32))] = &[
+        type Case = (&'static str, Light, (i32, i32, u32, u32));
+        const CASES: &[Case] = &[
             ("close", Light::Close, (113, 80, 12, 12)),
             ("minimise", Light::Minimise, (133, 80, 12, 12)),
             ("zoom", Light::Zoom, (153, 80, 12, 12)),

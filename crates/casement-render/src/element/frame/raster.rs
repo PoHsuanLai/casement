@@ -53,8 +53,11 @@ fn segment(p: (f32, f32), a: (f32, f32), b: (f32, f32)) -> f32 {
     (p.0 - a.0 - along * dx).hypot(p.1 - a.1 - along * dy)
 }
 
+/// A stroke from one point to another, in logical pixels.
+type Stroke = ((f32, f32), (f32, f32));
+
 /// A mark's strokes, relative to the light's centre, in logical pixels.
-fn strokes(light: Light) -> &'static [((f32, f32), (f32, f32))] {
+fn strokes(light: Light) -> &'static [Stroke] {
     match light {
         Light::Close => &[((-3.0, -3.0), (3.0, 3.0)), ((-3.0, 3.0), (3.0, -3.0))],
         Light::Minimise => &[((-3.2, 0.0), (3.2, 0.0))],

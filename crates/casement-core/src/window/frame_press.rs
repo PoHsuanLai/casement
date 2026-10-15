@@ -127,7 +127,8 @@ mod tests {
 
     #[test]
     fn a_second_press_close_behind_the_first_is_a_double_click() {
-        const CASES: &[(&str, u64, (i32, i32), u32, Clicks)] = &[
+        type Case = (&'static str, u64, (i32, i32), u64, Clicks);
+        const CASES: &[Case] = &[
             ("quick and still", 200, (10, 10), 1, Clicks::Double),
             ("at the limit", 400, (14, 6), 1, Clicks::Double),
             ("too late", 401, (10, 10), 1, Clicks::Single),
@@ -156,7 +157,8 @@ mod tests {
         let filled = WindowState::Filled { restore: rect };
         use ChromeAction as A;
         use TitleDoubleClick as D;
-        let cases: &[(&str, FrameHit, Clicks, D, &WindowState, Option<A>)] = &[
+        type Case<'a> = (&'a str, FrameHit, Clicks, D, &'a WindowState, Option<A>);
+        let cases: &[Case] = &[
             (
                 "close",
                 FrameHit::Light(Light::Close),
