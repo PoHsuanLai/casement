@@ -111,6 +111,21 @@ impl State {
                 };
                 match ClientState::of(&client) {
                     Some(state) => {
+                        // A37: under the lenient policy a first commit with a buffer maps the
+                        // window keyed and sends its one configure after the keyboard enter
+                        // (the order wlcs' text-input tests expect).
+                        #[cfg(feature = "testing")]
+                        if self.ack_policy == crate::relax::AckPolicy::Lenient
+                            && let Some(events) = xdg_shell::map_keyed_on_first_buffer(
+                                &mut self.wl.xdg_shell,
+                                surface,
+                                state,
+                            )
+                        {
+                            feed(self, events);
+                            xdg_shell::send_initial_configure(&self.wl.xdg_shell, surface);
+                            return Vec::new();
+                        }
                         // Only the testing build extends the events (A37 below).
                         #[cfg_attr(not(feature = "testing"), allow(unused_mut))]
                         let mut events =

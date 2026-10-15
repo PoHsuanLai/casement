@@ -141,7 +141,7 @@ impl Host {
     /// A window that mapped again goes back where wlcs had put the surface it is.
     fn replace_by_hand(&mut self, window: WindowId) {
         if let Some(at) = self.spot_of(window) {
-            self.fixture.place_window(window, at);
+            self.fixture.place_window_by_hand(window, at);
             self.fixture.advance(SETTLE);
             self.fixture.refocus_pointer();
         }
@@ -180,7 +180,7 @@ impl Compositor for Host {
                     self.fixture.refocus_pointer();
                 } else if let Some(window) = self.client_surface(client, surface) {
                     self.placed.insert((client, surface), whole(at));
-                    self.fixture.place_window(window, whole(at));
+                    self.fixture.place_window_by_hand(window, whole(at));
                     // The window glides to its place; wlcs' next step hit-tests where it is.
                     self.fixture.advance(SETTLE);
                     self.fixture.refocus_pointer();

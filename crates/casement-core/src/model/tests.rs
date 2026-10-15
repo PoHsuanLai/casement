@@ -369,3 +369,25 @@ fn every_invariant_can_fail() {
         assert_eq!(model.check_invariants(), Err(want), "{name}");
     }
 }
+
+/// A hand placement (a test's) is remembered until the person drags the window or it unmaps.
+#[test]
+fn a_hand_placement_lasts_until_a_drag_or_an_unmap() {
+    use crate::geometry::{LogicalPoint, LogicalRect, LogicalSize};
+    let rect = LogicalRect::new(
+        LogicalPoint { x: 64, y: -5 },
+        LogicalSize { w: 300, h: 300 },
+    );
+    let window = WindowId(1);
+    let placed = healthy()
+        .step(Event::WindowPlaced { window, rect }, at(100))
+        .0;
+    assert!(placed.is_placed_by_hand(window), "put by hand");
+    let dragged = placed
+        .clone()
+        .step(Event::WindowDragged { window, rect }, at(101))
+        .0;
+    assert!(!dragged.is_placed_by_hand(window), "a drag is the person's");
+    let gone = placed.step(Event::ToplevelUnmapped { window }, at(102)).0;
+    assert!(!gone.is_placed_by_hand(window), "forgotten with the window");
+}

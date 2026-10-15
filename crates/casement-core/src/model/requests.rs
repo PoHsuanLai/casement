@@ -74,11 +74,33 @@ impl Model {
     /// other state (full screen, in the dock) does not follow a drag; a tiled or filled one
     /// left its place when the grab began.
     pub(super) fn dragged(self, id: WindowId, rect: LogicalRect) -> Moved {
+        let mut model = self;
+        let was_free = model.hand_placed.remove(&id);
+        model.moved_to(id, rect, was_free)
+    }
+
+    /// A window was put at `rect` by hand (a test's placement, never the person's): layout keeps
+    /// the rectangle where it is even outside the usable area, until the person drags the
+    /// window. The person-facing rule (a drag keeps a window inside) is unchanged.
+    pub(super) fn placed_by_hand(self, id: WindowId, rect: LogicalRect) -> Moved {
+        let mut model = self;
+        let changed = model.windows.contains_key(&id) && model.hand_placed.insert(id);
+        model.moved_to(id, rect, changed)
+    }
+
+    /// Whether window `id` was put by hand and layout keeps its rectangle as given.
+    pub fn is_placed_by_hand(&self, id: WindowId) -> bool {
+        self.hand_placed.contains(&id)
+    }
+
+    /// Window `id` is now at `rect`; `reach_changed` says layout's rule for it changed with the
+    /// move, so it is laid out again even where the rectangle is the same.
+    fn moved_to(self, id: WindowId, rect: LogicalRect, reach_changed: bool) -> Moved {
         let Some(window) = self.windows.get(&id) else {
             return Moved::of(self).with(Effect::Note(CoreNote::UnknownWindow(id)));
         };
         match &window.state {
-            WindowState::Floating(held) if *held == rect => Moved::of(self),
+            WindowState::Floating(held) if *held == rect && !reach_changed => Moved::of(self),
             WindowState::Floating(_) | WindowState::New(_) => self
                 .with_state(id, WindowState::Floating(rect))
                 .then(|model| model.relaid_out(id, Cause::Drag)),

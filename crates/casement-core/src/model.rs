@@ -51,7 +51,7 @@ use crate::space::{SpaceBook, SpaceFile, SpaceSeed};
 use crate::time::{Mono, TimerBook};
 use moved::Moved;
 pub use query::OpeningRoom;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Everything casement knows, as one value.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,6 +67,8 @@ pub struct Model {
     /// Where each window's minimise animation should go: the rectangle its window-list client
     /// set (`zwlr_foreign_toplevel_handle_v1.set_rectangle`; P1-M2).
     minimise_rects: BTreeMap<WindowId, MinimiseTarget>,
+    /// The windows put by hand (`Event::WindowPlaced`): layout keeps their rectangle as given.
+    hand_placed: BTreeSet<WindowId>,
     outputs: OutputBook,
     layers: LayerBook,
     /// The on-demand layer surface that holds the keyboard: the one that mapped with no key
@@ -103,6 +105,7 @@ impl Model {
             spaces: SpaceBook::empty(),
             remembered: SpaceFile::empty(),
             minimise_rects: BTreeMap::new(),
+            hand_placed: BTreeSet::new(),
             outputs: OutputBook::default(),
             layers: LayerBook::empty(),
             demand: None,
@@ -136,6 +139,7 @@ impl Model {
         let shown = published::Published::of(&self);
         let mut moved = f(Model { now, ..self });
         moved.model.forget_gone_minimise_rects();
+        moved.model.forget_gone_placements();
         // A window that becomes key takes the keyboard back from an on-demand layer.
         if moved.model.focus.key != keyed && moved.model.focus.key.is_some() {
             moved.model.demand = None;
@@ -163,6 +167,7 @@ impl Model {
             Event::ToplevelModality { window, modality } => self.modality(window, modality),
             Event::ToplevelMeta { window, meta } => self.meta(window, meta),
             Event::WindowDragged { window, rect } => self.dragged(window, rect),
+            Event::WindowPlaced { window, rect } => self.placed_by_hand(window, rect),
             Event::WindowHint { window, hint } => self.hint(window, hint),
             Event::LayerMapped { layer, spec } => self.map_layer(layer, spec),
             Event::LayerChanged { layer, spec } => self.change_layer(layer, spec),

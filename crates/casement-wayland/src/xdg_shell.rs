@@ -7,6 +7,7 @@
 //! - [`commit`]: what a commit means (initial configure, map, resize, unmap) and the pure
 //!   step table behind it;
 //! - [`declared`]: what a client declared (title, app id, role, limits) as our types;
+//! - [`keyed`]: the lenient policy's first commit, which maps keyed before the first configure;
 //! - [`meta`]: the metadata requests (title, app id, parent, limits);
 //! - [`requests`]: move, resize, zoom, minimise, full screen, window menu and the press
 //!   proof a grab needs;
@@ -16,6 +17,7 @@
 mod apply;
 mod commit;
 mod declared;
+mod keyed;
 mod meta;
 mod popup;
 mod requests;
@@ -26,6 +28,7 @@ pub use commit::{
     on_toplevel_commit, on_toplevel_destroyed,
 };
 pub use declared::{claimed_of, limits_of, modality_of, role_of};
+pub use keyed::{map_keyed_on_first_buffer, send_initial_configure};
 pub use meta::{base_role, on_app_id, on_limits, on_parent, on_title};
 pub use popup::{
     PopupBounds, on_new_popup, on_popup_acked, on_popup_commit, on_popup_destroyed, on_popup_grab,

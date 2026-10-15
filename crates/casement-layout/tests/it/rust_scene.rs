@@ -88,6 +88,28 @@ fn new_windows_centre_then_cascade() {
     }
 }
 
+/// A window put by hand (a test's placement) keeps its position outside the usable area; the
+/// same rectangle as a floating window (where the person dragged it) is pushed inside.
+#[test]
+fn a_hand_placed_window_may_leave_the_area_a_floating_one_may_not() {
+    let usable = rect(0, 24, 1920, 1056);
+    let at = rect(64, -5, 300, 300);
+    let cases = [
+        (
+            "floating: pushed inside",
+            WindowPlacement::Floating(at),
+            rect(64, 24, 300, 300),
+        ),
+        ("placed by hand: kept", WindowPlacement::Placed(at), at),
+    ];
+    for (name, placement, want) in cases {
+        let spec = one_desktop(usable, vec![window(1, placement, ANY_SIZE)]);
+        let got = RustScene.arrange(&spec, &knobs());
+        let t = target(&got, 1);
+        assert_eq!((t.rect, t.size), (want, ConfigureNeed::Keep), "{name}");
+    }
+}
+
 #[test]
 fn a_filled_window_takes_the_usable_area_within_its_limits() {
     let usable = rect(0, 24, 1920, 1056);

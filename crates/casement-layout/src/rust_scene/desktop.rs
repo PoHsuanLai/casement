@@ -2,7 +2,9 @@
 //! floating and new windows goes.
 
 use super::cascade::cascade_rect;
-use super::floating::{filled_target, fit_size, floating_target, full_screen_target, placed};
+use super::floating::{
+    filled_target, fit_size, floating_target, full_screen_target, placed, placed_target,
+};
 use crate::{
     Arrangement, LayoutKnobs, OutputSpec, SceneMode, SpaceArrangement, SpaceSpec, SpaceTarget,
     WindowPlacement,
@@ -66,6 +68,9 @@ fn arrange_space(
         let (target, report) = match window.placement {
             WindowPlacement::Floating(rect) => {
                 floating_target(window.window, &output.output, rect, window.limits, usable)
+            }
+            WindowPlacement::Placed(rect) => {
+                placed_target(window.window, &output.output, rect, window.limits, usable)
             }
             WindowPlacement::New(asked) => {
                 let size = fit_size(asked, window.limits, usable);
