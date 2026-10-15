@@ -140,13 +140,13 @@ fn a_layout_change_in_the_settings_file_sends_a_new_keymap() {
     fixture.pump();
     let _keyboard = Keyboard::bind(fixture.client(id)).expect("a keyboard");
     fixture.pump();
-    let keymaps = |fixture: &Fixture| {
+    let keymaps = |fixture: &mut Fixture| {
         names_of(fixture.client(id), "wl_keyboard#")
             .into_iter()
             .filter(|name| name == "keymap")
             .count()
     };
-    assert_eq!(keymaps(&fixture), 1, "the first keymap, at bind");
+    assert_eq!(keymaps(&mut fixture), 1, "the first keymap, at bind");
     let layout = |name: &str| CasementDoc {
         keyboard: KeyboardSection {
             xkb_layout: name.to_owned(),
@@ -157,11 +157,11 @@ fn a_layout_change_in_the_settings_file_sends_a_new_keymap() {
 
     fixture.settings_file_changed(&layout("de"));
     fixture.pump();
-    assert_eq!(keymaps(&fixture), 2, "a new layout is a new keymap");
+    assert_eq!(keymaps(&mut fixture), 2, "a new layout is a new keymap");
 
     fixture.settings_file_changed(&layout("de"));
     fixture.pump();
-    assert_eq!(keymaps(&fixture), 2, "the same file again sends none");
+    assert_eq!(keymaps(&mut fixture), 2, "the same file again sends none");
 
     let unrelated = CasementDoc {
         pointer: PointerSection::default(),
@@ -169,12 +169,12 @@ fn a_layout_change_in_the_settings_file_sends_a_new_keymap() {
     };
     fixture.settings_file_changed(&unrelated);
     fixture.pump();
-    assert_eq!(keymaps(&fixture), 2, "an unrelated section sends none");
+    assert_eq!(keymaps(&mut fixture), 2, "an unrelated section sends none");
 
     fixture.settings_file_changed(&layout("no_such_layout_zz"));
     fixture.pump();
     assert_eq!(
-        keymaps(&fixture),
+        keymaps(&mut fixture),
         2,
         "a layout that does not compile keeps the keymap"
     );
