@@ -202,7 +202,7 @@ pub fn output_elements<R: Compositor>(
                 elements.extend(layer_elements(key, area, view, book, renderer));
             }
         };
-    let (covering, mut others): (Vec<_>, Vec<_>) = frame
+    let (covering, mut others): (Vec<&PlacedWindow>, Vec<&PlacedWindow>) = frame
         .windows
         .iter()
         .partition(|placed| layers.full_screen.contains(&placed.window));

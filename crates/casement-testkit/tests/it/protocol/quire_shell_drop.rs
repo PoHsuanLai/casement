@@ -10,6 +10,7 @@ use casement_core::overview::Overview;
 use casement_core::policy::ConnectionRole;
 use casement_core::window::SpacePlace;
 use casement_core::{OutputKey, WindowId};
+use casement_layout::SceneLayout;
 use casement_testclient::capture::{BufferAsk, OutputCapture, Size};
 use casement_testclient::quire::shell::{BoundOutput, ShellHandle, Shown};
 use casement_testclient::surface::toplevel::WmBase;
