@@ -21,14 +21,14 @@ use casement_motion::MotionBook;
 use casement_render::{ChromeLayer, CursorDraw, CursorShape, TextureBook};
 use casement_wayland::{
     ClientMint, GlobalFilter, WaylandFault, WaylandStates, alpha_modifier, background_effect,
-    capture_source, commit_timing, compositor, content_type, cursor_shape, data_device, dmabuf,
-    ext_data_control, fifo, foreign_toplevel_list, fractional_scale, gamma, idle_inhibit,
-    idle_notify, image_capture, input_method, layer_shell, output, output_management, output_power,
-    pointer_constraints, pointer_gestures, presentation, primary_selection, quire, quire_window,
-    relative_pointer, seat, security_context, session_lock, shm, shortcuts_inhibit, single_pixel,
-    subcompositor, system_bell, tablet, text_input, viewporter, virtual_keyboard, wlr_data_control,
-    wlr_toplevel, workspace, xdg_activation, xdg_decoration, xdg_dialog, xdg_foreign, xdg_shell,
-    xdg_toplevel_icon, xdg_toplevel_tag,
+    capture_source, color_management, commit_timing, compositor, content_type, cursor_shape,
+    data_device, dmabuf, ext_data_control, fifo, foreign_toplevel_list, fractional_scale, gamma,
+    idle_inhibit, idle_notify, image_capture, input_method, layer_shell, output, output_management,
+    output_power, pointer_constraints, pointer_gestures, presentation, primary_selection, quire,
+    quire_window, relative_pointer, seat, security_context, session_lock, shm, shortcuts_inhibit,
+    single_pixel, subcompositor, system_bell, tablet, text_input, viewporter, virtual_keyboard,
+    wlr_data_control, wlr_toplevel, workspace, xdg_activation, xdg_decoration, xdg_dialog,
+    xdg_foreign, xdg_shell, xdg_toplevel_icon, xdg_toplevel_tag,
 };
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::reexports::calloop::LoopHandle;
@@ -221,6 +221,7 @@ impl State {
             fractional_scale: fractional_scale::FractionalScalePart::new::<State>(&dh, filter),
             fifo: fifo::FifoPart::new::<State>(&dh, filter),
             commit_timing: commit_timing::CommitTimingPart::new::<State>(&dh, filter),
+            color_management: color_management::ColorPart::new::<State>(&dh, filter),
             content_type: content_type::ContentTypePart::new::<State>(&dh, filter),
             xdg_shell: xdg_shell::XdgShellPart::new::<State>(&dh, filter),
             xdg_decoration: xdg_decoration::XdgDecorationPart::new::<State>(&dh, filter),

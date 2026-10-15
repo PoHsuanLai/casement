@@ -2,6 +2,7 @@
 
 pub mod activation;
 pub mod background_effect;
+pub mod color_management;
 pub mod commit_timing;
 pub mod content_type;
 pub mod decoration;

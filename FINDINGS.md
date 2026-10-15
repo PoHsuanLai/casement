@@ -3442,6 +3442,53 @@ on hardware**: nothing was timed; whether the 4K read-back stall is gone is for 
   therefore not force-quittable until XWayland windows carry `_NET_WM_PID`.
 - casement does not launch apps in a transient scope (spawn.rs starts a plain child), so there
   is no app scope to signal; the credential pid is the only handle.
+
+## p3-cm: colour management, the colour pass, night light (2026-10-15)
+
+Written without a compiler (wave 6 rule): every smithay and wayland-scanner name was checked in
+the pinned sources, none was built. Look here first when it fails to compile.
+
+### What landed
+
+- `casement-core/src/output/{gamut,tag,night_light}.rs`, `settings/night_light.rs`: EDID
+  primaries (bytes 25..35 of the base block, ten-thousandths) and `Gamut::{Srgb, Wide}`; a
+  surface's `ColorTag`; the night-light schedule, tint table and gamma ramp (integers only).
+- `casement-render/src/pass/{color_matrix,color,color_gles}.rs`: sRGB-to-panel matrix, the CPU
+  transform (pixman, tests) and the GLES shader (`draw_converted`). `ColorTransform::for_gamut`
+  gives none for an sRGB panel, so the pass is skipped.
+- `casement-wayland/src/color_management/`: `wp_color_manager_v1` version 2, parametric subset.
+- `settings.toml` gains `night_light.{mode,from,to,kelvin,fade_minutes}`.
+
+### Departures and limits
+
+- Served: perceptual intent; features `parametric` and `set_primaries`; curves sRGB
+  (`compound_power_2_4`, `srgb` for v1), gamma22, `ext_linear`; named primaries sRGB and
+  Display P3. Not served (`unsupported_feature`): ICC, `set_tf_power`, luminances, mastering
+  volume, scRGB, BT.2100. No HDR. The `get_image_description` reference request fails the
+  description (`unsupported`). A client's white point is ignored; D65 is assumed.
+- The surface's preferred description is always sRGB; a P3-tagged surface is converted by the
+  renderer, which does not yet read `color_management::surface_tag` (open item below).
+- The panel's own white point is ignored too: content white is the panel's native white.
+- `get_image_description` on an output is built when asked; `image_description_changed` is never
+  sent because the gamut is fixed while an output is plugged.
+- Night light is not double-buffered with anything and is not yet driven: the model has no
+  `NightLightTick` event.
+
+### Open items (wiring that touches files other lanes own)
+
+1. Fill `ColorPart` gamuts: call `color_management::set_gamut(part, key, Gamut::of(primaries))`
+   where the tty backend reads a connector's EDID (`Primaries::from_edid(&connector.edid)`), and
+   `forget` on unplug. `OutputFacts` has 19 literal sites, so a side event is cheaper than a field.
+2. Render: `pass::draw_converted` for the output picture when `ColorTransform::for_gamut(..)` is
+   some, and per-surface `ColorTransform::for_gamut(output).with_source(tag.transfer.into())` when
+   `surface_tag` is some (a tagged P3 surface on an sRGB panel needs the inverse matrix; the maths
+   is `srgb_to_panel` composed with the tag's own `rgb_to_xyz`, not written yet).
+3. Night light driver: a timer in `casement/src/time/` reads the local minute, calls
+   `NightLight::ramp_at(minute, gamma_size)` per output and feeds `Effect::SetGamma`; a gamma
+   control client (`zwlr_gamma_control_v1`) wins while it holds the output. Interface for sill: the
+   `night_light.*` keys in settings.toml (mode off/always/scheduled; sill writes sunset and sunrise
+   into from/to). sill keeps DDC warmth for panels that take it and sets `night_light.mode = off`
+   there.
 ## wave-2026-10-15/wlcs5
 
 Written without a build or a wlcs run (rule of the lane); the orchestrator's run settles it.
