@@ -129,7 +129,8 @@ fn bake(rgba: &[u8], size: PhysicalSize, shape: ClipShape) -> Option<Vec<u8>> {
     }
     let reach = usize::try_from(shape.radius()).unwrap_or(0) + 1;
     let mut out = Vec::with_capacity(rgba.len());
-    for (at, pixel) in rgba.chunks_exact(4).enumerate() {
+    let (pixels, _) = rgba.as_chunks::<4>();
+    for (at, pixel) in pixels.iter().enumerate() {
         let (x, y) = (at % width, at / width);
         let in_corner = y + reach >= height && (x < reach || x + reach >= width);
         let cover = match in_corner {

@@ -154,21 +154,23 @@ impl Bodies {
 /// Draws `window` alone and keeps its image, when [`verdict`] says to. A window the backend cannot
 /// draw offscreen (a winit window) keeps nothing, and its frame goes at once as before.
 pub(super) fn take(state: &mut State, window: WindowId) {
-    let Some(Kept { style, .. }) = state.render.closing.get(&window).cloned() else {
-        return;
-    };
+    let style = state
+        .render
+        .closing
+        .get(&window)
+        .map(|Kept { style, .. }| *style);
     let Some((size, scale)) = content_and_scale(state, window) else {
         return;
     };
     let facts = Facts {
-        frame: FrameKept::Yes,
+        frame: style.map_or(FrameKept::No, |_| FrameKept::Yes),
         size,
         units: scale.numerator(),
         image: state.render.bodies.image_of(&window),
     };
-    if verdict(facts) != Verdict::Take {
+    let (Verdict::Take, Some(style)) = (verdict(facts), style) else {
         return;
-    }
+    };
     let Ok(frame) = window_rgba(state, window) else {
         return;
     };
