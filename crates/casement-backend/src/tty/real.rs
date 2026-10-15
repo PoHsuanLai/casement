@@ -5,14 +5,15 @@
 use super::SysDeviceKinds;
 use super::TtySeams;
 use super::kms_real::RealKmsOpener;
+use super::render_hub_real::RenderHub;
 use super::session_real::RealSession;
 use super::udev_real::RealUdev;
 use crate::backend::BackendError;
-use crate::gpu::{RealFormats, SysRenderNodes, SysRoot};
+use crate::gpu::{RealFormats, RenderNodes, SysRenderNodes, SysRoot};
 #[cfg(feature = "libinput")]
 use crate::input::RealInputFeed;
 use crate::session::SessionFault;
-use casement_core::gpu::GpuChoice;
+use casement_core::gpu::{GpuChoice, plan_for};
 use smithay::backend::session::libseat::LibSeatSession;
 use smithay::reexports::calloop::LoopHandle;
 
@@ -32,11 +33,23 @@ pub fn real_seams<D: 'static>(
     let fds = session.fds();
     let formats = RealFormats::new(root.clone());
     let kinds = SysDeviceKinds::new(root.clone());
+    let nodes = SysRenderNodes::new(root.clone());
+    let opener = RealKmsOpener::new(Box::new(fds), handle.clone()).refusing_virtual();
+    let opener = match plan_for(&nodes.nodes(), &choice) {
+        Ok(plan) => {
+            tracing::info!(render = ?plan.render, routes = ?plan.routes(), "the render GPU and each output's route");
+            opener.routed(RenderHub::new(root, plan))
+        }
+        Err(refusal) => {
+            tracing::warn!(%refusal, "no render plan; every output is drawn by its own GPU");
+            opener
+        }
+    };
     let seams = TtySeams::new(
         Box::new(session),
         Box::new(udev),
-        Box::new(RealKmsOpener::new(Box::new(fds), handle.clone()).refusing_virtual()),
-        Box::new(SysRenderNodes::new(root)),
+        Box::new(opener),
+        Box::new(nodes),
         choice,
     )
     .with_formats(Box::new(formats))

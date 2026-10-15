@@ -3414,6 +3414,34 @@ on hardware**: nothing was timed; whether the 4K read-back stall is gone is for 
   `TextureRenderElement::from_static_texture` argument order with `renderer.context_id()`; the `&dyn Any` downcast of `GlesTexture` to
   `R::TextureId`; a `GlesTexture` made by `Offscreen::create_buffer` drawn upright through `render_texture_from_to` after being rendered
   into with a `Transform::Normal` tracker (mirrors `blit_texture`).
+## wave-2026-10-15/multigpu
+
+Lane `cas20-multigpu` (not compiled; the orchestrator gates). Supersedes the "Multi-GPU. Not wired" item of `session`.
+
+- **Explicit render-then-copy, not `MultiRenderer`.** `FrameSource::gles` and every effect (blur_v0, rounded clip, shaders,
+  the closing body's GPU copy) need a `GlesRenderer`, and a `MultiRenderer` is not one. So the render GPU keeps one
+  `GlesRenderer` (`tty/render_hub_real.rs`, `RenderHub`), the only renderer that builds elements, and the `Compositor` seam is
+  untouched. `renderer_multi` stays enabled for the soft topology tests; nothing in the tty path uses `GpuManager`.
+- **Routes.** `real_seams` makes the plan once (`plan_for`) and hands it to the opener as a `RenderHub`; each `RealKms` asks
+  `RenderPlan::route_for_gpu` for its GPU (by the render node's `dev_t`, `DrmNodeId::from_dev_t`). `Direct`: the device shares
+  the hub's renderer and draws as before. `Copy`: `tty/bridge_real.rs` draws the frame on the render GPU into one dma-buf the
+  scanout GPU allocated (`bridge_format` picks the first of XRGB8888/ARGB8888 both GPUs carry, linear when both can), waits for
+  the render GPU on the CPU, and the scanout GPU's `DrmCompositor` (built at scale 1, no transform: the picture is final) draws
+  that one texture. One buffer serves all frames because a surface queues nothing while a flip is pending; the render-side
+  damage tracker (age 1) then reports "nothing changed" on a still desktop, so neither GPU renders.
+- **Departures from the direct route.** On a copy route there is no hardware cursor plane and no direct scanout of client
+  buffers (the pointer and every window are drawn into the picture), and one extra full-screen composite runs on the scanout
+  GPU. A copy route that cannot be built (no shared format, an import/bind refused, render GPU renderer failed) logs one plain
+  warning and that output is drawn by its own GPU, as before.
+- **Choice of render GPU.** Auto: of the GPUs driving a monitor, the one driving the most, then the firmware's display GPU,
+  then the lowest node (was: boot GPU first). The `gpu.render` setting still wins. Captures of a copy device use the render
+  GPU's renderer and render node.
+- **Dma-buf feedback** already names the render GPU as the main device (`feedback_for`); clients allocate there. Client buffers
+  from the other GPU are imported by the render GPU's EGL display. Not changed.
+- **Only a real hybrid run proves:** NVIDIA drawing into an AMD-allocated linear dma-buf (bind + implicit/CPU fence), AMD
+  sampling the buffer after NVIDIA wrote it (the texture comes from a cached EGL image; if stale frames show, re-import per
+  frame), the render node opening without a seat (`/dev/dri/renderD*` is opened directly, as `RealFormats` does), no flicker on
+  a VT switch back, frame pacing with the extra copy, and the log line "the render GPU and each output's route".
 
 ## Lane cas21-gesture (P3-GS, multi-finger swipes)
 

@@ -19,6 +19,39 @@ impl DrmNodeId {
     pub fn new(major: u32, minor: u32) -> DrmNodeId {
         DrmNodeId { major, minor }
     }
+
+    /// The node a Linux `dev_t` names (`st_rdev`, DRM's `dev_id`): glibc's `major`/`minor`
+    /// split of the 64-bit number.
+    ///
+    /// ```
+    /// use casement_core::gpu::DrmNodeId;
+    ///
+    /// assert_eq!(DrmNodeId::from_dev_t((226 << 8) | 128), DrmNodeId::new(226, 128));
+    /// ```
+    pub fn from_dev_t(dev: u64) -> DrmNodeId {
+        let major = ((dev >> 32) & 0xffff_f000) | ((dev >> 8) & 0x0fff);
+        let minor = ((dev >> 12) & 0xffff_ff00) | (dev & 0x00ff);
+        DrmNodeId {
+            major: u32::try_from(major).unwrap_or(u32::MAX),
+            minor: u32::try_from(minor).unwrap_or(u32::MAX),
+        }
+    }
+
+    /// The Linux `dev_t` of this node: the inverse of [`DrmNodeId::from_dev_t`].
+    ///
+    /// ```
+    /// use casement_core::gpu::DrmNodeId;
+    ///
+    /// let node = DrmNodeId::new(226, 129);
+    /// assert_eq!(DrmNodeId::from_dev_t(node.dev_t()), node);
+    /// ```
+    pub fn dev_t(&self) -> u64 {
+        let (major, minor) = (u64::from(self.major), u64::from(self.minor));
+        ((major & 0xffff_f000) << 32)
+            | ((major & 0x0fff) << 8)
+            | ((minor & 0xffff_ff00) << 12)
+            | (minor & 0x00ff)
+    }
 }
 
 /// A GPU's stable PCI identity, the tail of `/dev/dri/by-path/pci-0000:01:00.0-render` without

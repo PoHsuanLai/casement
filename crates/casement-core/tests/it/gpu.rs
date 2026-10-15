@@ -5,7 +5,8 @@
 use casement_core::OutputName;
 use casement_core::gpu::{
     BootVga, ByPathId, DrmNodeId, FormatEntry, FormatTable, Fourcc, GpuChoice, GpuFacts, Modifier,
-    OutputRoute, PlanRefusal, RenderPlan, TrancheUse, VendorFact, feedback_for, plan_for,
+    OutputRoute, PlanRefusal, RenderPlan, TrancheUse, VendorFact, bridge_format, feedback_for,
+    plan_for,
 };
 use std::collections::BTreeMap;
 
@@ -60,6 +61,58 @@ fn several_gpus_driving_outputs_fall_to_the_firmware_gpu() {
     assert_eq!(plan.render, node(129), "the boot GPU renders");
     assert_eq!(plan.scanout.get(&name("HDMI-A-1")), Some(&node(128)));
     assert_eq!(plan.scanout.get(&name("eDP-1")), Some(&node(129)));
+}
+
+#[test]
+fn the_gpu_driving_more_outputs_renders_whatever_its_boot_flag() {
+    let plan = plan_for(&laptop(&["HDMI-A-1", "DP-1"]), &GpuChoice::Auto).expect("a plan");
+    assert_eq!(plan.render, node(128), "two monitors beat the panel");
+    let routes: Vec<_> = plan.routes();
+    assert_eq!(
+        routes,
+        vec![
+            (name("DP-1"), OutputRoute::Direct { gpu: node(128) }),
+            (name("HDMI-A-1"), OutputRoute::Direct { gpu: node(128) }),
+            (
+                name("eDP-1"),
+                OutputRoute::Copy {
+                    render: node(128),
+                    scanout: node(129)
+                }
+            ),
+        ],
+        "the panel on the other GPU is drawn on the render GPU and copied"
+    );
+}
+
+#[test]
+fn a_device_is_routed_by_its_gpu_and_a_gpu_with_no_output_has_no_route() {
+    let plan = plan_for(&laptop(&["HDMI-A-1", "DP-1"]), &GpuChoice::Auto).expect("a plan");
+    assert_eq!(
+        plan.route_for_gpu(&node(128)),
+        Some(OutputRoute::Direct { gpu: node(128) })
+    );
+    assert_eq!(
+        plan.route_for_gpu(&node(129)),
+        Some(OutputRoute::Copy {
+            render: node(128),
+            scanout: node(129)
+        })
+    );
+    assert_eq!(plan.route_for_gpu(&node(130)), None);
+}
+
+#[test]
+fn a_node_converts_to_and_from_a_dev_t() {
+    assert_eq!(DrmNodeId::from_dev_t((226 << 8) | 128), node(128));
+    for probe in [
+        node(0),
+        node(129),
+        DrmNodeId::new(4_095, 255),
+        DrmNodeId::new(0x1_2345, 0x1_2345),
+    ] {
+        assert_eq!(DrmNodeId::from_dev_t(probe.dev_t()), probe);
+    }
 }
 
 #[test]
@@ -386,4 +439,29 @@ fn each_output_is_drawn_on_the_render_gpu_and_copied_when_another_gpu_scans_it_o
         }
         assert_eq!(plan.routes().len(), plan.scanout.len());
     }
+}
+
+#[test]
+fn the_copy_buffer_is_the_best_format_both_gpus_carry_in_a_layout_both_know() {
+    let tiled = 0x0100_0000_0000_0001;
+    let render = [entry(ARGB, 0), entry(XRGB, tiled), entry(XRGB, 0)];
+    let scanout = [entry(XRGB, tiled), entry(XRGB, 0), entry(ARGB, 0)];
+    let wanted = [Fourcc(XRGB), Fourcc(ARGB)];
+    assert_eq!(
+        bridge_format(&render, &scanout, &wanted),
+        Some(entry(XRGB, 0)),
+        "the first wanted format, linear when both have it"
+    );
+    let vendor_only = [entry(XRGB, tiled)];
+    assert_eq!(
+        bridge_format(&vendor_only, &scanout, &wanted),
+        Some(entry(XRGB, tiled)),
+        "two GPUs of one vendor share a tiled layout"
+    );
+    assert_eq!(
+        bridge_format(&[entry(ARGB, 0)], &[entry(XRGB, 0)], &wanted),
+        None,
+        "no common format: the copy route cannot be built"
+    );
+    assert_eq!(bridge_format(&[], &[], &wanted), None);
 }

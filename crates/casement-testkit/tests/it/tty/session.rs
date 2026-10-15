@@ -194,3 +194,34 @@ fn hotplug_waits_out_a_pause() {
     assert_eq!(session_notes(&back), [SessionNote::Activated]);
     assert!(back.len() > 1);
 }
+
+#[test]
+fn on_a_two_gpu_machine_the_backend_routes_each_output_to_the_render_gpu_or_a_copy() {
+    use casement_backend::gpu::SysRenderNodes;
+    use casement_core::OutputName;
+    use casement_core::gpu::OutputRoute;
+    use casement_testkit::gpu::{CrossImport, FabricatedSysRoot, GpuTopology};
+
+    let topology = GpuTopology::pair(CrossImport::Direct).expect("the pair topology");
+    let dir = tempfile::tempdir().expect("a directory for the fabricated /sys");
+    let root = FabricatedSysRoot::build(&topology, dir.path()).expect("a fabricated tree");
+    let seams = TtySeams::new(
+        Box::new(SharedSession::new(FakeSession::default())),
+        Box::new(FakeUdev::default()),
+        Box::new(FakeKmsOpener::default()),
+        Box::new(SysRenderNodes::new(root)),
+        GpuChoice::Auto,
+    );
+    let backend = TtyBackend::start(seams).expect("start");
+    let (render, other) = (DrmNodeId::new(226, 128), DrmNodeId::new(226, 129));
+    let route = |text: &str| backend.route_of(&OutputName::parse(text).expect("a connector"));
+    assert_eq!(route("eDP-1"), Some(OutputRoute::Direct { gpu: render }));
+    assert_eq!(
+        route("HDMI-A-1"),
+        Some(OutputRoute::Copy {
+            render,
+            scanout: other
+        })
+    );
+    assert_eq!(route("DP-9"), None);
+}

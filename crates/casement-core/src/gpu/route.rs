@@ -67,6 +67,37 @@ impl RenderPlan {
         })
     }
 
+    /// The route of frames scanned out on `scanout`: no copy when that GPU renders. A GPU the
+    /// plan places no output on has no route (a firmware framebuffer is not copied to).
+    ///
+    /// ```
+    /// use casement_core::gpu::{DrmNodeId, OutputRoute, RenderPlan};
+    /// use casement_core::OutputName;
+    /// use std::collections::BTreeMap;
+    ///
+    /// let (render, other) = (DrmNodeId::new(226, 128), DrmNodeId::new(226, 129));
+    /// let name = OutputName::parse("eDP-1").expect("a connector");
+    /// let plan = RenderPlan::new(render, BTreeMap::from([(name, other)]));
+    /// assert_eq!(
+    ///     plan.route_for_gpu(&other),
+    ///     Some(OutputRoute::Copy { render, scanout: other })
+    /// );
+    /// assert_eq!(plan.route_for_gpu(&render), Some(OutputRoute::Direct { gpu: render }));
+    /// assert_eq!(plan.route_for_gpu(&DrmNodeId::new(226, 130)), None);
+    /// ```
+    pub fn route_for_gpu(&self, scanout: &DrmNodeId) -> Option<OutputRoute> {
+        if *scanout == self.render {
+            return Some(OutputRoute::Direct { gpu: *scanout });
+        }
+        self.scanout
+            .values()
+            .any(|node| node == scanout)
+            .then_some(OutputRoute::Copy {
+                render: self.render,
+                scanout: *scanout,
+            })
+    }
+
     /// The route of every placed output, in connector order.
     pub fn routes(&self) -> Vec<(OutputName, OutputRoute)> {
         self.scanout

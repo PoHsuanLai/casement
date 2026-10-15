@@ -35,8 +35,8 @@ pub enum PlanRefusal {
     UnknownGpu(ByPathId),
 }
 
-/// The plan for `facts` under `choice`. The GPU driving the outputs wins; among several, the
-/// firmware's display GPU; the setting overrides both.
+/// The plan for `facts` under `choice`. The GPU driving the outputs wins; among several, the one
+/// driving the most, then the firmware's display GPU; the setting overrides all of it.
 pub fn plan_for(facts: &[GpuFacts], choice: &GpuChoice) -> Result<RenderPlan, PlanRefusal> {
     let render = match choice {
         GpuChoice::Auto => automatic(facts).ok_or(PlanRefusal::NoGpu)?,
@@ -53,8 +53,9 @@ pub fn plan_for(facts: &[GpuFacts], choice: &GpuChoice) -> Result<RenderPlan, Pl
     Ok(RenderPlan::new(render, scanout))
 }
 
-/// The GPU that renders when the setting does not say: of the GPUs driving a monitor the
-/// firmware's display GPU, else the lowest node; with none driving one, the same rule over all.
+/// The GPU that renders when the setting does not say: of the GPUs driving a monitor the one
+/// driving the most, then the firmware's display GPU, then the lowest node; with none driving
+/// one, the same rule over all.
 fn automatic(facts: &[GpuFacts]) -> Option<DrmNodeId> {
     let driving: Vec<&GpuFacts> = facts.iter().filter(|gpu| !gpu.drives.is_empty()).collect();
     let pool: Vec<&GpuFacts> = if driving.is_empty() {
@@ -63,6 +64,12 @@ fn automatic(facts: &[GpuFacts]) -> Option<DrmNodeId> {
         driving
     };
     pool.into_iter()
-        .min_by_key(|gpu| (gpu.boot_vga != BootVga::Primary, gpu.node))
+        .min_by_key(|gpu| {
+            (
+                std::cmp::Reverse(gpu.drives.len()),
+                gpu.boot_vga != BootVga::Primary,
+                gpu.node,
+            )
+        })
         .map(|gpu| gpu.node)
 }
