@@ -37,6 +37,23 @@ const SCENES: [(&str, &[&str]); 11] = [
 mod build;
 mod clip;
 mod desk;
+mod frames;
+mod minimise;
+
+/// Compares `actual` with the pixman golden `tests/golden/scenes/<name>.png`; with
+/// `CASEMENT_BLESS=1` the golden is written (deliberate, with a reason in the commit).
+fn golden_matches(name: &str, actual: &image::RgbaImage) {
+    let env = Env::of_process();
+    let golden = Golden {
+        scene: format!("tests/golden/scenes/{name}"),
+        tier: GoldenTier::Exact,
+    };
+    let outcome = compare(&golden, actual, &env.out_dir, env.bless);
+    assert!(
+        matches!(outcome, GoldenOutcome::Match | GoldenOutcome::Blessed),
+        "{name}: {outcome:?}"
+    );
+}
 
 /// Builds scene `name` on `fixture` with test clients and shoots its output.
 fn shoot(fixture: &mut Fixture, name: &str) -> image::RgbaImage {
