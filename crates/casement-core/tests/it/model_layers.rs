@@ -474,7 +474,7 @@ fn an_on_demand_panel_takes_the_keyboard_on_mapping_and_gives_it_back() {
     let mail = proven("org.quire.Mail");
     let on_demand = |level| panel(level, KeyboardInteractivity::OnDemand);
     let exclusive = panel(LayerLevel::Overlay, KeyboardInteractivity::Exclusive);
-    let window = KeyboardTarget::Window(WindowId(1));
+    let window = || KeyboardTarget::Window(WindowId(1));
     let layer = |n| KeyboardTarget::Layer(LayerKey(n));
     let cases: Vec<(&str, Vec<Step>, KeyboardTarget)> = vec![
         (
@@ -488,7 +488,7 @@ fn an_on_demand_panel_takes_the_keyboard_on_mapping_and_gives_it_back() {
                 Step::Do(mapped(1, on_demand(LayerLevel::Top))),
                 Step::Do(unmapped(1)),
             ],
-            window,
+            window(),
         ),
         (
             "a newer panel takes it, and its unmap returns it to the key window",
@@ -497,12 +497,12 @@ fn an_on_demand_panel_takes_the_keyboard_on_mapping_and_gives_it_back() {
                 Step::Do(mapped(2, on_demand(LayerLevel::Overlay))),
                 Step::Do(unmapped(2)),
             ],
-            window,
+            window(),
         ),
         (
             "a wallpaper that asks on demand does not steal it",
             vec![Step::Do(mapped(1, on_demand(LayerLevel::Background)))],
-            window,
+            window(),
         ),
         (
             "a layer that asks for none does not take it",
@@ -510,7 +510,7 @@ fn an_on_demand_panel_takes_the_keyboard_on_mapping_and_gives_it_back() {
                 1,
                 panel(LayerLevel::Top, KeyboardInteractivity::None),
             ))],
-            window,
+            window(),
         ),
         (
             "an exclusive layer already holding it keeps it",
@@ -546,7 +546,7 @@ fn an_on_demand_panel_takes_the_keyboard_on_mapping_and_gives_it_back() {
                 Step::Do(mapped(1, on_demand(LayerLevel::Top))),
                 Step::Do(Op::Event(Event::Lock(LockEvent::Unlocked))),
             ],
-            window,
+            window(),
         ),
         (
             "a click on a panel that never took it gives it the keyboard",
@@ -565,7 +565,7 @@ fn an_on_demand_panel_takes_the_keyboard_on_mapping_and_gives_it_back() {
                 )),
                 Step::Click(1),
             ],
-            window,
+            window(),
         ),
     ];
     for (name, steps, want) in cases {
