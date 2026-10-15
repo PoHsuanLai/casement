@@ -5,9 +5,10 @@ pub(crate) mod convert;
 use crate::compositor::Compositor;
 use crate::element::{
     CasementElement, ClipShape, ClosingFrame, FlightDraw, FrameDraw, GenieWindow, LockCoverElement,
-    PopupRide, Rgba8, TitleDraw, choose, closing_elements, cursor_elements, dim_elements,
-    drawn_content, frame_elements, genie_window, label_element, layer_elements, popup_elements,
-    popup_elements_riding, ring_elements, surface_origin_logical, window_content, window_elements,
+    OverviewLook, PopupRide, Rgba8, TitleDraw, choose, closing_elements, cursor_elements,
+    dim_elements, drawn_content, frame_elements, genie_window, label_element, layer_elements,
+    popup_elements, popup_elements_riding, ring_elements, shown_length, shown_outline,
+    surface_origin_logical, window_content, window_elements,
 };
 use crate::element::{alpha, flight_ratio};
 use crate::texture_book::TextureBook;
@@ -86,6 +87,8 @@ pub enum OverviewDraw {
     On {
         /// The hovered window.
         hover: Option<OverviewHover>,
+        /// The dimming and the ring's colours.
+        look: OverviewLook,
     },
 }
 
@@ -201,109 +204,126 @@ pub fn output_elements<R: Compositor>(
         .windows
         .iter()
         .partition(|placed| layers.full_screen.contains(&placed.window));
-    let draw_windows = |placed: &[&PlacedWindow],
-                        elements: &mut Vec<CasementElement<R>>,
-                        renderer: &mut R| {
-        for placed in placed.iter().rev() {
-            let title = layers.titles.get(&placed.window);
-            let Some(entry) = book.window(&placed.window) else {
-                // A window that has closed: its frame fades and shrinks with it.
-                if let Some(closing) = layers.closing.get(&placed.window) {
-                    elements.extend(closing_elements(
-                        placed, closing, title, view, book, renderer,
-                    ));
-                }
-                continue;
-            };
-            let (flown, effect) = in_overview(placed, window_content(placed, &entry.root), layers);
-            let placed = &flown;
-            let flight = choose(effect, placed.flight);
-            let style = layers.frames.get(&placed.window);
-            // A window casement frames is clipped at its bottom corners, unless it
-            // covers the screen (macOS drops the radius in full screen; a zoomed
-            // window keeps it). A window with its own frame is not in `frames`.
-            let clip_radius = style
-                .filter(|_| !layers.full_screen.contains(&placed.window))
-                .map(|style| style.look.radius);
-            if let FlightDraw::Genie(flight) = flight {
-                // The genie cuts the window as it stands at rest, and the strips go
-                // where the curve says. Its popups are closed (a menu does not ride
-                // a minimise on a Mac, and a strip cannot carry what hangs outside the
-                // window).
-                let window = GenieWindow {
-                    placed,
-                    flight,
-                    style,
-                    title,
-                    clip_radius,
+    let draw_windows =
+        |placed: &[&PlacedWindow], elements: &mut Vec<CasementElement<R>>, renderer: &mut R| {
+            for placed in placed.iter().rev() {
+                let title = layers.titles.get(&placed.window);
+                let Some(entry) = book.window(&placed.window) else {
+                    // A window that has closed: its frame fades and shrinks with it.
+                    if let Some(closing) = layers.closing.get(&placed.window) {
+                        elements.extend(closing_elements(
+                            placed, closing, title, view, book, renderer,
+                        ));
+                    }
+                    continue;
                 };
-                elements.extend(genie_window(window, &entry.root, view, book, renderer));
-                continue;
-            }
-            let origin = surface_origin_logical(
-                &entry.root,
-                LogicalPoint {
-                    x: placed.at.x.round_logical(),
-                    y: placed.at.y.round_logical(),
-                },
-            );
-            match flight {
-                FlightDraw::Still => {
-                    elements.extend(popup_elements(&entry.root, origin, view, renderer));
+                // In Mission Control the frame is drawn at the window's own size and shrunk with it.
+                let at_rest = window_content(placed, &entry.root);
+                let shrunk = matches!(
+                    (&layers.overview, placed.flight),
+                    (OverviewDraw::On { .. }, None)
+                );
+                let (flown, effect) = in_overview(placed, at_rest, layers);
+                let placed = &flown;
+                let flight = choose(effect, placed.flight);
+                let style = layers.frames.get(&placed.window);
+                // A window casement frames is clipped at its bottom corners, unless it
+                // covers the screen (macOS drops the radius in full screen; a zoomed
+                // window keeps it). A window with its own frame is not in `frames`.
+                let clip_radius = style
+                    .filter(|_| !layers.full_screen.contains(&placed.window))
+                    .map(|style| style.look.radius);
+                if let FlightDraw::Genie(flight) = flight {
+                    // The genie cuts the window as it stands at rest, and the strips go
+                    // where the curve says. Its popups are closed (a menu does not ride
+                    // a minimise on a Mac, and a strip cannot carry what hangs outside the
+                    // window).
+                    let window = GenieWindow {
+                        placed,
+                        flight,
+                        style,
+                        title,
+                        clip_radius,
+                    };
+                    elements.extend(genie_window(window, &entry.root, view, book, renderer));
+                    continue;
                 }
-                // A Scale flight: the popups shrink about the window's corner and fade
-                // with it.
-                _ => {
-                    let about = LogicalPoint {
+                let origin = surface_origin_logical(
+                    &entry.root,
+                    LogicalPoint {
                         x: placed.at.x.round_logical(),
                         y: placed.at.y.round_logical(),
-                    };
-                    let ratio = flight_ratio(placed, &entry.root);
-                    let ride = PopupRide::new(about, ratio, alpha(placed.opacity));
-                    elements.extend(popup_elements_riding(
-                        &entry.root,
-                        origin,
-                        ride,
-                        view,
-                        renderer,
-                    ));
+                    },
+                );
+                match flight {
+                    FlightDraw::Still => {
+                        elements.extend(popup_elements(&entry.root, origin, view, renderer));
+                    }
+                    // A Scale flight: the popups shrink about the window's corner and fade
+                    // with it.
+                    _ => {
+                        let about = LogicalPoint {
+                            x: placed.at.x.round_logical(),
+                            y: placed.at.y.round_logical(),
+                        };
+                        let ratio = flight_ratio(placed, &entry.root);
+                        let ride = PopupRide::new(about, ratio, alpha(placed.opacity));
+                        elements.extend(popup_elements_riding(
+                            &entry.root,
+                            origin,
+                            ride,
+                            view,
+                            renderer,
+                        ));
+                    }
                 }
+                // The frame goes round the content as it is drawn: shrunk, for a window
+                // that flies scaled.
+                let content = drawn_content(placed, at_rest, effect);
+                let full = match shrunk {
+                    true => at_rest.size,
+                    false => content.size,
+                };
+                let clip = clip_radius.map(|radius| {
+                    let radius = shown_length(radius, content.size, full);
+                    ClipShape::of_content(content, radius, view)
+                });
+                let (front, back) = style
+                    .map(|style| {
+                        frame_elements(
+                            placed.window,
+                            FrameDraw {
+                                style,
+                                title,
+                                content,
+                                full,
+                                opacity: placed.opacity,
+                            },
+                            view,
+                            book,
+                            renderer,
+                        )
+                    })
+                    .unwrap_or_default();
+                if let OverviewDraw::On {
+                    hover: Some(hover),
+                    look,
+                } = &layers.overview
+                    && hover.window == placed.window
+                {
+                    let visual =
+                        style.map_or(content, |style| shown_outline(style.metrics, content, full));
+                    elements.extend(ring_elements(visual, view, look));
+                    elements.extend(hover.label.as_ref().and_then(|(size, draw)| {
+                        let at = label_place(visual, *size);
+                        label_element(draw, at, view, renderer)
+                    }));
+                }
+                elements.extend(front);
+                elements.extend(window_elements(placed, clip, view, book, renderer));
+                elements.extend(back);
             }
-            // The frame goes round the content as it is drawn: shrunk, for a window
-            // that flies scaled.
-            let content = drawn_content(placed, window_content(placed, &entry.root), effect);
-            let clip = clip_radius.map(|radius| ClipShape::of_content(content, radius, view));
-            let (front, back) = style
-                .map(|style| {
-                    frame_elements(
-                        placed.window,
-                        FrameDraw {
-                            style,
-                            title,
-                            content,
-                            opacity: placed.opacity,
-                        },
-                        view,
-                        book,
-                        renderer,
-                    )
-                })
-                .unwrap_or_default();
-            if let OverviewDraw::On { hover: Some(hover) } = &layers.overview
-                && hover.window == placed.window
-            {
-                let visual = style.map_or(content, |style| style.around(content).outline());
-                elements.extend(ring_elements(visual, view));
-                elements.extend(hover.label.as_ref().and_then(|(size, draw)| {
-                    let at = label_place(visual, *size);
-                    label_element(draw, at, view, renderer)
-                }));
-            }
-            elements.extend(front);
-            elements.extend(window_elements(placed, clip, view, book, renderer));
-            elements.extend(back);
-        }
-    };
+        };
     draw_level(&layers.overlay, &mut elements, renderer);
     draw_windows(&covering, &mut elements, renderer);
     if let Some(colour) = layers.backdrop {
@@ -311,8 +331,8 @@ pub fn output_elements<R: Compositor>(
     }
     draw_level(&layers.top, &mut elements, renderer);
     draw_windows(&others, &mut elements, renderer);
-    if matches!(layers.overview, OverviewDraw::On { .. }) {
-        elements.extend(dim_elements(view, book));
+    if let OverviewDraw::On { look, .. } = &layers.overview {
+        elements.extend(dim_elements(view, book, look));
     }
     draw_level(&layers.bottom, &mut elements, renderer);
     draw_level(&layers.background, &mut elements, renderer);

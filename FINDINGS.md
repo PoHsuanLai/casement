@@ -2832,3 +2832,69 @@ Lane `input2` (not compiled; the orchestrator gates). Closes the two "Gaps noted
   re-applying `set_scroll_natural_scroll_enabled`/tap/accel on a live device (RealInputFeed::apply is the same call
   as at appearance); the watcher thread starts under the compositor's real config home; our own stamp write does
   not loop (it fires one reload that changes nothing).
+
+## wave-2026-10-15/ovpolish
+
+Mission Control polish (the follow-ups "Overview polish" and "Hard-coded colours to quire tokens"). Written without a compiler
+(wave rule); the orchestrator builds.
+
+- **The frame shrinks with the window.** The chosen way is "draw the frame at full size into the scaled rectangle", not a scaled
+  `FrameStyle`. `FrameDraw` gains `full: LogicalSize` (the content's real size; `content.size` everywhere but Mission Control).
+  `frame_elements` rasters the titlebar, the title and the shadow tiles at the full size (so their cache keys do not change while
+  the windows fly, and nothing is re-rastered) and draws each into its rectangle shrunk about the content's corner
+  (`element/frame/shrink.rs`, whole numbers; both corners of a rectangle are shrunk and rounded, so touching parts still touch).
+  The factor is the width ratio `content.w / full.w` for both axes. `shown_outline` and `shown_length` (pub, doc-tested) give the
+  drawn outline and a shrunk length: the ring and the label follow the shrunk outline, the bottom-corner clip takes the shrunk
+  radius, and the hit test (`core_loop/overview.rs::window_at`) reaches the shrunk titlebar above a slot (the full size is the
+  window's desktop target in `arrangement.windows`). `core_loop/titles.rs` makes the title for the full-size titlebar in the
+  overview (it used to make it for the scaled bar). Layout's spread reserves the scaled frame: `reserved(reserve, scale)` rounds up,
+  the render rounds to nearest, so the frame never leaves its box.
+- **Minimise flights.** Unchanged on purpose: a Scale flight still draws the frame at full metrics round the shrunk content
+  (`full = content.size`), the Genie and the closing frame too. The same change would fix them (set `full` to the window's real
+  size and let the Scale flight's sampled size be `content`), but a minimise flight also fades and moves its popups; left for the
+  owner to decide after seeing the overview. Departure: the shadow of a shrunk window is the full-size shadow shrunk, so its blur
+  radius shrinks with the window as it would on the Mac, but the corner tiles are stretched (not re-rastered): a slightly softer
+  edge at small ratios.
+- **Close causes (model).** `Model::leave_overview(None)` (the normal leave, flight home and timer) now also runs on: a Space switch
+  (`show`, only when the shown Space really changes; a switch to the Space already shown changes nothing), the lock request
+  (`lock_event`, `Unlocked` + `Requested`) and the last seen window of an output closing (`unmap` -> `leave_when_bare`: the closing
+  window was seen and not a shell window, and no window other than a shell window is seen on its output any more). A window
+  closing on a Space that is not shown changes nothing. Entering and open both close; leaving and closed ignore it.
+  A new window while it is open keeps today's behaviour: it joins the Space, gets a slot at the next relayout, the overview stays
+  open and the shell hears nothing (a test pins it; macOS does the same).
+  Departures: (1) the overview is global, so a Space switch on any output closes it on all; (2) the last-window rule reads the
+  output of the closing window, so a close on output B with output A's windows gone does not close it; (3) which relayout cause
+  the switch sends first (`SpaceSwitch`, then `Overview`) is moot: exec keeps the first and both travel on the Move spring.
+- **Themed colours.** Boundary: `scripts/check-boundary.sh` has no row against `ds-style` in `casement-layout` (B1 limits only
+  `casement-core`'s own dependencies; B13 limits only ds-settings), and `frame.rs` already reads ColourToken there. So the values
+  are read in a new `casement-layout/src/look.rs` and reach the renderer through the loop: `overview_ring(scheme)` is
+  `ColourToken::Accent` (quire's accent fill, Blue until the person's accent is carried to casement; casement has no accent setting
+  today), `overview_dim(scheme)` is `ColourToken::Scrim` (black at .22: alpha 56 where 64 was written), `split_backdrop()` is
+  `ColourToken::Paper` in its Dark value (#1E1E1E) in both schemes (was 28/28/30), because the Mac's backdrop stays dark on a
+  light desktop and quire has no separate backdrop token. `OverviewDraw::On` carries an `OverviewLook { dim, ring }` (premultiplied
+  `Rgba8`, made by `From<FrameColour>`). The ring is the light scheme's accent fill (#0A60FF-like) rather than the dark #0A84FF
+  that was written: the colour changes slightly in light. No golden pinned any of these.
+- **App icon in the hover label: not done (departure).** casement can resolve an app's icon only when the client sets
+  `xdg_toplevel_icon` (`casement_wayland::xdg_toplevel_icon::icon_of(root)` returns the shm buffers or a theme name, nothing reads it
+  yet); the usual source (`.desktop` -> icon theme lookup) needs an icon loader, which this lane does not add. To finish: pick the
+  buffer nearest 16 px x scale from `icon_of`, read it with the capture's `ArgbImage::from_shm`, and lay it left of the title in
+  `label_element` (the label's raster has no left margin to make room: widen `LABEL_MIN`).
+- **Tests.** Layout: `spread.rs` (`the_frame_reserve_shrinks_with_the_window` table at four scales, `a_shrunk_window_keeps_only_its_scaled_frame_above_the_slot`);
+  `look.rs` (the three colours are quire's tokens). Render: `frame/shrink.rs` tables (lengths, no-shrink cases, touching parts,
+  placement about a corner, the titlebar keeps a pixel), `frame.rs` (the shrunk bar and outline land on whole pixels at 1x and 2x:
+  (100,186,400x14) and (100,186,400x314) at 1x, doubled at 2x; a frame at its own size is where it was; the shrunk shadow margin),
+  doc tests for `shown_outline`, `shown_length`, `OverviewLook::new`, `Rgba8::from(FrameColour)`. Model (`model_overview.rs`): a Space
+  switch (entering and open), a switch to the shown Space does nothing, the lock, the last window (one left keeps it open), a close on
+  a Space not shown, a window arriving. No golden or `expected-failures.txt` changed.
+- **Gate.** Likeliest compile faults: `frame.rs` (`const METRICS: fn() -> FrameMetrics = || ..` in the tests; the `Seen` struct; `Shrink`
+  is `pub(crate)` in a private module and used in a `pub fn` body only), `scene.rs` (the `at_rest` local shadows nothing but `shrunk`
+  must be computed before `placed` is shadowed; the `if let ... && ...` with a struct pattern), `windows.rs` (`outputs.clone()` in a
+  non-move closure, then `outputs` moved into the next), `model/overview.rs` (`WindowRole` is `PartialEq`), `solid.rs` (the `From`
+  impl names `casement_core::window::FrameColour`). The test most likely to need a tweak: `a_space_switch_closes_the_overview_with_no_pick`
+  assumes `SwitchSpace(Previous)` after a full-screen request lands on the desktop and `Next` goes back (as `model_spaces.rs` does).
+- **Real run.** Ctrl+Up with framed windows: titlebar, lights, title and shadow shrink with the window as they fly in, the ring sits
+  just outside the shrunk titlebar, no title is missing or blurry at 1x and 2x (the title is stretched from the full-size raster, so
+  at small ratios it is downsampled by the GPU: look for shimmer while flying); hovering the shrunk titlebar picks the window;
+  a window with 20 siblings sits closer to its neighbours than before (the reserve shrank). Switch Space with the keyboard, lock the
+  session, close the last window with a command line tool: the windows fly home each time and a lock cover goes up over it. The
+  dim is lighter than before, the ring is the accent's light-scheme blue, the Split View backdrop is #1E1E1E.

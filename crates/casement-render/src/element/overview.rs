@@ -11,21 +11,33 @@ use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize, PhysicalRe
 use smithay::backend::renderer::element::Id;
 use smithay::backend::renderer::utils::CommitCounter;
 
-/// The dimming over the picture (premultiplied black, about a quarter).
-const DIM: Rgba8 = Rgba8 {
-    r: 0,
-    g: 0,
-    b: 0,
-    a: 64,
-};
+/// The colours Mission Control draws with, premultiplied: the dimming over the picture and the
+/// hovered window's ring. The composition root makes them from quire's tokens (the scrim and the
+/// accent, in the person's scheme); this crate holds no colour of its own for them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct OverviewLook {
+    /// The dimming over the picture.
+    pub dim: Rgba8,
+    /// The ring round the window the pointer is on.
+    pub ring: Rgba8,
+}
 
-/// The hovered window's ring: the Mac's blue.
-const RING: Rgba8 = Rgba8 {
-    r: 10,
-    g: 132,
-    b: 255,
-    a: 255,
-};
+impl OverviewLook {
+    /// A look from its two colours.
+    ///
+    /// ```
+    /// use casement_render::{OverviewLook, Rgba8};
+    ///
+    /// let black = Rgba8 { r: 0, g: 0, b: 0, a: 56 };
+    /// let blue = Rgba8 { r: 10, g: 96, b: 255, a: 255 };
+    /// let look = OverviewLook::new(black, blue);
+    /// assert_eq!((look.dim, look.ring), (black, blue));
+    /// ```
+    pub fn new(dim: Rgba8, ring: Rgba8) -> OverviewLook {
+        OverviewLook { dim, ring }
+    }
+}
 
 /// The ring's thickness, in logical pixels.
 const THICKNESS: u32 = 3;
@@ -34,6 +46,7 @@ const THICKNESS: u32 = 3;
 pub fn dim_elements<R: Compositor>(
     view: &OutputView,
     book: &TextureBook,
+    look: &OverviewLook,
 ) -> Vec<CasementElement<R>> {
     let area = PhysicalRect {
         x: 0,
@@ -44,7 +57,7 @@ pub fn dim_elements<R: Compositor>(
     vec![CasementElement::Solid(solid_rect(
         book.cache().dim_id(),
         area,
-        DIM,
+        look.dim,
         CommitCounter::default(),
     ))]
 }
@@ -54,6 +67,7 @@ pub fn dim_elements<R: Compositor>(
 pub fn ring_elements<R: Compositor>(
     inner: LogicalRect,
     view: &OutputView,
+    look: &OverviewLook,
 ) -> Vec<CasementElement<R>> {
     let t = i32::try_from(THICKNESS).unwrap_or(3);
     let out = LogicalRect::new(
@@ -104,7 +118,7 @@ pub fn ring_elements<R: Compositor>(
             CasementElement::Solid(solid_rect(
                 Id::new(),
                 physical(bar, view),
-                RING,
+                look.ring,
                 CommitCounter::default(),
             ))
         })

@@ -61,10 +61,12 @@ pub fn closing_elements<R: Compositor>(
     book: &TextureBook,
     renderer: &mut R,
 ) -> Vec<CasementElement<R>> {
+    let content = closing_content(placed.at, placed.size);
     let draw = FrameDraw {
         style: &closing.style,
         title,
-        content: closing_content(placed.at, placed.size),
+        content,
+        full: content.size,
         opacity: placed.opacity,
     };
     let (front, back) = frame_elements(placed.window, draw, view, book, renderer);

@@ -29,6 +29,29 @@ impl Rgba8 {
     }
 }
 
+impl From<casement_core::window::FrameColour> for Rgba8 {
+    /// A straight-alpha colour as the premultiplied one the elements draw with.
+    ///
+    /// ```
+    /// use casement_core::window::FrameColour;
+    /// use casement_render::Rgba8;
+    ///
+    /// let half_white = FrameColour { r: 255, g: 255, b: 255, a: 128 };
+    /// assert_eq!(Rgba8::from(half_white), Rgba8 { r: 128, g: 128, b: 128, a: 128 });
+    /// ```
+    fn from(colour: casement_core::window::FrameColour) -> Rgba8 {
+        let premultiplied = |c: u8| {
+            u8::try_from((u32::from(c) * u32::from(colour.a) + 127) / 255).unwrap_or(u8::MAX)
+        };
+        Rgba8 {
+            r: premultiplied(colour.r),
+            g: premultiplied(colour.g),
+            b: premultiplied(colour.b),
+            a: colour.a,
+        }
+    }
+}
+
 impl Rgba8 {
     /// The colour at `alpha` of its own strength (premultiplied, so every channel scales).
     ///

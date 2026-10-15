@@ -42,6 +42,7 @@ pub use element::{
     strip_plans, surface_origin, surface_origin_logical, window_content, window_drawn,
     window_elements, window_surfaces,
 };
+pub use element::{OverviewLook, shown_length, shown_outline};
 pub use gl_raw::{gles_on, surfaceless_gles};
 pub use scene::{
     ChromeLayer, CursorDraw, CursorShape, LayerDraw, OutputView, OverviewDraw, OverviewHover,

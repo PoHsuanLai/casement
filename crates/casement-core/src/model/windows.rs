@@ -143,6 +143,7 @@ impl Model {
             return Moved::of(self).with(Effect::Note(CoreNote::UnknownWindow(id)));
         };
         let outputs = self.outputs_of(&[id]);
+        let was_seen = window.role != WindowRole::Shell && self.sees_window(id);
         let held = self.spaces_naming(id);
         let mut model = self.without_app_window(&window.app, id);
         model.windows.remove(&id);
@@ -170,7 +171,11 @@ impl Model {
                 Some(parent) => model.feed(FocusIn::SheetClosed { parent }),
                 None => Moved::of(model),
             })
-            .then(|model| model.redrawn(Cause::Close, outputs))
+            .then(|model| model.redrawn(Cause::Close, outputs.clone()))
+            .then(move |model| match was_seen {
+                true => model.leave_when_bare(&outputs),
+                false => Moved::of(model),
+            })
     }
 
     /// A toplevel committed a size: an unplaced or floating window keeps it.

@@ -14,18 +14,9 @@ use casement_core::layer::LayerLevel;
 use casement_core::lock::LockState;
 use casement_core::shell::ShellRequest;
 use casement_core::{Event, Model, OutputKey};
-use casement_layout::DividerTarget;
+use casement_layout::{DividerTarget, split_backdrop};
 use casement_render::{CursorDraw, CursorShape, Rgba8};
 use casement_wayland::seat::Candidate;
-
-/// What fills the output behind the halves and in the gap between them (a dark grey, as the
-/// Mac's Split View has).
-const BACKDROP: Rgba8 = Rgba8 {
-    r: 28,
-    g: 28,
-    b: 30,
-    a: 255,
-};
 
 /// Where the pointer is in relation to a Split View divider.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -105,7 +96,7 @@ pub(super) fn backdrop(state: &State, output: &OutputKey) -> Option<Rgba8> {
         .backdrops
         .iter()
         .any(|target| target.output == *output && target.space == shown.id)
-        .then_some(BACKDROP)
+        .then(|| Rgba8::from(split_backdrop()))
 }
 
 /// The divider of a shown Split View whose strip is under `at`, unless something in front of it

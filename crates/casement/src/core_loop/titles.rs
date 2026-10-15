@@ -10,8 +10,8 @@ use casement_core::window::{FrameMetrics, FrameStyle};
 use casement_layout::frame_metrics;
 use casement_motion::OutputFrame;
 use casement_render::{
-    ClosingFrame, FlightDraw, OutputView, OverviewDraw, TitleDraw, closing_content, scaled_content,
-    window_content, window_drawn,
+    ClosingFrame, OutputView, OverviewDraw, TitleDraw, closing_content, window_content,
+    window_drawn,
 };
 use std::collections::BTreeMap;
 
@@ -27,7 +27,7 @@ fn margins(metrics: &FrameMetrics) -> Margins {
 }
 
 /// The title pixels for each framed window on `frame` (the windows in `styles`), at the size
-/// each is drawn at (`overview` says whether Mission Control scales them). A window whose title
+/// each is drawn at (in Mission Control, the window's own size: the frame shrinks as a picture). A window whose title
 /// cannot be drawn (empty, no room) has none.
 pub(super) fn of(
     state: &mut State,
@@ -55,13 +55,10 @@ pub(super) fn of(
             let style = styles.get(&placed.window)?;
             let window = model.windows().get(&placed.window)?;
             let entry = textures.window(&placed.window)?;
-            // In Mission Control a window that is not in a flight is drawn at its sampled size.
+            // In Mission Control a window that is not in a flight has its frame drawn at the
+            // window's own size and shrunk with it, so its title is made for the full titlebar.
             let drawn = match (overview, placed.flight) {
-                (OverviewDraw::On { .. }, None) => scaled_content(
-                    FlightDraw::Scaled,
-                    window_content(placed, &entry.root),
-                    placed.size,
-                ),
+                (OverviewDraw::On { .. }, None) => window_content(placed, &entry.root),
                 _ => window_drawn(placed, &entry.root, effect),
             };
             let bar = style.around(drawn).titlebar();
