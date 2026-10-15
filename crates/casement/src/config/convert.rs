@@ -247,6 +247,7 @@ fn night_light(doc: &NightLightSection) -> NightLightSettings {
         Kelvin(doc.kelvin.0.clamp(Kelvin::WARMEST.0, Kelvin::NEUTRAL.0)),
         doc.fade_minutes.0,
     )
+    .skipping(doc.skip_outputs.clone())
 }
 
 pub(super) fn night_light_doc(core: &NightLightSettings) -> NightLightSection {
@@ -256,6 +257,7 @@ pub(super) fn night_light_doc(core: &NightLightSettings) -> NightLightSection {
         to: Count(core.to.get()),
         kelvin: Count(core.warmth.0),
         fade_minutes: Count(core.fade_minutes),
+        skip_outputs: core.skip_outputs.clone(),
     }
 }
 

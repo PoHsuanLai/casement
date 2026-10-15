@@ -6,8 +6,8 @@ use ds_settings::Count;
 use ds_settings::schema::Page;
 use serde::{Deserialize, Serialize};
 
-/// `night_light.*`: the screen warms on a schedule. A display that takes warmth over DDC is
-/// warmed by sill instead; this is for the rest.
+/// `night_light.*`: the screen warms on a schedule. A display that takes warmth through its own
+/// controls is warmed by sill instead and listed in `skip_outputs`; this is for the rest.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ds_settings::SettingsSchema)]
 #[serde(default)]
 #[settings(file = "casement/settings.toml", domain = "night_light", page = Page::Appearance)]
@@ -56,6 +56,15 @@ pub struct NightLightSection {
         unit = "min"
     )]
     pub fade_minutes: Count,
+    /// `night_light.skip_outputs`.
+    #[settings(
+        label = "Displays left as they are",
+        help = "Displays that warm themselves, such as monitors Night Shift warms through the \
+                monitor's own controls, are listed here so they are not warmed twice. Give each \
+                display by its port name, such as DP-1 or HDMI-A-1.",
+        section = "Night light"
+    )]
+    pub skip_outputs: Vec<String>,
 }
 
 impl Default for NightLightSection {

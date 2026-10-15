@@ -3530,3 +3530,34 @@ Written without a build or a wlcs run (rule of the lane); the orchestrator's run
   and arms the kill grace; `pids_of` is empty, so nothing is signalled. Open: what the model
   should do when an app has no killable process (leave it running and say so in the panel, or
   close its windows).
+
+### cas28-daily: night light per display (2026-10-16)
+
+- **`night_light.skip_outputs`** (list of text, page Appearance, "Displays left as they are"): outputs
+  night light does not warm. An entry is a connector name (`DP-1`, what sill knows of a DDC monitor:
+  `Endpoint::connector`) or an `OutputKey`'s text (`edid:<make>/<model>/<serial>`, or
+  `connector:<name>` for a display without a serial); surrounding spaces are ignored. The one
+  place it is honoured is `NightLightSettings::ramp_for` (identity for a skipped output).
+- **The driver did not exist** (the p3-cm entry's open item 3: the model had no tick). Added the
+  model half: `Event::NightLightTick(MinuteOfDay)` sets the local minute; every plugged output
+  whose wanted ramp differs from the one last asked gets `Effect::SetGamma` (so a steady minute,
+  a plug, a settings change and a minute of a fade each ask only what changed). Ramps are 256
+  steps; the KMS adapter resamples to the CRTC's own size (`channels`). A gamma-control client
+  (`Event::GammaSet` with a table) holds its output: night light does not touch it until the client
+  gives it back (identity), when night light takes it up again.
+- **Still missing: the producer of the tick.** Nothing in the session reads the local minute:
+  `casement/src/time/` has only the monotonic session clock, and the local time of day needs the
+  time zone (a tz-aware crate such as `jiff`, as sill uses; `chrono`/`time` would do; there is no
+  safe route in std or rustix). Needed: a one-shot timer in `time/` re-armed every minute that
+  feeds `Event::NightLightTick`, and one tick at start. Until then night light does nothing in a
+  real session, skip list or not. Held back because the lane may not touch Cargo.toml/Cargo.lock.
+- **Live.** `settings_live::followed` now takes `night_light` from the file, so a rewrite of
+  `settings.toml` by sill reaches the model (`SettingsChanged`) within the watcher's debounce
+  and the outputs are re-driven in the same step. Before this change only the pointer, the key
+  repeat and the keyboard layout followed.
+- **What sill writes.** `[night_light]` keys as before (`mode`, `from`, `to`, `kelvin`,
+  `fade_minutes`; sill's file merge keeps unknown keys, so `skip_outputs` survives its writes) plus
+  `skip_outputs = ["DP-1", ...]`: the connector of each monitor it warms over DDC
+  (`Endpoint::connector`), written by sill's Night Shift when `display.night_warmth = "hardware"`
+  and the software light is on for the rest, and `[]` (or removed) otherwise. A DDC monitor whose
+  connector sill could not match to a bus is not listed (sill cannot name it either).

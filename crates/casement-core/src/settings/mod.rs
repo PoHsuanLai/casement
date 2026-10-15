@@ -12,7 +12,7 @@ mod windows;
 
 pub use gpu::GpuSettings;
 pub use keyboard::{KeyboardSettings, RepeatRate, XkbNames};
-pub use night_light::{NightLightMode, NightLightSettings};
+pub use night_light::{NightLightMode, NightLightSettings, OutputWarming};
 pub use outputs::OutputSettings;
 pub use pointer::{AccelProfile, PointerProfile, PointerSettings};
 pub use spaces::SpaceSettings;
