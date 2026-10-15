@@ -153,7 +153,7 @@ impl ArgbImage {
     }
 
     /// The image turned by `transform` (the frame's rule: [`turn_point`] of each pixel's index).
-    fn turned(&self, transform: Transform) -> ArgbImage {
+    pub(super) fn turned(&self, transform: Transform) -> ArgbImage {
         if transform == Transform::Normal {
             return self.clone();
         }
@@ -183,7 +183,7 @@ impl ArgbImage {
 }
 
 /// A size as `usize` sides.
-fn sides(size: PhysicalSize) -> (usize, usize) {
+pub(super) fn sides(size: PhysicalSize) -> (usize, usize) {
     (
         usize::try_from(size.w).unwrap_or(0),
         usize::try_from(size.h).unwrap_or(0),

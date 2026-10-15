@@ -21,10 +21,12 @@ use smithay::utils::{Buffer, Rectangle};
 mod bitmap;
 mod crop;
 mod dmabuf;
+mod drawn;
 mod shm;
 
 pub use bitmap::{ArgbImage, ReadError};
 pub use dmabuf::{read_dmabuf, write_dmabuf};
+pub use drawn::{DrawnView, SourceRect, crop_pixels};
 pub use shm::{ShmWriteError, write_frame};
 
 /// Whether the cursor is in the captured image.
