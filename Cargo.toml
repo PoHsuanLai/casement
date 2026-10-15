@@ -63,8 +63,8 @@ ds-behaviour = { path = "../quire/crates/ds-behaviour" }
 # The desktop's keymap (chordkit's layers) and keycap's program end, `KeycapSource`: casement
 # reads its shell bindings from them (`casement::keymap`). The revs are the ones sill, quire and
 # cua pin.
-chordkit      = { git = "https://github.com/PoHsuanLai/chordkit.git", rev = "55a62b2366d6ee1994d95f7cb5a195217807099c" }
-keycap-client = { git = "https://github.com/PoHsuanLai/keycap", rev = "e4dd317c8d2ed7270d486197af6083c053298ebb" }
+chordkit      = { git = "https://github.com/PoHsuanLai/chordkit.git", rev = "934a2d71f6516bee5919ee29278003702a4ea5e1" }
+keycap-client = { git = "https://github.com/PoHsuanLai/keycap", rev = "c1bbb675e40013d68ba0e51c58d10241f58677a6" }
 # The stored settings document (C45, B13): casement and casement-ipc only.
 # `quire-desktop`: the settings portal, so `theme = "system"` follows the desktop (wave-2026-10-15/chrome2 ask).
 ds-settings = { path = "../quire/crates/ds-settings", default-features = false, features = ["quire-desktop"] }
