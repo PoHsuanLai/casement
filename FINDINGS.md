@@ -2872,7 +2872,7 @@ Mission Control polish (the follow-ups "Overview polish" and "Hard-coded colours
   today), `overview_dim(scheme)` is `ColourToken::Scrim` (black at .22: alpha 56 where 64 was written), `split_backdrop()` is
   `ColourToken::Paper` in its Dark value (#1E1E1E) in both schemes (was 28/28/30), because the Mac's backdrop stays dark on a
   light desktop and quire has no separate backdrop token. `OverviewDraw::On` carries an `OverviewLook { dim, ring }` (premultiplied
-  `Rgba8`, made by `From<FrameColour>`). The ring is the light scheme's accent fill (#0A60FF-like) rather than the dark #0A84FF
+  `Rgba8`, made by `From<FrameColour>`). The ring is the light scheme's accent fill rather than the dark #0A84FF
   that was written: the colour changes slightly in light. No golden pinned any of these.
 - **App icon in the hover label: not done (departure).** casement can resolve an app's icon only when the client sets
   `xdg_toplevel_icon` (`casement_wayland::xdg_toplevel_icon::icon_of(root)` returns the shm buffers or a theme name, nothing reads it
