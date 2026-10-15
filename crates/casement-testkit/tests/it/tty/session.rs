@@ -125,12 +125,14 @@ fn the_vt_chords_map_to_vt_numbers() {
     assert_eq!(vt_of_keysym(Keysym(0x20)), None);
 }
 
+/// (held, modified, raw, expected)
+type ChordRow<'a> = (VtHeld, &'a [Keysym], &'a [Keysym], Option<VtNumber>);
+
 #[test]
 fn ctrl_alt_and_a_function_key_ask_for_that_vt_when_the_keymap_names_none() {
     let f = |n: u32| [Keysym(0xffbd + n)];
     let named = [Keysym(0x1008fe05)];
-    // (held, modified, raw, expected)
-    let table: [(VtHeld, &[Keysym], &[Keysym], Option<VtNumber>); 7] = [
+    let table: [ChordRow; 7] = [
         (VtHeld::CtrlAlt, &named, &f(5), Some(VtNumber(5))),
         (VtHeld::CtrlAlt, &f(1), &f(1), Some(VtNumber(1))),
         (VtHeld::CtrlAlt, &[], &f(12), Some(VtNumber(12))),
