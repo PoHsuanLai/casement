@@ -406,6 +406,30 @@ fn settle_capture(fixture: &mut Fixture, capture: &mut OutputCapture) {
 }
 
 #[test]
+fn a_mouse_and_a_touchpad_both_start_with_natural_scrolling() {
+    let mut seat = seat_with(two_monitors(), FixtureSpec::desktop());
+    let mouse = DeviceId(3);
+    let touchpad = DeviceId(4);
+    seat.world.input.plug(mouse, DeviceClass::Pointer, "mouse");
+    seat.world
+        .input
+        .plug(touchpad, DeviceClass::Touchpad, "touchpad");
+    seat.fixture.pump();
+    let applied = seat.world.input.applied();
+    let natural = |id: DeviceId| {
+        applied
+            .iter()
+            .find(|(device, _)| *device == id)
+            .map(|(_, settings)| settings.natural_scroll)
+    };
+    assert_eq!(natural(mouse), Some(casement_core::settings::Enabled::On));
+    assert_eq!(
+        natural(touchpad),
+        Some(casement_core::settings::Enabled::On)
+    );
+}
+
+#[test]
 fn input_devices_are_configured_and_their_keys_reach_the_bindings() {
     let mut spec = FixtureSpec::desktop();
     let argv = Argv(vec!["foot".to_owned()]);

@@ -1788,3 +1788,32 @@ Lane P2-T3, casement half (not compiled; the orchestrator gates). No `todo!()` w
   `smithay::reexports::calloop::Result`, `caps.into_iter().collect()` into `BitFlags`, the `before_done_cb` closure typed as
   `for<'a> FnOnce(&'a Device)`, `eis::handshake::ContextType` comparison, the `KeyState`/`ButtonState` paths and a
   `_` arm over them. `connect.rs`: `insert_source` with a `RemoteEisSource` whose `Ret` is `()`.
+
+
+## wave-2026-10-15/session
+
+Lane `session` (not compiled; the orchestrator gates). Three findings from the first real logins.
+
+- **VT switch.** The existing path (`core_loop::tty::vt_chord`, before bindings and clients) only matched
+  `XF86Switch_VT_n`, which xkb gives `Ctrl+Alt+Fn` only when the layout carries the server-control group
+  and the F-row sends real F-keys. A keyboard in Mac mode sends media keys on the F-row (Fn held gives F1..F12),
+  and a layout without the group gives no such symbol. New pure `casement_backend::tty::vt_of_chord(VtHeld,
+  modified, raw) -> Option<VtNumber>`: the keymap's `XF86Switch_VT_n` wins; with Ctrl and Alt both held, an F1..F12
+  symbol (modified or raw) also asks for that VT. `TtyBackend::switch_to(VtNumber)` carries it out. Table test
+  `ctrl_alt_and_a_function_key_ask_for_that_vt_when_the_keymap_names_none`. Only a real run proves the session
+  accepts the switch (libseat `change_vt`) and that the chord is swallowed. A Mac-mode keyboard needs Fn held to
+  produce F1..F12 at all; that is the keyboard's, not ours.
+- **Multi-GPU.** Not wired. Landed: pure `RenderPlan::route_of` / `routes` and `OutputRoute::{Direct, Copy}`
+  (`casement-core/src/gpu/route.rs`, table test `each_output_is_drawn_on_the_render_gpu_and_copied_...`), and
+  `TtyBackend::route_of`. Still open (large, needs a compiler and a second GPU): smithay's `GpuManager`/
+  `MultiRenderer` through `DrmCompositor` (a `MultiRenderer` is not a `GlesRenderer`, so `FrameSource::gles`,
+  `RealScanout` and `RealKms::renderer` need a generic or boxed renderer type); one `GlesRenderer` per
+  render node shared across devices; `RealScanout::open` taking the route; the client dma-buf feedback already
+  names the render GPU, so clients keep allocating there. Today each output is drawn by its own device's renderer, which
+  works whenever the render GPU also scans out, as on the owner's NVIDIA-driven monitors.
+- **Natural scroll.** `device_settings(pointer, class)` maps Touchpad to the touchpad profile and every other
+  class (mouse, trackball) to the mouse profile; `configure` applies it when a Pointer or Touchpad appears;
+  `class_of` makes a pointer with finger taps a touchpad. Both defaults are On. Table tests added
+  (`every_pointing_class_gets_natural_scroll_from_the_defaults`, a fixture test for both devices). Gaps noted, not
+  changed: settings are applied only when a device appears (a changed setting reaches a device after a replug or
+  restart); a `settings.toml` written before 8b10803 holds `pointer.natural_scroll = "off"` and wins over the new default.

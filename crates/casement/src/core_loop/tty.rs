@@ -12,7 +12,7 @@ use casement_backend::input::{
     Applied, FedDevice, FedInput, PollContext, device_settings, scaled_scroll,
 };
 use casement_backend::tty::{
-    PresentOutcome, SessionNote, TtyBackend, TtyNote, VtNumber, Watch, vt_of_keysym,
+    PresentOutcome, SessionNote, TtyBackend, TtyNote, VtHeld, VtNumber, Watch, vt_of_chord,
 };
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::input::{DeviceClass, Edge, InputEvent, Keysym, Origin};
@@ -21,6 +21,7 @@ use casement_core::time::Mono;
 use casement_core::{Effect, Event, OutputKey, OutputName};
 use casement_wayland::image_capture::CaptureBook;
 use smithay::input::keyboard::Keysym as XkbKeysym;
+use smithay::input::keyboard::ModifiersState;
 
 /// Drains the tty backend: connector events go down the connector path (plug, change,
 /// unplug); a pause needs nothing here (the backend presents no frame while the seat is lent);
@@ -179,16 +180,24 @@ pub(super) fn present(
 /// seat's session to switch there, before any binding or client sees the key. The VT the key
 /// names, press or release (the release is swallowed too); none for any other key and on a
 /// backend that has no VTs.
-pub(super) fn vt_chord(state: &mut State, syms: &[XkbKeysym], edge: Edge) -> Option<VtNumber> {
+pub(super) fn vt_chord(
+    state: &mut State,
+    mods: &ModifiersState,
+    syms: &[XkbKeysym],
+    raw: &[XkbKeysym],
+    edge: Edge,
+) -> Option<VtNumber> {
     let BackendKind::Tty(tty) = &mut state.backend else {
         return None;
     };
-    let (sym, vt) = syms.iter().find_map(|sym| {
-        let sym = Keysym(sym.raw());
-        vt_of_keysym(sym).map(|vt| (sym, vt))
-    })?;
+    let held = match (mods.ctrl, mods.alt) {
+        (true, true) => VtHeld::CtrlAlt,
+        _ => VtHeld::Other,
+    };
+    let own = |syms: &[XkbKeysym]| syms.iter().map(|sym| Keysym(sym.raw())).collect::<Vec<_>>();
+    let vt = vt_of_chord(held, &own(syms), &own(raw))?;
     if edge == Edge::Press
-        && let Err(error) = tty.request_vt(sym)
+        && let Err(error) = tty.switch_to(vt)
     {
         tracing::warn!(vt = vt.0, %error, "the VT switch was refused");
     }

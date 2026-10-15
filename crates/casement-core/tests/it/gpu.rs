@@ -5,7 +5,7 @@
 use casement_core::OutputName;
 use casement_core::gpu::{
     BootVga, ByPathId, DrmNodeId, FormatEntry, FormatTable, Fourcc, GpuChoice, GpuFacts, Modifier,
-    PlanRefusal, RenderPlan, TrancheUse, VendorFact, feedback_for, plan_for,
+    OutputRoute, PlanRefusal, RenderPlan, TrancheUse, VendorFact, feedback_for, plan_for,
 };
 use std::collections::BTreeMap;
 
@@ -330,5 +330,60 @@ fn firmware_displays_are_kept_only_when_nothing_else_is() {
     ];
     for (found, want) in table {
         assert_eq!(keep_displays(found), want, "{found:?}");
+    }
+}
+
+#[test]
+fn each_output_is_drawn_on_the_render_gpu_and_copied_when_another_gpu_scans_it_out() {
+    let (nvidia, amd) = (node(128), node(129));
+    let dgpu_id = ByPathId::parse(DGPU).expect("by-path id");
+    // (facts, setting, [(output, route)])
+    let table = [
+        // Both drive a monitor: the firmware's GPU (the iGPU) renders, the NVIDIA monitor is a copy.
+        (
+            laptop(&["HDMI-A-2"]),
+            GpuChoice::Auto,
+            vec![
+                ("eDP-1", Some(OutputRoute::Direct { gpu: amd })),
+                (
+                    "HDMI-A-2",
+                    Some(OutputRoute::Copy {
+                        render: amd,
+                        scanout: nvidia,
+                    }),
+                ),
+            ],
+        ),
+        // The setting puts the render on the NVIDIA card while the panel is on the iGPU.
+        (
+            laptop(&[]),
+            GpuChoice::ByPath(dgpu_id),
+            vec![
+                (
+                    "eDP-1",
+                    Some(OutputRoute::Copy {
+                        render: nvidia,
+                        scanout: amd,
+                    }),
+                ),
+                ("DP-9", None),
+            ],
+        ),
+        // Auto with only the iGPU driving a panel renders there.
+        (
+            laptop(&[]),
+            GpuChoice::Auto,
+            vec![("eDP-1", Some(OutputRoute::Direct { gpu: amd }))],
+        ),
+    ];
+    for (facts, choice, wants) in table {
+        let plan = plan_for(&facts, &choice).expect("a plan");
+        for (output, want) in wants {
+            assert_eq!(plan.route_of(&name(output)), want, "{output}");
+            if let Some(route) = want {
+                assert_eq!(route.renders_on(), plan.render);
+            }
+        }
+        assert_eq!(plan.routes().len(), plan.scanout.len());
     }
 }
