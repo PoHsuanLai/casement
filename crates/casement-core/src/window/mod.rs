@@ -8,6 +8,7 @@ mod hints;
 mod limits;
 mod menu;
 mod menu_dwell;
+mod origin;
 mod pip;
 mod request;
 mod sheet;
@@ -33,6 +34,7 @@ pub use menu::{
     is_offered, menu_for, menu_point,
 };
 pub use menu_dwell::{Dwell, DwellInput, DwellOutcome, DwellTiming};
+pub use origin::WindowOrigin;
 pub use pip::{PIP_MARGIN, PipSource, fit_aspect, floats_above, pip_source_of, snap_corner};
 pub use request::WlrToplevelRequest;
 pub use sheet::{attach_rect, sheet_parent, slide_clip, slide_start};

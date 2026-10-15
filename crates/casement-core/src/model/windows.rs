@@ -32,6 +32,7 @@ impl Model {
             id,
             client: mapped.client,
             app: mapped.app.clone(),
+            origin: mapped.origin,
             role: mapped.role,
             modality: mapped.modality,
             place,

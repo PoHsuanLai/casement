@@ -287,6 +287,7 @@ pub(super) fn mapped_events(
         window,
         client: client.key,
         app: AppKey::of(&client.peer, &claimed),
+        origin: client.origin,
         claimed_id: claimed,
         role: role_of(declared.hint),
         modality: modality_of(declared.hint),

@@ -55,7 +55,7 @@ mod tests {
     use casement_core::settings::CasementSettings;
     use casement_core::space::SpaceSeed;
     use casement_core::time::Mono;
-    use casement_core::window::{MaxSize, Parent, SizeLimits};
+    use casement_core::window::{MaxSize, Parent, SizeLimits, WindowOrigin};
     use casement_core::{ClientKey, MappedToplevel};
     use casement_protocols::vocab::{Modality, WindowRole};
     use porter_core::{ClaimedId, PeerIdentity};
@@ -78,6 +78,7 @@ mod tests {
                 window: WindowId(id),
                 client,
                 app: AppKey::of(&PeerIdentity::Unproven, &claimed),
+                origin: WindowOrigin::Wayland,
                 claimed_id: claimed,
                 role: WindowRole::Document,
                 modality: Modality::None,

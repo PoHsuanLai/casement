@@ -14,11 +14,11 @@ use casement_core::input::{DesktopCommand, DeviceClass, Origin};
 use casement_core::settings::{CasementSettings, Enabled};
 use casement_core::shell::ShellNote;
 use casement_core::time::{Due, TimerKey};
-use casement_core::window::WindowState;
+use casement_core::window::{WindowOrigin, WindowState};
 use casement_core::{CoreNote, Effect, Event, ToplevelRequest, WindowId};
 use casement_protocols::vocab::MacMods;
 use support::driver::{Op, Run, assert_same_world, last, map, plug, press, request, run, run_from};
-use support::proven;
+use support::{claimed, proven};
 
 fn two_apps() -> Run {
     let (mail, web) = (proven("org.quire.Mail"), proven("org.example.Web"));
@@ -404,6 +404,7 @@ fn force_quit_stops_only_that_apps_connections_term_then_kill() {
     let term = Effect::Terminate(Termination {
         app: mail.clone(),
         clients: vec![ClientKey(2), ClientKey(3)],
+        x11: Vec::new(),
         signal: StopSignal::Term,
     });
     assert!(last(&stopped).contains(&term));
@@ -421,6 +422,7 @@ fn force_quit_stops_only_that_apps_connections_term_then_kill() {
     assert!(last(&killed).contains(&Effect::Terminate(Termination {
         app: mail.clone(),
         clients: vec![ClientKey(2), ClientKey(3)],
+        x11: Vec::new(),
         signal: StopSignal::Kill,
     })));
     let gone = run_from(
@@ -459,6 +461,95 @@ fn a_connection_that_carries_two_apps_is_never_force_quit() {
             "{app:?}"
         );
     }
+}
+
+/// The satellite's connection (client 1) carrying window 1 of `xterm` and window 2 of `gimp`,
+/// and window 3 of a Wayland app on a connection of its own.
+fn two_x11_apps_and_a_wayland_app() -> (Run, AppKey, AppKey, AppKey) {
+    let (xterm, gimp) = (
+        AppKey::Claimed(claimed("XTerm")),
+        AppKey::Claimed(claimed("Gimp")),
+    );
+    let web = proven("org.example.Web");
+    let x11 = |n: u64, app: &AppKey| {
+        Op::Event(Event::ToplevelMapped(casement_core::MappedToplevel {
+            client: ClientKey(1),
+            origin: WindowOrigin::X11,
+            ..support::driver::mapped(n, app, TokenCheck::Valid)
+        }))
+    };
+    let base = run(vec![
+        plug("HEADLESS-1"),
+        x11(1, &xterm),
+        x11(2, &gimp),
+        map(3, &web, TokenCheck::Valid),
+    ]);
+    (base, xterm, gimp, web)
+}
+
+fn terminations(run: &Run) -> Vec<Termination> {
+    last(run)
+        .iter()
+        .filter_map(|effect| match effect {
+            Effect::Terminate(stop) => Some(stop.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn force_quit_of_one_of_two_x11_apps_names_only_its_own_windows_never_the_satellite() {
+    let (base, xterm, gimp, _) = two_x11_apps_and_a_wayland_app();
+    for (app, window) in [(&xterm, WindowId(1)), (&gimp, WindowId(2))] {
+        let asked = run_from(base.model.clone(), vec![force_quit(app)]);
+        assert_eq!(
+            terminations(&asked),
+            vec![Termination {
+                app: app.clone(),
+                clients: Vec::new(),
+                x11: vec![window],
+                signal: StopSignal::Term,
+            }],
+            "{app:?}: no connection is named, so the satellite is spared"
+        );
+        assert!(matches!(
+            asked.model.apps()[app].life,
+            AppLife::Quitting(QuitPhase::Stopping)
+        ));
+        let other = if app == &xterm { &gimp } else { &xterm };
+        assert_eq!(asked.model.apps()[other].life, AppLife::Running);
+    }
+}
+
+#[test]
+fn the_kill_after_the_grace_names_the_same_x11_windows_and_a_wayland_app_keeps_its_connection() {
+    let (base, xterm, _, web) = two_x11_apps_and_a_wayland_app();
+    let termed = run_from(base.model.clone(), vec![force_quit(&xterm)]);
+    let killed = run_from(
+        termed.model,
+        vec![Op::Event(Event::TimerFired(TimerKey::QuitGrace(
+            xterm.clone(),
+        )))],
+    );
+    assert_eq!(
+        terminations(&killed),
+        vec![Termination {
+            app: xterm,
+            clients: Vec::new(),
+            x11: vec![WindowId(1)],
+            signal: StopSignal::Kill,
+        }]
+    );
+    let wayland = run_from(base.model, vec![force_quit(&web)]);
+    assert_eq!(
+        terminations(&wayland),
+        vec![Termination {
+            app: web,
+            clients: vec![ClientKey(3)],
+            x11: Vec::new(),
+            signal: StopSignal::Term,
+        }]
+    );
 }
 
 #[test]
