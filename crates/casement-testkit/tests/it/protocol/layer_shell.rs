@@ -1,6 +1,7 @@
 //! `layer_shell` (P0-H3).
 
-use casement_core::geometry::PhysicalSize;
+use casement_core::OutputName;
+use casement_core::geometry::{LogicalPoint, PhysicalSize};
 use casement_core::input::{DeviceClass, Edge, KeyCode};
 use casement_core::policy::ConnectionRole;
 use casement_testclient::seat::keyboard::Keyboard;
@@ -8,11 +9,12 @@ use casement_testclient::seat::pointer::Pointer;
 use casement_testclient::surface::layer::{
     Anchor, KeyboardInteractivity, Layer, LayerAsk, LayerSurface,
 };
+use casement_testclient::surface::subsurface::{Compositor, H1Data};
 use casement_testclient::surface::toplevel::{State, WmBase};
 use casement_testclient::{Pattern, TestClient, shm_buffer};
-use casement_testkit::{ClientId, Fixture, FixtureSpec, TestOrigin};
+use casement_testkit::{ClientId, Fixture, FixtureSpec, FrameCount, ShotTarget, TestOrigin};
 
-use crate::protocol::xdg_shell::map_toplevel;
+use crate::protocol::xdg_shell::{map_toplevel, settle, windows};
 
 /// The evdev code of the left shift key.
 const KEY_LEFTSHIFT: KeyCode = KeyCode(42);
@@ -446,5 +448,77 @@ fn a_full_screen_window_covers_the_whole_output_with_a_bar_mapped() {
         motions.last().map(|(_, args)| args[1..].to_vec()),
         Some(vec!["420.000".to_owned(), "20.000".to_owned()]),
         "the pointer in the bar's old strip is over the window: {motions:?}"
+    );
+}
+
+/// cas-wave "Real-run checks: Layers": a panel whose buffer carries a shadow margin around its
+/// body and whose input region is the body alone. A pointer in the margin, over a window below,
+/// is the window's (it enters the window, not the panel), a pointer in the body is the panel's,
+/// and the margin still draws over the window.
+#[test]
+fn a_panels_shadow_margin_takes_no_input_and_still_draws() {
+    // The panel's buffer is 340 x 240 at the output's corner; its body is the inner 300 x 200.
+    let margin = (20, 20, 300, 200);
+    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let mouse = fixture.input().plug(
+        DeviceClass::Pointer,
+        TestOrigin::Physical(DeviceClass::Pointer),
+    );
+    let (app, shell) = (
+        fixture.connect(ConnectionRole::Public),
+        fixture.connect(ConnectionRole::Public),
+    );
+    fixture.pump();
+    let _pointers = [app, shell].map(|id| Pointer::bind(fixture.client(id)).expect("a pointer"));
+    let base = WmBase::bind(fixture.client(app), 7);
+    let _window = map_toplevel(&mut fixture, app, &base, (600, 500));
+    let window = windows(&fixture)[0];
+    fixture.place_window_by_hand(window, LogicalPoint { x: 0, y: 0 });
+    settle(&mut fixture);
+    let ask = LayerAsk {
+        level: Layer::Top,
+        namespace: "panel",
+        anchor: Anchor::Top | Anchor::Left,
+        exclusive_zone: 0,
+        keyboard: KeyboardInteractivity::None,
+        size: (340, 240),
+    };
+    let panel = map(&mut fixture, shell, &ask);
+    let compositor = Compositor::bind(fixture.client(shell), 4);
+    let region = compositor
+        .compositor
+        .create_region(&fixture.client(shell).qh(), H1Data);
+    region.add(margin.0, margin.1, margin.2, margin.3);
+    panel.surface().set_input_region(Some(&region));
+    region.destroy();
+    panel.surface().commit();
+    fixture.pump();
+
+    let clients = [app, shell];
+    // name, where the pointer goes, (window enters, panel enters)
+    let moves = [
+        ("in the margin: the window below", (5, 150), [1, 0]),
+        ("in the body: the panel", (100, 100), [0, 1]),
+        ("back in the margin: the window", (330, 230), [1, 0]),
+    ];
+    for (name, at, entered) in moves {
+        assert_eq!(
+            pointer_enters_at(&mut fixture, mouse, at, &clients),
+            entered,
+            "{name}"
+        );
+    }
+    // Out of the way of the cursor, the margin is the panel's pixels over the window's.
+    fixture
+        .input()
+        .pointer_to(mouse, LogicalPoint { x: 1000, y: 800 });
+    let output = OutputName::parse("HEADLESS-1").expect("a name");
+    fixture.advance(std::time::Duration::from_secs(1));
+    fixture.frames(&output, FrameCount(2));
+    let shot = fixture.shot(ShotTarget::Output(output));
+    assert_eq!(
+        shot.get_pixel(5, 150).0,
+        [0x20, 0x20, 0x20, 0xff],
+        "the margin is drawn over the window"
     );
 }

@@ -1,5 +1,6 @@
 //! What the model tells the shell's protocol layer (the `Effect::Shell` of this crate).
 
+use crate::app::ForceQuitRow;
 use crate::geometry::{LogicalPoint, LogicalRect};
 use crate::ids::{LayerKey, OutputKey, WindowId};
 use crate::overview::Overview;
@@ -34,6 +35,10 @@ pub enum ShellNote {
     /// The choosing for this first window is over (a pick, a cancel, or the window left): the
     /// shell takes its picker away.
     SplitChoiceEnd(WindowId),
+    /// The Force Quit Applications window was asked for (Option-Command-Escape): the apps that
+    /// are running, each answering or not. The shell draws the window and answers with
+    /// `desktop_app.force_quit` for the app the person picks.
+    ForceQuitPanel(Vec<ForceQuitRow>),
     /// Mission Control moved to this state (`overview_state`, Mission Control's mode): the shell
     /// draws its Spaces bar while it is not closed.
     Overview(Overview),

@@ -373,10 +373,7 @@ fn reach_asks_the_input_table_with_the_models_lock() {
 
 #[test]
 fn input_events_change_nothing() {
-    let base = run(vec![
-        plug("HEADLESS-1"),
-        map(1, &proven("org.quire.Mail"), TokenCheck::Valid),
-    ]);
+    let base = run(vec![plug("HEADLESS-1")]);
     let key_press = Event::Input(casement_core::input::InputEvent {
         origin: Origin::Test,
         device: casement_core::DeviceId(1),

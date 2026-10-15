@@ -25,6 +25,7 @@ use crate::spawn::{EnvVar, SpawnError, SpawnSpec, Spawned, Spawner};
 use crate::state::State;
 use casement_core::input::Argv;
 use casement_core::time::Mono;
+use rustix::process::RawPid;
 use std::os::fd::AsRawFd;
 use std::path::PathBuf;
 
@@ -272,6 +273,16 @@ impl XwaylandState {
             XwaylandState::Off => None,
             XwaylandState::Listening(sockets) => Some(sockets.display()),
             XwaylandState::Running(running) => Some(running.display()),
+        }
+    }
+
+    /// The process of the running satellite. It is one Wayland client that carries every X11
+    /// program's windows, so its process is never the process of an app: force quit must not
+    /// signal it (`clients::Processes`, `exec::quit`).
+    pub fn satellite_pid(&self) -> Option<RawPid> {
+        match self {
+            XwaylandState::Running(running) => RawPid::try_from(running.process.pid.0).ok(),
+            XwaylandState::Off | XwaylandState::Listening(_) => None,
         }
     }
 

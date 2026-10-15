@@ -2,12 +2,12 @@
 
 use super::Model;
 use super::moved::Moved;
-use crate::app::{AppKey, AppLife};
+use crate::app::{AppKey, AppLife, PING_DEADLINE, PING_GAP, Pinging, ping_plan};
 use crate::cause::Cause;
-use crate::effect::{CoreNote, Effect};
+use crate::effect::{CoreNote, Effect, Held};
 use crate::ids::ClientKey;
 use crate::settings::CasementSettings;
-use crate::time::TimerKey;
+use crate::time::{Due, TimerKey};
 use ds_behaviour::space_swipe::SwipeIn;
 
 impl Model {
@@ -22,6 +22,7 @@ impl Model {
         match (gone, &key) {
             (Gone::Yes, _) => Moved::of(model).with(Effect::Note(CoreNote::StaleTimer(key))),
             (Gone::No, TimerKey::Ping(client)) => model.not_responding(*client),
+            (Gone::No, TimerKey::QuitGrace(app)) => model.quit_grace_over(app),
             (Gone::No, TimerKey::LockWait) => model.lock_wait_over(),
             (Gone::No, TimerKey::OverviewSettle) => model.overview_settled(),
             (Gone::No, TimerKey::SpaceFinish(_)) => model.space_swipe(SwipeIn::Elapsed),
@@ -33,7 +34,9 @@ impl Model {
     fn is_gone(&self, key: &TimerKey) -> Option<Gone> {
         let exists = |found: Option<()>| found.map_or(Gone::Yes, |()| Gone::No);
         match key {
-            TimerKey::Ping(client) => Some(exists(self.clients.get(client).map(|_| ()))),
+            TimerKey::Ping(client) | TimerKey::PingGap(client) => {
+                Some(exists(self.clients.get(client).map(|_| ())))
+            }
             TimerKey::QuitGrace(app) => Some(exists(self.apps.get(app).map(|_| ()))),
             TimerKey::FrameWatch(output) | TimerKey::SpaceFinish(output) => {
                 Some(exists(self.outputs.0.get(output).map(|_| ())))
@@ -47,6 +50,59 @@ impl Model {
             | TimerKey::TrustedArm(_)
             | TimerKey::LeaseYield(_) => None,
             TimerKey::LockWait | TimerKey::OverviewSettle => Some(Gone::No),
+        }
+    }
+
+    /// Input arrived: the client of the key window is pinged, unless a ping is out or one went
+    /// a moment ago. A client that does not answer within [`PING_DEADLINE`] is not responding.
+    pub(super) fn input_seen(self) -> Moved {
+        let client = self
+            .focus
+            .key
+            .and_then(|id| self.windows.get(&id))
+            .map(|window| window.client);
+        match client {
+            Some(client) => self.pinged(client),
+            None => Moved::of(self),
+        }
+    }
+
+    /// `client` is pinged when [`ping_plan`] says one is due; the deadline and the gap are
+    /// armed here and in the book, so the next input sees them.
+    fn pinged(self, client: ClientKey) -> Moved {
+        let life = self
+            .clients
+            .get(&client)
+            .and_then(|app| app.as_ref())
+            .and_then(|app| self.apps.get(app))
+            .map(|record| record.life.clone());
+        let held = |key: TimerKey| match self.timers.is_armed(&key) {
+            true => Held::Yes,
+            false => Held::No,
+        };
+        let plan = ping_plan(
+            life.as_ref(),
+            held(TimerKey::Ping(client)),
+            held(TimerKey::PingGap(client)),
+        );
+        match plan {
+            Pinging::Hold => Moved::of(self),
+            Pinging::Send => {
+                let deadline = Due {
+                    at: self.now.after(PING_DEADLINE),
+                    key: TimerKey::Ping(client),
+                };
+                let gap = Due {
+                    at: self.now.after(PING_GAP),
+                    key: TimerKey::PingGap(client),
+                };
+                let mut model = self;
+                model.timers = model.timers.arm(deadline.clone()).arm(gap.clone());
+                Moved::of(model)
+                    .with(Effect::Ping { client })
+                    .with(Effect::ArmTimer(deadline))
+                    .with(Effect::ArmTimer(gap))
+            }
         }
     }
 

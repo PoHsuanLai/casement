@@ -192,7 +192,7 @@ impl Model {
             Event::LayerPlaced { layer, at } => self.place_layer(layer, at),
             Event::LayerUnmapped { layer } => self.unmap_layer(layer),
             Event::Lock(event) => self.lock_event(event),
-            Event::Input(event) => self.swipe_input(event),
+            Event::Input(event) => self.input_seen().then(|model| model.swipe_input(event)),
             Event::OutputPlugged(facts) => self.plug(facts),
             Event::OutputUnplugged(output) => self.unplug(&output),
             Event::OutputConfigured { output, config } => self.configure_output(&output, config),

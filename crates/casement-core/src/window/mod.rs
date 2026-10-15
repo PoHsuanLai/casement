@@ -10,6 +10,7 @@ mod menu;
 mod menu_dwell;
 mod request;
 mod state;
+mod tile_drag;
 mod title;
 #[allow(
     clippy::module_inception,
@@ -32,5 +33,8 @@ pub use menu::{
 pub use menu_dwell::{Dwell, DwellInput, DwellOutcome, DwellTiming};
 pub use request::WlrToplevelRequest;
 pub use state::{Restore, WindowState};
+pub use tile_drag::{
+    CORNER_REACH, EDGE_BAND, TileDrag, TileDrop, TileKnobs, TileScene, TileTarget, target_at,
+};
 pub use title::WindowTitle;
 pub use window::{Parent, SpacePlace, StackRank, Window};

@@ -33,6 +33,7 @@ mod quire;
 mod round_trip;
 mod space_persist;
 mod support;
+mod tile_drag;
 mod window;
 
 /// Test files that run in their own process and stay their own binary (a comment in each says why).

@@ -3,10 +3,17 @@
 
 use crate::support;
 
-use casement_core::app::AppLife;
+use casement_core::ClientKey;
+use casement_core::app::AppKey;
+use casement_core::app::{
+    Answer, AppLife, ForceQuitRow, PING_DEADLINE, QuitPhase, StopSignal, Termination,
+};
+use casement_core::desktop::{AppAsk, DesktopRequest};
 use casement_core::focus::{HitPart, PressRoute, TokenCheck};
 use casement_core::input::{DesktopCommand, DeviceClass, Origin};
 use casement_core::settings::{CasementSettings, Enabled};
+use casement_core::shell::ShellNote;
+use casement_core::time::{Due, TimerKey};
 use casement_core::window::WindowState;
 use casement_core::{CoreNote, Effect, Event, ToplevelRequest, WindowId};
 use casement_protocols::vocab::MacMods;
@@ -179,7 +186,6 @@ fn commands_with_nothing_to_act_on_do_nothing() {
         DesktopCommand::HideActive,
         DesktopCommand::HideOthers,
         DesktopCommand::QuitActive,
-        DesktopCommand::ForceQuitPanel,
         DesktopCommand::Place(casement_protocols::vocab::PlaceTarget::Fill),
         DesktopCommand::SplitTile(casement_core::window::SplitSide::Left),
     ] {
@@ -277,4 +283,206 @@ fn states_follow_the_record_and_focus() {
     let other = run.model.states_of(WindowId(1)).expect("window");
     assert_eq!(other.activation, Activation::Inactive);
     assert_eq!(run.model.states_of(WindowId(9)), None);
+}
+
+fn typing() -> Op {
+    Op::Event(Event::Input(casement_core::input::InputEvent {
+        origin: Origin::Test,
+        device: casement_core::DeviceId(1),
+        at: support::ms(5),
+        kind: casement_core::input::InputKind::Key {
+            code: casement_core::input::KeyCode(30),
+            edge: casement_core::input::Edge::Press,
+        },
+    }))
+}
+
+fn ping_of(run: &Run) -> Vec<Effect> {
+    last(run)
+        .iter()
+        .filter(|e| matches!(e, Effect::Ping { .. }))
+        .cloned()
+        .collect()
+}
+
+#[test]
+fn input_pings_the_key_window_once_per_gap_and_times_the_answer() {
+    let mail = proven("org.quire.Mail");
+    let base = run(vec![plug("HEADLESS-1"), map(1, &mail, TokenCheck::Valid)]);
+    let first = run_from(base.model, vec![typing()]);
+    let client = ClientKey(1);
+    assert_eq!(ping_of(&first), [Effect::Ping { client }]);
+    let deadline = Due {
+        at: first.model.now().after(PING_DEADLINE),
+        key: TimerKey::Ping(client),
+    };
+    assert!(last(&first).contains(&Effect::ArmTimer(deadline)));
+    let again = run_from(first.model, vec![typing()]);
+    assert_eq!(ping_of(&again), [], "a ping is out");
+    let answered = run_from(
+        again.model,
+        vec![Op::Event(Event::Pong { client }), typing()],
+    );
+    assert_eq!(ping_of(&answered), [], "one went a moment ago");
+    let later = run_from(
+        answered.model,
+        vec![
+            Op::Event(Event::TimerFired(TimerKey::PingGap(client))),
+            typing(),
+        ],
+    );
+    assert_eq!(ping_of(&later), [Effect::Ping { client }]);
+}
+
+#[test]
+fn a_client_that_misses_the_deadline_is_not_responding_until_it_answers() {
+    let mail = proven("org.quire.Mail");
+    let base = run(vec![plug("HEADLESS-1"), map(1, &mail, TokenCheck::Valid)]);
+    let client = ClientKey(1);
+    let missed = run_from(
+        base.model,
+        vec![
+            typing(),
+            Op::Event(Event::TimerFired(TimerKey::Ping(client))),
+        ],
+    );
+    assert!(matches!(
+        missed.model.apps()[&mail].life,
+        AppLife::NotResponding { .. }
+    ));
+    let still = run_from(
+        missed.model,
+        vec![
+            Op::Event(Event::TimerFired(TimerKey::PingGap(client))),
+            typing(),
+        ],
+    );
+    assert_eq!(
+        ping_of(&still),
+        [],
+        "the ping that is out is the answer awaited"
+    );
+    let back = run_from(still.model, vec![Op::Event(Event::Pong { client })]);
+    assert_eq!(back.model.apps()[&mail].life, AppLife::Running);
+}
+
+#[test]
+fn quitting_shows_the_app_as_quitting_until_the_grace_ends_with_it_still_here() {
+    let mail = proven("org.quire.Mail");
+    let quit = run_from(
+        two_apps().model,
+        vec![Op::Command(DesktopCommand::QuitActive)],
+    );
+    assert!(matches!(
+        quit.model.apps()[&mail].life,
+        AppLife::Quitting(QuitPhase::Asked { .. })
+    ));
+    assert!(last(&quit).iter().any(|e| matches!(
+        e,
+        Effect::ArmTimer(Due { key: TimerKey::QuitGrace(app), .. }) if *app == mail
+    )));
+    let kept = run_from(
+        quit.model,
+        vec![Op::Event(Event::TimerFired(TimerKey::QuitGrace(
+            mail.clone(),
+        )))],
+    );
+    assert_eq!(kept.model.apps()[&mail].life, AppLife::Running);
+}
+
+fn force_quit(app: &AppKey) -> Op {
+    Op::Event(Event::Desktop(DesktopRequest::App {
+        app: app.clone(),
+        ask: AppAsk::ForceQuit,
+    }))
+}
+
+#[test]
+fn force_quit_stops_only_that_apps_connections_term_then_kill() {
+    let (mail, web) = (proven("org.quire.Mail"), proven("org.example.Web"));
+    let stopped = run_from(two_apps().model, vec![force_quit(&mail)]);
+    let term = Effect::Terminate(Termination {
+        app: mail.clone(),
+        clients: vec![ClientKey(2), ClientKey(3)],
+        signal: StopSignal::Term,
+    });
+    assert!(last(&stopped).contains(&term));
+    assert!(matches!(
+        stopped.model.apps()[&mail].life,
+        AppLife::Quitting(QuitPhase::Stopping)
+    ));
+    assert_eq!(stopped.model.apps()[&web].life, AppLife::Running);
+    let killed = run_from(
+        stopped.model,
+        vec![Op::Event(Event::TimerFired(TimerKey::QuitGrace(
+            mail.clone(),
+        )))],
+    );
+    assert!(last(&killed).contains(&Effect::Terminate(Termination {
+        app: mail.clone(),
+        clients: vec![ClientKey(2), ClientKey(3)],
+        signal: StopSignal::Kill,
+    })));
+    let gone = run_from(
+        killed.model,
+        vec![
+            Op::Event(Event::ClientGone {
+                client: ClientKey(2),
+            }),
+            Op::Event(Event::ClientGone {
+                client: ClientKey(3),
+            }),
+        ],
+    );
+    assert!(!gone.model.apps().contains_key(&mail));
+    assert!(gone.model.apps().contains_key(&web));
+}
+
+#[test]
+fn a_connection_that_carries_two_apps_is_never_force_quit() {
+    let (mail, web) = (proven("org.quire.Mail"), proven("org.example.Web"));
+    let shared = Op::Event(Event::ToplevelMapped(casement_core::MappedToplevel {
+        client: ClientKey(1),
+        ..support::driver::mapped(2, &web, TokenCheck::Valid)
+    }));
+    let base = run(vec![
+        plug("HEADLESS-1"),
+        map(1, &mail, TokenCheck::Valid),
+        shared,
+    ]);
+    for app in [&mail, &web] {
+        let asked = run_from(base.model.clone(), vec![force_quit(app)]);
+        assert!(
+            !last(&asked)
+                .iter()
+                .any(|e| matches!(e, Effect::Terminate(_))),
+            "{app:?}"
+        );
+    }
+}
+
+#[test]
+fn the_force_quit_panel_lists_the_apps_and_who_answers() {
+    let (mail, web) = (proven("org.quire.Mail"), proven("org.example.Web"));
+    let stuck = run_from(
+        two_apps().model,
+        vec![Op::Event(Event::TimerFired(TimerKey::Ping(ClientKey(2))))],
+    );
+    let panel = run_from(
+        stuck.model,
+        vec![Op::Command(DesktopCommand::ForceQuitPanel)],
+    );
+    assert_eq!(
+        last(&panel),
+        [Effect::Shell(ShellNote::ForceQuitPanel(vec![
+            ForceQuitRow {
+                app: web,
+                answer: Answer::Responding
+            },
+            ForceQuitRow {
+                app: mail,
+                answer: Answer::NotResponding
+            },
+        ]))]
+    );
 }
