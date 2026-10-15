@@ -198,12 +198,11 @@ impl Model {
             spaces: self.row_len(&output),
             reduced: Reduced::No,
         };
-        let (machine, outs) =
-            self.swipe
-                .space
-                .0
-                .clone()
-                .step(input, self.now.stamp(), &params, &());
+        let (machine, outs) = self
+            .swipe
+            .space
+            .clone()
+            .step(input, self.now.stamp(), &params, &());
         let mut model = self;
         model.swipe.space = machine;
         outs.into_iter()
