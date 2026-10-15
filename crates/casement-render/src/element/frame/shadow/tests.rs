@@ -148,19 +148,26 @@ fn the_shadow_is_cut_out_under_the_windows_shape() {
         let made = tiles(&layers, 20, scale);
         let corner = &made.corners[0];
         let px = |logical: u32| logical * per;
+        // The far inside edge of the tile (its last column or row), and a point well inside.
+        let far = made.inner - 1;
+        let deep = far.min(30);
         // name, corner tile pixel, expected nonzero
         let table = [
-            ("deep inside the window", (m + 30, m + 30), false),
-            ("inside, near the straight top edge", (m + 40, m + 2), false),
+            ("deep inside the window", (m + deep, m + deep), false),
+            (
+                "inside, near the straight top edge",
+                (m + far, m + 2),
+                false,
+            ),
             (
                 "inside, near the straight left edge",
-                (m + 2, m + 40),
+                (m + 2, m + far),
                 false,
             ),
             ("on the curve's inside, 6 px in", (m + 10, m + 10), false),
             ("in the square, outside the curve", (m + 1, m + 1), true),
-            ("just outside the top edge", (m + 40, m - 3), true),
-            ("just outside the left edge", (m - 3, m + 40), true),
+            ("just outside the top edge", (m + far, m - 3), true),
+            ("just outside the left edge", (m - 3, m + far), true),
             ("out beyond the corner", (m - 3, m - 3), true),
         ];
         for (name, (x, y), shadowed) in table {
