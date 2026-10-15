@@ -51,9 +51,9 @@ pub enum Damage {
     Fresh,
 }
 
-/// What the composition root knows of an output a client named.
+/// What the composition root knows of an output a client named. Plain data the root fills, so
+/// not `non_exhaustive`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
 pub struct ScreencopyOutput {
     /// The model's key.
     pub key: OutputKey,
