@@ -5,12 +5,13 @@
 //! upright texture, `v_coords = (position * ratio + src.loc) / texture size`, so
 //! `position = v_coords * (texture size * ratio) - src.loc * ratio`, where `position` is in
 //! physical pixels from the element's top-left and `ratio` is `dst.size / src.size`. A texture
-//! that is turned, flipped or upside down is drawn unclipped. The compiled shader is kept in
-//! the EGL context's user data, one per renderer.
+//! that is turned, flipped or upside down, and a single-pixel buffer, take the renderer-neutral
+//! draw in `bands.rs` instead. The compiled shader is kept in the EGL context's user data, one
+//! per renderer.
 
 use super::RoundedClipElement;
+use smithay::backend::renderer::element::Element;
 use smithay::backend::renderer::element::surface::WaylandSurfaceTexture;
-use smithay::backend::renderer::element::{Element, RenderElement};
 use smithay::backend::renderer::gles::{
     GlesError, GlesFrame, GlesRenderer, GlesTexProgram, GlesTexture, Uniform, UniformName,
     UniformType,
@@ -94,11 +95,12 @@ pub(super) fn draw(
 ) -> Result<(), GlesError> {
     let surface = clip.surface();
     let upright = surface.transform() == Transform::Normal;
+    let _ = cache;
     let WaylandSurfaceTexture::Texture(texture) = surface.texture() else {
-        return surface.draw(frame, src, dst, damage, opaque_regions, cache);
+        return clip.draw_banded(frame, src, dst, damage, opaque_regions);
     };
     if !upright || texture.is_y_inverted() || src.size.w <= 0.0 || src.size.h <= 0.0 {
-        return surface.draw(frame, src, dst, damage, opaque_regions, cache);
+        return clip.draw_banded(frame, src, dst, damage, opaque_regions);
     }
     let program = program(frame)?;
     let uniforms = uniforms(clip, texture, src, dst);
