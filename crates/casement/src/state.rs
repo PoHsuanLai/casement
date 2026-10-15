@@ -127,6 +127,8 @@ pub struct RenderState {
     pub(crate) overview_drag: casement_core::overview_drag::Drag,
     /// The rasteriser of the title under that window (no margins), made when first needed.
     pub labels: Option<casement_chrome::TitleRaster>,
+    /// The app icons under the windows in Mission Control, found when it opens.
+    pub icons: crate::icons::IconBook,
 }
 
 /// Whether the pointer has been put where it starts: the centre of the primary output, once an
@@ -343,6 +345,7 @@ impl State {
             overview_hover: None,
             overview_drag: casement_core::overview_drag::Drag::Idle,
             labels: None,
+            icons: crate::icons::IconBook::new(config.icons.clone()),
         };
         Ok(State {
             core,

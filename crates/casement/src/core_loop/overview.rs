@@ -8,19 +8,22 @@ use super::deliver::run_model;
 use super::frames;
 use super::overview_drag as drag;
 use crate::exec;
-use crate::state::State;
+use crate::icons::book::want_of;
+use crate::state::{RenderState, State};
 use casement_chrome::{Margins, TitleKey, TitleRaster};
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::input::InputEvent;
 use casement_core::overview::Overview;
 use casement_core::overview_drag::Drag;
 use casement_core::{OverviewPick, WindowId};
-use casement_layout::{Scheme, overview_dim, overview_ring};
+use casement_layout::{Scheme, overview_dim, overview_plate, overview_ring};
 use casement_render::{
-    CursorDraw, CursorShape, OutputView, OverviewDraw, OverviewHover, OverviewLook, Rgba8,
-    TitleDraw, shown_length,
+    CursorDraw, CursorShape, OutputView, OverviewDraw, OverviewHover, OverviewIcon, OverviewLook,
+    Rgba8, TitleDraw, shown_length,
 };
+use casement_wayland::xdg_toplevel_icon::icon_of;
 use ds_core::vocab::Activity;
+use std::collections::BTreeMap;
 
 /// The narrowest a window's title under it is made (a very small window still gets a readable
 /// label), in logical pixels.
@@ -133,6 +136,7 @@ pub(super) fn leave(state: &mut State, pick: Option<OverviewPick>) {
 pub(super) fn draw(state: &mut State, view: &OutputView) -> OverviewDraw {
     if !takes_input(state) {
         state.render.overview_hover = None;
+        state.render.icons.clear();
         return OverviewDraw::Off;
     }
     let hover = state
@@ -153,46 +157,56 @@ pub(super) fn draw(state: &mut State, view: &OutputView) -> OverviewDraw {
         Drag::Dragging { window, .. } => Some(*window),
         _ => None,
     };
-    OverviewDraw::On { hover, look, lift }
+    let icons = icons_of(state, view);
+    OverviewDraw::On {
+        hover,
+        look,
+        lift,
+        icons,
+    }
 }
 
-/// `window`'s title as a label under its slot: as wide as the slot, within bounds.
-fn label_of(
-    state: &mut State,
-    window: WindowId,
-    view: &OutputView,
-) -> Option<(LogicalSize, TitleDraw)> {
-    let title = &state.core.model.windows().get(&window)?.title.0;
-    let slot = state
-        .core
-        .arrangement
-        .overview
+/// The icon under each window of Mission Control whose icon is on this output: found the first
+/// frame Mission Control is up (this reads files), kept until it is closed. On the way out the
+/// layout has no slots any more, so the icons last drawn leave with their windows.
+fn icons_of(state: &mut State, view: &OutputView) -> BTreeMap<WindowId, OverviewIcon> {
+    let plate = overview_plate(state.render.scheme);
+    let ink = [plate.r, plate.g, plate.b, plate.a];
+    let RenderState {
+        icons, textures, ..
+    } = &mut state.render;
+    let model = &state.core.model;
+    let slots = &state.core.arrangement.overview;
+    let here = |rect: &LogicalRect| view.area.intersection(rect).is_some();
+    if slots.is_empty() {
+        return icons
+            .remembered()
+            .iter()
+            .filter(|(_, icon)| here(&icon.rest))
+            .map(|(window, icon)| (*window, icon.clone()))
+            .collect();
+    }
+    let found: BTreeMap<WindowId, OverviewIcon> = slots
         .iter()
-        .find(|slot| slot.window == window)?;
-    let size = LogicalSize {
-        w: slot.rect.size.w.clamp(LABEL_MIN, LABEL_MAX),
-        h: LABEL_HEIGHT,
-    };
-    let raster = state
-        .render
-        .labels
-        .get_or_insert_with(|| TitleRaster::system(Margins { left: 0, right: 0 }));
-    let key = TitleKey::new(
-        title,
-        size.w,
-        size.h,
-        view.scale,
-        Scheme::Dark,
-        Activity::Active,
-    );
-    let pixels = raster.render(&key).ok()?;
-    let draw = TitleDraw {
-        id: pixels.id,
-        width: pixels.width,
-        height: pixels.height,
-        rgba: pixels.rgba,
-    };
-    Some((size, draw))
+        .filter(|slot| here(&slot.icon))
+        .filter_map(|slot| {
+            let window = model.windows().get(&slot.window)?;
+            let draw = icons.draw_of(slot.window, slot.icon, view.scale, ink, || {
+                let set = textures
+                    .window(&slot.window)
+                    .and_then(|entry| icon_of(&entry.root));
+                want_of(window.claimed_id.as_str(), set)
+            })?;
+            let icon = OverviewIcon {
+                rest: slot.icon,
+                slot: slot.rect,
+                draw,
+            };
+            Some((slot.window, icon))
+        })
+        .collect();
+    icons.remember(&found);
+    found
 }
 
 #[cfg(test)]

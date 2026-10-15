@@ -16,6 +16,7 @@ use crate::input::FixtureInput;
 use crate::spec::FixtureSpec;
 use casement::cli::{ClockChoice, ConfigHome, Entropy, StartConfig, StartMode, TtyMode};
 use casement::display::{self, SharedDisplay, attach_display};
+use casement::icons::IconSearch;
 use casement::seams::Seams;
 use casement::space_store::StateHome;
 use casement::time::{ClockSource, SharedClock};
@@ -171,6 +172,7 @@ impl Fixture {
             state_home: StateHome::Ephemeral,
             xwayland: XwaylandConfig::off(),
             tty: TtyMode::Seat,
+            icons: IconSearch::Off,
         };
         let space_store = spec.space_store.clone();
         let shell_calls = FakeShellCalls::new();

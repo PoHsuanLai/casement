@@ -4,6 +4,7 @@
 mod debug_peer_units;
 
 use casement::cli::{self, Command};
+use casement::icons::IconSearch;
 use casement::notify::{NotifySocket, Watchdog};
 use casement::space_store::{StateDirs, StateHome};
 use casement::{CompositorBus, DebugBus, RunConfig};
@@ -45,6 +46,19 @@ fn state_home(flag: StateHome, backend: BackendChoice, env: &StateEnv) -> StateH
     })
 }
 
+/// Where app icons are looked for: nowhere on the headless backend (its runs are throwaway), else
+/// the XDG data folders.
+fn icon_search(backend: BackendChoice) -> IconSearch {
+    if backend == BackendChoice::Headless {
+        return IconSearch::Off;
+    }
+    IconSearch::xdg(
+        std::env::var_os("XDG_DATA_HOME").map(PathBuf::from),
+        std::env::var_os("HOME").map(PathBuf::from),
+        std::env::var("XDG_DATA_DIRS").ok(),
+    )
+}
+
 fn main() -> ExitCode {
     let filter =
         std::env::var("CASEMENT_LOG").unwrap_or_else(|_| casement::log::DEFAULT_FILTER.to_owned());
@@ -65,6 +79,7 @@ fn main() -> ExitCode {
         Ok(Command::Run(mut start)) => {
             start.state_home =
                 state_home(start.state_home.clone(), start.backend, &StateEnv::read());
+            start.icons = icon_search(start.backend);
             // Debug1 lives on the jail's private bus, which the jail's scripts name here.
             let session_bus = std::env::var("DBUS_SESSION_BUS_ADDRESS").ok();
             let debug_bus = session_bus.clone().map_or(DebugBus::Unset, DebugBus::At);

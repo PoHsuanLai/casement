@@ -29,4 +29,4 @@ pub use finder::Finder;
 pub use pixels::Pixels;
 pub use plate::plate;
 pub use theme::{SystemTheme, ThemeLookup};
-pub use want::{Alpha, RgbaBuffer, Want};
+pub use want::{RgbaBuffer, Want};

@@ -33,6 +33,18 @@ pub fn overview_dim(scheme: Scheme) -> FrameColour {
     colour(ColourToken::Scrim.value(scheme))
 }
 
+/// The plate drawn for an app that has no icon, in Mission Control: quire's raised ground, so it
+/// reads over the dimmed picture in either scheme.
+///
+/// ```
+/// use casement_layout::{Scheme, overview_plate};
+///
+/// assert!(overview_plate(Scheme::Dark).a > 0);
+/// ```
+pub fn overview_plate(scheme: Scheme) -> FrameColour {
+    colour(ColourToken::Raise.value(scheme))
+}
+
 /// What fills the output behind the halves of a Split View and in the gap between them: the
 /// dark paper in either scheme (the Mac's backdrop stays dark in a light desktop).
 ///

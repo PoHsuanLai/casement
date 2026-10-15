@@ -46,6 +46,7 @@ mod delegates;
 pub mod display;
 pub mod exec;
 mod handlers;
+pub mod icons;
 #[cfg(any(feature = "testing", feature = "debug-inject"))]
 pub mod jail_check;
 pub mod keymap;

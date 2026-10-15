@@ -1,5 +1,5 @@
 use crate::support::{FakeTheme, entry, png};
-use casement_icons::{Alpha, Finder, IconCache, RgbaBuffer, Want};
+use casement_icons::{Finder, IconCache, RgbaBuffer, Want};
 use std::collections::BTreeMap;
 
 fn middle_pixel(want: &Want, finder: &Finder<FakeTheme>, edge: u32) -> Option<[u8; 4]> {
@@ -179,13 +179,12 @@ fn the_cache_looks_once_per_question_and_edge_and_remembers_a_miss() {
 
 #[test]
 fn a_wayland_buffer_becomes_straight_rgba() {
-    // B, G, R, A premultiplied; the second pixel's alpha is zero.
-    let bytes = [0, 0, 128, 128, 9, 9, 9, 0];
-    let got = RgbaBuffer::from_wl(1, 4, &bytes[..4], Alpha::Used).expect("one pixel");
+    // B, G, R, A premultiplied.
+    let got = RgbaBuffer::from_argb(1, &[0, 0, 128, 128]).expect("one pixel");
     assert_eq!(got.rgba, [255, 0, 0, 128]);
-    let opaque = RgbaBuffer::from_wl(1, 4, &[0, 0, 128, 0], Alpha::Opaque).expect("one pixel");
-    assert_eq!(opaque.rgba, [128, 0, 0, 255]);
-    let clear = RgbaBuffer::from_wl(1, 4, &bytes[4..], Alpha::Used).expect("one pixel");
+    let clear = RgbaBuffer::from_argb(1, &[9, 9, 9, 0]).expect("one pixel");
     assert_eq!(clear.rgba, [0, 0, 0, 0]);
-    assert!(RgbaBuffer::from_wl(2, 8, &bytes, Alpha::Used).is_none());
+    let opaque = RgbaBuffer::from_argb(1, &[1, 2, 3, 255]).expect("one pixel");
+    assert_eq!(opaque.rgba, [3, 2, 1, 255]);
+    assert!(RgbaBuffer::from_argb(2, &[0; 4]).is_none());
 }

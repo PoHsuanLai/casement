@@ -1,14 +1,5 @@
 //! What an app offers to be drawn as: its own pixels, a name, an app id.
 
-/// Whether a buffer's alpha byte means anything.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Alpha {
-    /// `Argb8888`: the fourth byte is the coverage.
-    Used,
-    /// `Xrgb8888`: the fourth byte is padding, the pixel is opaque.
-    Opaque,
-}
-
 /// One of a toplevel's own icon buffers, as straight (not premultiplied) RGBA8, square.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RgbaBuffer {
@@ -19,36 +10,33 @@ pub struct RgbaBuffer {
 }
 
 impl RgbaBuffer {
-    /// A buffer from what a client's shm pool holds: `Argb8888` or `Xrgb8888` (little-endian, so
-    /// the bytes are B, G, R, A), premultiplied as Wayland has it, rows `stride` bytes apart.
-    /// Nothing when `bytes` is too short.
+    /// A buffer from `argb`, tightly packed rows of B, G, R, A premultiplied as Wayland's
+    /// `Argb8888` has them (an `Xrgb8888` buffer with its alpha made opaque), `edge` pixels
+    /// across. Nothing when `argb` is not `edge * edge` pixels.
     ///
     /// ```
-    /// use casement_icons::{Alpha, RgbaBuffer};
+    /// use casement_icons::RgbaBuffer;
     ///
-    /// let got = RgbaBuffer::from_wl(1, 4, &[0, 50, 100, 128], Alpha::Used).unwrap();
+    /// let got = RgbaBuffer::from_argb(1, &[0, 50, 100, 128]).unwrap();
     /// assert_eq!(got.rgba, [199, 100, 0, 128]);
-    /// assert!(RgbaBuffer::from_wl(2, 8, &[0; 4], Alpha::Used).is_none());
+    /// assert!(RgbaBuffer::from_argb(2, &[0; 4]).is_none());
     /// ```
-    pub fn from_wl(edge: u32, stride: usize, bytes: &[u8], alpha: Alpha) -> Option<RgbaBuffer> {
-        let side = usize::try_from(edge).ok()?;
-        let rows = (0..side).map(|row| bytes.get(row * stride..row * stride + side * 4));
-        let rows: Option<Vec<&[u8]>> = rows.collect();
-        let rgba = rows?
-            .into_iter()
-            .flat_map(|row| row.as_chunks::<4>().0.iter())
-            .flat_map(|px| unpremultiplied(*px, alpha))
-            .collect();
-        Some(RgbaBuffer { edge, rgba })
+    pub fn from_argb(edge: u32, argb: &[u8]) -> Option<RgbaBuffer> {
+        let wanted = usize::try_from(u64::from(edge) * u64::from(edge) * 4).ok()?;
+        (argb.len() == wanted).then(|| RgbaBuffer {
+            edge,
+            rgba: argb
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .flat_map(|px| unpremultiplied(*px))
+                .collect(),
+        })
     }
 }
 
-/// A shm pixel (B, G, R, A, premultiplied) as straight R, G, B, A.
-fn unpremultiplied([b, g, r, a]: [u8; 4], alpha: Alpha) -> [u8; 4] {
-    let a = match alpha {
-        Alpha::Used => a,
-        Alpha::Opaque => u8::MAX,
-    };
+/// A pixel (B, G, R, A, premultiplied) as straight R, G, B, A.
+fn unpremultiplied([b, g, r, a]: [u8; 4]) -> [u8; 4] {
     let lift = |c: u8| match a {
         0 => 0,
         _ => {

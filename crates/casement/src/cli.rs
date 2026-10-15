@@ -17,6 +17,7 @@
 //! ([`TtyMode::Direct`]): they need `--backend tty` and each other (the last two need
 //! `--drm-node`).
 
+use crate::icons::IconSearch;
 use crate::space_store::{StateDirs, StateHome};
 use crate::xwayland::{SatellitePath, XwaylandConfig, XwaylandMode};
 use casement_backend::{
@@ -56,6 +57,9 @@ pub struct StartConfig {
     pub xwayland: XwaylandConfig,
     /// Where the tty backend gets its seat: the real one, or the vkms test mode.
     pub tty: TtyMode,
+    /// Whether the app icons in Mission Control are looked for, and where: `Off` unless `main`
+    /// resolves the XDG folders for a backend that has a person at it.
+    pub icons: IconSearch,
 }
 
 /// Where the tty backend gets its seat. (Ignored by the other backends.)
@@ -205,6 +209,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, CliError> {
         state_home: StateHome::Ephemeral,
         xwayland: XwaylandConfig::off(),
         tty: TtyMode::Seat,
+        icons: IconSearch::Off,
     };
     let mut node = None;
     let mut report = None;
