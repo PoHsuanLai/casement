@@ -517,12 +517,11 @@ fn stamping_a_missing_file_writes_nothing() {
 }
 
 /// Each row: what a change in the file does to the settings casement runs with. Only the
-/// pointer and the key repeat follow; the bindings and the layout the keymap gave stay.
+/// pointer, the key repeat and the keyboard layout follow; the bindings the keymap gave stay.
 #[test]
-fn the_file_changes_the_pointer_and_the_repeat_and_nothing_else() {
+fn the_file_changes_the_pointer_the_repeat_and_the_layout_and_nothing_else() {
     use casement::settings_live::followed;
-    let mut current = CasementSettings::defaults();
-    current.keyboard.layout.layout = "de".to_owned();
+    let current = CasementSettings::defaults();
     let doc = |text: &str| -> CasementDoc {
         let (_dir, home) = home_with(text);
         load(&home).expect("load")
@@ -541,9 +540,13 @@ fn the_file_changes_the_pointer_and_the_repeat_and_nothing_else() {
     );
     assert_eq!(next.pointer.mouse.tap, Enabled::On);
     assert_eq!(next.keyboard.repeat_rate, RepeatRate(30));
+    assert_eq!(next.keyboard.layout.layout, "fr", "the layout follows");
     assert_eq!(
-        next.keyboard.layout.layout, "de",
-        "the layout waits for a restart"
+        followed(&next, &doc("[keyboard]\nxkb_layout = \"fr\"\n"))
+            .keyboard
+            .layout,
+        next.keyboard.layout,
+        "the same layout again is no change"
     );
     assert_eq!(next.windows, current.windows);
     assert_eq!(next.bindings, current.bindings);
