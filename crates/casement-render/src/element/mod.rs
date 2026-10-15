@@ -1,5 +1,5 @@
 //! The closed set of things casement draws. Each delta freeze adds variants (P3: shadow,
-//! rounded clip, dim, genie, thumbnail, tile preview, chrome bitmap; P4: glow, agent cursor,
+//! rounded clip (built), dim, genie, thumbnail, tile preview, chrome bitmap; P4: glow, agent cursor,
 //! click ring, trust frame).
 
 mod blur_v0;
@@ -9,6 +9,7 @@ mod geometry;
 mod layer;
 mod lock_cover;
 mod popup;
+mod rounded_clip;
 mod solid;
 mod window;
 
@@ -19,6 +20,7 @@ pub use geometry::{geometry_size, surface_origin, surface_origin_logical};
 pub use layer::layer_elements;
 pub use lock_cover::LockCoverElement;
 pub use popup::{popup_elements, popup_surfaces};
+pub use rounded_clip::{ClipShape, RoundedClipElement};
 pub use solid::{Rgba8, solid_rect};
 pub use window::{window_content, window_elements};
 
@@ -40,4 +42,6 @@ smithay::backend::renderer::element::render_elements! {
     Blur = BlurV0Element,
     /// The cover over a locked output without a live lock surface.
     Cover = LockCoverElement,
+    /// A framed window's surface clipped at its bottom corners (GLES; unclipped elsewhere).
+    Clip = RoundedClipElement<R>,
 }

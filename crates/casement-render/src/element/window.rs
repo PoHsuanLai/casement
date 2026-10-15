@@ -1,8 +1,10 @@
 //! A window's surface tree as elements.
 
 use super::CasementElement;
+use super::RoundedClipElement;
 use super::blur_v0;
 use super::geometry::{geometry_size, surface_origin};
+use super::rounded_clip::ClipShape;
 use crate::compositor::Compositor;
 use crate::scene::OutputView;
 use crate::scene::convert::on_output;
@@ -11,7 +13,9 @@ use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_motion::PlacedWindow;
 use ds_core::vocab::Fraction;
 use smithay::backend::renderer::element::Kind;
-use smithay::backend::renderer::element::surface::render_elements_from_surface_tree;
+use smithay::backend::renderer::element::surface::{
+    WaylandSurfaceRenderElement, render_elements_from_surface_tree,
+};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 
 /// `placed`'s surface tree (subsurfaces, then the root) drawn at its sampled place and opacity
@@ -22,8 +26,12 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 /// ([`surface_origin`]), at its committed size: the closed element set has no rescaling wrapper,
 /// so a sampled size that differs from the committed one (a resize in flight) shows once the
 /// client commits it (FINDINGS: P3-Z adds the wrapper with the effect elements).
+///
+/// With a `clip` every surface of the tree (the root and its subsurfaces) is drawn inside that
+/// shape, a window's rounded bottom corners; the window's popups are not part of this tree.
 pub fn window_elements<R: Compositor>(
     placed: &PlacedWindow,
+    clip: Option<ClipShape>,
     view: &OutputView,
     book: &TextureBook,
     renderer: &mut R,
@@ -32,7 +40,7 @@ pub fn window_elements<R: Compositor>(
         return Vec::new();
     };
     let origin = surface_origin(&entry.root, placed.at);
-    let mut elements: Vec<CasementElement<R>> = render_elements_from_surface_tree(
+    let surfaces: Vec<WaylandSurfaceRenderElement<R>> = render_elements_from_surface_tree(
         renderer,
         &entry.root,
         on_output(origin, view),
@@ -40,6 +48,13 @@ pub fn window_elements<R: Compositor>(
         alpha(placed.opacity),
         Kind::Unspecified,
     );
+    let mut elements: Vec<CasementElement<R>> = surfaces
+        .into_iter()
+        .map(|surface| match clip {
+            Some(shape) => CasementElement::Clip(RoundedClipElement::new(surface, shape)),
+            None => CasementElement::Surface(surface),
+        })
+        .collect();
     elements.extend(blur_v0::behind(&entry.root, origin, view).map(CasementElement::Blur));
     elements
 }

@@ -4,8 +4,8 @@ pub(crate) mod convert;
 
 use crate::compositor::Compositor;
 use crate::element::{
-    CasementElement, LockCoverElement, Rgba8, cursor_elements, frame_elements, layer_elements,
-    popup_elements, surface_origin_logical, window_content, window_elements,
+    CasementElement, ClipShape, LockCoverElement, Rgba8, cursor_elements, frame_elements,
+    layer_elements, popup_elements, surface_origin_logical, window_content, window_elements,
 };
 use crate::texture_book::TextureBook;
 use casement_core::geometry::{LogicalPoint, LogicalRect, PhysicalRect, PhysicalSize, SubPoint};
@@ -165,16 +165,21 @@ pub fn output_elements<R: Compositor>(
                         },
                     );
                     elements.extend(popup_elements(&entry.root, origin, view, renderer));
-                    let (front, back) = layers
-                        .frames
-                        .get(&placed.window)
+                    // A window casement frames is clipped at its bottom corners, unless it
+                    // covers the screen (macOS drops the radius in full screen; a zoomed
+                    // window keeps it). A window with its own frame is not in `frames`.
+                    let style = layers.frames.get(&placed.window);
+                    let content = window_content(placed, &entry.root);
+                    let clip = style
+                        .filter(|_| !layers.full_screen.contains(&placed.window))
+                        .map(|style| ClipShape::of_content(content, style.look.radius, view));
+                    let (front, back) = style
                         .map(|style| {
-                            let content = window_content(placed, &entry.root);
                             frame_elements(placed.window, style, content, view, book, renderer)
                         })
                         .unwrap_or_default();
                     elements.extend(front);
-                    elements.extend(window_elements(placed, view, book, renderer));
+                    elements.extend(window_elements(placed, clip, view, book, renderer));
                     elements.extend(back);
                 }
             }

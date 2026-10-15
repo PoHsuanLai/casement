@@ -72,12 +72,17 @@ fn decorated(state: &State) -> impl Iterator<Item = (&WindowId, &casement_core::
         .windows()
         .iter()
         .filter(|(id, _)| state.wl.xdg_decoration.mode_of(**id) == DecorationMode::ServerSide)
-        .filter(|(_, window)| {
-            !matches!(
-                window.state,
-                WindowState::FullScreen { .. } | WindowState::Minimised { .. }
-            )
-        })
+        .filter(|(_, window)| framed(&window.state))
+}
+
+/// Whether a window in `state` has a server-side frame, and so its content is clipped at the
+/// bottom corners (`casement-render`'s rounded clip): every state but full screen and the
+/// dock. A filled (zoomed) window keeps its radius, as on the Mac; full screen drops it.
+fn framed(state: &WindowState) -> bool {
+    !matches!(
+        state,
+        WindowState::FullScreen { .. } | WindowState::Minimised { .. }
+    )
 }
 
 /// How far each framed window's frame reaches above its content (the titlebar's height), for
@@ -322,4 +327,54 @@ fn carry_out(
         _ => return,
     };
     feed(state, vec![Event::ToplevelRequest { window, request }]);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use casement_core::geometry::{LogicalPoint, LogicalSize};
+    use casement_core::window::Restore;
+    use casement_protocols::vocab::TileZone;
+    use porter_core::SpaceId;
+
+    #[test]
+    fn which_states_have_a_frame_and_so_rounded_corners() {
+        let rect = || LogicalRect::new(LogicalPoint { x: 1, y: 2 }, LogicalSize { w: 30, h: 40 });
+        let space = SpaceId::parse("s-1").expect("id");
+        let table = [
+            (
+                "unplaced",
+                WindowState::New(LogicalSize { w: 30, h: 40 }),
+                true,
+            ),
+            ("floating", WindowState::Floating(rect()), true),
+            (
+                "tiled",
+                WindowState::Tiled {
+                    zone: TileZone::TopRight,
+                    restore: rect(),
+                },
+                true,
+            ),
+            ("zoomed", WindowState::Filled { restore: rect() }, true),
+            (
+                "full screen",
+                WindowState::FullScreen {
+                    space,
+                    restore: Restore::Floating(rect()),
+                },
+                false,
+            ),
+            (
+                "in the dock",
+                WindowState::Minimised {
+                    restore: Restore::Floating(rect()),
+                },
+                false,
+            ),
+        ];
+        for (name, state, want) in table {
+            assert_eq!(framed(&state), want, "{name}");
+        }
+    }
 }

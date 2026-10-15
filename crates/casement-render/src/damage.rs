@@ -154,6 +154,9 @@ impl<R: Compositor> RenderElement<R> for Routed<'_, R> {
     ) -> Result<(), R::Error> {
         match self.element {
             CasementElement::Blur(blur) => R::draw_blur_v0(frame, blur, dst, damage, cache),
+            CasementElement::Clip(clip) => {
+                R::draw_rounded_clip(frame, clip, src, dst, damage, opaque_regions, cache)
+            }
             element => element.draw(frame, src, dst, damage, opaque_regions, cache),
         }
     }

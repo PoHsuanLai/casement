@@ -1,11 +1,12 @@
 //! The renderer trait casement composites with.
 
-use crate::element::BlurV0Element;
+use crate::element::{BlurV0Element, RoundedClipElement};
+use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::pixman::PixmanRenderer;
 use smithay::backend::renderer::{ImportAll, ImportMem, Renderer, RendererSuper};
 use smithay::utils::user_data::UserDataMap;
-use smithay::utils::{Physical, Rectangle};
+use smithay::utils::{Buffer, Physical, Rectangle};
 
 /// The renderers casement composites with: smithay's traits plus what our effect passes need.
 ///
@@ -46,6 +47,23 @@ pub trait Compositor:
         let _ = cache;
         blur.draw_stand_in(frame, dst, damage)
     }
+
+    /// A framed window's surface clipped at its bottom corners: draw `clip` at `dst` where
+    /// `damage` (relative to `dst`) asks. The default draws the surface unclipped (pixman, the
+    /// dummy renderer; FINDINGS, `wave-2026-10-15/clip`); a renderer with shaders masks the
+    /// corners.
+    fn draw_rounded_clip(
+        frame: &mut Self::Frame<'_, '_>,
+        clip: &RoundedClipElement<Self>,
+        src: Rectangle<f64, Buffer>,
+        dst: Rectangle<i32, Physical>,
+        damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
+        cache: Option<&UserDataMap>,
+    ) -> Result<(), Self::Error> {
+        clip.surface()
+            .draw(frame, src, dst, damage, opaque_regions, cache)
+    }
 }
 
 /// Whether effect passes (blur, shadow, rounded clip, dim, genie, glow) run their shaders.
@@ -78,6 +96,18 @@ impl Compositor for GlesRenderer {
         cache: Option<&UserDataMap>,
     ) -> Result<(), Self::Error> {
         blur.draw_gles(frame, dst, damage, cache)
+    }
+
+    fn draw_rounded_clip(
+        frame: &mut Self::Frame<'_, '_>,
+        clip: &RoundedClipElement<Self>,
+        src: Rectangle<f64, Buffer>,
+        dst: Rectangle<i32, Physical>,
+        damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
+        cache: Option<&UserDataMap>,
+    ) -> Result<(), Self::Error> {
+        clip.draw_gles(frame, src, dst, damage, opaque_regions, cache)
     }
 }
 

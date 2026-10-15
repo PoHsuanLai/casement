@@ -1937,13 +1937,14 @@ without a compiler (wave rule); the orchestrator builds.
 - **Unreachable from quire's pure crates, so written here (asks below):** the window radius 10 (`--r-window` is a CSS string,
   and still 26 until quire's batch), `--shadow-window` (CSS string, hand-copied as two `ShadowLayer`s), the three light hues
   and their mark inks (stylesheet candy colours), and (until chrome2) the colour scheme.
-- **Not done.** (1) Rounded bottom corners: see `## wave-2026-10-15/chrome2` (design only). (2) Title text: casement has no
-  text stack (`casement-chrome`, B15), so the titlebar title is empty. (3) The green light has no Move and Resize menu, and
-  the minimise animation target is untouched. (4) The frame is not drawn in the Mission Control and Space-slide passes (they
+- **Not done.** (1) Title text: casement has no
+  text stack (`casement-chrome`, B15), so the titlebar title is empty. (2) The green light has no Move and Resize menu, and
+  the minimise animation target is untouched. (3) The frame is not drawn in the Mission Control and Space-slide passes (they
   go through `output_elements` with the same `LayerDraw`, so it follows there only if `frames` is filled, which
-  `core_loop::frame` does for every output frame). (5) The shadow is a square-cornered blur at one raster pixel per logical
+  `core_loop::frame` does for every output frame). (4) The shadow is a square-cornered blur at one raster pixel per logical
   pixel, scaled up; cost on a window being resized is a new raster per frame (cache limit 64 entries). (Done by
-  chrome2: layout reserves the titlebar, lights act on release, Option-click zoom, the colour scheme from settings.)
+  chrome2: layout reserves the titlebar, lights act on release, Option-click zoom, the colour scheme from settings; done by
+  clip: the rounded bottom corners.)
 - **Interface asks for quire** (exact):
   1. `ds-style/src/tokens/shape.rs`: `impl Radius { pub fn px(self) -> u16 }` returning the number `value()` writes (Window
      10 in the next batch), so casement stops hard-coding `WINDOW_RADIUS`.
@@ -1991,20 +1992,6 @@ orchestrator builds.
   feature and is off in the workspace's `ds-settings` dependency. Ask for the orchestrator: if `system` should follow the
   desktop, enable that feature (a Cargo edit) and read `SystemPrefsSource::Portal` once at startup and on its watch.
   Only the frame follows the scheme; the cursor and everything else casement draws is scheme-free.
-- **Rounded bottom corners: design, not built.** Clipping a client's buffer needs a draw-time mask, and the closed element set
-  has none. smithay's `WaylandSurfaceRenderElement::draw` calls `render_texture_from_to` with no shader override, and
-  `gles::element::TextureShaderElement` wraps only a `TextureRenderElement<GlesTexture>`, so a clip is not a wrapper over the
-  surface element. Plan (about 400 lines and a Pixman stand-in decision, over the 300 budget): (a) a `RoundedClipElement`
-  variant in `CasementElement` that owns the surface element plus the window's outer-bottom radius, `id`/`geometry`/
-  `opaque_regions` forwarded, with the two bottom corner squares (radius x radius) removed from the opaque regions; (b) a
-  `Compositor` hook beside `capture_blur_v0`/`draw_blur_v0`, `draw_rounded_clip(frame, element, dst, damage)`, whose GLES
-  implementation compiles one texture shader (`compile_custom_texture_shader`, uniforms: size in px, radius) that multiplies
-  alpha by an analytic corner coverage and draws the surface's texture through it via `render_texture_from_to`'s `program`
-  argument; the surface texture comes from `WaylandSurfaceRenderElement`'s texture (`TextureRenderElement` built from the
-  surface's `GlesTexture` via the renderer's import, as `render_elements_from_surface_tree` does); (c) the default (Pixman
-  and the multi-GPU paths) draws the surface element unclipped, as today; (d) the shader program lives in the renderer's
-  user data like the blur's. The gl_raw.rs module needs no change (the shader API is safe). The titlebar's own rounded top
-  corners and the window shadow already follow the same radius (`WINDOW_RADIUS`, 10).
 - **Departures.** `LightArm` lives in `casement-core::window` with the other frame machines, and the scheme reader is
   `casement::appearance` (not `config`, which is the casement document). New public items: `spec_of_framed`, `scheme_of`,
   `pressed`, `Theme` (re-export), `LightArm` and friends, `appearance::scheme_in`; each has a doc test.
@@ -2019,6 +2006,51 @@ orchestrator builds.
   restores; a window opened at the top of the screen has its bar under the menu bar's exclusive zone, not beneath it; fill
   leaves the bar visible; set `appearance.theme = "dark"` in `~/.config/quire/appearance.toml` and the frames turn dark
   without a restart; windows with client-side frames are unchanged.
+## wave-2026-10-15/clip
+
+Rounded bottom corners for the windows casement decorates (chrome2's design, built). Written without a compiler (wave rule);
+the orchestrator builds.
+
+- **What is clipped.** A window in `LayerDraw::frames` (its client was answered server-side and it is not full screen or in the
+  dock; `core_loop::frames::framed` is that rule, table-tested), minus any window in `LayerDraw::full_screen`. A filled (zoomed)
+  window keeps the radius, as on the Mac; full screen has square corners. A window with its own frame is not in `frames`, so it
+  draws its own corners. The radius is the frame's (`FrameLook::radius`, `WINDOW_RADIUS` 10), times the output scale, rounded.
+  Only the two bottom corners round: the titlebar above rounds its own top corners and meets the content square.
+- **The element.** `RoundedClipElement<R>` (variant `Clip` of `CasementElement`, `element/rounded_clip.rs`) owns the
+  window's `WaylandSurfaceRenderElement` and a `ClipShape` (the content rectangle in output pixels plus the physical radius,
+  `rounded_clip/shape.rs`, pure). `window_elements` takes `Option<ClipShape>` and wraps every surface of the window's tree, so
+  subsurfaces are clipped to the same rounded rectangle. Popups come from `popup_elements` and are never wrapped. `id` is the
+  surface's id namespaced (2) so a window gaining or losing the clip is a new element to the damage tracker; `current_commit`,
+  `src`, `geometry` and `damage_since` forward; `opaque_regions` forwards minus the two radius-sized corner squares (smithay
+  draws opaque regions with blending off, which would paint the corners over); `underlying_storage` is none, so a clipped window
+  is never scanned out unclipped.
+- **The hook and the shader.** `Compositor::draw_rounded_clip` (default: the surface drawn unclipped) beside the blur hooks;
+  `Routed::draw` in `damage.rs` sends `Clip` to it; the GLES implementation is `rounded_clip/gles.rs`. One texture shader
+  (`compile_custom_texture_shader`, compiled once per EGL context and kept in `egl_context().user_data()`) multiplies the
+  texel (after smithay's own `NO_ALPHA` and alpha handling) by an analytic coverage, a signed distance to the rounded rectangle
+  with radius 0 above the middle and the window radius below it, `clamp(0.5 - distance, 0, 1)`, about one pixel of anti-alias.
+  The shader finds its pixel by inverting smithay's texture matrix from `v_coords` (uniforms `to`, `from`, `shape`, `radius`;
+  derivation in the file header), the same formula as `ClipShape::coverage`, which carries the table test. No `gl_raw.rs` change
+  and no unsafe.
+- **Known gap.** Pixman, the dummy renderer and the multi-GPU copy path draw the window unclipped (the default of the hook), so
+  the bottom corners are square there. On GLES a surface whose texture is rotated, flipped or upside down (`is_y_inverted`; a
+  surface with a buffer transform) or a single-pixel-buffer surface is also drawn unclipped. A window capture
+  (`pass::window_tree`) and the window's shadow are unchanged: the capture shows the square corners of the client's buffer.
+- **Tests.** Table tests: `ClipShape` coverage inside, outside, on the curve and at the corner pixel at scale 1, 1.5 and 2, the
+  ramp width, the corner squares, the radius per scale (`shape.rs`); which window states are framed (`frames.rs`). A doc test
+  on `ClipShape::new`. Testkit: `tests/it/scene/clip.rs` maps a decorated 400x300 window of one colour on llvmpipe and reads the
+  shot: the two bottom corner pixels are not the client's colour, 12 px in they are, the top corners and the edges beside the
+  curve are. No golden changed (no existing scene binds the decoration manager).
+- **Gate and real run.** Likeliest compile faults: the `render_elements!` variant `Clip = RoundedClipElement<R>` (the macro adds
+  `TextureId: 'static` and `Renderer`, the impls ask `Texture + 'static`), `surface.id().namespaced(...)` on a borrowed element
+  in `RoundedClipElement::new`, `Compositor::draw_rounded_clip`'s default (`clip.surface().draw` needs `RenderElement` in scope),
+  `egl_context().user_data().insert_if_missing` (a non-threadsafe entry, as the blur's cache), `Uniform::new` with tuple values,
+  `OpaqueRegions` collected from `Vec`s in `opaque_regions`. Real run on foot: the bottom corners are round in light and dark
+  (set `appearance.theme` in `~/.config/quire/appearance.toml`); a full-screen window has square corners; a zoomed one keeps
+  them; there is no seam or light line between the titlebar and the content at the sides (both use the same rounded edges of
+  `window_content`); a window moved or resized across a fractional scale keeps a one-pixel anti-aliased edge; a Qt app that
+  insists on client-side decoration is unchanged.
+
 ## wave-2026-10-15/fork
 
 Written without a build or a run (wave rules); the orchestrator pushes the fork, moves the rev and runs wlcs. Fork branch

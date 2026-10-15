@@ -35,6 +35,7 @@ const SCENES: [(&str, &[&str]); 11] = [
 ];
 
 mod build;
+mod clip;
 mod desk;
 
 /// Builds scene `name` on `fixture` with test clients and shoots its output.
