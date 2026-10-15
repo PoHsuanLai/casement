@@ -7,7 +7,7 @@ use crate::element::{
     CasementElement, ClipShape, ClosingFrame, FlightDraw, FrameDraw, GenieWindow, LockCoverElement,
     OverviewLook, PopupRide, Rgba8, TitleDraw, choose, closing_elements, cursor_elements,
     dim_elements, drawn_content, frame_elements, genie_window, label_element, layer_elements,
-    popup_elements, popup_elements_riding, ring_elements, shown_length, shown_outline,
+    lift_last, popup_elements, popup_elements_riding, ring_elements, shown_length, shown_outline,
     surface_origin_logical, window_content, window_elements,
 };
 use crate::element::{alpha, flight_ratio};
@@ -89,6 +89,8 @@ pub enum OverviewDraw {
         hover: Option<OverviewHover>,
         /// The dimming and the ring's colours.
         look: OverviewLook,
+        /// The window the person is dragging: drawn above every other window.
+        lift: Option<WindowId>,
     },
 }
 
@@ -200,10 +202,18 @@ pub fn output_elements<R: Compositor>(
                 elements.extend(layer_elements(key, area, view, book, renderer));
             }
         };
-    let (covering, others): (Vec<_>, Vec<_>) = frame
+    let (covering, mut others): (Vec<_>, Vec<_>) = frame
         .windows
         .iter()
         .partition(|placed| layers.full_screen.contains(&placed.window));
+    // The window being dragged in Mission Control goes last: the front-most (this list is back
+    // first), above the slots it passes over.
+    if let OverviewDraw::On {
+        lift: Some(lifted), ..
+    } = &layers.overview
+    {
+        lift_last(&mut others, |placed| placed.window == *lifted);
+    }
     let draw_windows =
         |placed: &[&PlacedWindow], elements: &mut Vec<CasementElement<R>>, renderer: &mut R| {
             for placed in placed.iter().rev() {
@@ -308,6 +318,7 @@ pub fn output_elements<R: Compositor>(
                 if let OverviewDraw::On {
                     hover: Some(hover),
                     look,
+                    ..
                 } = &layers.overview
                     && hover.window == placed.window
                 {

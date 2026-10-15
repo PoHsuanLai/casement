@@ -6,6 +6,7 @@ use super::Model;
 use super::moved::Moved;
 use crate::cause::Cause;
 use crate::focus::FocusIn;
+use crate::geometry::LogicalRect;
 use crate::ids::{OutputKey, WindowId};
 use crate::space::{Space, SpaceContent, SpaceIndex};
 use crate::window::{SpacePlace, WindowState};
@@ -40,10 +41,15 @@ impl Model {
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect();
+        let carry = self.carried_between(was.as_ref(), &target.output);
         let mut model = self;
         if let Some(moving) = model.windows.get_mut(&window) {
             moving.place = SpacePlace::On(space.clone());
             moving.home = None;
+            // Onto another output: the window keeps its place relative to the output's corner.
+            if let Some((dx, dy)) = carry {
+                moving.state = shifted(&moving.state, dx, dy);
+            }
         }
         let refocus = was
             .filter(|_| model.focus.key == Some(window) && !model.shows(window))
@@ -66,6 +72,16 @@ impl Model {
                 let configure = model.configure_effect(window);
                 Moved::of(model).with_all(configure)
             })
+    }
+
+    /// How far a window's rectangles move when it goes from output `from` to output `to`: the
+    /// difference of the two outputs' corners. None when it stays on one output or either is
+    /// not plugged.
+    fn carried_between(&self, from: Option<&OutputKey>, to: &OutputKey) -> Option<(i32, i32)> {
+        let from = from.filter(|from| *from != to)?;
+        let corner = |key: &OutputKey| Some(self.outputs.0.get(key)?.config.logical_rect().origin);
+        let (a, b) = (corner(from)?, corner(to)?);
+        Some((b.x.saturating_sub(a.x), b.y.saturating_sub(a.y)))
     }
 
     /// `AllSpaces` puts the window on every Space of the output it is on; `ThisSpace` pins a
@@ -137,5 +153,78 @@ impl Model {
         let model = Model { spaces, ..self };
         let output = moving.output;
         Moved::of(model).then(|model| model.redrawn(Cause::SpaceSwitch, vec![output]))
+    }
+}
+
+/// `state` with the rectangles it holds moved by `dx`, `dy` (a window going to another output).
+/// A window not yet placed, full screen or in the dock holds none worth moving.
+fn shifted(state: &WindowState, dx: i32, dy: i32) -> WindowState {
+    let moved = |rect: &LogicalRect| {
+        LogicalRect::new(
+            crate::geometry::LogicalPoint {
+                x: rect.origin.x.saturating_add(dx),
+                y: rect.origin.y.saturating_add(dy),
+            },
+            rect.size,
+        )
+    };
+    match state {
+        WindowState::Floating(rect) => WindowState::Floating(moved(rect)),
+        WindowState::Tiled { zone, restore } => WindowState::Tiled {
+            zone: *zone,
+            restore: moved(restore),
+        },
+        WindowState::Filled { restore } => WindowState::Filled {
+            restore: moved(restore),
+        },
+        other => other.clone(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::geometry::{LogicalPoint, LogicalSize};
+    use casement_protocols::vocab::TileZone;
+
+    fn rect(x: i32, y: i32) -> LogicalRect {
+        LogicalRect::new(LogicalPoint { x, y }, LogicalSize { w: 40, h: 30 })
+    }
+
+    #[test]
+    fn the_rectangles_a_window_holds_move_with_it() {
+        let new = WindowState::New(LogicalSize { w: 5, h: 5 });
+        // name, state, want
+        let cases = [
+            (
+                "floating",
+                WindowState::Floating(rect(10, 20)),
+                WindowState::Floating(rect(1930, 20)),
+            ),
+            (
+                "tiled keeps the zone and moves the way back",
+                WindowState::Tiled {
+                    zone: TileZone::Left,
+                    restore: rect(10, 20),
+                },
+                WindowState::Tiled {
+                    zone: TileZone::Left,
+                    restore: rect(1930, 20),
+                },
+            ),
+            (
+                "filled moves the way back",
+                WindowState::Filled {
+                    restore: rect(0, 0),
+                },
+                WindowState::Filled {
+                    restore: rect(1920, 0),
+                },
+            ),
+            ("unplaced stays", new.clone(), new),
+        ];
+        for (name, state, want) in cases {
+            assert_eq!(shifted(&state, 1920, 0), want, "{name}");
+        }
     }
 }

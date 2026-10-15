@@ -22,6 +22,7 @@ mod moved;
 mod output_requests;
 mod outputs;
 mod overview;
+mod picture;
 mod published;
 mod query;
 mod requests;

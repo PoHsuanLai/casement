@@ -13,6 +13,7 @@ mod input;
 mod kinds;
 mod model;
 mod model_apps;
+mod model_drop;
 mod model_input;
 mod model_layers;
 mod model_lock;

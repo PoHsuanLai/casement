@@ -78,6 +78,8 @@ pub enum WindowAsk {
     FullScreen(Toggle),
     /// Move it to a Space.
     ToSpace(SpaceId),
+    /// Make a new desktop Space at the end of this output's row and move it there.
+    ToNewSpace(OutputKey),
     /// Assign it to every Space, this one, or none.
     Assign(Assign),
 }

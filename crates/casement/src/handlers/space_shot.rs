@@ -3,11 +3,16 @@
 //! shell's Spaces bar. `handlers/image_capture.rs` hands the sessions whose source holds a
 //! `SpaceSourceId` here.
 //!
-//! A picture is the windows of the Space the output shows, each drawn alone (window capture's
-//! pixels, no frames) and shrunk to where it sits on the output ([`compose_thumb`]), over a
-//! transparent background. A frame request is held until the Space changed since the session's
-//! last frame: a window of it committed, moved or came or went ([`look`]). This version draws
-//! the Space the output shows now; a session on another Space is stopped.
+//! A picture is the windows of the Space, each drawn alone (window capture's pixels, no frames)
+//! and shrunk to where it sits on the output ([`compose_thumb`]), over a transparent background
+//! (the shell draws the wallpaper under it). The Space need not be the one the output shows:
+//! layout arranges every Space of an output as a desktop (`arrangement.windows` holds a place
+//! for each window of each Space, as if its Space were shown, with no motion), and the model
+//! says which windows a Space holds ([`Model::pictured`](casement_core::Model::pictured)). A
+//! frame request is held until the Space changed since the session's last frame: a window of it
+//! committed, moved or came or went ([`look`]). The cost is bounded by the sessions: only a Space
+//! someone has an open session on is fingerprinted or drawn, and only when a window of it
+//! changed. A session on a Space that is removed, or moved to another output, is stopped.
 
 use super::capture_source::window_rgba;
 use crate::state::State;
@@ -21,16 +26,18 @@ use smithay::reexports::wayland_server::protocol::wl_shm::Format;
 use smithay::utils::{Buffer, Rectangle, Size, Transform};
 use smithay::wayland::image_copy_capture::{BufferConstraints, Frame, Session, SessionRef};
 
-/// Whether the Space of `shot` is the one its output shows now.
-fn is_shown(state: &State, shot: &SpaceShot) -> bool {
-    let spaces = state.core.model.spaces();
-    spaces
-        .shown_on(&shot.output)
-        .is_some_and(|shown| shown.id == shot.space)
+/// Whether the Space of `shot` still exists on the output the picture was asked for.
+fn exists(state: &State, shot: &SpaceShot) -> bool {
+    state
+        .core
+        .model
+        .spaces()
+        .get(&shot.space)
+        .is_some_and(|space| space.output == shot.output)
 }
 
-/// The windows of the Space of `shot` that are drawn: their rectangles, in global logical
-/// pixels, back first.
+/// The windows of the Space of `shot` that are drawn: their rectangles on the output, in global
+/// logical pixels, back first. A window that has no place (tiled, not yet laid out) is left out.
 fn windows_of(
     state: &State,
     shot: &SpaceShot,
@@ -38,14 +45,19 @@ fn windows_of(
     casement_core::WindowId,
     casement_core::geometry::LogicalRect,
 )> {
+    let arrangement = &state.core.arrangement;
     state
         .core
-        .arrangement
-        .windows
-        .iter()
-        .filter(|target| target.output == shot.output)
-        .filter(|target| state.core.model.shows(target.window))
-        .map(|target| (target.window, target.rect))
+        .model
+        .pictured(&shot.space)
+        .into_iter()
+        .filter_map(|window| {
+            arrangement
+                .windows
+                .iter()
+                .find(|target| target.window == window && target.output == shot.output)
+                .map(|target| (window, target.rect))
+        })
         .collect()
 }
 
@@ -69,10 +81,10 @@ pub(crate) fn look(state: &State, shot: &SpaceShot) -> Look {
 }
 
 /// What a client must allocate to capture the Space `source` shows: the size it asked for. None
-/// when the Space is gone or not the one shown: the session is stopped.
+/// when the Space is gone: the session is stopped.
 pub(super) fn constraints(state: &State, source: SpaceSourceId) -> Option<BufferConstraints> {
     let shot = state.wl.quire_shell.shots.book.source(source)?;
-    if !is_shown(state, shot) {
+    if !exists(state, shot) {
         return None;
     }
     constraints_of(state, shot)
@@ -106,7 +118,7 @@ pub(super) fn serve(state: &mut State, session: &SessionRef, frame: Frame, id: S
     let Some(shot) = state.wl.quire_shell.shots.book.session(id).cloned() else {
         return frame.fail(CaptureFailure::OutputGone.reason());
     };
-    if !is_shown(state, &shot) {
+    if !exists(state, &shot) {
         state.wl.quire_shell.shots.stop(&[id]);
         return frame.fail(CaptureFailure::OutputGone.reason());
     }
@@ -139,7 +151,7 @@ pub(crate) fn committed(state: &mut State, window: casement_core::WindowId) {
 }
 
 /// Draws the held requests whose Space changed since their session's last frame, and stops the
-/// sessions whose Space is no longer shown. Run after a commit and after a relayout.
+/// sessions whose Space is gone. Run after a commit and after a relayout.
 pub(crate) fn poll(state: &mut State) {
     if !state.wl.quire_shell.shots.book.is_watching() {
         return;
@@ -154,7 +166,7 @@ pub(crate) fn poll(state: &mut State) {
         .collect();
     let gone: Vec<SpaceSessionId> = shots
         .iter()
-        .filter(|(_, shot)| !is_shown(state, shot))
+        .filter(|(_, shot)| !exists(state, shot))
         .map(|(id, _)| *id)
         .collect();
     state.wl.quire_shell.shots.stop(&gone);

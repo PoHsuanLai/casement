@@ -3120,3 +3120,75 @@ casement-protocols first. Built on casement 79456e1: `ovpolish` (6cb6035) is not
   under it lights); release on the tile (the window leaves the grid, Mission Control stays); release elsewhere (the window glides
   home); a plain click still picks. With two outputs, each shows its own bar and a window dropped on the other output's tile moves
   to that Space.
+
+## wave-2026-10-15/mc3
+
+The four "Not done" items of `mcwire` and the dragged window's stacking, as `quire_shell_v1` **version 3** (casement-protocols
+`lane/cas10-mc3`, FINDINGS `## wave-2026-10-15/mc3` there; land it first). Written without a compiler (wave rule); the gate is the
+first build. Built on casement 78b3152.
+
+- **1. Pictures of every Space.** The premise in `mcwire` ("`Arrangement` carries no places for windows on hidden Spaces") was
+  wrong: `casement-layout`'s `arrange_output` already arranges **every** Space of an output as a desktop (the targets are "as if
+  shown"; motion adds the strip origin), and `spec_of` already puts each Space's windows in its `SpaceSpec`. What was missing was
+  the question "which windows does this Space hold", which `space_shot` answered by filtering `arrangement.windows` with
+  `Model::shows` (only the shown Space). So no layout change: `Model::pictured(&SpaceId)` (`casement-core/src/model/picture.rs`) is
+  the windows on the Space, plus those on every Space homed on its output, minus the dock and hidden apps, back first by stack rank;
+  `handlers/space_shot.rs` draws those at their `arrangement.windows` rectangles. A session is stopped only when its Space is gone
+  or no longer on the output (it used to be stopped on every Space switch, so the bar need not ask again). Cost is bounded by the
+  sessions: `poll` returns at once with none, a look is made only for a Space with a session, and a frame is drawn only when a
+  window of that Space committed, moved or came or went (the look carries each window's commit count). Stacking is now the
+  model's order (it was `arrangement.windows` order), which also fixes mcwire's departure 5 for the pictures. Layout tests pin the
+  premise: `casement-layout/tests/it/hidden_space.rs`.
+  Departures: (1) a hidden Space's windows are not asked to redraw (their frame callbacks are not sent), so the picture is as
+  live as the client's last commit; (2) a window moved while its Space is hidden shows at its end state; (3) every refresh still
+  draws each window of the Space through the software path, one CPU read-back per window; (4) a full-screen or Split View Space
+  shows its windows as the layout places them (a Split View: two halves); (5) a window on every Space is in each picture of its
+  output.
+- **2. Wallpaper.** Confirmed, no code: the pictures are composed over a transparent background (`compose_thumb`, the test
+  `a_space_picture_is_sent_on_damage_only` and the new hidden-Space test assert pixels with alpha 0 and some with alpha 255).
+  sill draws the wallpaper under each tile. The wire text says so.
+- **3. A drag to another output.** `SpaceTargets::hit` already finds the targets of any plugged output and `Over` names the
+  output, so a drop on another output's tile reached `window_to_space` (the model's cross-output path) in mcwire. Added:
+  (a) `window_to_space` carries the window's rectangles (`Floating`, and the `restore` of `Tiled` and `Filled`) by the difference
+  of the two outputs' corners when the output changes, so a window keeps its place about the corner (before, it kept global
+  coordinates and layout pushed it to the nearest edge of the new output); (b) a release off every target but over a **different
+  output** than the window's own drops it on the Space that output shows (`Released::FlyBack` now carries `at`); (c) after every
+  drop the loop lays out again (`relayout(Overview)`), so a drop the model refuses (the Space the window is already on, a
+  full-screen Space) flies back instead of leaving the slot where it was dropped (mcwire departure 4 and 5). Tests:
+  `model_drop.rs`, `desktop_places.rs` (`shifted`), `quire_shell_drop.rs` (two outputs: drop on a tile, drop on the bare output,
+  release on the own output).
+- **4. "New desktop" tile.** Wire: `space_target_new(output, x, y, w, h)` and `drop_target_new(output, over: shown)` (version 3).
+  Core: `SpaceTargets::set_new_space`, `Landing { Space, NewSpace }` in `Over`, `ShellNote::DropTargetNew`,
+  `WindowAsk::ToNewSpace(OutputKey)` (`Model::window_to_new_space`: makes a desktop at the end of the row and moves the window;
+  nothing is made for a full-screen window or an unplugged output). The tile is in front of the output's Space targets; one per
+  output; an empty rectangle removes it; `space_target_clear` leaves it. Dropping stays in Mission Control and does not switch
+  Space. The exec sends `drop_target_new` to version 3 objects only; `drop_target` gets null in the same step the tile lights.
+  An empty Space left behind is kept (macOS removes an empty one; here the shell can remove it with the desktop manager).
+- **5. The dragged window on top.** `OverviewDraw::On` gains `lift: Option<WindowId>` (the window of a `Drag::Dragging`);
+  `output_elements` moves it last in the back-first list of ordinary windows (`lift_last`, doc- and table-tested), so it is
+  drawn above every other slot and its frame, ring and label go with it. It stays below layers that are above windows.
+- **Tests added.** casement-core: `overview_drag.rs` (tile priority, per-output tiles, clear/clear_all, release remembers the
+  pointer), `model_drop.rs` (pictured, new Space, gone output, cross-output shift), `desktop_places.rs::shifted`. casement-layout:
+  `hidden_space.rs`. casement-render: `lift_last`. casement-testkit: `quire_shell_drop.rs` (hidden picture follows its own
+  windows only, tile lights/unlights/creates, tile beats a Space target, empty rectangle removes and clear keeps it, version 2
+  shell hears nothing, three cross-output drags); `quire_shell_spaces.rs` (the "not shown stops" test became "empty Space picture
+  is transparent" and "a Space not on the output stops"; the desk now binds version 3). casement-testclient: `space_target_new`,
+  `drop_targets_new`. No golden and no `expected-failures.txt` changed; no `globals.txt` change (private global).
+- **What sill must do.** Bind `quire_shell_v1` at 3 (`desktop-client` binds `1..=3`). Ask for a picture of each Space tile on
+  each output (`CaptureRequest::of_space`), not only the shown one, and keep the sessions across Space switches (they now live
+  until the Space is removed); draw the wallpaper under the pictures; send `SetNewSpaceTarget` for the "+" tile after
+  `SetSpaceTargets`; light the tile on `ShellEvent::DropTargetNew` (`Overview::over_new_space`).
+- **Gate.** Likeliest compile faults: `core_loop/overview_drag.rs` (partial move of `target.landing` then `target.output`; the
+  `tell` match on `(&Landing, Option<&Landing>)` with the non-exhaustive wildcard; `shown_space_at`'s `contains(at)` on
+  `LogicalRect`), `overview_drag.rs` in core (`hit`'s `BTreeSet<&OutputKey>` and the `live` closure on `&&OutputKey`), `scene.rs`
+  (`others` is now `mut`; `lift_last` over `Vec<&PlacedWindow>`), `exec/shell.rs` (the `Shown` mapping), `desktop_places.rs`
+  (`carried_between` is called before `self` moves). Tests likeliest to need a tweak: `model_drop.rs`
+  (`a_picture_leaves_out_the_dock...` assumes `WindowAsk::Minimise` puts window 3 in the dock at once;
+  the cross-output test assumes the second output is to the right and the centred window floats), `quire_shell_drop.rs` (the
+  hidden-picture test assumes `desk.tops[i]` is `desk.windows[i]`, and that two outputs at 0,0 and 640,0 map both windows to the
+  first; the `s-nowhere` Space source stops its sessions as mcwire's text says).
+- **Real run.** Ctrl+Up with two Spaces: the second tile shows its windows (not blank) and updates when one of its apps redraws
+  (apps on a hidden Space may not redraw: expect a stale picture); drag a window onto the "+" tile: the tile lights, a desktop
+  appears at the end with the window, Mission Control stays; drag across to the other display: the window follows the pointer,
+  is on top of the other slots while it is dragged, and lands on the target or the Space shown there, at the same place about
+  that display's corner; a drop on a tile of the Space it is on flies back.

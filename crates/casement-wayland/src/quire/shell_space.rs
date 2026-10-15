@@ -1,6 +1,7 @@
-//! `quire_shell_v1` version 2, the Spaces bar's part: which outputs Mission Control is up on
+//! `quire_shell_v1` versions 2 and 3, the Spaces bar's part: which outputs Mission Control is up on
 //! (`overview_output`), the rectangles a dragged window can be dropped on (`space_target_clear`,
-//! `space_target`) and the Space under it (`drop_target`). The picture of a Space is
+//! `space_target`, and from version 3 `space_target_new`, the "add desktop" tile) and the target
+//! under it (`drop_target`, `drop_target_new`). The picture of a Space is
 //! [`super::space_shot`]. The model and the loop decide; this only carries.
 
 use super::shell::{QuireShellHandler, QuireShellPart};
@@ -57,6 +58,30 @@ pub fn on_space_target(
         part.space_targets
             .add(output, SpaceTarget::new(space, rect));
     }
+}
+
+/// `space_target_new`: the rectangle (global logical pixels) a dropped window makes a new Space
+/// on `output` with. An empty rectangle removes it; an output the compositor does not know is
+/// kept out without an error.
+///
+/// ```
+/// use casement_wayland::quire::shell_space::new_target_rect;
+/// assert!(new_target_rect(0, 0, 160, 90).is_some());
+/// assert!(new_target_rect(0, 0, 0, 90).is_none());
+/// ```
+pub fn on_space_target_new(
+    part: &mut QuireShellPart,
+    output: Option<OutputKey>,
+    rect: Option<LogicalRect>,
+) {
+    if let Some(output) = output {
+        part.space_targets.set_new_space(output, rect);
+    }
+}
+
+/// The rectangle of a `space_target_new`; none when it is empty (the request removes the tile).
+pub fn new_target_rect(x: i32, y: i32, width: u32, height: u32) -> Option<LogicalRect> {
+    target_rect(x, y, width, height).ok()
 }
 
 /// The rectangle of a `space_target`, or why it is refused.
@@ -123,7 +148,28 @@ pub fn send_drop_target(
     }
 }
 
-/// A version 2 request of the shell; every other request is ignored here.
+/// `drop_target_new`: the dragged window entered or left the new-Space tile of `output`
+/// (version 3 objects only).
+pub fn send_drop_target_new(
+    part: &QuireShellPart,
+    outputs: &BTreeMap<OutputKey, Output>,
+    output: &OutputKey,
+    over: quire_shell_v1::Shown,
+) {
+    let Some(output) = outputs.get(output) else {
+        return;
+    };
+    for shell in part.bound.iter().filter(|shell| shell.version() >= 3) {
+        let Some(client) = shell.client() else {
+            continue;
+        };
+        for wl_output in output.client_outputs(&client) {
+            shell.drop_target_new(&wl_output, over);
+        }
+    }
+}
+
+/// A version 2 or 3 request of the shell; every other request is ignored here.
 pub fn on_request<D: QuireShellHandler>(
     state: &mut D,
     resource: &quire_shell_v1::QuireShellV1,
@@ -154,6 +200,20 @@ pub fn on_request<D: QuireShellHandler>(
                 "a Space target needs a width and a height",
             ),
         },
+        Request::SpaceTargetNew {
+            output,
+            x,
+            y,
+            width,
+            height,
+        } => {
+            let output = state.output_key_of(&output);
+            on_space_target_new(
+                state.quire_shell_part(),
+                output,
+                new_target_rect(x, y, width, height),
+            );
+        }
         Request::GetSpaceCaptureSource {
             source,
             output,

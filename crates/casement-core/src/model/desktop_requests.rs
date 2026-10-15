@@ -73,6 +73,7 @@ impl Model {
             ),
             WindowAsk::Place(target) => self.place(&held, target),
             WindowAsk::ToSpace(space) => self.window_to_space(window, &space),
+            WindowAsk::ToNewSpace(output) => self.window_to_new_space(window, &output),
             WindowAsk::Assign(assign) => self.window_assigned(window, assign),
         }
     }

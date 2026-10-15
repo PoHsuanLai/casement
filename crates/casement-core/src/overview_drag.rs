@@ -9,7 +9,7 @@ use crate::geometry::{LogicalPoint, LogicalRect};
 use crate::ids::{OutputKey, WindowId};
 use crate::input::Origin;
 use porter_core::SpaceId;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// How far the pointer must travel from the press, in logical pixels, before a press on a slot
 /// becomes a drag (the Mac's drag threshold is a few pixels too).
@@ -33,14 +33,40 @@ impl SpaceTarget {
     }
 }
 
-/// The Space under the dragged window: on which output, and which Space.
+/// What a drop on a target does.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Landing {
+    /// The window moves to this Space.
+    Space(SpaceId),
+    /// A new Space is made on the output and the window moves to it (the Spaces bar's "add
+    /// desktop" tile).
+    NewSpace,
+}
+
+impl Landing {
+    /// The Space a drop lands on, when it is an existing one.
+    ///
+    /// ```
+    /// use casement_core::overview_drag::Landing;
+    /// assert!(Landing::NewSpace.space().is_none());
+    /// ```
+    pub fn space(&self) -> Option<&SpaceId> {
+        match self {
+            Landing::Space(space) => Some(space),
+            Landing::NewSpace => None,
+        }
+    }
+}
+
+/// The target under the dragged window: on which output, and what a drop there does.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Over {
     /// The output whose bar holds the target.
     pub output: OutputKey,
-    /// The Space.
-    pub space: SpaceId,
+    /// What a drop does.
+    pub landing: Landing,
 }
 
 /// Every output's Space targets, as the shell set them.
@@ -55,45 +81,86 @@ pub struct Over {
 /// assert!(none.is_none());
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct SpaceTargets(BTreeMap<OutputKey, Vec<SpaceTarget>>);
+pub struct SpaceTargets {
+    spaces: BTreeMap<OutputKey, Vec<SpaceTarget>>,
+    new_spaces: BTreeMap<OutputKey, LogicalRect>,
+}
 
 impl SpaceTargets {
-    /// Forgets the targets of `output`.
+    /// Forgets the Space targets of `output` (its new-Space target stays).
     pub fn clear(&mut self, output: &OutputKey) {
-        self.0.remove(output);
+        self.spaces.remove(output);
     }
 
     /// Forgets every target (the shell went away).
     pub fn clear_all(&mut self) {
-        self.0.clear();
+        self.spaces.clear();
+        self.new_spaces.clear();
+    }
+
+    /// Sets the new-Space target of `output` (it replaces the one it had), in front of the
+    /// output's Space targets; `None` removes it.
+    ///
+    /// ```
+    /// use casement_core::OutputKey;
+    /// use casement_core::geometry::LogicalRect;
+    /// use casement_core::overview_drag::SpaceTargets;
+    ///
+    /// fn set(targets: &mut SpaceTargets, output: OutputKey, rect: LogicalRect) {
+    ///     targets.set_new_space(output.clone(), Some(rect));
+    ///     targets.set_new_space(output, None);
+    /// }
+    /// ```
+    pub fn set_new_space(&mut self, output: OutputKey, rect: Option<LogicalRect>) {
+        match rect {
+            Some(rect) => {
+                self.new_spaces.insert(output, rect);
+            }
+            None => {
+                self.new_spaces.remove(&output);
+            }
+        }
     }
 
     /// Adds `target` to `output`, in front of the ones it already has.
     pub fn add(&mut self, output: OutputKey, target: SpaceTarget) {
-        self.0.entry(output).or_default().push(target);
+        self.spaces.entry(output).or_default().push(target);
     }
 
-    /// The target of an output that is `live` under `at`: the last one added wins, and outputs
-    /// are tried in key order.
+    /// The target of an output that is `live` under `at`: an output's new-Space target is in
+    /// front of its Space targets, of which the last one added wins, and outputs are tried in
+    /// key order.
     pub fn hit(&self, at: LogicalPoint, live: impl Fn(&OutputKey) -> bool) -> Option<Over> {
-        self.0
-            .iter()
-            .filter(|(output, _)| live(output))
-            .find_map(|(output, targets)| {
-                targets
-                    .iter()
-                    .rev()
-                    .find(|target| target.rect.contains(at))
-                    .map(|target| Over {
-                        output: output.clone(),
-                        space: target.space.clone(),
+        let outputs: BTreeSet<&OutputKey> =
+            self.spaces.keys().chain(self.new_spaces.keys()).collect();
+        outputs
+            .into_iter()
+            .filter(|output| live(output))
+            .find_map(|output| {
+                let new = self
+                    .new_spaces
+                    .get(output)
+                    .filter(|rect| rect.contains(at))
+                    .map(|_| Landing::NewSpace);
+                let existing = || {
+                    self.spaces.get(output).and_then(|targets| {
+                        targets
+                            .iter()
+                            .rev()
+                            .find(|target| target.rect.contains(at))
+                            .map(|target| Landing::Space(target.space.clone()))
                     })
+                };
+                new.or_else(existing).map(|landing| Over {
+                    output: output.clone(),
+                    landing,
+                })
             })
     }
 
     /// Whether no output has a target.
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.spaces.is_empty() && self.new_spaces.is_empty()
     }
 }
 
@@ -173,6 +240,8 @@ pub enum Released {
     FlyBack {
         /// The window.
         window: WindowId,
+        /// Where the pointer was.
+        at: LogicalPoint,
     },
 }
 
@@ -316,8 +385,11 @@ impl Drag {
                 ..
             } => Released::Drop { window, over },
             Drag::Dragging {
-                window, over: None, ..
-            } => Released::FlyBack { window },
+                window,
+                over: None,
+                at,
+                ..
+            } => Released::FlyBack { window, at },
         }
     }
 }
@@ -396,7 +468,7 @@ mod tests {
         for (name, point, live, want) in cases {
             let got = targets
                 .hit(point, |key| live && *key == out)
-                .map(|over| over.space);
+                .and_then(|over| over.landing.space().cloned());
             assert_eq!(got, want.map(space), "{name}");
         }
     }
@@ -454,7 +526,10 @@ mod tests {
         let live = |key: &OutputKey| *key == out;
         let press = Drag::press(WindowId(1), Origin::Test, at(500, 500), at(480, 480));
         let (drag, _) = press.moved(at(10, 10), &targets, live);
-        assert_eq!(drag.over().map(|o| o.space.clone()), Some(space("s-a")));
+        assert_eq!(
+            drag.over().and_then(|o| o.landing.space().cloned()),
+            Some(space("s-a"))
+        );
         // Still over s-a: no change reported.
         let (drag, again) = drag.moved(at(20, 10), &targets, live);
         assert!(matches!(again, Moved::Follows { changed: None, .. }));
@@ -492,7 +567,7 @@ mod tests {
         let (over_b, _) = press().moved(at(150, 10), &targets, live);
         assert!(matches!(
             over_b.released(),
-            Released::Drop { window: WindowId(7), over } if over.space == space("s-b")
+            Released::Drop { window: WindowId(7), over } if over.landing == Landing::Space(space("s-b"))
         ));
         let (nowhere, _) = press().moved(at(400, 400), &targets, live);
         assert!(matches!(
@@ -502,5 +577,77 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn the_new_space_tile_is_in_front_of_the_spaces_of_its_output_and_is_set_alone() {
+        let (mut targets, out) = targets();
+        // The tile overlaps s-b's right half; it is in front there.
+        targets.set_new_space(out.clone(), Some(rect(150, 0, 100, 50)));
+        let live = |key: &OutputKey| *key == out;
+        // name, point, landing
+        let cases = [
+            (
+                "a Space only",
+                at(10, 10),
+                Some(Landing::Space(space("s-a"))),
+            ),
+            (
+                "s-b outside the tile",
+                at(120, 10),
+                Some(Landing::Space(space("s-b"))),
+            ),
+            ("the tile over s-b", at(160, 10), Some(Landing::NewSpace)),
+            ("the tile alone", at(220, 10), Some(Landing::NewSpace)),
+            ("outside all", at(300, 10), None),
+        ];
+        for (name, point, want) in cases {
+            let got = targets.hit(point, live).map(|over| over.landing);
+            assert_eq!(got, want, "{name}");
+        }
+        // Clearing the Space targets leaves the tile; setting none removes it.
+        targets.clear(&out);
+        assert_eq!(
+            targets.hit(at(160, 10), live).map(|o| o.landing),
+            Some(Landing::NewSpace)
+        );
+        assert!(targets.hit(at(10, 10), live).is_none());
+        targets.set_new_space(out.clone(), None);
+        assert!(targets.is_empty());
+        targets.set_new_space(out, Some(rect(0, 0, 5, 5)));
+        targets.clear_all();
+        assert!(targets.is_empty(), "the shell going takes the tile too");
+    }
+
+    #[test]
+    fn a_tile_on_another_output_is_hit_and_a_dead_output_is_not() {
+        let (mut targets, out) = targets();
+        let other = output("DP-1");
+        targets.set_new_space(other.clone(), Some(rect(1000, 0, 50, 50)));
+        let all = |_: &OutputKey| true;
+        let hit = targets
+            .hit(at(1010, 10), all)
+            .expect("the other output's tile");
+        assert_eq!(
+            (hit.output, hit.landing),
+            (other.clone(), Landing::NewSpace)
+        );
+        let only_first = |key: &OutputKey| *key == out;
+        assert!(targets.hit(at(1010, 10), only_first).is_none());
+    }
+
+    #[test]
+    fn a_release_off_every_target_remembers_where_the_pointer_was() {
+        let (targets, out) = targets();
+        let live = |key: &OutputKey| *key == out;
+        let press = Drag::press(WindowId(7), Origin::Test, at(500, 500), at(480, 480));
+        let (nowhere, _) = press.moved(at(400, 300), &targets, live);
+        assert_eq!(
+            nowhere.released(),
+            Released::FlyBack {
+                window: WindowId(7),
+                at: at(400, 300)
+            }
+        );
     }
 }

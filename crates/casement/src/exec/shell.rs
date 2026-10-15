@@ -33,6 +33,19 @@ pub(super) fn note(state: &mut State, note: ShellNote) {
             );
             return;
         }
+        ShellNote::DropTargetNew { output, over } => {
+            let over = match over {
+                casement_protocols::vocab::Shown::Shown => Shown::Shown,
+                _ => Shown::Hidden,
+            };
+            shell_space::send_drop_target_new(
+                &state.wl.quire_shell,
+                &state.wl.output.outputs,
+                output,
+                over,
+            );
+            return;
+        }
         _ => {}
     }
     log(shell::apply_note(&mut state.wl.quire_shell, &note));

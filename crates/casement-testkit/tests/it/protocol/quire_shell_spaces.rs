@@ -1,6 +1,8 @@
 //! `quire_shell_v1` version 2, the Spaces bar's three asks: which outputs Mission Control is up
 //! on (`overview_output`), a picture of a Space (`get_space_capture_source`), and dropping a
-//! dragged window on a Space (`space_target`, `drop_target`). Shell connections only.
+//! dragged window on a Space (`space_target`, `drop_target`). Shell connections only. Version 3
+//! (the pictures of Spaces that are not shown, the new-Space tile, a drag to another output)
+//! is in `quire_shell_drop.rs`, which builds on this file's desk.
 
 use crate::protocol::image_capture::{settle as settle_capture, small};
 use crate::protocol::xdg_shell::{map_toplevel, pointer, windows};
@@ -23,23 +25,23 @@ use std::time::Duration;
 /// The left button (`BTN_LEFT`).
 const LEFT: ButtonCode = ButtonCode(0x110);
 
-/// A one-output desktop with two windows, a version 2 shell with its outputs bound, a pointer
+/// A one-output desktop with two windows, a version 3 shell with its outputs bound, a pointer
 /// and a second Space on the output.
-struct Desk {
-    fixture: Fixture,
-    shell: ShellHandle,
-    shell_id: ClientId,
-    outputs: Vec<BoundOutput>,
-    windows: Vec<WindowId>,
-    pointer: DeviceId,
-    second: SpaceId,
-    app: ClientId,
-    tops: Vec<Toplevel>,
+pub(super) struct Desk {
+    pub(super) fixture: Fixture,
+    pub(super) shell: ShellHandle,
+    pub(super) shell_id: ClientId,
+    pub(super) outputs: Vec<BoundOutput>,
+    pub(super) windows: Vec<WindowId>,
+    pub(super) pointer: DeviceId,
+    pub(super) second: SpaceId,
+    pub(super) app: ClientId,
+    pub(super) tops: Vec<Toplevel>,
     _base: WmBase,
     _watch: DesktopWatch,
 }
 
-fn desk() -> Desk {
+pub(super) fn desk() -> Desk {
     let mut fixture = Fixture::start(small()).expect("fixture");
     let app = fixture.connect(ConnectionRole::Public);
     let base = WmBase::bind(fixture.client(app), 7);
@@ -48,7 +50,7 @@ fn desk() -> Desk {
         map_toplevel(&mut fixture, app, &base, (240, 160)),
     ];
     let shell_id = fixture.connect(ConnectionRole::Shell);
-    let shell = ShellHandle::bind(fixture.client(shell_id), 2);
+    let shell = ShellHandle::bind(fixture.client(shell_id), 3);
     let outputs = ShellHandle::bind_outputs(fixture.client(shell_id));
     let mut watch = DesktopWatch::start(fixture.client(shell_id).globals()).expect("the manager");
     for _ in 0..3 {
@@ -86,7 +88,7 @@ fn desk() -> Desk {
     }
 }
 
-fn output_key(fixture: &Fixture) -> OutputKey {
+pub(super) fn output_key(fixture: &Fixture) -> OutputKey {
     fixture
         .model()
         .outputs()
@@ -97,21 +99,21 @@ fn output_key(fixture: &Fixture) -> OutputKey {
         .expect("an output")
 }
 
-fn open(desk: &mut Desk) {
+pub(super) fn open(desk: &mut Desk) {
     desk.shell
         .overview(OverviewMode::MissionControl, Toggle::On);
     desk.fixture.pump();
     desk.fixture.advance(Duration::from_millis(500));
 }
 
-fn slots(fixture: &Fixture) -> Vec<OverviewSlot> {
+pub(super) fn slots(fixture: &Fixture) -> Vec<OverviewSlot> {
     let model = fixture.model();
     RustScene
         .arrange(&spec_of(model), &LayoutKnobs::of(model.settings()))
         .overview
 }
 
-fn centre_of(desk: &Desk, window: WindowId) -> LogicalPoint {
+pub(super) fn centre_of(desk: &Desk, window: WindowId) -> LogicalPoint {
     slots(&desk.fixture)
         .iter()
         .find(|slot| slot.window == window)
@@ -121,7 +123,7 @@ fn centre_of(desk: &Desk, window: WindowId) -> LogicalPoint {
 }
 
 /// The shell puts one drop target in the top left corner, above every slot.
-fn target(desk: &mut Desk) {
+pub(super) fn target(desk: &mut Desk) {
     let output = &desk.outputs[0].object;
     desk.shell.space_target_clear(output);
     desk.shell
@@ -129,19 +131,19 @@ fn target(desk: &mut Desk) {
     desk.fixture.pump();
 }
 
-fn press(desk: &mut Desk) {
+pub(super) fn press(desk: &mut Desk) {
     desk.fixture.input().button(desk.pointer, LEFT, Edge::Press);
     desk.fixture.pump();
 }
 
-fn release(desk: &mut Desk) {
+pub(super) fn release(desk: &mut Desk) {
     desk.fixture
         .input()
         .button(desk.pointer, LEFT, Edge::Release);
     desk.fixture.pump();
 }
 
-fn move_to(desk: &mut Desk, at: LogicalPoint) {
+pub(super) fn move_to(desk: &mut Desk, at: LogicalPoint) {
     desk.fixture.input().pointer_to(desk.pointer, at);
     desk.fixture.pump();
 }
@@ -384,9 +386,9 @@ fn a_space_picture_is_sent_on_damage_only() {
     );
 }
 
-/// A picture of a Space the output does not show is not made: the session is stopped.
+/// A picture of a Space that has no window is made too, and is empty.
 #[test]
-fn a_picture_of_a_space_that_is_not_shown_stops() {
+fn a_picture_of_an_empty_space_is_made_and_transparent() {
     let mut desk = desk();
     let mut capture =
         OutputCapture::start(desk.fixture.client(desk.shell_id).globals()).expect("the managers");
@@ -396,6 +398,33 @@ fn a_picture_of_a_space_that_is_not_shown_stops() {
             &desk.shell.object,
             "HEADLESS-1",
             desk.second.as_str(),
+            Size::new(80, 60),
+        )
+        .expect("a session");
+    settle_capture(&mut desk.fixture, &mut capture);
+    assert!(!capture.is_stopped(), "a Space that is not shown has one");
+    capture.request(BufferAsk::Announced).expect("a frame");
+    settle_capture(&mut desk.fixture, &mut capture);
+    let frame = capture
+        .take()
+        .expect("answered")
+        .expect("a frame, not a failure");
+    let rgba = frame.to_rgba8().expect("argb8888 reads as rgba");
+    assert!(rgba.chunks(4).all(|pixel| pixel[3] == 0), "nothing in it");
+}
+
+/// A picture of a Space that is not on the output asked for stops.
+#[test]
+fn a_picture_of_a_space_that_is_not_on_the_output_stops() {
+    let mut desk = desk();
+    let mut capture =
+        OutputCapture::start(desk.fixture.client(desk.shell_id).globals()).expect("the managers");
+    settle_capture(&mut desk.fixture, &mut capture);
+    capture
+        .open_space(
+            &desk.shell.object,
+            "HEADLESS-1",
+            "s-nowhere",
             Size::new(80, 60),
         )
         .expect("a session");

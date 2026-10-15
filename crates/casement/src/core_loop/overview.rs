@@ -13,6 +13,7 @@ use casement_chrome::{Margins, TitleKey, TitleRaster};
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::input::InputEvent;
 use casement_core::overview::Overview;
+use casement_core::overview_drag::Drag;
 use casement_core::{OverviewPick, WindowId};
 use casement_layout::{Scheme, overview_dim, overview_ring};
 use casement_render::{
@@ -147,7 +148,12 @@ pub(super) fn draw(state: &mut State, view: &OutputView) -> OverviewDraw {
         Rgba8::from(overview_dim(scheme)),
         Rgba8::from(overview_ring(scheme)),
     );
-    OverviewDraw::On { hover, look }
+    // The window being dragged is drawn above the others.
+    let lift = match &state.render.overview_drag {
+        Drag::Dragging { window, .. } => Some(*window),
+        _ => None,
+    };
+    OverviewDraw::On { hover, look, lift }
 }
 
 /// `window`'s title as a label under its slot: as wide as the slot, within bounds.

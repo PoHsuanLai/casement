@@ -127,6 +127,19 @@ pub fn ring_elements<R: Compositor>(
 
 /// `rect` on `view`, in its physical pixels: both corners rounded the way every element's are,
 /// so the bars meet without a seam.
+/// Moves the items `is_lifted` picks to the end of `items`, keeping every other order: the
+/// front of a list that is back first.
+///
+/// ```
+/// use casement_render::lift_last;
+/// let mut list = [1, 2, 3, 4];
+/// lift_last(&mut list, |n| *n == 2);
+/// assert_eq!(list, [1, 3, 4, 2]);
+/// ```
+pub fn lift_last<T>(items: &mut [T], is_lifted: impl Fn(&T) -> bool) {
+    items.sort_by_key(|item| is_lifted(item));
+}
+
 fn physical(rect: LogicalRect, view: &OutputView) -> PhysicalRect {
     let far = LogicalPoint {
         x: rect.origin.x.saturating_add_unsigned(rect.size.w),
@@ -155,6 +168,21 @@ mod tests {
             area: LogicalRect::new(LogicalPoint { x: 0, y: 0 }, LogicalSize { w: 1280, h: 720 }),
             scale: Scale(scale),
             mode: PhysicalSize { w: 1280, h: 720 },
+        }
+    }
+
+    #[test]
+    fn the_lifted_item_goes_last_and_the_rest_keep_their_order() {
+        // name, list, lifted, want
+        let cases: [(&str, [u32; 4], u32, [u32; 4]); 4] = [
+            ("from the middle", [1, 2, 3, 4], 2, [1, 3, 4, 2]),
+            ("already last", [1, 2, 3, 4], 4, [1, 2, 3, 4]),
+            ("from the front", [1, 2, 3, 4], 1, [2, 3, 4, 1]),
+            ("not in the list", [1, 2, 3, 4], 9, [1, 2, 3, 4]),
+        ];
+        for (name, mut list, lifted, want) in cases {
+            lift_last(&mut list, |n| *n == lifted);
+            assert_eq!(list, want, "{name}");
         }
     }
 

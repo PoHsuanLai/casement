@@ -45,6 +45,14 @@ pub enum ShellNote {
         /// The Space, or none.
         space: Option<porter_core::SpaceId>,
     },
+    /// The window dragged in Mission Control entered (`Shown`) or left (`Hidden`) the new-Space
+    /// target on `output` (`drop_target_new`, version 3).
+    DropTargetNew {
+        /// The output whose bar holds the target.
+        output: OutputKey,
+        /// Whether the dragged window is over it.
+        over: Shown,
+    },
 }
 
 /// The other half of a Split View is being chosen.

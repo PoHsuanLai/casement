@@ -34,6 +34,9 @@ pub struct ShellEvents {
     /// Every `drop_target` (version 2), in order: the output and the Space under the dragged
     /// window, or none.
     pub drop_targets: Vec<(WlOutput, Option<String>)>,
+    /// Every `drop_target_new` (version 3), in order: the output and whether the dragged window
+    /// is over its new-Space tile (`None` for a code this client does not know).
+    pub drop_targets_new: Vec<(WlOutput, Option<Shown>)>,
 }
 
 /// A bound `wl_output` and the connector name it reported.
@@ -87,7 +90,7 @@ pub struct ShellHandle {
 }
 
 impl ShellHandle {
-    /// Binds the global at `version` (1 or 2).
+    /// Binds the global at `version` (1, 2 or 3).
     pub fn bind(client: &mut TestClient, version: u32) -> ShellHandle {
         let log = ShellLog::default();
         let object = client
@@ -131,6 +134,19 @@ impl ShellHandle {
     pub fn space_target(&self, output: &WlOutput, space: &str, at: (i32, i32), size: (u32, u32)) {
         self.object
             .space_target(output, space.to_owned(), at.0, at.1, size.0, size.1);
+    }
+
+    /// Sets the new-Space target of `output`: dropping a dragged window on the rectangle at `at`
+    /// of `size` (global logical pixels) makes a Space with it; an empty rectangle removes the
+    /// target (version 3).
+    pub fn space_target_new(&self, output: &WlOutput, at: (i32, i32), size: (u32, u32)) {
+        self.object
+            .space_target_new(output, at.0, at.1, size.0, size.1);
+    }
+
+    /// The `drop_target_new` events, in order.
+    pub fn drop_targets_new(&self) -> Vec<(WlOutput, Option<Shown>)> {
+        self.log.with(|seen| seen.drop_targets_new.clone())
     }
 
     /// The `overview_output` events, in order.
@@ -289,6 +305,13 @@ impl Dispatch<QuireShellV1, ShellLog> for Host {
             quire_shell_v1::Event::DropTarget { output, space_id } => {
                 log.with(|seen| seen.drop_targets.push((output, space_id)));
             }
+            quire_shell_v1::Event::DropTargetNew { output, over } => log.with(|seen| {
+                let over = match over {
+                    WEnum::Value(over) => Some(over),
+                    WEnum::Unknown(_) => None,
+                };
+                seen.drop_targets_new.push((output, over));
+            }),
             _ => {}
         }
     }

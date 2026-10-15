@@ -11,10 +11,11 @@ use crate::state::State;
 use casement_core::desktop::{DesktopRequest, WindowAsk};
 use casement_core::geometry::LogicalPoint;
 use casement_core::input::InputEvent;
-use casement_core::overview_drag::{Drag, Moved, Over, Released};
+use casement_core::overview_drag::{Drag, Landing, Moved, Over, Released};
 use casement_core::shell::ShellNote;
-use casement_core::{Cause, Effect, Event, OutputKey, OverviewPick, WindowId};
+use casement_core::{Cause, Effect, Event, OverviewPick, WindowId};
 use casement_motion::retarget;
+use casement_protocols::vocab::Shown;
 use casement_render::{CursorDraw, CursorShape};
 
 /// Whether the drag took the pointer move.
@@ -87,20 +88,64 @@ pub(super) fn released(state: &mut State) {
             over: target,
         } => {
             tell(state, Some(&target), None);
-            state.render.overview_hover = None;
-            let ask = WindowAsk::ToSpace(target.space);
-            super::feed(
-                state,
-                vec![Event::Desktop(DesktopRequest::Window { window, ask })],
-            );
+            let ask = match target.landing {
+                Landing::Space(space) => WindowAsk::ToSpace(space),
+                // `NewSpace` (the enum grows).
+                _ => WindowAsk::ToNewSpace(target.output),
+            };
+            land(state, window, ask);
         }
-        Released::FlyBack { .. } => {
+        Released::FlyBack { window, at } => {
             tell(state, over.as_ref(), None);
-            state.render.overview_hover = None;
-            super::relayout(state, &Cause::Overview);
+            // Off every target but over another output: the window goes to the Space that
+            // output shows, as a window dragged to another display does on a Mac.
+            match shown_space_at(state, window, at) {
+                Some(space) => land(state, window, WindowAsk::ToSpace(space)),
+                None => {
+                    state.render.overview_hover = None;
+                    super::relayout(state, &Cause::Overview);
+                }
+            }
         }
         _ => {}
     }
+}
+
+/// Carries out a drop: the model moves `window` (or refuses), and the picture is laid out again
+/// either way, so a window the model leaves where it was flies back to its slot.
+fn land(state: &mut State, window: WindowId, ask: WindowAsk) {
+    state.render.overview_hover = None;
+    super::feed(
+        state,
+        vec![Event::Desktop(DesktopRequest::Window { window, ask })],
+    );
+    super::relayout(state, &Cause::Overview);
+}
+
+/// The Space shown by the output under `at`, when that is not the output `window` is on.
+fn shown_space_at(
+    state: &State,
+    window: WindowId,
+    at: LogicalPoint,
+) -> Option<porter_core::SpaceId> {
+    let model = &state.core.model;
+    let under = model
+        .outputs()
+        .0
+        .iter()
+        .find(|(_, plugged)| plugged.config.logical_rect().contains(at))
+        .map(|(key, _)| key.clone())?;
+    let from = model
+        .windows()
+        .get(&window)
+        .and_then(|held| model.output_of(held));
+    if from.as_ref() == Some(&under) {
+        return None;
+    }
+    model
+        .spaces()
+        .shown_on(&under)
+        .map(|shown| shown.id.clone())
 }
 
 /// The dragged `window`'s slot is `top_left` now (and the front-most): motion carries it there.
@@ -125,22 +170,36 @@ fn follow(state: &mut State, window: WindowId, top_left: LogicalPoint) {
     state.core.arrangement = next;
 }
 
-/// The shell hears the Space target under the dragged window changed from `before` to `now`.
+/// The shell hears the target under the dragged window changed from `before` to `now`: the
+/// tile it left is cleared (unless the new one is the same kind on the same output, which
+/// replaces it) and the one it entered is lit.
 fn tell(state: &mut State, before: Option<&Over>, now: Option<&Over>) {
     let mut notes: Vec<Effect> = Vec::new();
-    let cleared: Option<&OutputKey> = before
-        .map(|over| &over.output)
-        .filter(|output| now.is_none_or(|over| over.output != **output));
-    if let Some(output) = cleared {
-        notes.push(Effect::Shell(ShellNote::DropTarget {
-            output: output.clone(),
-            space: None,
-        }));
+    if let Some(left) = before {
+        let kept = now.filter(|over| over.output == left.output);
+        match (&left.landing, kept.map(|over| &over.landing)) {
+            (Landing::Space(_), Some(Landing::Space(_))) => {}
+            (Landing::Space(_), _) => notes.push(Effect::Shell(ShellNote::DropTarget {
+                output: left.output.clone(),
+                space: None,
+            })),
+            (Landing::NewSpace, Some(Landing::NewSpace)) => {}
+            (_, _) => notes.push(Effect::Shell(ShellNote::DropTargetNew {
+                output: left.output.clone(),
+                over: Shown::Hidden,
+            })),
+        }
     }
     if let Some(over) = now {
-        notes.push(Effect::Shell(ShellNote::DropTarget {
-            output: over.output.clone(),
-            space: Some(over.space.clone()),
+        notes.push(Effect::Shell(match &over.landing {
+            Landing::Space(space) => ShellNote::DropTarget {
+                output: over.output.clone(),
+                space: Some(space.clone()),
+            },
+            _ => ShellNote::DropTargetNew {
+                output: over.output.clone(),
+                over: Shown::Shown,
+            },
         }));
     }
     exec::exec(state, notes);
