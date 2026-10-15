@@ -27,6 +27,8 @@ pub mod input;
 pub mod session;
 pub mod tty;
 mod winit;
+mod winit_held;
+mod winit_spec;
 
 pub use backend::{BackendChoice, BackendError, BackendKind};
 pub use headless::{
@@ -37,4 +39,6 @@ pub use headless::{
 pub use input::{DeviceName, DeviceSpec, VirtualDevice, VirtualInput};
 pub use session::{SessionFault, SessionSeam};
 pub use tty::TtyBackend;
-pub use winit::WinitBackend;
+pub use winit::{WindowTurn, WinitBackend};
+pub use winit_held::HeldInput;
+pub use winit_spec::{HOST_TRANSFORM, window_spec};

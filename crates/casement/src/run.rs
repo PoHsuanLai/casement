@@ -9,7 +9,6 @@ use crate::notify::{Notice, NotifySocket, SocketNotify, Watchdog};
 use crate::space_sync::SpaceSync;
 use crate::test_mode::{HookError, TestHooks};
 use crate::{StartError, State, cli, clients, core_loop};
-use casement_backend::BackendKind;
 use casement_ipc::IpcError;
 use casement_ipc::sleep::SleepBus;
 use casement_ipc::space_registry::ZbusSpaceRegistry;
@@ -324,17 +323,15 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
     #[cfg(not(feature = "debug-inject"))]
     let wake = hooks.wake();
     let ran = event_loop.run(wake, &mut state, |state| {
+        if core_loop::nested::drain(state).is_break() {
+            stop.stop();
+        }
         core_loop::turn(state);
         state.seams.space_sync.poll();
         hooks.turn(state);
         crate::xwayland::turn(state, &xwayland_config, &wayland);
         #[cfg(feature = "debug-inject")]
         debug::turn(&debug, state);
-        if let BackendKind::Winit(window) = &mut state.backend
-            && window.dispatch().is_break()
-        {
-            stop.stop();
-        }
         display::flush(&display);
     });
     if let Err(error) = state.seams.notify.send(&Notice::Stopping) {

@@ -3192,3 +3192,50 @@ first build. Built on casement 78b3152.
   appears at the end with the window, Mission Control stays; drag across to the other display: the window follows the pointer,
   is on top of the other slots while it is dragged, and lands on the target or the Space shown there, at the same place about
   that display's corner; a drop on a tile of the Space it is on flies back.
+
+## wave-2026-10-15/winit
+
+Lane cas12-winit: the winit backend usable for hands-on testing in a host desktop. Built nowhere by the lane (no cargo).
+
+- **Upside down.** The window's damage tracker draws with `HOST_TRANSFORM` (`Transform::Flipped180`, as anvil's winit
+  backend does) instead of `Normal`. The flip is the window's own: the output in the model, the config and the
+  `wl_output` stay `Normal`. The winit backend has no capture path (`present` keeps no pixels, `capture_watch` is read
+  only for the tty), so nothing is flipped twice; a screenshot of a winit output is not offered at all.
+- **Size and scale.** `winit_spec::window_spec` turns the window's physical size and the host's scale factor into mode
+  size and scale in 120ths (table-tested: 2880x1800 at 2.0 is 240; a non-positive or non-finite factor is 120). `start`
+  announces that output, not the requested one. `WinitEvent::Resized { size, scale_factor }` (also what a scale-factor
+  change becomes in smithay) rebuilds the tracker and returns `ConnectorEvent::Changed`; a window with no area is ignored.
+  In `core_loop::connector` a winit output now takes the window's `OutputConfig` on `Plugged` (through `spec_config`, which
+  the headless backend alone used) and on `Changed` (a new `window_config` branch, then `configure_output`), because the
+  model keeps a known output's config when only its facts change. The requested refresh and position are kept.
+- **Input.** `WinitBackend::dispatch(&PollContext) -> WindowTurn { flow, fed, connectors }` converts `WinitEvent::Input`
+  with `input_kind_of` over the desktop extent (absolute pointer positions are the window's 0..1 position times the
+  extent) and stamps `Origin::Physical`, device and `context.now`, as `RealInputFeed` does. The first turn also reports a
+  keyboard (`DeviceId(1)`) and a pointer (`DeviceId(2)`) as `FedInput::Appeared`; the core ignores device appearance
+  today, and nothing is configured (the host owns acceleration, so the stored pointer settings do not apply here).
+  `core_loop/nested.rs` drains it (connector changes first, then input events with the scroll factor of the stored profile)
+  and `run.rs` calls it before `core_loop::turn`, replacing the old post-turn `dispatch()`. No device removal is
+  reported: the devices live as long as the window.
+- **Focus loss.** The core has no release-all mechanism, so the backend tracks held keys and buttons (`HeldInput`) and a
+  `WinitEvent::Focus(false)` emits their releases as ordinary events.
+- **Not wired.** Touch (a host touchscreen) and tablet events: `device_of` drops them, the window announces no touch
+  device. Gestures from a host touchpad are pointer-class and pass through `input_kind_of` as it converts them.
+- **Keys the host eats.** The host desktop keeps its own shortcuts: Super alone, Super+key, Alt+Tab, Alt+F4, Ctrl+Alt+F-keys,
+  media keys never reach the window, so casement's Super-based chords cannot be pressed nested, and the key-up of a key
+  whose press the host took never arrives either. Chords on keys the host lets through (Ctrl, Alt, Shift combinations) work as
+  on the tty, because modifiers come from the same key events. A host that grabs the keyboard shortcut inhibit protocol
+  (KDE: hold the shortcut-inhibit toggle) gives the window everything; winit does not request it. A chord for nested use
+  that avoids the host's keys is the owner's call. The tty's VT chords do nothing here (not a tty).
+- **Tests.** casement-backend `tests/it/winit.rs`: the spec table, the kept fields, the transform choice, focus release.
+  `docs/manual-checks.md` gains the winit entry (new file).
+- **Likeliest first-compile faults.** (smithay rev 90efde4) `winit.rs`: `dispatch_new_events(|event| seen.push(event))`
+  needs the closure to be `FnMut(WinitEvent)`; `WinitInput` is re-exported from `smithay::backend::winit` through
+  `pub use self::input::*`; `WinitGraphicsBackend::scale_factor` and `window_size` sit in an impl block that may carry a
+  renderer bound (`spec_of_window` names `GlesRenderer`); `OutputDamageTracker::new(size, scale, HOST_TRANSFORM)` takes the
+  size as `(i32, i32)` via `Into<Size<i32, Physical>>`; `Mode { size, ..base.mode }` and `Scale` equality
+  (`next.scale != self.output.scale`). `core_loop.rs`: the `if let (Some(key), Some(config)) = ...` arm and
+  `key_of` over `Model::outputs().0`. `run.rs`: `BackendKind` import removed (check nothing else uses it). The doc test on
+  `window_spec` parses `WINIT-1:1440x900@60000:120:0,0`.
+- **By hand.** The manual-checks entry; also whether the first pointer motion lands under the host pointer (absolute
+  motion needs a first `PointerMoved` from the host), and whether a 2x window with the host's fractional scale (1.25)
+  keeps the picture sharp.
