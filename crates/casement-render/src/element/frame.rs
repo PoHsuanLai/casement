@@ -290,7 +290,7 @@ pub fn label_element<R: Compositor>(
 }
 
 /// `made` as a buffer smithay can upload.
-fn to_buffer(made: &raster::Raster) -> MemoryRenderBuffer {
+pub(super) fn to_buffer(made: &raster::Raster) -> MemoryRenderBuffer {
     MemoryRenderBuffer::from_slice(
         &made.argb,
         Fourcc::Argb8888,
@@ -305,7 +305,7 @@ fn to_buffer(made: &raster::Raster) -> MemoryRenderBuffer {
 }
 
 /// The whole of a buffer `w` by `h` pixels.
-fn whole(w: u32, h: u32) -> Rectangle<f64, Logical> {
+pub(super) fn whole(w: u32, h: u32) -> Rectangle<f64, Logical> {
     Rectangle::from_size((f64::from(w), f64::from(h)).into())
 }
 
@@ -391,7 +391,7 @@ fn shadow_elements<R: Compositor>(
 
 /// `buffer` drawn with its top-left at the global logical `origin`, stretched to `size`
 /// logical pixels; `src` is the part of the buffer shown, in its pixels.
-fn element<R: Compositor>(
+pub(super) fn element<R: Compositor>(
     renderer: &mut R,
     view: &OutputView,
     origin: LogicalPoint,

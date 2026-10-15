@@ -27,6 +27,13 @@ const SHADOW_LIMIT: usize = 8;
 /// are few).
 const WHOLE_LIMIT: usize = 16;
 
+/// How many icon buffers the cache holds: Mission Control shows a few dozen windows.
+const ICON_LIMIT: usize = 64;
+
+/// What an icon buffer is cached under: the window, the raster's id and its size in pixels. A
+/// window keeps its own buffer, so two windows of one app never share an element id in a frame.
+pub(crate) type IconKey = (WindowId, u64, u32, u32);
+
 /// A small window's shadow buffers: the window, the shadow, and its width and height in pixels.
 type WholeAt = (WindowId, ShadowKey, u32, u32);
 
@@ -47,6 +54,8 @@ pub(crate) struct DrawCache {
     wholes: RefCell<BTreeMap<(ShadowKey, u32, u32), Rc<Raster>>>,
     /// Each small window's shadow as a buffer, uploaded once from its raster.
     whole_sets: RefCell<BTreeMap<WholeAt, Rc<WholeShadow>>>,
+    /// Mission Control's app icons as buffers, uploaded once each and dropped when it closes.
+    icons: RefCell<BTreeMap<IconKey, MemoryRenderBuffer>>,
     /// The cover's id: one for every output (each output has its own damage tracker).
     cover: Id,
     /// The id of Mission Control's dimming layer (one for every output).
@@ -62,6 +71,7 @@ impl Default for DrawCache {
             shadows: RefCell::new(BTreeMap::new()),
             wholes: RefCell::new(BTreeMap::new()),
             whole_sets: RefCell::new(BTreeMap::new()),
+            icons: RefCell::new(BTreeMap::new()),
             cover: Id::new(),
             dim: Id::new(),
         }
@@ -151,6 +161,24 @@ impl DrawCache {
         set
     }
 
+    /// The icon buffer under `key`, made by `make` the first time.
+    pub(crate) fn icon(
+        &self,
+        key: IconKey,
+        make: impl FnOnce() -> MemoryRenderBuffer,
+    ) -> MemoryRenderBuffer {
+        let mut icons = self.icons.borrow_mut();
+        if icons.len() >= ICON_LIMIT && !icons.contains_key(&key) {
+            icons.clear();
+        }
+        icons.entry(key).or_insert_with(make).clone()
+    }
+
+    /// Lets go of every icon buffer (Mission Control is not drawn).
+    pub(crate) fn drop_icons(&self) {
+        self.icons.borrow_mut().clear();
+    }
+
     /// The frame raster under `key`, made by `make` the first time.
     pub(crate) fn frame(
         &self,
@@ -233,6 +261,33 @@ mod tests {
         let b = cache.shadow(WindowId(2), shadow_key(&look, Scale::ONE), make);
         assert_eq!(made.get(), 1);
         assert!(!Rc::ptr_eq(&a, &b));
+    }
+
+    #[test]
+    fn an_icon_is_uploaded_once_until_the_overview_closes() {
+        use smithay::backend::allocator::Fourcc;
+        use smithay::utils::Transform;
+        let cache = DrawCache::default();
+        let made = std::cell::Cell::new(0);
+        let ask = || {
+            cache.icon((WindowId(1), 7, 1, 1), || {
+                made.set(made.get() + 1);
+                MemoryRenderBuffer::from_slice(
+                    &[0u8; 4],
+                    Fourcc::Argb8888,
+                    (1, 1),
+                    1,
+                    Transform::Normal,
+                    None,
+                )
+            })
+        };
+        ask();
+        ask();
+        assert_eq!(made.get(), 1);
+        cache.drop_icons();
+        ask();
+        assert_eq!(made.get(), 2);
     }
 
     #[test]

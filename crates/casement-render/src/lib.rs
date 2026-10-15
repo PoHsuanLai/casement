@@ -42,7 +42,10 @@ pub use element::{
     scaled_content, solid_rect, strip_plans, surface_origin, surface_origin_logical,
     window_content, window_drawn, window_elements, window_surfaces,
 };
-pub use element::{OverviewLook, lift_last, shown_length, shown_outline};
+pub use element::{
+    IconPlace, OverviewIcon, OverviewLook, icon_element, icon_place, lift_last, shown_length,
+    shown_outline,
+};
 pub use gl_raw::{gles_on, surfaceless_gles};
 pub use scene::{
     ChromeLayer, CursorDraw, CursorShape, LayerDraw, OutputView, OverviewDraw, OverviewHover,

@@ -5,10 +5,11 @@ pub(crate) mod convert;
 use crate::compositor::Compositor;
 use crate::element::{
     CasementElement, ClipShape, ClosingFrame, FlightDraw, FrameDraw, GenieWindow, LockCoverElement,
-    OverviewLook, PopupRide, Rgba8, TitleDraw, choose, closing_elements, cursor_elements,
-    dim_elements, drawn_content, frame_elements, genie_window, label_element, layer_elements,
-    lift_last, popup_elements, popup_elements_riding, ring_elements, shown_length, shown_outline,
-    surface_origin_logical, window_content, window_elements,
+    OverviewIcon, OverviewLook, PopupRide, Rgba8, TitleDraw, choose, closing_elements,
+    cursor_elements, dim_elements, drawn_content, frame_elements, genie_window, icon_element,
+    icon_place, label_element, layer_elements, lift_last, popup_elements, popup_elements_riding,
+    ring_elements, shown_length, shown_outline, surface_origin_logical, window_content,
+    window_elements,
 };
 use crate::element::{alpha, flight_ratio};
 use crate::texture_book::TextureBook;
@@ -91,6 +92,8 @@ pub enum OverviewDraw {
         look: OverviewLook,
         /// The window the person is dragging: drawn above every other window.
         lift: Option<WindowId>,
+        /// The app icon under each window that has one.
+        icons: BTreeMap<WindowId, OverviewIcon>,
     },
 }
 
@@ -214,6 +217,10 @@ pub fn output_elements<R: Compositor>(
     {
         lift_last(&mut others, |placed| placed.window == *lifted);
     }
+    if matches!(layers.overview, OverviewDraw::Off) {
+        // The icons were uploaded for an overview that is over.
+        book.cache().drop_icons();
+    }
     let draw_windows =
         |placed: &[&PlacedWindow], elements: &mut Vec<CasementElement<R>>, renderer: &mut R| {
             for placed in placed.iter().rev() {
@@ -315,6 +322,12 @@ pub fn output_elements<R: Compositor>(
                         )
                     })
                     .unwrap_or_default();
+                // The app's icon under the window, arriving with its slot.
+                let icon = match (&layers.overview, shrunk) {
+                    (OverviewDraw::On { icons, .. }, true) => icons.get(&placed.window),
+                    _ => None,
+                }
+                .and_then(|icon| Some((icon, icon_place(icon, content, full)?)));
                 if let OverviewDraw::On {
                     hover: Some(hover),
                     look,
@@ -326,10 +339,14 @@ pub fn output_elements<R: Compositor>(
                         style.map_or(content, |style| shown_outline(style.metrics, content, full));
                     elements.extend(ring_elements(visual, view, look));
                     elements.extend(hover.label.as_ref().and_then(|(size, draw)| {
-                        let at = label_place(visual, *size);
+                        let clear = icon.map(|(_, place)| place.at);
+                        let at = label_place(visual, *size, clear);
                         label_element(draw, at, view, renderer)
                     }));
                 }
+                elements.extend(icon.and_then(|(icon, place)| {
+                    icon_element(placed.window, icon, place, view, book, renderer)
+                }));
                 elements.extend(front);
                 elements.extend(window_elements(placed, clip, view, book, renderer));
                 elements.extend(back);
@@ -371,10 +388,13 @@ fn in_overview(
     }
 }
 
-/// Where a label of `size` goes: centred under `visual`, a gap below it.
-fn label_place(visual: LogicalRect, size: LogicalSize) -> LogicalRect {
+/// Where a label of `size` goes: centred under `visual`, a gap below it, and below `clear` (the
+/// app's icon, which hangs off the window's bottom edge) when there is one.
+fn label_place(visual: LogicalRect, size: LogicalSize, clear: Option<LogicalRect>) -> LogicalRect {
     let across = i64::from(visual.origin.x) + (i64::from(visual.size.w) - i64::from(size.w)) / 2;
-    let below = i64::from(visual.origin.y) + i64::from(visual.size.h) + i64::from(LABEL_GAP);
+    let bottom = |rect: LogicalRect| i64::from(rect.origin.y) + i64::from(rect.size.h);
+    let below = clear.map_or(bottom(visual), |icon| bottom(visual).max(bottom(icon)))
+        + i64::from(LABEL_GAP);
     let whole = |n: i64| i32::try_from(n).unwrap_or(0);
     LogicalRect::new(
         LogicalPoint {
