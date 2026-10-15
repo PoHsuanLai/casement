@@ -39,6 +39,18 @@ pub(crate) fn behind(
     origin: SubPoint,
     view: &OutputView,
 ) -> Option<BlurV0Element> {
+    behind_scaled(root, origin, (1.0, 1.0), 1.0, view)
+}
+
+/// [`behind`] stretched by `ratio` about its top-left (a window in a Scale flight) and drawn at `alpha`
+/// (the window's, so the blur fades with it); none without a region or with an empty one.
+pub(crate) fn behind_scaled(
+    root: &WlSurface,
+    origin: SubPoint,
+    ratio: (f64, f64),
+    alpha: f32,
+    view: &OutputView,
+) -> Option<BlurV0Element> {
     let region = with_states(root, |states| {
         states
             .cached_state
@@ -49,11 +61,11 @@ pub(crate) fn behind(
     })?;
     let rects: Vec<PhysicalRect> = disjoint(&region)
         .into_iter()
-        .map(|rect| placed(rect, origin, view))
+        .map(|rect| placed(rect, origin, ratio, view))
         .filter(|rect| rect.w > 0 && rect.h > 0)
         .collect();
     let id = Id::from_wayland_resource(root).namespaced(NAMESPACE);
-    (!rects.is_empty()).then(|| BlurV0Element::new(id, rects, STAND_IN))
+    (!rects.is_empty()).then(|| BlurV0Element::new(id, rects, STAND_IN).with_alpha(alpha))
 }
 
 /// A region's rectangles, added and subtracted in order, as rectangles that do not overlap
@@ -74,14 +86,20 @@ fn disjoint(region: &RegionAttributes) -> Vec<Rectangle<i32, Logical>> {
         })
 }
 
-/// A surface-local rectangle of a surface at `origin`, in `view`'s physical pixels (each edge
-/// rounded, so neighbours stay touching).
-fn placed(rect: Rectangle<i32, Logical>, origin: SubPoint, view: &OutputView) -> PhysicalRect {
+/// A surface-local rectangle of a surface at `origin` stretched by `ratio`, in `view`'s
+/// physical pixels (each edge rounded, so neighbours stay touching).
+fn placed(
+    rect: Rectangle<i32, Logical>,
+    origin: SubPoint,
+    ratio: (f64, f64),
+    view: &OutputView,
+) -> PhysicalRect {
+    let offset = |d: i32, by: f64| (f64::from(SubPx::of_logical(d).0) * by).round() as i32;
     let corner = |dx: i32, dy: i32| {
         on_output(
             SubPoint {
-                x: SubPx(origin.x.0.saturating_add(SubPx::of_logical(dx).0)),
-                y: SubPx(origin.y.0.saturating_add(SubPx::of_logical(dy).0)),
+                x: SubPx(origin.x.0.saturating_add(offset(dx, ratio.0))),
+                y: SubPx(origin.y.0.saturating_add(offset(dy, ratio.1))),
             },
             view,
         )
@@ -104,6 +122,7 @@ pub struct BlurV0Element {
     id: Id,
     region: Vec<PhysicalRect>,
     stand_in: Rgba8,
+    alpha: f32,
 }
 
 impl BlurV0Element {
@@ -114,7 +133,49 @@ impl BlurV0Element {
             id,
             region,
             stand_in,
+            alpha: 1.0,
         }
+    }
+
+    /// The same blur drawn at `alpha` (0 to 1): a window that fades takes its blur with it.
+    ///
+    /// ```
+    /// use casement_render::{BlurV0Element, Rgba8};
+    /// use smithay::backend::renderer::element::Id;
+    ///
+    /// let black = Rgba8 { r: 0, g: 0, b: 0, a: 255 };
+    /// let blur = BlurV0Element::new(Id::new(), Vec::new(), black).with_alpha(0.5);
+    /// assert_eq!(blur.alpha_of(), 0.5);
+    /// ```
+    pub fn with_alpha(self, alpha: f32) -> BlurV0Element {
+        BlurV0Element {
+            alpha: alpha.clamp(0.0, 1.0),
+            ..self
+        }
+    }
+
+    /// How opaque the blur is drawn.
+    pub fn alpha_of(&self) -> f32 {
+        self.alpha
+    }
+
+    /// The same blur over the rectangles `map` makes of each of this one's (a window cut into
+    /// strips has its blur cut the same way); the id, the stand-in and the alpha are kept.
+    pub fn remapped<I: IntoIterator<Item = PhysicalRect>>(
+        &self,
+        map: impl Fn(PhysicalRect) -> I,
+    ) -> BlurV0Element {
+        BlurV0Element {
+            id: self.id.clone(),
+            region: self.region.iter().copied().flat_map(map).collect(),
+            stand_in: self.stand_in,
+            alpha: self.alpha,
+        }
+    }
+
+    /// The rectangles it blurs under (output pixels).
+    pub fn region(&self) -> &[PhysicalRect] {
+        &self.region
     }
 
     /// The smallest rectangle holding the region (empty for an empty region).
@@ -180,7 +241,7 @@ impl BlurV0Element {
         let clipped = self.clip(damage);
         match clipped.is_empty() {
             true => Ok(()),
-            false => frame.draw_solid(dst, &clipped, self.stand_in.color32f()),
+            false => frame.draw_solid(dst, &clipped, self.stand_in.faded(self.alpha)),
         }
     }
 }
@@ -205,7 +266,8 @@ impl Element for BlurV0Element {
                 .into_iter()
                 .flat_map(i32::to_le_bytes)
         });
-        fingerprint(colour.into_iter().chain(shape))
+        let alpha = self.alpha.to_bits().to_le_bytes();
+        fingerprint(colour.into_iter().chain(alpha).chain(shape))
     }
 
     fn src(&self) -> Rectangle<f64, BufferCoords> {
@@ -234,10 +296,14 @@ impl Element for BlurV0Element {
     /// opaque too.
     fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
         let _ = scale;
-        match self.stand_in.is_opaque() {
+        match self.stand_in.is_opaque() && self.alpha >= 1.0 {
             true => OpaqueRegions::from_slice(&self.local_region()),
             false => OpaqueRegions::default(),
         }
+    }
+
+    fn alpha(&self) -> f32 {
+        self.alpha
     }
 
     fn is_framebuffer_effect(&self) -> bool {

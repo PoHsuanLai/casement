@@ -2602,6 +2602,75 @@ Nothing here compiled or ran (the lane does not build). Closes the four "Capture
   the bind in `write_dmabuf` is the lever); the cursor of a toolkit that draws its own (GTK/Qt apps set one) follows in a
   cursor capture; on a rotated output a remote-desktop viewer's cursor points the right way; at 1.5x the cursor in a
   screencast sits exactly where it does on screen.
+## wave-2026-10-15/flight2
+
+Minimise, restore and close without anything dropped (the follow-ups "Genie and Scale gaps" and "A closing window loses its frame
+at once"). Written without a compiler (wave rule); the orchestrator builds.
+
+- **Genie: clip.** The rounded clip is applied to the surface strips that reach the bottom corners (`ClipShape::touches`, the
+  strip's `source` rows against the radius band, plus a pixel), as the new variant `ClipStrip` (`clip_strip.rs`) with a
+  `Compositor::draw_clip_strip` hook (default: the plain strip, so pixman and the dummy renderer stay unclipped as before). The
+  GLES draw reuses the clip shader (`rounded_clip/gles.rs::draw_masked`) but takes the mask's src/dst from the shared surface
+  element as it stands at rest, not from the strip's own draw arguments. The coverage is therefore a function of the window's own
+  pixels and the strip carries the cut along under any scale and move; no per-strip ellipse maths. Strips above the corner band
+  stay plain `SurfaceStrip`s. A clipped strip offers no opaque regions.
+- **Genie: shadow.** Cut into the same strips, not a nine-slice. Reason: the shadow already exists as eight memory pieces, the strip
+  wrappers take them unchanged, and a strip follows the bent silhouette at every row; a nine-slice scaled over the bounding
+  trapezoid would leave the halo straight while the window bends. Each shadow strip is the window strip's plan `widened` by the
+  shadow margin sideways (the first strip also above, the last also below). Cost: up to (strips x 8) crop attempts per frame, most
+  return `None` at once.
+- **Genie: blur.** One `BlurV0Element` whose region is the blur rectangles of the window mapped through every strip
+  (`StripPlan::mapped`, rows clipped to the strip's drawn band so no two rectangles share a pixel). A blur per strip would be one
+  framebuffer capture each. `BlurV0Element` now has an alpha (`with_alpha`; the stand-in, the GLES draw, the commit counter and the
+  opaque regions follow), set to the window's opacity.
+- **Scale: blur.** Stretched by the flight's ratio about the window's corner and faded with the window's opacity
+  (`blur_v0::behind_scaled`). Only windows in a flight take the opacity; a window that is merely fading in or out keeps a full-strength
+  blur as before (no golden moves). Open question for the owner: fade the blur for every fading window.
+- **Popups.** Scale: they ride with the window (`popup_elements_riding`: the corner moves toward the window's corner by the ratio,
+  the tree is drawn at the ratio, alpha is the window's). Genie: not drawn, from the first frame of the flight. Reason: a strip
+  can only carry what lies inside the window's rows, and a menu hangs outside; macOS closes menus before a window minimises.
+  The popup surface itself is not dismissed (the client is not told); it comes back when the window has landed. If the owner wants
+  the client told, that is a `popup_done` on minimise (core change, not this lane).
+- **Genie silhouette.** `casement_motion::genie::strips_fine`: the 48 base strips, each cut at equal heights into up to 6 pieces
+  when the curve's edge moves more than `2 x TOLERANCE` (1 px) across it, with a total budget of `MAX_STRIPS` (120); when the wish
+  passes the budget the extra cuts are shared in proportion. At rest it is exactly 48. A strip is still a rectangle (its edges are
+  the mean of its rows' edges), so the stepped silhouette stays within about 1 px only where the budget allows; a 1600 px window
+  squeezing to a 48 px tile is limited by the budget (a few px at the steepest rows). A true trapezoid would need a custom vertex
+  or a per-row fragment remap: a new shader and element for every kind of strip (surface and memory), judged not worth it blind.
+  The strip count never passes the window's physical height (no strip thinner than a row).
+- **Genie: no double blend.** The 1 px overlap is gone. `strip_plans` rounds the edge between two strips once and both use it, so
+  strips meet exactly. The price is up to one source row of repeat or skip at a seam (each strip is cropped at integer pixels of
+  its own scaled copy), not seen unless a strip is stretched hard. Test: solid strips never overlap (`genie.rs`), and meet exactly
+  at 21 progress values and three scales.
+- **Closing window keeps its frame.** The loop keeps, for every framed window while it lives, its `FrameStyle`, title and activity
+  (`RenderState::closing`, `core_loop/closing.rs`, refreshed every frame, forgotten once the window is neither in the model nor in
+  the motion scene). When the model no longer has a window that motion still places, `LayerDraw::closing` carries the snapshot and
+  `output_elements` draws its frame (`closing_elements`: titlebar, lights, title, shadow) round the sampled rectangle at the
+  sampled opacity; the title is rastered again for the shrinking bar (`titles::of_closing`). Tests: `leaving` (which windows),
+  `closing_content` (the sampled rectangle).
+- **Not solved: the content of a closed window.** `core_loop/windows.rs::sync` drops the window from the surface book on
+  `ToplevelUnmapped` (the client has detached or destroyed its surface; there is nothing left to draw). So today a closing window's
+  CONTENT already vanishes at once, and with this change its frame fades alone: a titlebar and shadow with an empty body for
+  about 380 ms. Whether that reads better than vanishing is a real-run call. To fade the body too the loop must keep a
+  texture of the window (render it into an offscreen texture on the frame before the unmap), a separate piece of work. To turn the
+  ghost frame off: build `LayerDraw::closing` empty in `core_loop.rs::frame`.
+- **Tests added.** `casement-motion` `genie.rs`: at rest exactly the base strips, limit == base is the plain strips, steep part
+  finer within the limit with shared edges, edges within tolerance with room (+ doc test). `casement-render`: `genie.rs` (6: at
+  rest/shared edges, exact meeting at progress x scale, finer halfway, short window, source rows cover once, no area; halo; solid
+  strips never overlap), `strip.rs` (widened band, mapped rectangle), `shape.rs` (`touches`), `popup.rs` (corner by ratio),
+  `closing.rs` (+ doc test), doc tests on `strips_fine`, `with_alpha`, `faded`. `casement`: `closing.rs` (2). The old strip tests moved
+  from `flight.rs` to `genie.rs`; the overlap assertion became "end equals next start". No golden, no `expected-failures.txt` change.
+  No doc test on `StripPlan` methods (the struct is `non_exhaustive`, a doc test cannot build one).
+- **Gate and real run.** Likeliest compile faults: `clip_strip.rs` (`Element`/`RenderElement` bounds on `ClipStripElement<R>`, `Mask`
+  re-exported `pub(crate)` from a private module), `Compositor::draw_clip_strip`'s default (same shape as `draw_rounded_clip`'s),
+  `genie.rs::shared` generic helper and the partial moves out of `GenieParts`, `blur.remapped` closure returning a `Vec`,
+  `scene.rs` (`&&PlacedWindow` coerced to `&PlacedWindow` in `GenieWindow`/`closing_elements`), `core_loop/closing.rs::leaving`'s
+  lifetimes (an `impl Fn + 'a` captured with the model), the `RenderState` field using a `pub(crate)` type. Real run: Genie with a
+  framed window: rounded bottom corners during the flight, the shadow bends with it and fades, a blur-behind window keeps a blur
+  that fades, a translucent window shows no light line at strip seams, no stepped edge on a 700-1000 px window at 1x and 2x; frame time
+  with up to 120 strips x (titlebar, title, tree, shadow pieces) elements (lower `MAX_STRIPS` if it drops); Scale with a menu open:
+  the menu shrinks and fades with the window; Genie with a menu open: the menu is gone from the first frame; close a framed
+  window: the titlebar and shadow fade and shrink in step and the title stays centred.
 ## wave-2026-10-15/corners
 
 Rounded corners and shadows right everywhere (wave 5). Written without a compiler (wave rule); the orchestrator builds.

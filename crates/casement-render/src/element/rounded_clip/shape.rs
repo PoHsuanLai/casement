@@ -92,6 +92,14 @@ impl ClipShape {
         (0.5 - distance).clamp(0.0, 1.0)
     }
 
+    /// Whether the rows `rows` (top, bottom; output pixels) reach the bottom corners' band, the
+    /// only rows the clip changes. A pixel of slack either side keeps the anti-aliased edge.
+    pub fn touches(&self, rows: (f64, f64)) -> bool {
+        let bottom = f64::from(self.rect.y) + f64::from(self.rect.h);
+        let band = f64::from(self.radius) + 1.0;
+        self.radius > 0 && rows.1 > bottom - band && rows.0 < bottom + 1.0
+    }
+
     /// The two squares of `radius` sides at the bottom corners, the only places the shape is
     /// not opaque over an opaque surface (so they leave the opaque regions).
     pub fn corner_squares(&self) -> [Rectangle<i32, Physical>; 2] {
@@ -184,6 +192,25 @@ mod tests {
         assert!((at(0.0) - 0.5).abs() < 0.01);
         assert_eq!(at(0.7), 0.0);
         assert!(at(-0.2) > at(0.2));
+    }
+
+    #[test]
+    fn only_rows_in_the_corner_band_are_touched() {
+        let shape = ClipShape::new(RECT, 10, Scale(120));
+        // name, rows (top, bottom), touched; the band is 89 to 101 (radius 10 and a pixel)
+        let cases = [
+            ("the top", (0.0, 20.0), false),
+            ("the middle", (40.0, 80.0), false),
+            ("just above the band", (70.0, 89.0), false),
+            ("the last rows", (90.0, 100.0), true),
+            ("across the band edge", (80.0, 95.0), true),
+            ("below", (101.0, 120.0), false),
+        ];
+        for (name, rows, want) in cases {
+            assert_eq!(shape.touches(rows), want, "{name}");
+        }
+        let square = ClipShape::new(RECT, 0, Scale(120));
+        assert!(!square.touches((90.0, 100.0)));
     }
 
     #[test]

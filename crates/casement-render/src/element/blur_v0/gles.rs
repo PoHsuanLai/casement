@@ -176,7 +176,7 @@ pub(crate) fn draw(
         &local,
         &[],
         Transform::Normal,
-        1.0,
+        blur.alpha_of(),
         Some(&program),
         &[texel],
     )

@@ -16,7 +16,7 @@ use casement_core::output::OutputConfig;
 use casement_core::settings::CasementSettings;
 use casement_core::space::SpaceSeed;
 use casement_core::time::{Mono, VblankSeq};
-use casement_core::{Cause, Effect, Event, Model, OutputKey, OutputName};
+use casement_core::{Cause, Effect, Event, Model, OutputKey, OutputName, WindowId};
 use casement_layout::{ConfigureNeed, SceneLayout, spec_of_framed};
 use casement_motion::{FrameScene, retarget};
 use casement_render::{LayerDraw, OutputView};
@@ -27,6 +27,7 @@ use smithay::wayland::compositor::{
     SurfaceAttributes, TraversalAction, with_surface_tree_downward,
 };
 
+mod closing;
 mod deliver;
 mod divider;
 mod frames;
@@ -42,6 +43,7 @@ mod titles;
 pub(crate) mod tty;
 mod windows;
 
+pub(crate) use closing::Kept;
 pub(crate) use divider::DividerPointer;
 pub(crate) use frames::Over as FrameOver;
 pub(crate) use grab::start as start_grab;
@@ -130,6 +132,11 @@ pub fn frame(state: &mut State, output: &OutputKey) {
     };
     let (name, config) = (plugged.facts.name.clone(), plugged.config);
     let sampled = sample_scene_at(state, now);
+    let in_scene: Vec<WindowId> = sampled
+        .outputs
+        .iter()
+        .flat_map(|frame| frame.windows.iter().map(|placed| placed.window))
+        .collect();
     let frame = sampled
         .outputs
         .into_iter()
@@ -141,10 +148,15 @@ pub fn frame(state: &mut State, output: &OutputKey) {
         mode: config.mode.size,
     };
     let styles = frames::drawn(state);
-    let titles = titles::of(state, &frame, &view, &styles);
+    closing::remember(state, &styles);
+    closing::forget(state, &in_scene);
+    let leaving = closing::on(state, &frame);
+    let mut titles = titles::of(state, &frame, &view, &styles);
+    titles.extend(titles::of_closing(state, &frame, &view, &leaving));
     let layers = LayerDraw {
         frames: styles,
         titles,
+        closing: leaving,
         minimise_effect: state.core.model.settings().windows.minimise_effect,
         backdrop: divider::backdrop(state, output),
         ..layers_on(&state.core.model, output)

@@ -157,6 +157,9 @@ impl<R: Compositor> RenderElement<R> for Routed<'_, R> {
             CasementElement::Clip(clip) => {
                 R::draw_rounded_clip(frame, clip, src, dst, damage, opaque_regions, cache)
             }
+            CasementElement::ClipStrip(clip) => {
+                R::draw_clip_strip(frame, clip, src, dst, damage, opaque_regions, cache)
+            }
             element => element.draw(frame, src, dst, damage, opaque_regions, cache),
         }
     }

@@ -12,6 +12,7 @@ mod bands;
 mod gles;
 mod shape;
 
+pub(crate) use gles::{Mask, draw_masked};
 pub use shape::ClipShape;
 
 use crate::compositor::Compositor;

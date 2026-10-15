@@ -9,9 +9,11 @@
 //! draw in `bands.rs` instead. The compiled shader is kept in the EGL context's user data, one
 //! per renderer.
 
-use super::RoundedClipElement;
+use super::{ClipShape, RoundedClipElement};
 use smithay::backend::renderer::element::Element;
-use smithay::backend::renderer::element::surface::WaylandSurfaceTexture;
+use smithay::backend::renderer::element::surface::{
+    WaylandSurfaceRenderElement, WaylandSurfaceTexture,
+};
 use smithay::backend::renderer::gles::{
     GlesError, GlesFrame, GlesRenderer, GlesTexProgram, GlesTexture, Uniform, UniformName,
     UniformType,
@@ -83,6 +85,20 @@ void main() {
 #[derive(Debug, Default)]
 struct Compiled(RefCell<Option<GlesTexProgram>>);
 
+/// Where the texture's pixels land in the space the shape is in: the source and destination
+/// rectangles that turn a texture coordinate into a position in the shape's pixels. For a window
+/// drawn as it is these are the draw's own; for a strip of a genie they are the window's at
+/// rest, so the corners are cut where the window's are and the strip carries them along.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Mask {
+    /// The shape, in the mask destination's space (output pixels).
+    pub(crate) shape: ClipShape,
+    /// The source rectangle of the unmoved element.
+    pub(crate) src: Rectangle<f64, BufferCoords>,
+    /// The destination rectangle of the unmoved element.
+    pub(crate) dst: Rectangle<i32, Physical>,
+}
+
 /// Draws `clip`'s surface where `damage` (relative to `dst`) asks, masked to its shape.
 pub(super) fn draw(
     frame: &mut GlesFrame<'_, '_>,
@@ -93,17 +109,48 @@ pub(super) fn draw(
     opaque_regions: &[Rectangle<i32, Physical>],
     cache: Option<&UserDataMap>,
 ) -> Result<(), GlesError> {
-    let surface = clip.surface();
-    let upright = surface.transform() == Transform::Normal;
     let _ = cache;
-    let WaylandSurfaceTexture::Texture(texture) = surface.texture() else {
-        return clip.draw_banded(frame, src, dst, damage, opaque_regions);
+    let mask = Mask {
+        shape: clip.shape(),
+        src,
+        dst,
     };
-    if !upright || texture.is_y_inverted() || src.size.w <= 0.0 || src.size.h <= 0.0 {
-        return clip.draw_banded(frame, src, dst, damage, opaque_regions);
+    draw_masked(
+        frame,
+        clip.surface(),
+        mask,
+        (src, dst),
+        (damage, opaque_regions),
+        |frame| clip.draw_banded(frame, src, dst, damage, opaque_regions),
+    )
+}
+
+/// The damage of a draw and the opaque regions, in physical pixels.
+type Regions<'a> = (
+    &'a [Rectangle<i32, Physical>],
+    &'a [Rectangle<i32, Physical>],
+);
+
+/// Draws `surface` from `src` to `dst` (the rectangles of this draw) where `damage` asks,
+/// through the corner mask of `mask`. A surface the shader cannot mask (no texture, or one that is
+/// turned, flipped or empty) is drawn by `fallback` instead.
+pub(crate) fn draw_masked(
+    frame: &mut GlesFrame<'_, '_>,
+    surface: &WaylandSurfaceRenderElement<GlesRenderer>,
+    mask: Mask,
+    (src, dst): (Rectangle<f64, BufferCoords>, Rectangle<i32, Physical>),
+    (damage, opaque_regions): Regions<'_>,
+    fallback: impl FnOnce(&mut GlesFrame<'_, '_>) -> Result<(), GlesError>,
+) -> Result<(), GlesError> {
+    let upright = surface.transform() == Transform::Normal;
+    let WaylandSurfaceTexture::Texture(texture) = surface.texture() else {
+        return fallback(frame);
+    };
+    if !upright || texture.is_y_inverted() || mask.src.size.w <= 0.0 || mask.src.size.h <= 0.0 {
+        return fallback(frame);
     }
     let program = program(frame)?;
-    let uniforms = uniforms(clip, texture, src, dst);
+    let uniforms = uniforms(texture, mask);
     frame.render_texture_from_to(
         texture,
         src,
@@ -117,13 +164,9 @@ pub(super) fn draw(
     )
 }
 
-/// The shader's uniforms for `texture` drawn from `src` to `dst`.
-fn uniforms(
-    clip: &RoundedClipElement<GlesRenderer>,
-    texture: &GlesTexture,
-    src: Rectangle<f64, BufferCoords>,
-    dst: Rectangle<i32, Physical>,
-) -> [Uniform<'static>; 4] {
+/// The shader's uniforms for `texture` placed as `mask` says.
+fn uniforms(texture: &GlesTexture, mask: Mask) -> [Uniform<'static>; 4] {
+    let (src, dst) = (mask.src, mask.dst);
     let size = texture.size();
     let ratio = (
         f64::from(dst.size.w) / src.size.w,
@@ -131,7 +174,7 @@ fn uniforms(
     );
     let to = (f64::from(size.w) * ratio.0, f64::from(size.h) * ratio.1);
     let from = (-src.loc.x * ratio.0, -src.loc.y * ratio.1);
-    let rect = clip.shape().rect();
+    let rect = mask.shape.rect();
     let shape = (
         (rect.x - dst.loc.x) as f32,
         (rect.y - dst.loc.y) as f32,
@@ -142,7 +185,7 @@ fn uniforms(
         Uniform::new("to", (to.0 as f32, to.1 as f32)),
         Uniform::new("from", (from.0 as f32, from.1 as f32)),
         Uniform::new("shape", shape),
-        Uniform::new("radius", clip.shape().radius() as f32),
+        Uniform::new("radius", mask.shape.radius() as f32),
     ]
 }
 
