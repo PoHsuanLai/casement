@@ -207,6 +207,6 @@ fn an_unwatched_output_frees_its_scene() {
     backend
         .watch(&name, &config, Watch::Off)
         .expect("unwatched");
-    assert_eq!(gpu.world().forgotten, [name.clone()]);
+    assert_eq!(gpu.world().forgotten, std::slice::from_ref(&name));
     assert!(backend.last_frame(&name).is_none(), "nothing is kept");
 }

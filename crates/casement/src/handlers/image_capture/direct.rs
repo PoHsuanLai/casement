@@ -130,6 +130,6 @@ pub(in crate::handlers) fn window(
 /// The dma-buf behind `buffer`.
 fn held(buffer: &WlBuffer) -> Result<Dmabuf, BackendError> {
     get_dmabuf(buffer)
-        .map(Clone::clone)
+        .cloned()
         .map_err(|_| BackendError::NoFrame)
 }
