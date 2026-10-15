@@ -3451,3 +3451,18 @@ Written without a build or a wlcs run (rule of the lane); the orchestrator's run
 | `ForeignToplevelHandleTest.gets_unminimized_when_maximized`, `gets_unminimized_when_fullscreened` | `wlr_requests` mapped `set_maximized` / `set_fullscreen` straight to the window's own request, which leaves a minimised window alone. | `Model::wlr_request`: a window-list client's maximise-on / full-screen-on first brings a minimised window back from the dock (the activation path, so the restore animation plays), then applies the request. Test: `wlr_toplevel.rs` `a_state_asked_of_a_minimised_window_...`. |
 | `can_maximize_foreign_while_fullscreen` | `place` returned early for a full-screen window, so the fill was dropped. | `place`: Fill on a full-screen window replaces the state it returns to with Filled (xdg-shell: `set_maximized` while full screen takes effect when full screen ends); the window stays full screen. Same test. This also applies to the window's own `xdg_toplevel.set_maximized`. |
 | `text_input_enters_grabbing_popup`, `..._after_child_destroyed` | gmock `InSequence` chains the xdg helpers' `AnyNumber` expectations; a later call retires every earlier link, and the protocol's wire order (toplevel/popup configure, then xdg_surface.configure; wm_capabilities at creation) is the reverse of the chain. The keyboard `enter` was already in order. | Nothing in casement can fix it without dropping configures; the two rows are back on the expected-failures list as W14 with the reasoning. |
+
+## wave-2026-10-15/cas27-ignored: five scene tests that were ignored
+
+Written without a build or a run (rule of the lane); the orchestrator's run settles it.
+
+- **Restoring a minimised window now flies out of the dock** (code fix, `model/requests.rs`
+  `activate_window`). A window brought back by an activation (a click on its dock tile, `unset_minimized`,
+  xdg-activation) relaid out with `Cause::Configure`, which motion snaps (no travel, no flight), so the
+  window jumped back. It now relays out with `Cause::Minimise(target)` (the same tile it left for), which
+  motion already reverses (`retarget::Step::toward`, tested in `casement-motion`). macOS plays the genie in
+  reverse on restore; this is the plan's behaviour, not a departure.
+- The shadow and hover tests were wrong, not the code: the bare desktop is black and the shadow is black, so
+  a probe on the shadow read 0 against 0 (the scene tests now put a light wallpaper layer under the
+  window, `Desk::wallpaper`); a hovered light's middle pixel is the mark's ink (`#4d0000` on Close, chroma
+  77), so the colour is read beside the mark.

@@ -7,6 +7,9 @@ use casement_core::policy::ConnectionRole;
 use casement_core::{OutputName, WindowId};
 use casement_testclient::misc::decoration::DecorationManager;
 use casement_testclient::misc::viewporter::Viewporter;
+use casement_testclient::surface::layer::{
+    Anchor, KeyboardInteractivity, Layer, LayerAsk, LayerSurface,
+};
 use casement_testclient::surface::popup::{Popup, PopupSpec};
 use casement_testclient::surface::subsurface::Surface;
 use casement_testclient::surface::toplevel::{Toplevel, WmBase};
@@ -207,6 +210,34 @@ impl<'a> Desk<'a> {
         self.fixture.pump();
         self.kept.keep(buffer);
         self.kept.keep(popup);
+    }
+
+    /// Spreads `colour` (ARGB) over the whole output as a wallpaper (a background layer surface
+    /// that reserves nothing), drawn for `dpi`. The bare desktop is black, and a shadow is
+    /// black: only a lighter ground shows one.
+    pub fn wallpaper(&mut self, colour: u32, dpi: Dpi) {
+        let ask = LayerAsk {
+            level: Layer::Background,
+            namespace: "wallpaper",
+            anchor: Anchor::Top | Anchor::Bottom | Anchor::Left | Anchor::Right,
+            exclusive_zone: -1,
+            keyboard: KeyboardInteractivity::None,
+            size: (0, 0),
+        };
+        let layer = LayerSurface::create(self.fixture.client(self.id), &ask).expect("a layer");
+        self.fixture.pump();
+        let configure = layer.configure().expect("the wallpaper is sized");
+        assert!(layer.ack(self.fixture.client(self.id)));
+        let logical = (configure.width, configure.height);
+        let buffer = shm_buffer(
+            self.fixture.client(self.id),
+            dpi.buffer(logical),
+            Pattern::Solid(colour),
+        );
+        self.scale_to(layer.surface(), logical, dpi);
+        layer.show(self.fixture.client(self.id), &buffer);
+        self.fixture.pump();
+        self.kept.keep((layer, buffer));
     }
 
     /// Plugs a pointer and puts it at `at` (logical).

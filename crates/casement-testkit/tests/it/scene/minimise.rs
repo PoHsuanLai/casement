@@ -56,7 +56,6 @@ fn flown(fixture: &mut Fixture, window: WindowId, bound: Duration) -> Vec<u32> {
 /// nothing toward all of it) and is off the flight at the end; restored, it flies back out
 /// (progress falling from the tile's end toward nothing) and lands where it was.
 #[test]
-#[ignore = "wave-6 follow-up: the restore flight is not seen in fixture.scene(); find where it is published"]
 fn genie_and_scale_both_play_and_reverse_on_restore() {
     for effect in [MinimiseEffect::Genie, MinimiseEffect::Scale] {
         let mut fixture = Fixture::start(spec(effect)).expect("fixture");
@@ -204,7 +203,6 @@ fn mid_flight(effect: MinimiseEffect, output: &str, dpi: Dpi) -> image::RgbaImag
 /// part of the way in, at both scales, matches its golden. New goldens `minimise-<effect>-<scale>-mid`:
 /// bless and review that the genie's strips meet without a visible seam.
 #[test]
-#[ignore = "wave-6 follow-up: goldens not blessed yet; bless after the flight test passes"]
 fn a_window_mid_flight_has_no_seams_at_fractional_and_double_scale() {
     let outputs = [
         (
