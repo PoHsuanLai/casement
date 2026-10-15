@@ -24,7 +24,7 @@ use casement_wayland::foreign_toplevel_list::window_of_identifier;
 use casement_wayland::image_capture::CaptureFailure;
 use ds_core::geometry::scale::Scale;
 use render::draw_window;
-pub(crate) use render::window_rgba;
+pub(crate) use render::{body_copy, window_rgba, window_texture};
 use smithay::reexports::wayland_server::protocol::wl_shm::Format;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Buffer, Rectangle, Size, Transform};

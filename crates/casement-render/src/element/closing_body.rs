@@ -2,8 +2,11 @@
 //! moment it unmaps, so the loop draws the window once, alone, just before (the same pass window
 //! capture uses) and keeps the pixels here. They are baked with the window's rounded bottom
 //! corners and drawn as one memory element inside the closing frame, so body and frame fade and
-//! shrink as one. A memory buffer works on every renderer (GLES, pixman, the dummy one); the
-//! price is one read-back when the window closes and one upload on its first frame.
+//! shrink as one. There are two kinds of image ([`Pixels`]): a GPU texture the display GPU drew
+//! at close, which never leaves the GPU, and a memory buffer made from a read-back, which works
+//! on every renderer (GLES, pixman, the dummy one) at the price of one read-back when the window
+//! closes and one upload on its first frame. The texture is the display GPU's own, so it is
+//! drawn only by that renderer; dropping the body frees it.
 
 use super::{CasementElement, ClipShape, alpha};
 use crate::compositor::Compositor;
@@ -13,11 +16,28 @@ use casement_core::geometry::{LogicalRect, PhysicalRect, PhysicalSize};
 use ds_core::geometry::scale::Scale;
 use ds_core::vocab::Fraction;
 use smithay::backend::allocator::Fourcc;
-use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::element::memory::{
     MemoryRenderBuffer, MemoryRenderBufferRenderElement,
 };
+use smithay::backend::renderer::element::texture::TextureRenderElement;
+use smithay::backend::renderer::element::{Id, Kind};
+use smithay::backend::renderer::gles::GlesTexture;
 use smithay::utils::{Logical, Rectangle, Size, Transform};
+use std::any::Any;
+
+/// Where a closing window's image lives.
+#[derive(Debug, Clone)]
+pub enum Pixels {
+    /// On the CPU, as smithay uploads it (every renderer draws it).
+    Memory(MemoryRenderBuffer),
+    /// On the display GPU, never read back. Only that GPU's renderer draws it.
+    Gpu {
+        /// The texture the GPU drew at close.
+        texture: GlesTexture,
+        /// The element id, the same on every frame so the damage tracker sees one element.
+        element: Id,
+    },
+}
 
 /// A closed window's last image, with its bottom corners already rounded.
 #[derive(Debug, Clone)]
@@ -26,8 +46,8 @@ pub struct ClosingBody {
     id: u64,
     /// The image's size in physical pixels.
     size: PhysicalSize,
-    /// The pixels, as smithay uploads them.
-    buffer: MemoryRenderBuffer,
+    /// The pixels.
+    pixels: Pixels,
 }
 
 impl PartialEq for ClosingBody {
@@ -76,7 +96,26 @@ impl ClosingBody {
             Transform::Normal,
             None,
         );
-        Some(ClosingBody { id, size, buffer })
+        Some(ClosingBody {
+            id,
+            size,
+            pixels: Pixels::Memory(buffer),
+        })
+    }
+
+    /// The body made of `texture`, which the display GPU drew at `size` with the bottom corners
+    /// already cut (`pass::render_window_texture`).
+    pub fn from_texture(id: u64, size: PhysicalSize, texture: GlesTexture) -> ClosingBody {
+        let pixels = Pixels::Gpu {
+            texture,
+            element: Id::new(),
+        };
+        ClosingBody { id, size, pixels }
+    }
+
+    /// Where the image lives.
+    pub fn pixels(&self) -> &Pixels {
+        &self.pixels
     }
 
     /// What the pixels weigh, in bytes (the loop caps the total it keeps).
@@ -89,7 +128,7 @@ impl ClosingBody {
 
     /// The body drawn over `content` (global logical pixels: where the closing window's content
     /// is as it shrinks) at `opacity`, stretched to it. `None` when the renderer refuses the
-    /// upload.
+    /// upload, or when the image is a GPU texture of another renderer than `renderer`.
     pub fn element<R: Compositor>(
         &self,
         content: LogicalRect,
@@ -101,20 +140,40 @@ impl ClosingBody {
         let whole = Rectangle::<f64, Logical>::from_size(
             (f64::from(self.size.w), f64::from(self.size.h)).into(),
         );
-        MemoryRenderBufferRenderElement::from_buffer(
-            renderer,
-            on_output(sub_of(content.origin), view).to_f64(),
-            &self.buffer,
-            Some(alpha(opacity)),
-            Some(whole),
-            Some(Size::<i32, Logical>::from((
-                side(content.size.w),
-                side(content.size.h),
-            ))),
-            Kind::Unspecified,
-        )
-        .ok()
-        .map(CasementElement::Memory)
+        let at = on_output(sub_of(content.origin), view).to_f64();
+        let drawn = Size::<i32, Logical>::from((side(content.size.w), side(content.size.h)));
+        match &self.pixels {
+            Pixels::Memory(buffer) => MemoryRenderBufferRenderElement::from_buffer(
+                renderer,
+                at,
+                buffer,
+                Some(alpha(opacity)),
+                Some(whole),
+                Some(drawn),
+                Kind::Unspecified,
+            )
+            .ok()
+            .map(CasementElement::Memory),
+            Pixels::Gpu { texture, element } => {
+                let any: &dyn Any = texture;
+                let texture = any.downcast_ref::<R::TextureId>()?.clone();
+                Some(CasementElement::Texture(
+                    TextureRenderElement::from_static_texture(
+                        element.clone(),
+                        renderer.context_id(),
+                        at,
+                        texture,
+                        1,
+                        Transform::Normal,
+                        Some(alpha(opacity)),
+                        Some(whole),
+                        Some(drawn),
+                        None,
+                        Kind::Unspecified,
+                    ),
+                ))
+            }
+        }
     }
 }
 

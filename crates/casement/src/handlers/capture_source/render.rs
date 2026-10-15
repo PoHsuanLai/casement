@@ -6,6 +6,7 @@ use crate::handlers::image_capture::{Drawn, draw_window_direct};
 use crate::state::State;
 use casement_backend::BackendKind;
 use casement_backend::headless::{FrameSource, RgbaFrame};
+use casement_backend::tty::BodyCopy;
 use casement_core::WindowId;
 use casement_core::geometry::{LogicalSize, PhysicalRect, PhysicalSize};
 use casement_core::time::Mono;
@@ -14,7 +15,7 @@ use casement_render::{CasementElement, Compositor};
 use casement_wayland::capture_source::ToplevelCaptureRequest;
 use casement_wayland::image_capture::CaptureFailure;
 use ds_core::geometry::scale::Scale;
-use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::pixman::PixmanRenderer;
 #[cfg(feature = "testing")]
 use smithay::backend::renderer::test::DummyRenderer;
@@ -91,6 +92,36 @@ pub(crate) fn window_rgba(
         tracing::warn!(%error, "a window was not drawn for capture");
         CaptureFailure::Renderer
     })
+}
+
+/// How the last image of a closing window is kept on the running backend: copied on the display
+/// GPU where the seat has exactly one that lends its renderer, read back everywhere else (the
+/// software renderers, a second GPU, the headless and nested backends).
+pub(crate) fn body_copy(state: &State) -> BodyCopy {
+    match &state.backend {
+        BackendKind::Tty(tty) => tty.body_copy(),
+        _ => BodyCopy::ReadBack,
+    }
+}
+
+/// `window` drawn alone into a texture that stays on the display GPU, its bottom corners cut by
+/// `radius` logical pixels: no read-back. Only where [`body_copy`] says `Gpu`; any failure is the
+/// caller's cue to read the window back instead.
+pub(crate) fn window_texture(
+    state: &mut State,
+    window: WindowId,
+    radius: u32,
+) -> Result<(GlesTexture, PhysicalSize), CaptureFailure> {
+    let (source, size) = window_source(state, window)?;
+    let BackendKind::Tty(tty) = &mut state.backend else {
+        return Err(CaptureFailure::Renderer);
+    };
+    tty.render_window_texture(size, source.scale, radius, &source)
+        .map(|texture| (texture, size))
+        .map_err(|error| {
+            tracing::info!(%error, "a closing window was not copied on the GPU; reading it back");
+            CaptureFailure::Renderer
+        })
 }
 
 /// Draws the window of `request` into `buffer` and says when. The window's size or scale may

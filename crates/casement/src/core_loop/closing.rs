@@ -49,10 +49,10 @@ pub(super) fn forget(state: &mut State, in_scene: &[WindowId]) {
         .retain(|id, _| model.windows().contains_key(id) || in_scene.contains(id));
     // An image is only for a window that is gone from the model and still fading; one taken for
     // a window that stays (a client that hid it and maps it again) is freed here.
-    state
-        .render
-        .bodies
-        .retain(|id| !model.windows().contains_key(id) && in_scene.contains(id));
+    state.render.bodies.release_finished(
+        |id| model.windows().contains_key(id),
+        |id| in_scene.contains(id),
+    );
 }
 
 /// The windows to draw closing on `frame`: the ones motion still places that the model no longer

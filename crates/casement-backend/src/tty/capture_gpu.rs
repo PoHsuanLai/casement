@@ -27,6 +27,7 @@ use ds_core::geometry::scale::Scale;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::{Format, Fourcc};
 use smithay::backend::renderer::Bind;
+use smithay::backend::renderer::gles::GlesTexture;
 
 /// A display device's renderer, lent to draw captures.
 pub trait CaptureGpu: std::fmt::Debug {
@@ -103,6 +104,50 @@ pub trait CaptureGpu: std::fmt::Debug {
     ) -> Result<(), BackendError> {
         let _ = (target, size, scale, source);
         Err(RenderError::NoTarget.into())
+    }
+
+    /// Renders `source` alone into a new texture of `size` at `scale` that stays on this GPU, its
+    /// bottom corners cut by `radius` logical pixels, and returns once it is done: the last image
+    /// of a closing window, with no CPU read. The texture is this renderer's own; only it draws
+    /// it (see [`body_copy`]).
+    fn render_window_texture(
+        &mut self,
+        size: PhysicalSize,
+        scale: Scale,
+        radius: u32,
+        source: &dyn FrameSource,
+    ) -> Result<GlesTexture, BackendError> {
+        let _ = (size, scale, radius, source);
+        Err(RenderError::NoTarget.into())
+    }
+}
+
+/// How a closing window's last image is kept.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum BodyCopy {
+    /// Copied into a texture on the display GPU, never read back.
+    Gpu,
+    /// Read back to the CPU and drawn from a memory buffer on any renderer.
+    ReadBack,
+}
+
+/// How to keep a closing window's last image on a seat with `devices` open display devices, of
+/// which `lending` lend a renderer. A texture belongs to one GL context, so the GPU copy is for a
+/// seat whose only device lends its renderer: with none (software) or a second GPU, whose
+/// scanout would draw it from another context, the image is read back.
+///
+/// ```
+/// use casement_backend::tty::{BodyCopy, body_copy};
+///
+/// assert_eq!(body_copy(1, 1), BodyCopy::Gpu);
+/// assert_eq!(body_copy(1, 0), BodyCopy::ReadBack);
+/// assert_eq!(body_copy(2, 2), BodyCopy::ReadBack);
+/// ```
+pub fn body_copy(devices: usize, lending: usize) -> BodyCopy {
+    match (devices, lending) {
+        (1, 1) => BodyCopy::Gpu,
+        _ => BodyCopy::ReadBack,
     }
 }
 
@@ -241,6 +286,26 @@ mod tests {
             CaptureRoute::Software,
             "no gpu lent: software"
         );
+    }
+
+    #[test]
+    fn a_closing_image_stays_on_the_gpu_only_on_a_seat_with_one_lending_device() {
+        // name, open devices, devices lending a renderer, the copy
+        let table = [
+            ("one gpu", 1, 1, BodyCopy::Gpu),
+            ("one device, software", 1, 0, BodyCopy::ReadBack),
+            ("no device", 0, 0, BodyCopy::ReadBack),
+            ("a second gpu", 2, 2, BodyCopy::ReadBack),
+            (
+                "a second device that does not lend",
+                2,
+                1,
+                BodyCopy::ReadBack,
+            ),
+        ];
+        for (name, devices, lending, copy) in table {
+            assert_eq!(body_copy(devices, lending), copy, "{name}");
+        }
     }
 
     #[test]

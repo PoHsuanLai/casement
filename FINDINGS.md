@@ -3353,3 +3353,33 @@ outcome)` goes out once per output after the highlight is cleared: `dropped_on_s
 output shows), `dropped_on_new` (the new-desktop tile), `cancelled` (flew back, or Mission Control left mid-drag). Only
 objects bound at version 4 or later hear them. Tests: `quire_shell_drop.rs`
 `the_shell_hears_a_window_drag_begin_and_end_with_its_outcome`.
+## wave-2026-10-15/closegpu
+
+Follow-up to closesnap: the closing body stays on the GPU. Written without a compiler (wave rule); the orchestrator builds. **Unmeasured
+on hardware**: nothing was timed; whether the 4K read-back stall is gone is for a real run to say.
+
+- **What changed.** `ClosingBody` holds `Pixels`: `Memory` (closesnap's baked buffer, every renderer) or `Gpu { texture, element }` (a
+  `GlesTexture` the display GPU drew at close, bottom corners already cut). `casement_render::pass::render_window_texture` draws the
+  window tree into a scratch texture, then once into the kept texture through the existing corner-mask shader
+  (`rounded_clip/gles.rs::bake_corners`, the same coverage formula as the CPU bake), over transparent, and waits on the sync point. The
+  frame draws it as a `TextureRenderElement` (new `CasementElement::Texture`, stable element id, alpha and stretch as the memory
+  element had). No CPU read and no upload.
+- **The typed choice.** `casement_backend::tty::BodyCopy { Gpu, ReadBack }` from `body_copy(devices, lending)` (pure, table test): `Gpu`
+  only on a seat with exactly one open device and that device lends its renderer. `core_loop/bodies.rs::make_body` takes `Gpu` first and
+  falls back to the read-back when the GPU copy errs. Headless (GLES on llvmpipe included), winit, pixman and the dummy renderer always
+  read back.
+- **Why one device.** A texture belongs to one GL context. With two GPUs the second scanout would draw the first's texture from another
+  context, so a second GPU reads back. `CaptureGpu::render_window_texture` is the seam (default `NoTarget`; the testkit fake takes the
+  default; the real lender uses the scanout's own `Rc<RefCell<GlesRenderer>>`). A device that has lit no output yet lends nothing; a
+  second device opened after a texture was made is not detected (see open questions).
+- **Released when.** The body is dropped with `Bodies::release_finished` (every frame, `closing::forget`): the window is back in the
+  model or its fade left the motion scene. The cap (6 images, 192 MiB) counts a texture at `w x h x 4` like a memory image.
+  `GlesTexture`'s drop queues the GL delete for the renderer's next use.
+- **Tests.** `body_copy` table + doctest (casement-backend), `release_finished` table (casement `bodies.rs`, replaces the older
+  `retain`-only test). The memory path's existing unit and `it` tests are unchanged and still cover the fallback. The GPU path has no
+  automated test (no GL in the jail): real run, close a framed window on the tty seat; the fade and shrink must look as before (bottom
+  corners round, not flipped, not blank), then `grim` after the fade.
+- **Unverified API guesses.** `render_elements!` accepting `TextureRenderElement<<R as RendererSuper>::TextureId>` as a variant;
+  `TextureRenderElement::from_static_texture` argument order with `renderer.context_id()`; the `&dyn Any` downcast of `GlesTexture` to
+  `R::TextureId`; a `GlesTexture` made by `Offscreen::create_buffer` drawn upright through `render_texture_from_to` after being rendered
+  into with a `Transform::Normal` tracker (mirrors `blit_texture`).

@@ -164,6 +164,33 @@ pub(crate) fn draw_masked(
     )
 }
 
+/// Draws the whole of `texture` at its own size, one texel to one pixel, through the corner mask
+/// of `shape` (a rectangle at the origin of the texture's size): the window's last image with its
+/// bottom corners cut, made on the GPU (`pass::render_window_texture`).
+pub(crate) fn bake_corners(
+    frame: &mut GlesFrame<'_, '_>,
+    texture: &GlesTexture,
+    shape: ClipShape,
+) -> Result<(), GlesError> {
+    let size = texture.size();
+    let dst = Rectangle::<i32, Physical>::from_size((size.w, size.h).into());
+    let src =
+        Rectangle::<f64, BufferCoords>::from_size((f64::from(size.w), f64::from(size.h)).into());
+    let program = program(frame)?;
+    let uniforms = uniforms(texture, Mask { shape, src, dst });
+    frame.render_texture_from_to(
+        texture,
+        src,
+        dst,
+        &[dst],
+        &[],
+        Transform::Normal,
+        1.0,
+        Some(&program),
+        &uniforms,
+    )
+}
+
 /// The shader's uniforms for `texture` placed as `mask` says.
 fn uniforms(texture: &GlesTexture, mask: Mask) -> [Uniform<'static>; 4] {
     let (src, dst) = (mask.src, mask.dst);
