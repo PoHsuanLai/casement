@@ -106,6 +106,10 @@ pub struct RenderState {
     pub(crate) frame_over: Option<crate::core_loop::FrameOver>,
     /// The last titlebar press, for the double click.
     pub clicks: casement_core::window::ClickTracker,
+    /// The traffic light held down, if any (a light acts on release).
+    pub light_arm: casement_core::window::LightArm,
+    /// The person's light or dark scheme, which the server-side frame is drawn in.
+    pub scheme: casement_layout::Scheme,
 }
 
 /// Whether the pointer has been put where it starts: the centre of the primary output, once an
@@ -312,6 +316,8 @@ impl State {
             frame_faults: RepeatGate::new(FAULT_LOG_EVERY),
             frame_over: None,
             clicks: casement_core::window::ClickTracker::default(),
+            light_arm: casement_core::window::LightArm::default(),
+            scheme: casement_layout::Scheme::default(),
         };
         Ok(State {
             core,

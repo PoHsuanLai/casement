@@ -17,7 +17,7 @@ use casement_core::settings::CasementSettings;
 use casement_core::space::SpaceSeed;
 use casement_core::time::{Mono, VblankSeq};
 use casement_core::{Cause, Effect, Event, Model, OutputKey, OutputName};
-use casement_layout::{ConfigureNeed, SceneLayout, spec_of};
+use casement_layout::{ConfigureNeed, SceneLayout, spec_of_framed};
 use casement_motion::{FrameScene, retarget};
 use casement_render::{LayerDraw, OutputView};
 use casement_wayland::{commit_timing, fifo, presentation, session_lock, xdg_shell};
@@ -300,7 +300,7 @@ fn send_frame_callbacks(root: &WlSurface, now: Mono) -> u64 {
 /// whose size must change for it (a configure each).
 pub(crate) fn relayout(state: &mut State, cause: &Cause) {
     let now = state.clock.now();
-    let spec = spec_of(&state.core.model);
+    let spec = spec_of_framed(&state.core.model, &frames::reserves(state));
     let next = state.core.layout.arrange(&spec, &state.core.knobs);
     let motion = std::mem::replace(&mut state.core.motion, casement_motion::MotionBook::empty());
     state.core.motion = retarget(

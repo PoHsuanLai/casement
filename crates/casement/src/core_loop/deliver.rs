@@ -436,6 +436,7 @@ fn press_edge(
         let (taken, fate) = std::mem::take(&mut state.wl.seat.taken).release_button(button);
         state.wl.seat.taken = taken;
         if fate == PressFate::Taken {
+            frames::released(state, seat, button);
             return;
         }
     }

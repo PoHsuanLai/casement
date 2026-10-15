@@ -34,6 +34,7 @@
 //! let _serve = move || casement::run(config);
 //! ```
 
+pub mod appearance;
 pub mod cli;
 pub mod clients;
 pub mod config;

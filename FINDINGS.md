@@ -1933,20 +1933,17 @@ without a compiler (wave rule); the orchestrator builds.
   root's place, so a window in front hides the frame behind it; popups come first. A press on a frame is never delivered, its
   release is swallowed (`seat.taken`), the model routes it as a titlebar or edge press (activate, raise), then the part acts:
   close = `Effect::SendClose`, minimise and zoom = `ToplevelRequest`, drag = `ToplevelRequest::Move` (the existing grab),
-  edge = `Resize`, double click = `windows.double_click_title`. Lights act on press (macOS acts on release inside).
+  edge = `Resize`, double click = `windows.double_click_title`. Lights act on release inside, as on the Mac (chrome2).
 - **Unreachable from quire's pure crates, so written here (asks below):** the window radius 10 (`--r-window` is a CSS string,
   and still 26 until quire's batch), `--shadow-window` (CSS string, hand-copied as two `ShadowLayer`s), the three light hues
-  and their mark inks (stylesheet candy colours), and the colour scheme (Light is assumed; casement does not read the
-  appearance setting).
-- **Not done.** (1) Rounded bottom corners: clipping a client buffer needs a clip element or shader in the closed element set
-  (P3 "rounded clip"); the titlebar's top corners are rounded, the bottom ones are square. (2) Title text: casement has no text
-  stack (`casement-chrome`, B15), so the titlebar title is empty. (3) Layout does not reserve the 28 px above decorated
-  windows (fill, tile and the first placement can put the bar under the menu bar or off the top). (4) Lights act on press, not
-  release; the green light has no Move and Resize menu. (5) Option-click zoom and the minimise animation target are untouched.
-  (6) The frame is not drawn in the Mission Control and Space-slide passes (they go through `output_elements` with the same
-  `LayerDraw`, so it follows there only if `frames` is filled, which `core_loop::frame` does for every output frame).
-  (7) The shadow is a square-cornered blur at one raster pixel per logical pixel, scaled up; cost on a window being resized
-  is a new raster per frame (cache limit 64 entries).
+  and their mark inks (stylesheet candy colours), and (until chrome2) the colour scheme.
+- **Not done.** (1) Rounded bottom corners: see `## wave-2026-10-15/chrome2` (design only). (2) Title text: casement has no
+  text stack (`casement-chrome`, B15), so the titlebar title is empty. (3) The green light has no Move and Resize menu, and
+  the minimise animation target is untouched. (4) The frame is not drawn in the Mission Control and Space-slide passes (they
+  go through `output_elements` with the same `LayerDraw`, so it follows there only if `frames` is filled, which
+  `core_loop::frame` does for every output frame). (5) The shadow is a square-cornered blur at one raster pixel per logical
+  pixel, scaled up; cost on a window being resized is a new raster per frame (cache limit 64 entries). (Done by
+  chrome2: layout reserves the titlebar, lights act on release, Option-click zoom, the colour scheme from settings.)
 - **Interface asks for quire** (exact):
   1. `ds-style/src/tokens/shape.rs`: `impl Radius { pub fn px(self) -> u16 }` returning the number `value()` writes (Window
      10 in the next batch), so casement stops hard-coding `WINDOW_RADIUS`.
@@ -1960,3 +1957,65 @@ without a compiler (wave rule); the orchestrator builds.
   and `from_buffer` argument types copied from the cursor), `light_state`/`LightFill`/`Shown` matches (a `non_exhaustive`
   would need a wildcard). Real run: a foot window shows the bar, lights (grey when inactive, marks on hover), shadow; drag
   moves; double click zooms; edges resize; click on the red light closes; a Qt app that insists on client-side keeps its bar.
+
+## wave-2026-10-15/chrome2
+
+Follow-ups to the server-side frame (the ssd lane's "Not done" list). Written without a compiler (wave rule); the
+orchestrator builds.
+
+- **Layout reserves the titlebar.** `WindowSpec::reserve_top` (new field, 0 for a window that draws its own frame) is the
+  height of the frame above the content. `RustScene` arranges a window in `below_chrome(usable, reserve)`, the usable area
+  minus its top `reserve` rows, so the outer frame (content plus bar) is what fill, first placement (centre and cascade),
+  the size fit and the keep-inside clamp hold inside the usable area; a hand-placed (`Placed`) window keeps its position and
+  only its size is fitted. The model's rect stays the client's content size. The model does not know who draws a frame (the
+  decoration answer is an edge fact), so `casement_layout::spec_of_framed(model, &BTreeMap<WindowId, u32>)` takes the
+  reserves and `spec_of` is `spec_of_framed` with none; `core_loop::relayout` passes `frames::reserves(state)`. The xdg
+  decoration handler now runs a relayout when a window already in the model is answered server-side (the answer can arrive
+  after the first placement). Tiled windows have no desktop target in layout today (`WindowPlacement::Tiled` is skipped in
+  `rust_scene/desktop.rs`), so the tile reserve has nothing to hold; when tiling is arranged it must use `below_chrome` too.
+  A drag in flight is not held by the reserve (the grab follows the pointer); layout clamps it when the drag ends.
+- **Lights act on release.** `casement_core::window::LightArm` (`frame_arm.rs`) is the pure machine: `Press` arms and shows
+  pressed, `Release` over the same light fires (`ArmOutcome::Fire`), `Move` off it cancels, back on re-arms, a release of
+  another button leaves it held, `Lost` forgets. `frames::press` arms on a light and does nothing else; `frames::released`
+  (called from `deliver::press_edge` where the swallowed release is recognised) steps the machine at the pointer's place and
+  carries out what fires. `casement_layout::pressed(style, light)` draws the held light darker with its mark.
+- **The green light.** A plain click is `ChromeAction::FullScreen(Toggle)` -> `ToplevelRequest::FullScreen { toggle, output:
+  None }` (it exists). Option held at release is zoom (`Maximise`), today's behaviour. `chrome_action` takes the `MacMods`.
+  Double click on the title still follows `windows.double_click_title`. The hover menu of the Mac's green light (Move and Resize,
+  tile) is not built. A full-screen window draws no frame, so leaving full screen is by the app, its key or the shell.
+- **The colour scheme.** `casement::appearance` reads quire's `appearance.toml` (`AppName::QUIRE`, the file ds-settings owns)
+  through a `Store`, puts `casement_layout::scheme_of(appearance.theme)` in `RenderState::scheme`, and follows the file with
+  `Store::watch` (ds-settings' task runs on a small thread-per-task `Spawner`, `block_on` by parking; casement runs no async
+  runtime). The watch forwards the scheme over a calloop channel; the next vblank draws the frame in it (`styles` reads it each
+  frame). `theme = "system"` paints Light: following the desktop needs the settings portal, which is ds-settings' `quire-desktop`
+  feature and is off in the workspace's `ds-settings` dependency. Ask for the orchestrator: if `system` should follow the
+  desktop, enable that feature (a Cargo edit) and read `SystemPrefsSource::Portal` once at startup and on its watch.
+  Only the frame follows the scheme; the cursor and everything else casement draws is scheme-free.
+- **Rounded bottom corners: design, not built.** Clipping a client's buffer needs a draw-time mask, and the closed element set
+  has none. smithay's `WaylandSurfaceRenderElement::draw` calls `render_texture_from_to` with no shader override, and
+  `gles::element::TextureShaderElement` wraps only a `TextureRenderElement<GlesTexture>`, so a clip is not a wrapper over the
+  surface element. Plan (about 400 lines and a Pixman stand-in decision, over the 300 budget): (a) a `RoundedClipElement`
+  variant in `CasementElement` that owns the surface element plus the window's outer-bottom radius, `id`/`geometry`/
+  `opaque_regions` forwarded, with the two bottom corner squares (radius x radius) removed from the opaque regions; (b) a
+  `Compositor` hook beside `capture_blur_v0`/`draw_blur_v0`, `draw_rounded_clip(frame, element, dst, damage)`, whose GLES
+  implementation compiles one texture shader (`compile_custom_texture_shader`, uniforms: size in px, radius) that multiplies
+  alpha by an analytic corner coverage and draws the surface's texture through it via `render_texture_from_to`'s `program`
+  argument; the surface texture comes from `WaylandSurfaceRenderElement`'s texture (`TextureRenderElement` built from the
+  surface's `GlesTexture` via the renderer's import, as `render_elements_from_surface_tree` does); (c) the default (Pixman
+  and the multi-GPU paths) draws the surface element unclipped, as today; (d) the shader program lives in the renderer's
+  user data like the blur's. The gl_raw.rs module needs no change (the shader API is safe). The titlebar's own rounded top
+  corners and the window shadow already follow the same radius (`WINDOW_RADIUS`, 10).
+- **Departures.** `LightArm` lives in `casement-core::window` with the other frame machines, and the scheme reader is
+  `casement::appearance` (not `config`, which is the casement document). New public items: `spec_of_framed`, `scheme_of`,
+  `pressed`, `Theme` (re-export), `LightArm` and friends, `appearance::scheme_in`; each has a doc test.
+- **Goldens and expectations.** None edited by hand. A real-frame golden or a testkit scenario that maps a server-side window at
+  a `Floating` rect whose top is within 28 px of the usable area now moves that window down by the difference; the xdg
+  decoration protocol test places nothing by hand, so none is expected to change, but the gate will say.
+- **Gate and real run.** Likeliest compile faults: `frames.rs` `decorated()` (returned `impl Iterator` over the model's
+  `BTreeMap` iter, edition 2024 capture), `appearance.rs` (the `Watch<AppearanceFile>` moved into a `Send` future; `Loaded`
+  field names; `ds_core::spawner` reachable without a feature), `LightArm` being `non_exhaustive` (matched only through
+  `==`/`step`), `casement_layout::Theme` re-export. Real run: press a light and drag off it (it un-darkens), back on (darkens),
+  release off it (nothing happens), release on it (acts); green click goes full screen, Option-click zooms and a second one
+  restores; a window opened at the top of the screen has its bar under the menu bar's exclusive zone, not beneath it; fill
+  leaves the bar visible; set `appearance.theme = "dark"` in `~/.config/quire/appearance.toml` and the frames turn dark
+  without a restart; windows with client-side frames are unchanged.
