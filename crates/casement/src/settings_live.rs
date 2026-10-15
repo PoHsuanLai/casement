@@ -3,21 +3,23 @@
 //! already bound, at once, as a change in System Settings does on the Mac. (The core loop does
 //! the reaching when the model is told, `core_loop::feed`.)
 //!
-//! Only these parts follow the file for now. The keymap's layout is compiled when the seat
-//! starts, so a changed layout still waits for a restart; the rest of the document is read at
-//! start.
+//! The keyboard layout follows too: a changed `keyboard.xkb_*` is compiled and put on the seat's
+//! keyboard (every bound client gets the new keymap, as an input-source change does on the Mac).
+//! A layout that does not compile keeps the old keymap, is reported once, and the model keeps
+//! the names it runs with. The rest of the document is read at start.
 
 use crate::State;
 use crate::appearance::ThreadSpawner;
 use crate::cli::ConfigHome;
 use crate::config::{self, CasementDoc};
 use casement_core::Event;
-use casement_core::settings::{CasementSettings, KeyboardSettings};
+use casement_core::settings::{CasementSettings, KeyboardSettings, XkbNames};
+use casement_wayland::seat_keymap::{self, KeymapStep, Report};
 use ds_core::spawner::Spawner;
 use smithay::reexports::calloop::channel::{self, Event as ChannelEvent};
 
-/// `current` with the parts that follow the file taken from `doc`: the pointer's settings and
-/// the key repeat. Everything else, the keymap's bindings and layout among it, stays.
+/// `current` with the parts that follow the file taken from `doc`: the pointer's settings, the
+/// key repeat and the keyboard layout. Everything else, the keymap's bindings among it, stays.
 ///
 /// ```
 /// use casement::config::CasementDoc;
@@ -34,7 +36,7 @@ pub fn followed(current: &CasementSettings, doc: &CasementDoc) -> CasementSettin
         keyboard: KeyboardSettings {
             repeat_delay: read.keyboard.repeat_delay,
             repeat_rate: read.keyboard.repeat_rate,
-            ..current.keyboard.clone()
+            layout: read.keyboard.layout,
         },
         ..current.clone()
     }
@@ -70,6 +72,24 @@ pub fn attach(state: &mut State, home: &ConfigHome) -> Result<(), crate::StartEr
         .map_err(|error| crate::StartError::Loop(error.to_string()))
 }
 
+/// Puts the layout `doc` names on the seat's keyboard when it is not the one it has, and gives
+/// the names the keyboard runs with afterwards: the new ones, or the old ones when the new did
+/// not compile (reported once per set of names).
+fn switch_keymap(state: &mut State, wanted: &XkbNames) -> XkbNames {
+    if state.wl.seat.keymap.plan(wanted) == KeymapStep::Compile {
+        let keyboard = state.wl.seat.keyboard.clone();
+        match seat_keymap::switch_layout(&keyboard, state, wanted) {
+            Ok(()) => state.wl.seat.keymap.switched(wanted.clone()),
+            Err(fault) => {
+                if state.wl.seat.keymap.refuse(wanted.clone()) == Report::Say {
+                    tracing::warn!(%fault, "the keyboard layout in the settings did not compile; the old one stays");
+                }
+            }
+        }
+    }
+    state.wl.seat.keymap.running().clone()
+}
+
 /// Tells the model the settings `doc` gives, when they differ from the ones it has.
 ///
 /// ```no_run
@@ -81,7 +101,8 @@ pub fn attach(state: &mut State, home: &ConfigHome) -> Result<(), crate::StartEr
 /// }
 /// ```
 pub fn apply(state: &mut State, doc: &CasementDoc) {
-    let next = followed(state.settings(), doc);
+    let mut next = followed(state.settings(), doc);
+    next.keyboard.layout = switch_keymap(state, &next.keyboard.layout);
     if *state.settings() == next {
         return;
     }

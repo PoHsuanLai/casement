@@ -130,6 +130,61 @@ fn repeat_info_comes_from_settings() {
     assert_eq!(repeat.2, vec!["25".to_owned(), "600".to_owned()]);
 }
 
+/// A changed layout in the settings file reaches a bound keyboard as a new keymap; the same file
+/// again, an unrelated change and a layout that does not compile send none.
+#[test]
+fn a_layout_change_in_the_settings_file_sends_a_new_keymap() {
+    use casement::config::{CasementDoc, KeyboardSection, PointerSection};
+    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let id = fixture.connect(ConnectionRole::Public);
+    fixture.pump();
+    let _keyboard = Keyboard::bind(fixture.client(id)).expect("a keyboard");
+    fixture.pump();
+    let keymaps = |fixture: &mut Fixture| {
+        names_of(fixture.client(id), "wl_keyboard#")
+            .into_iter()
+            .filter(|name| name == "keymap")
+            .count()
+    };
+    assert_eq!(keymaps(&mut fixture), 1, "the first keymap, at bind");
+    let layout = |name: &str| CasementDoc {
+        keyboard: KeyboardSection {
+            xkb_layout: name.to_owned(),
+            ..KeyboardSection::default()
+        },
+        ..CasementDoc::default()
+    };
+
+    fixture.settings_file_changed(&layout("de"));
+    fixture.pump();
+    assert_eq!(keymaps(&mut fixture), 2, "a new layout is a new keymap");
+
+    fixture.settings_file_changed(&layout("de"));
+    fixture.pump();
+    assert_eq!(keymaps(&mut fixture), 2, "the same file again sends none");
+
+    let unrelated = CasementDoc {
+        pointer: PointerSection::default(),
+        ..layout("de")
+    };
+    fixture.settings_file_changed(&unrelated);
+    fixture.pump();
+    assert_eq!(keymaps(&mut fixture), 2, "an unrelated section sends none");
+
+    fixture.settings_file_changed(&layout("no_such_layout_zz"));
+    fixture.pump();
+    assert_eq!(
+        keymaps(&mut fixture),
+        2,
+        "a layout that does not compile keeps the keymap"
+    );
+    assert_eq!(
+        fixture.model().settings().keyboard.layout.layout,
+        "de",
+        "and the model keeps the names the keyboard runs with"
+    );
+}
+
 /// Enter, then the modifiers it carries, then each key; a modifier key's own `modifiers` follow
 /// its `key`.
 ///

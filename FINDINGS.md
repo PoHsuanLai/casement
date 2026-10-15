@@ -2883,3 +2883,40 @@ and the "Not solved: the content of a closed window" row of flight2). Written wi
   last image is the window as it was (not blank), bottom corners rounded; close two at once; close a 4K window (the read-back stall at
   the moment of closing); an app quitting with many windows (the cap); `grim` after the fade shows nothing left behind; watch memory
   after many closes (the images are freed when the fade ends).
+## wave-2026-10-15/kbdlive
+
+Lane `kbdlive` (not compiled; the orchestrator gates). Closes input2's departure 1: the keyboard layout follows
+`settings.toml`.
+
+- **What changed.** `settings_live::followed` now also takes `keyboard.xkb_*` from the file. `settings_live::apply`
+  first calls `switch_keymap`: if the wanted names differ from the ones the seat's keymap was compiled from, it
+  calls smithay `KeyboardHandle::set_xkb_config` (through `casement_wayland::seat_keymap::switch_layout`), and the
+  model is told the names the keyboard runs with afterwards (the new ones, or the old ones on failure). Repeat
+  rate and delay already followed (`apply_repeat_info`). New pure `casement_wayland::seat_keymap`: `KeymapBook`
+  (on `SeatPart.keymap`; the running names and the last refused ones), `plan` -> `KeymapStep::{Unchanged, Refused,
+  Compile}`, `refuse` -> `Report::{Say, Quiet}`; `xkb_config(&XkbNames)` is shared with `SeatPart::new`.
+- **Bad keymap.** `set_xkb_config` compiles before touching anything, so a failure leaves the keyboard as it was;
+  we log one warning per distinct refused set of names (the same bad file read again, or an unrelated edit while it
+  stays bad, is quiet) and the model keeps the old layout, so the model and the seat never disagree.
+- **Modifier and held-key state (smithay's behaviour, `update_xkb_state`).** Keys still held are replayed onto
+  the new xkb state, so a held key stays held and its release is matched; modifiers are recomputed from those
+  keys and sent to the focused client after the new keymap. Latched and locked modifiers (Caps Lock, a sticky
+  Shift) are NOT carried over; LEDs are updated. A held key's already-sent press is not re-sent or re-interpreted
+  and the clients' own repeat timers are untouched. Our shell bindings read keysyms from the live xkb state per
+  key (`cmd+space` and the like are modifier plus a key whose symbol is `space` in every layout); a binding on a
+  letter follows the new layout's symbol for that key, as on the Mac.
+- **Tests.** Pure: `seat_keymap` tests (`a_layout_change_compiles_and_the_same_names_or_a_refused_pair_do_not`,
+  `a_refusal_is_reported_once_per_pair_of_names`, `a_switch_forgets_the_refusal`); table
+  `the_file_changes_the_pointer_the_repeat_and_the_layout_and_nothing_else` (renamed; the layout row flipped from
+  "waits for a restart"); doc test of `KeymapBook::new`. Fixture: `a_layout_change_in_the_settings_file_sends_a_new_keymap`
+  (second `wl_keyboard.keymap` after a layout change; none for the same file, an unrelated section, or a layout
+  that does not compile; the model keeps the old names). It counts keymap events, it does not read the keymap
+  text. No golden or expected-failures changed.
+- **Departures.** The test uses `no_such_layout_zz` as the uncompilable layout: it relies on libxkbcommon
+  refusing an unknown layout name (it does with the stock xkeyboard-config); if the gate's data lets it through,
+  pick another bad name (a bad `xkb_rules`, say). Windows, spaces, outputs stay read at start.
+- **Only a real run proves.** Editing `keyboard.xkb_layout` (e.g. `us` to `de`, or `us,de` with
+  `grp:alt_shift_toggle` options) in `~/.config/casement/settings.toml` while a terminal has focus: the next key
+  types the new layout at once with no restart; a held modifier key still releases cleanly; Caps Lock is cleared by
+  the switch; a typo in the layout leaves typing unchanged and one warning in the log; `cmd+space` still works.
+  Toolkits that cache the keymap (GTK, Qt, Xwayland through xwayland-satellite) must take the new `keymap` event.
