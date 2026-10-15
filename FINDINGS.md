@@ -143,7 +143,7 @@ module); `Rgba8`; `TextureBook`; `Transcript`, `Pattern`; `FixtureSpec`, `TestOr
 | `SoftPixman` and `FixedUdmabuf` (A4) have constructors only; their renderer and allocator trait impls (pure delegation) and the `GraphicsApi` over the jail's fabricated nodes are P1-D4's | P1-D4's soft topology suite ("display on A, client buffers from B", counters asserted, A5) |
 | `casement-scene-css` was written, never built (Blitz is heavy and the oracle is P3's) | P3-CSS builds and fills it |
 | Protocol tests carry `todo!()` client steps: the fixture setup and the scenario are written, the testclient helpers are not | each H lane writes its helper module and the steps in the same change |
-| `taffy_bridge` (`new_tree`, `solve`, `rect_of`, `fixed_size`) has no caller outside its test | P3-Z's Split View and Exposé call it; the `expect(dead_code, unused_imports)` on the module then fails and is removed |
+| `taffy_bridge` (`new_tree`, `solve`, `rect_of`, `fixed_size`) has no caller outside its test | DONE for Split View (wave-2026-10-15/split: `taffy_bridge/split.rs`, called by `rust_scene/split.rs`); the `expect` on the module is removed. Exposé is the next caller but needs none of it to compile |
 | Mission Control spread quality: scale about 0.30 at 20 windows, 0.19 to 0.22 at 30 to 50 (A21) | the user decides at P3 whether to enable refinement trials or a better packer |
 | `Event` has no variant for a window press, an app activation or a desktop command, so `Model::press`, `Model::activate_app` and `Model::command` are called directly | the edge's handler lanes (P0-H2, P0-B-loop) say whether `Event::Press`, `Event::Activate` and `Event::Command` join the enum, each routed to those methods in `Model::step` |
 | The model never arms a timer: `Ping`, `QuitGrace` and the other model-owned `TimerKey`s have handlers (`Model::step` on `TimerFired` and `Pong`) but nothing asks for them | P3-Z's quit machine and the not-responding policy arm them through `Effect::ArmTimer` |
@@ -2303,3 +2303,61 @@ Title text, quire's numbers, `theme = "system"`. Written without a compiler (wav
   desktop's light/dark toggle without a restart (KDE/GNOME portal; check `busctl --user` shows no second connection per frame);
   with `theme = "dark"` it does not. Open: right-to-left titles (parley shapes them; the margins are not mirrored), and
   the title is not in a window capture of a window without its frame (as the frame is not).
+
+## wave-2026-10-15/split
+
+Split View end to end in the model and layout (the window menu's Full Screen Tile entries are on). Written without a
+compiler (wave rule); the orchestrator builds.
+
+- **The command.** `Model::split_view(window, side)` (`model/split.rs`), reached by `ShellRequest::WindowMenuPick` with
+  `TileLeftOfScreen` / `TileRightOfScreen` (`window_menu.rs` now passes `SplitSupport::Available`). The window goes full
+  screen on a Space of its own (`enter_full_screen`, now `pub(super)`), exactly as Enter Full Screen does. No key binding
+  yet: `DesktopCommand` is serialised in the bindings document, and `SplitSide` has no serde form; add `SplitKey(SplitSide)`
+  with the binding names when the owner picks chords.
+- **Choosing the other half.** When other windows can fill it, the model holds a `SplitChoice { first, side, space }`
+  (`Model::split_choice`) and emits `ShellNote::SplitChoose(SplitChoices { first, side, candidates })`. Candidates: ordinary
+  (not `WindowRole::Shell`, no parent) windows of apps that are not hidden, not in the dock, not full screen, on a desktop
+  Space of the first window's output, most recently stacked first. `ShellRequest::SplitPick { window }` completes the pair
+  (the window must still be a candidate; the first must still be alone in its Space); `ShellRequest::SplitCancel` (Escape or a
+  click elsewhere, which only the shell sees) leaves the first window alone, full screen. The choosing ends, with
+  `ShellNote::SplitChoiceEnd(first)`, on a pick, a cancel, the first window leaving full screen or closing. With no other
+  window the first just goes full screen and nothing is asked.
+- **The pair.** The Space becomes `SpaceContent::SplitView(SplitPair { leading, trailing, divider: 500 })`; both windows are
+  `WindowState::FullScreen { space, restore }` with the same Space, so the whole full-screen machinery (the green light's
+  Exit Full Screen, the toplevel states, drawing above the layers) works for both unchanged. The `full_screen_spaces_agree`
+  invariant now also requires both windows of a Split View to hold the Space (`FullScreenOutOfStep`).
+- **Leaving.** `leave_full_screen` restores every window full screen in that Space and retires it (the desktop to its left
+  takes them), so Exit Full Screen on either window ends the Split View with both back at their previous states. Closing one
+  window (`unmap`) turns the Space back into `FullScreen(other)` (`split_survivor`); before this lane an unmapped Split View
+  window turned the Space into an empty Desktop (the old `_ =>` arm, never reached).
+- **Layout.** `rust_scene/split.rs`: the halves share the output's whole rectangle (`OutputSpec::full`) with an 8 px divider
+  strip; the leading width is the divider's share of the rest, held so each half keeps its window's minimum width; when the
+  minimums cannot both fit, the share stands and `LayoutReport::MinUnmet` is reported for the window(s) that fall short. The
+  row is solved by `taffy_bridge::split_rects` (`new_tree`, `solve`, `rect_of`, `fixed_size`: the bridge now has its caller, and
+  the `expect(dead_code, unused_imports)` on the module is gone); `by_arithmetic` is the fallback if Taffy refuses the tree.
+  Both halves are always sent a `Resize` (as a full-screen window is).
+- **Divider drag: model and layout only.** `ShellRequest::SplitDivide { window, share }` sets the share (clamped to 200..800
+  thousandths) and relays out. Not built: the hit test on the divider strip and the pointer grab in `core_loop`, the resize
+  cursor, and a divider rectangle in `Arrangement` (it is the 8 px gap between the two targets). The shell can draw a handle
+  in the gap and send `split_divide` as it drags; until the protocol lands the divider is fixed at 50/50.
+- **Departure: whole output, not the usable area.** The task said "usable area"; both windows are `FullScreen` and are drawn
+  above the top layers (`full_screen_windows`), so a halves-in-usable-area layout would leave the bar's strip uncovered. Layout
+  uses `OutputSpec::full`. Changing it is one line (`let area = output.full;` in `rust_scene/split.rs`).
+- **Departure: the picker has no wire.** The XML has no event or request for it and `casement-protocols` is not this lane's.
+  `casement_wayland::quire::shell::apply_note` has an explicit empty arm for `SplitChoose` and `SplitChoiceEnd` naming this
+  section. Until the protocol lands the menu entry makes the window full screen and the model waits for a pick that cannot
+  come (it ends when the window leaves full screen or closes). No test client catalogue entry (no new interface).
+- **Departures.** A window's maximum size is not honoured by a half (it is as wide as the half, like a full-screen window);
+  windows on other desktops of the output are candidates, not only the desktop the first came from (the model does not record
+  which desktop that was); switching Space while choosing does not cancel it; the divider share is not persisted.
+- **Tests.** `casement-core/tests/it/model_split.rs` (enter, candidates, pick both sides, cancel, stale picks, first leaving,
+  exit from either window, close either window, divider clamp); `casement-layout/tests/it/split.rs` (widths table, unmet
+  minimums, the output's place, a missing window); in-file test of `taffy_bridge/split.rs`. Changed: `model_window_menu.rs`
+  ("a Full Screen Tile entry ..." now ends full screen), `casement-testkit/tests/it/protocol/quire_shell.rs`
+  (`resting_on_the_green_light...` expects both Full Screen Tile entries enabled).
+- **Gate.** Likeliest compile faults: `model/split.rs` (the `restore.filter(..)` let-else in `split_pick`, `Moved::then(Model::choice_over)`,
+  `with_all(Option<Effect>)`), `invariants.rs` (the tuple match), `requests.rs` `leave_full_screen` closures, `desktop.rs`
+  (`if let SpaceArrangement::Split(pair) = space.kind` copies the `Copy` pair out of a borrowed place), `taffy_bridge/split.rs`
+  (`Style { flex_shrink, flex_grow }`, `tree.layout(node)?`). The proptest model run (`model_props.rs`) never issues a Split
+  command, so it is unchanged; add the menu picks to its strategies if wanted. Real run: Left of Screen with two windows open
+  fills the left half and (once the wire lands) the shell offers the second; today Left of Screen only goes full screen.
