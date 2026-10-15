@@ -41,7 +41,9 @@ impl TitleDraw {
         let wanted = usize::try_from(u64::from(self.width) * u64::from(self.height) * 4).ok()?;
         (self.rgba.len() == wanted).then(|| {
             self.rgba
-                .chunks_exact(4)
+                .as_chunks::<4>()
+                .0
+                .iter()
                 .flat_map(|px| [px[2], px[1], px[0], px[3]])
                 .collect()
         })
