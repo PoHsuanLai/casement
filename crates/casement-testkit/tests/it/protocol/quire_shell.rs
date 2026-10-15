@@ -1,7 +1,7 @@
 //! `quire_shell` (P2-Q2): the shell's surface roles, minimise targets and the events only the
 //! compositor sees. Shell connections only.
 
-use crate::protocol::xdg_shell::{map_toplevel, pointer, rect_of, settle, windows};
+use crate::protocol::xdg_shell::{map_toplevel, pointer, settle, windows};
 use casement_core::WindowId;
 use casement_core::geometry::LogicalRect;
 use casement_core::geometry::PhysicalSize;
