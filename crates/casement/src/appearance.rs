@@ -16,7 +16,7 @@ use smithay::reexports::calloop::channel::{self, Event as ChannelEvent};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{Context, Poll, Wake, Waker};
+use std::task::{Context, Wake, Waker};
 use std::thread::Thread;
 
 /// The appearance store of `home`: the real config tree, or a stand-in directory (a test or a
@@ -104,7 +104,7 @@ impl Wake for Unpark {
 fn block_on(mut task: Pin<Box<dyn Future<Output = ()> + Send>>) {
     let waker = Waker::from(Arc::new(Unpark(std::thread::current())));
     let mut context = Context::from_waker(&waker);
-    while let Poll::Pending = task.as_mut().poll(&mut context) {
+    while task.as_mut().poll(&mut context).is_pending() {
         std::thread::park();
     }
 }
