@@ -174,3 +174,13 @@ fn the_shaders_declare_what_the_passes_set() {
         assert!(up.contains(declaration), "{declaration}");
     }
 }
+
+/// llvmpipe's `sin` returns NaN past an argument of 65536, which the classic
+/// `sin(dot(gl_FragCoord.xy, k))` grain hash reaches at full-HD coordinates; the NaN turned the
+/// bottom right of a 1920 by 1080 blur black even at a grain of 0.
+#[test]
+fn the_finish_shader_has_no_sin_of_the_pixel_position() {
+    let up = include_str!("../../src/shaders/kawase_up.frag");
+    assert!(!up.contains("sin("), "no sin() in the finish shader");
+    assert!(up.contains("if (grain > 0.0)"), "grain only when asked");
+}

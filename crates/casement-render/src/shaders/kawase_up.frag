@@ -53,8 +53,14 @@ void main() {
     float luma = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
     color.rgb = clamp(mix(vec3(luma), color.rgb, saturation), 0.0, color.a);
     color = wash + color * (1.0 - wash.a);
-    float n = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5;
-    color.rgb = clamp(color.rgb + vec3(n * grain) * color.a, 0.0, color.a);
+    // Grain only when asked, and from a hash with no sin(): the usual sin(dot(p, k)) hash takes
+    // an argument past 65536 at full-HD coordinates, where llvmpipe's sin returns NaN, and NaN
+    // times a grain of 0 is still NaN (the pixel went black wherever 12.9898 x + 78.233 y was
+    // over 65536). Interleaved gradient noise (Jimenez 2014) keeps every argument small.
+    if (grain > 0.0) {
+        float n = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) - 0.5;
+        color.rgb = clamp(color.rgb + vec3(n * grain) * color.a, 0.0, color.a);
+    }
     color = color * alpha;
 
 #if defined(DEBUG_FLAGS)

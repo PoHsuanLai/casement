@@ -3449,6 +3449,13 @@ on hardware**: nothing was timed; whether the 4K read-back stall is gone is for 
 - **Unverified API guesses.** A nested `Renderer::render` on an offscreen texture inside `capture_framebuffer` through
   `frame.renderer()` (read from smithay `90efde4`: `finish_internal` disables scissor and blend, the guard drop re-enables them);
   offscreen textures need no wrap mode because the shaders clamp their own coordinates; `Texture::size` used as a path in `.map`.
+- **Fixed: black wedge in the full-HD compositor scene.** `blur_v0_matches_its_llvmpipe_golden` showed the panel's bottom right black
+  (64 where 160 belongs) below a straight edge of slope -0.166 = -12.9898/78.233. The cause was the grain hash in `kawase_up.frag`:
+  `sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233)))` has an argument past 65536 where 12.9898 x + 78.233 y > 65536 (the edge, to the
+  pixel), llvmpipe's `sin` is taken to return NaN or garbage there (inferred from the edge, not measured), and `vec3(n * grain)` with grain 0 then poisons the colour, which `clamp` turns into black. The
+  render-level scenes are 320x200 (argument under 20000) and the intermediate levels are under 21000, so only the finish at full-HD
+  coordinates hit it. The hash is now interleaved gradient noise (no `sin`) and runs only when `grain > 0`. The damage path was
+  not at fault: smithay's tracker adds the whole element area to the damage whenever it captures, and the capture reads a fully drawn frame.
 ## P3-TL: window tiling by drag (cas22-tile)
 
 - **What landed.** `casement_layout::zone_rect(zone, usable, margin)` (`rust_scene/tile_zone.rs`) cuts a half or quarter out of the
