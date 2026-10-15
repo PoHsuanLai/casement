@@ -7,10 +7,13 @@ use crate::protocol::image_capture::{cursor_watch, name, pointer_at, settle};
 use casement_core::geometry::{LogicalPoint, PhysicalSize};
 use casement_core::policy::ConnectionRole;
 use casement_testclient::capture::{BufferAsk, CursorEvent, CursorMode, OutputCapture, Size};
+use casement_testclient::misc::viewporter::Viewporter;
 use casement_testclient::seat::pointer::Pointer;
 use casement_testclient::surface::layer::Layer;
+use casement_testclient::surface::subsurface::Surface;
 use casement_testclient::{Pattern, Pumped, shm_buffer};
 use casement_testkit::{Fixture, FixtureSpec, FrameCount};
+use wayland_client::protocol::wl_output::Transform;
 
 /// Where the pointer rests: over the middle of the layer the client maps.
 const REST: (i32, i32) = (960, 540);
@@ -222,4 +225,98 @@ fn the_capture_and_the_screen_agree_at_a_fractional_scale() {
         opaque > 20,
         "the arrow has an opaque body, found {opaque} pixels"
     );
+}
+
+/// How a client dresses its 16 x 16 cursor surface before it commits.
+enum Dress {
+    /// The viewport takes the buffer's (4, 2) 8 x 8 part and shows it 16 x 16.
+    Viewport,
+    /// The buffer is declared turned half a circle.
+    HalfTurn,
+}
+
+/// The image a cursor session sends for a coordinate-encoded 16 x 16 cursor buffer (pixel
+/// (x, y) is red = x, green = y) that the client dressed with `dress`.
+fn dressed_cursor(dress: &Dress) -> (Size, Vec<u8>) {
+    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let mouse = pointer_at(&mut fixture, (10, 10));
+    let id = fixture.connect(ConnectionRole::Public);
+    fixture.pump();
+    let pointer = Pointer::bind(fixture.client(id)).expect("a pointer");
+    let _layer = map(&mut fixture, id, &focused(Layer::Top, "canvas"));
+    fixture.input().pointer_to(
+        mouse,
+        LogicalPoint {
+            x: REST.0,
+            y: REST.1,
+        },
+    );
+    fixture.pump();
+    let serial = pointer
+        .enter_serial()
+        .expect("the pointer entered the layer");
+    let surface = fixture.client(id).create_surface().expect("a surface");
+    let art = shm_buffer(
+        fixture.client(id),
+        PhysicalSize { w: 16, h: 16 },
+        Pattern::CoordinateEncoding,
+    );
+    match dress {
+        Dress::Viewport => {
+            let viewporter = Viewporter::bind(fixture.client(id));
+            let wrapped = Surface {
+                surface: surface.clone(),
+            };
+            let viewport = viewporter.viewport(fixture.client(id), &wrapped);
+            viewport.source(4.0, 2.0, 8.0, 8.0);
+            viewport.destination(16, 16);
+        }
+        Dress::HalfTurn => surface.set_buffer_transform(Transform::_180),
+    }
+    surface.attach(Some(art.buffer()), 0, 0);
+    surface.commit();
+    pointer.pointer().set_cursor(serial, Some(&surface), 0, 0);
+    fixture.pump();
+    fixture.frames(&name("HEADLESS-1"), FrameCount(2));
+    let mut capture = OutputCapture::start(fixture.client(id).globals()).expect("the managers");
+    settle(&mut fixture, &mut capture);
+    capture.open_cursor("HEADLESS-1").expect("a cursor session");
+    settle(&mut fixture, &mut capture);
+    image_of(&mut fixture, &mut capture)
+}
+
+/// A cursor with a viewport is captured as drawn: the cropped part, scaled to the shown size.
+#[test]
+fn a_cursor_with_a_viewport_is_captured_as_drawn() {
+    let (size, rgba) = dressed_cursor(&Dress::Viewport);
+    assert_eq!((size.w, size.h), (16, 16), "the viewport's destination");
+    for y in 0..16_u8 {
+        for x in 0..16_u8 {
+            let at = (usize::from(y) * 16 + usize::from(x)) * 4;
+            assert_eq!(
+                rgba[at..at + 2],
+                [4 + x / 2, 2 + y / 2],
+                "pixel ({x}, {y}) comes from the buffer's ({}, {})",
+                4 + x / 2,
+                2 + y / 2
+            );
+        }
+    }
+}
+
+/// A cursor whose buffer is declared turned is captured upright, as the screen shows it.
+#[test]
+fn a_cursor_with_a_buffer_transform_is_captured_upright() {
+    let (size, rgba) = dressed_cursor(&Dress::HalfTurn);
+    assert_eq!((size.w, size.h), (16, 16));
+    for y in 0..16_u8 {
+        for x in 0..16_u8 {
+            let at = (usize::from(y) * 16 + usize::from(x)) * 4;
+            assert_eq!(
+                rgba[at..at + 2],
+                [15 - x, 15 - y],
+                "pixel ({x}, {y}) of the half-turned buffer"
+            );
+        }
+    }
 }

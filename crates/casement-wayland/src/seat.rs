@@ -23,6 +23,7 @@ pub use touch::{apply_touch, release_dead};
 pub use under::{Candidate, surface_under};
 
 use crate::convert::serial_to;
+use crate::seat_keymap::{KeymapBook, xkb_config};
 use crate::serial::{PressRecord, SerialBook};
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::geometry::{LogicalPoint, SubPoint};
@@ -30,9 +31,7 @@ use casement_core::input::{ButtonCode, Edge, GestureStep, KeyCode, Origin, Pinch
 use casement_core::settings::KeyboardSettings;
 use casement_core::time::Mono;
 use casement_core::{Event, InputSerial};
-use smithay::input::keyboard::{
-    FilterResult, KeyboardHandle, KeysymHandle, ModifiersState, XkbConfig,
-};
+use smithay::input::keyboard::{FilterResult, KeyboardHandle, KeysymHandle, ModifiersState};
 use smithay::input::pointer::{CursorImageStatus, PointerHandle};
 use smithay::input::touch::TouchHandle;
 use smithay::input::{Seat, SeatHandler, SeatState};
@@ -55,6 +54,8 @@ pub struct SeatPart<D: SeatHandler + 'static> {
     pub pointer: PointerHandle<D>,
     /// Its keyboard.
     pub keyboard: KeyboardHandle<D>,
+    /// What its keymap was compiled from, and what it refused.
+    pub keymap: KeymapBook,
     /// Its touch.
     pub touch: TouchHandle<D>,
     /// Which serials answer a real press.
@@ -84,14 +85,8 @@ impl<D: SeatHandler + 'static> SeatPart<D> {
         let mut state = SeatState::new();
         let mut seat = state.new_wl_seat(display, SEAT_NAME);
         let pointer = seat.add_pointer();
-        let names = &keyboard.layout;
-        let xkb = XkbConfig {
-            rules: &names.rules,
-            model: &names.model,
-            layout: &names.layout,
-            variant: &names.variant,
-            options: Some(names.options.clone()).filter(|options| !options.is_empty()),
-        };
+        let xkb = xkb_config(&keyboard.layout);
+        let running = keyboard.layout.clone();
         let (rate, delay) = repeat_wire(keyboard);
         let keyboard = seat
             .add_keyboard(xkb, delay, rate)
@@ -102,6 +97,7 @@ impl<D: SeatHandler + 'static> SeatPart<D> {
             seat,
             pointer,
             keyboard,
+            keymap: KeymapBook::new(running),
             touch,
             serials: SerialBook::empty(),
             taken: Taken::none(),

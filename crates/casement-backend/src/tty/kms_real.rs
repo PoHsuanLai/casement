@@ -12,6 +12,8 @@
 //! compositor that owns the surface keeps its mode, and a new mode is a new surface (the
 //! backend drops the old one first).
 
+use super::capture_gpu::CaptureGpu;
+use super::capture_gpu_real::RealCaptureGpu;
 use super::direct::require_vkms;
 use super::hotplug::{KnownConnectors, reconcile};
 use super::judge::{Lit, judge};
@@ -194,6 +196,11 @@ impl RealKms {
 }
 
 impl Kms for RealKms {
+    fn capture_gpu(&self) -> Option<Box<dyn CaptureGpu>> {
+        let renderer = self.renderer.as_ref()?;
+        Some(Box::new(RealCaptureGpu::new(Rc::clone(renderer))))
+    }
+
     fn resources(&self) -> KmsResources {
         probe(&self.device).unwrap_or_else(|_| self.last.clone())
     }

@@ -13,8 +13,8 @@
 use super::dma::{deliver, offer, read_cursor};
 use crate::state::State;
 use casement_core::OutputKey;
-use casement_core::geometry::{PhysicalRect, PhysicalSize};
-use casement_render::pass::{ArgbImage, CapturedFrame};
+use casement_core::geometry::{PhysicalRect, PhysicalSize, Transform as CoreTransform};
+use casement_render::pass::{ArgbImage, CapturedFrame, DrawnView, SourceRect};
 use casement_render::{ChromeLayer, CursorDraw, CursorShape, cursor_face, cursor_pixels};
 use casement_wayland::image_capture::{
     CaptureFailure, CaptureSourceId, CursorSessionId, CursorView, image_size, place,
@@ -232,23 +232,47 @@ fn raw_image(
             .map(|argb| ArgbImage::new(upright, argb))
             .ok_or(CaptureFailure::Renderer),
         CursorDraw::ClientSurface { .. } => {
-            let buffer = state
+            let surface = state
                 .render
                 .textures
                 .cursor()
-                .and_then(|surface| {
-                    with_states(surface, |states| {
-                        let held = states.data_map.get::<RendererSurfaceStateUserData>()?;
-                        let held = held.lock().ok()?;
-                        held.buffer().cloned()
-                    })
-                })
+                .cloned()
                 .ok_or(CaptureFailure::Renderer)?;
-            read_cursor(state, &buffer).map_err(|error| {
+            let (buffer, view) = with_states(&surface, |states| {
+                let held = states.data_map.get::<RendererSurfaceStateUserData>()?;
+                let held = held.lock().ok()?;
+                let surface_view = held.view()?;
+                let src = surface_view.src;
+                let drawn = DrawnView::new(
+                    held.buffer_scale(),
+                    core_transform(held.buffer_transform()),
+                    SourceRect::new(src.loc.x, src.loc.y, src.size.w, src.size.h),
+                );
+                Some((held.buffer().cloned()?, drawn))
+            })
+            .ok_or(CaptureFailure::Renderer)?;
+            let read = read_cursor(state, &buffer).map_err(|error| {
                 tracing::warn!(%error, "a client's cursor was not read for capture");
                 CaptureFailure::Renderer
-            })
+            })?;
+            // The buffer as the screen draws it: turned upright and cut to the viewport's
+            // source; `fitted` then scales it to the drawn size.
+            Ok(read.drawn(&view))
         }
         _ => Err(CaptureFailure::Renderer),
+    }
+}
+
+/// Our name for one of smithay's transforms (the edge converts, CONVENTIONS 3).
+fn core_transform(transform: Transform) -> CoreTransform {
+    match transform {
+        Transform::Normal => CoreTransform::Normal,
+        Transform::_90 => CoreTransform::R90,
+        Transform::_180 => CoreTransform::R180,
+        Transform::_270 => CoreTransform::R270,
+        Transform::Flipped => CoreTransform::Flipped,
+        Transform::Flipped90 => CoreTransform::Flipped90,
+        Transform::Flipped180 => CoreTransform::Flipped180,
+        Transform::Flipped270 => CoreTransform::Flipped270,
     }
 }

@@ -1,11 +1,13 @@
 //! `FakeKms`: `Kms` over a shared world a test scripts.
 
 use super::super::scanout::{FakeScanout, GlassHandle};
+use super::capture_gpu::FakeCaptureGpu;
 use super::topology::SyntheticTopology;
 use casement_backend::headless::ConnectorEvent;
 use casement_backend::tty::{
-    CommitVerdict, ConnectorFacts, ConnectorId, ConnectorStatus, DevicePath, Kms, KmsCommit,
-    KmsError, KmsOpener, KmsRefusal, KmsResources, Lit, ScanoutSurface, judge, output_facts,
+    CaptureGpu, CommitVerdict, ConnectorFacts, ConnectorId, ConnectorStatus, DevicePath, Kms,
+    KmsCommit, KmsError, KmsOpener, KmsRefusal, KmsResources, Lit, ScanoutSurface, judge,
+    output_facts,
 };
 use casement_core::output::{GammaRamp, Mode, OutputConfig, OutputPower};
 use std::collections::BTreeMap;
@@ -48,6 +50,8 @@ pub struct KmsWorld {
     pub pauses: u32,
     /// How many times it came back (`resume`).
     pub resumes: u32,
+    /// The renderer it lends to draw captures (none: it lends nothing).
+    pub capture_gpu: Option<FakeCaptureGpu>,
 }
 
 /// A fake display device.
@@ -243,6 +247,11 @@ impl Kms for FakeKms {
         let glass = GlassHandle::new(FakeScanout::following());
         world.glass.insert(connector, glass.clone());
         Ok(Box::new(glass))
+    }
+
+    fn capture_gpu(&self) -> Option<Box<dyn CaptureGpu>> {
+        let gpu = self.world().capture_gpu.clone()?;
+        Some(Box::new(gpu))
     }
 
     fn pause(&mut self) {

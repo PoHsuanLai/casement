@@ -14,6 +14,7 @@
 //! }
 //! ```
 
+use super::capture_gpu::CaptureGpu;
 use super::surface::ScanoutSurface;
 use super::udev::DevicePath;
 use crate::headless::ConnectorEvent;
@@ -391,6 +392,12 @@ pub trait Kms: std::fmt::Debug {
 
     /// The seat is back: take master again. The caller then commits every output again.
     fn resume(&mut self) -> Result<(), KmsError>;
+
+    /// The device's renderer lent to draw captures into a client's dma-buf (GPU formats and
+    /// modifiers); none by default and while the device has lit no output yet.
+    fn capture_gpu(&self) -> Option<Box<dyn CaptureGpu>> {
+        None
+    }
 }
 
 /// Opens a display device. Real: asks the session for the file descriptor and wraps it; fake:

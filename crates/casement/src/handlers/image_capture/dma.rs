@@ -3,8 +3,10 @@
 //!
 //! The offer is the renderer's own set (what the backend's renderer can draw a frame into)
 //! meeting what the dma-buf global accepts, so a client can always create the buffer it
-//! allocates. The pixels are drawn by the backend's renderer (`casement_render::pass::
-//! write_dmabuf`); shared memory stays the fallback and is written directly.
+//! allocates. On a real seat the offer starts with the display GPU's formats and modifiers and
+//! the GPU's renderer draws the pixels; the software renderer (linear buffers) is the fallback
+//! (`casement_backend::tty::TtyBackend::write_dmabuf`). The pixels are drawn by
+//! `casement_render::pass::write_dmabuf`; shared memory is written directly.
 
 use crate::state::State;
 use casement_backend::{BackendError, BackendKind};
