@@ -119,6 +119,10 @@ pub struct RenderState {
     /// The window titles' rasteriser (`casement-chrome`), made when the first server-side frame
     /// needs a title so a session without one never scans the fonts.
     pub titles: Option<casement_chrome::TitleRaster>,
+    /// The window Mission Control's pointer is on, if any.
+    pub(crate) overview_hover: Option<casement_core::WindowId>,
+    /// The rasteriser of the title under that window (no margins), made when first needed.
+    pub labels: Option<casement_chrome::TitleRaster>,
 }
 
 /// Whether the pointer has been put where it starts: the centre of the primary output, once an
@@ -331,6 +335,8 @@ impl State {
             light_dwell: casement_core::window::Dwell::default(),
             scheme: casement_layout::Scheme::default(),
             titles: None,
+            overview_hover: None,
+            labels: None,
         };
         Ok(State {
             core,

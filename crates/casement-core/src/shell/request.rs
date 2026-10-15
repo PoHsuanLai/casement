@@ -4,7 +4,7 @@
 use crate::geometry::LogicalRect;
 use crate::ids::{LayerKey, WindowId};
 use crate::window::MenuEntry;
-use casement_protocols::vocab::ShellRole;
+use casement_protocols::vocab::{OverviewMode, ShellRole, Toggle};
 use ds_core::vocab::Fraction;
 
 /// One request from the shell.
@@ -61,5 +61,13 @@ pub enum ShellRequest {
         window: WindowId,
         /// The leading window's share.
         share: Fraction,
+    },
+    /// The shell opened or closed an overview (`overview`: its key or gesture). Only Mission
+    /// Control is built; the others change nothing.
+    Overview {
+        /// Which overview.
+        mode: OverviewMode,
+        /// Open (on) or close (off).
+        toggle: Toggle,
     },
 }

@@ -16,6 +16,7 @@ mod model_apps;
 mod model_input;
 mod model_layers;
 mod model_lock;
+mod model_overview;
 mod model_props;
 mod model_requests;
 mod model_shell;

@@ -5,11 +5,11 @@
 //!
 //! The wire glue is written: the part, the handler trait, the global's and the object's
 //! dispatch, and the errors a refusal becomes. What each request decides (`on_*`) and what a
-//! note sends (`apply_note`) are the lane's. The switcher, overview and show-desktop requests
-//! are ignored until P3-Z gives them their machines.
+//! note sends (`apply_note`) are the lane's. The switcher and show-desktop requests are ignored
+//! until P3-Z gives them their machines.
 
-use super::shell_split;
 use super::{Advertised, code_of};
+use super::{shell_overview, shell_split};
 use crate::foreign_toplevel_list::{identifier_of, window_of_identifier};
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
@@ -216,7 +216,13 @@ where
                 let window = window_of_identifier(&toplevel).filter(|id| state.window_known(*id));
                 state.quire_shell_events(shell_split::on_split_divide(window, share));
             }
-            // The switcher, overview and show-desktop requests arrive with P3-Z.
+            quire_shell_v1::Request::Overview { mode, toggle } => {
+                state.quire_shell_events(shell_overview::on_overview(
+                    code_of(mode),
+                    code_of(toggle),
+                ));
+            }
+            // The switcher and show-desktop requests arrive with P3-Z.
             _ => {}
         }
     }
@@ -373,6 +379,7 @@ pub fn apply_note(part: &mut QuireShellPart, note: &ShellNote) -> Result<(), Way
         }
         ShellNote::SplitChoose(choices) => shell_split::send_choose(part, choices),
         ShellNote::SplitChoiceEnd(first) => shell_split::send_choice_end(part, *first),
+        ShellNote::Overview(overview) => shell_overview::send_state(part, *overview),
         _ => {}
     }
     Ok(())

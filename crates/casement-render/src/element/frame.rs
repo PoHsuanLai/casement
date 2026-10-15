@@ -165,6 +165,37 @@ fn title_element<R: Compositor>(
     .map(CasementElement::Memory)
 }
 
+/// A label (a text raster made like a title) laid over `at`, global logical pixels: the same
+/// size as `at` at the output's native scale, drawn opaque. Nothing for a raster of another size
+/// or a place off this output. Mission Control's title under the hovered window.
+pub fn label_element<R: Compositor>(
+    label: &TitleDraw,
+    at: LogicalRect,
+    view: &OutputView,
+    renderer: &mut R,
+) -> Option<CasementElement<R>> {
+    view.area.intersection(&at)?;
+    let pixels = buffer_size(at.size, view.scale);
+    if (label.width, label.height) != (pixels.w, pixels.h) {
+        return None;
+    }
+    let buffer = to_buffer(&raster::Raster {
+        w: label.width,
+        h: label.height,
+        argb: label.argb()?,
+    });
+    element(
+        renderer,
+        view,
+        at.origin,
+        at.size,
+        whole(pixels.w, pixels.h),
+        1.0,
+        &buffer,
+    )
+    .map(CasementElement::Memory)
+}
+
 /// `made` as a buffer smithay can upload.
 fn to_buffer(made: &raster::Raster) -> MemoryRenderBuffer {
     MemoryRenderBuffer::from_slice(

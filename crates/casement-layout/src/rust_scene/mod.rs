@@ -16,7 +16,10 @@
 mod cascade;
 mod desktop;
 mod floating;
+mod overview;
 mod split;
+mod spread;
+mod spread_fit;
 
 use crate::{Arrangement, LayoutKnobs, SceneLayout, SceneSpec};
 
@@ -39,13 +42,16 @@ impl SceneLayout for RustScene {
     /// A Split View Space's two windows take the left and right of the whole output with an
     /// 8 px divider between them (`split.rs`).
     ///
-    /// At P0 every output is arranged as a desktop whatever its mode, and only floating, new,
-    /// filled and full-screen windows get targets: tile zones, the overviews and Show Desktop
-    /// arrive with P3-Z, one file each.
+    /// Every output is arranged as a desktop whatever its mode, so the windows keep their
+    /// desktop targets; an output in Mission Control also gets an overview slot for each window
+    /// of its shown desktop Space, spread without overlap below the Spaces bar's strip
+    /// (`spread.rs`; `LayoutReport::SpreadOverflow` when the floor scale cannot separate them).
+    /// Tile zones, App Exposé and Show Desktop arrive with P3-Z, one file each.
     fn arrange(&self, spec: &SceneSpec, knobs: &LayoutKnobs) -> Arrangement {
         let mut arrangement = Arrangement::default();
         for output in &spec.outputs {
             desktop::arrange_output(output, knobs, &mut arrangement);
+            overview::arrange_overview(output, knobs, &mut arrangement);
         }
         arrangement
     }

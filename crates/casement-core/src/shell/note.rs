@@ -2,6 +2,7 @@
 
 use crate::geometry::{LogicalPoint, LogicalRect};
 use crate::ids::{LayerKey, WindowId};
+use crate::overview::Overview;
 use crate::window::{MenuItem, SplitSide, enabled_mask};
 use casement_protocols::vocab::{Corner, MacMods, ScreenEdge, ShellRole, Shown};
 
@@ -33,6 +34,9 @@ pub enum ShellNote {
     /// The choosing for this first window is over (a pick, a cancel, or the window left): the
     /// shell takes its picker away.
     SplitChoiceEnd(WindowId),
+    /// Mission Control moved to this state (`overview_state`, Mission Control's mode): the shell
+    /// draws its Spaces bar while it is not closed.
+    Overview(Overview),
 }
 
 /// The other half of a Split View is being chosen.

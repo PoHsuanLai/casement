@@ -36,6 +36,7 @@ mod idle;
 mod ime;
 mod input;
 mod menu;
+mod overview;
 mod presence;
 mod scene;
 mod surfaces;
@@ -151,13 +152,15 @@ pub fn frame(state: &mut State, output: &OutputKey) {
     closing::remember(state, &styles);
     closing::forget(state, &in_scene);
     let leaving = closing::on(state, &frame);
-    let mut titles = titles::of(state, &frame, &view, &styles);
+    let overview = overview::draw(state, &view);
+    let mut titles = titles::of(state, &frame, &view, &styles, &overview);
     titles.extend(titles::of_closing(state, &frame, &view, &leaving));
     let layers = LayerDraw {
         frames: styles,
         titles,
         closing: leaving,
         minimise_effect: state.core.model.settings().windows.minimise_effect,
+        overview,
         backdrop: divider::backdrop(state, output),
         ..layers_on(&state.core.model, output)
     };

@@ -9,7 +9,10 @@ use casement_core::WindowId;
 use casement_core::window::{FrameMetrics, FrameStyle};
 use casement_layout::frame_metrics;
 use casement_motion::OutputFrame;
-use casement_render::{ClosingFrame, OutputView, TitleDraw, closing_content, window_drawn};
+use casement_render::{
+    ClosingFrame, FlightDraw, OutputView, OverviewDraw, TitleDraw, closing_content, scaled_content,
+    window_content, window_drawn,
+};
 use std::collections::BTreeMap;
 
 /// What the title keeps clear in a titlebar of `metrics`: the lights and one gap after them on
@@ -23,12 +26,15 @@ fn margins(metrics: &FrameMetrics) -> Margins {
     }
 }
 
-/// The title pixels for each framed window on `frame` (the windows in `styles`). A window whose title cannot be drawn (empty, no room) has none.
+/// The title pixels for each framed window on `frame` (the windows in `styles`), at the size
+/// each is drawn at (`overview` says whether Mission Control scales them). A window whose title
+/// cannot be drawn (empty, no room) has none.
 pub(super) fn of(
     state: &mut State,
     frame: &OutputFrame,
     view: &OutputView,
     styles: &BTreeMap<WindowId, FrameStyle>,
+    overview: &OverviewDraw,
 ) -> BTreeMap<WindowId, TitleDraw> {
     if styles.is_empty() {
         return BTreeMap::new();
@@ -49,9 +55,16 @@ pub(super) fn of(
             let style = styles.get(&placed.window)?;
             let window = model.windows().get(&placed.window)?;
             let entry = textures.window(&placed.window)?;
-            let bar = style
-                .around(window_drawn(placed, &entry.root, effect))
-                .titlebar();
+            // In Mission Control a window that is not in a flight is drawn at its sampled size.
+            let drawn = match (overview, placed.flight) {
+                (OverviewDraw::On { .. }, None) => scaled_content(
+                    FlightDraw::Scaled,
+                    window_content(placed, &entry.root),
+                    placed.size,
+                ),
+                _ => window_drawn(placed, &entry.root, effect),
+            };
+            let bar = style.around(drawn).titlebar();
             let key = TitleKey::new(
                 &window.title.0,
                 bar.size.w,
