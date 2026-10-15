@@ -35,12 +35,32 @@ pub(crate) struct Over {
     pub(crate) hit: FrameHit,
 }
 
-/// The windows whose frame casement draws and how each looks now: the ones whose client was
-/// answered server-side, and that are neither full screen nor in the dock.
+/// The windows that have a server-side frame to act on now (hit, reserve): the ones whose
+/// client was answered server-side, and that are neither full screen nor in the dock.
 pub(super) fn styles(state: &State) -> BTreeMap<WindowId, FrameStyle> {
+    styles_where(state, framed)
+}
+
+/// The frames to draw this frame: [`styles`], and the frame of a window on its way into the
+/// dock, which flies and fades with its content. A window the dock holds is drawn only while
+/// the frame scene still has it (it leaves the scene when its fade ends), so a frame is never
+/// drawn for a window nothing else draws. The Mission Control and Space-slide passes draw
+/// through the same `output_elements` call, so a window they place has its frame, shadow and
+/// rounded clip at the place it was given.
+pub(super) fn drawn(state: &State) -> BTreeMap<WindowId, FrameStyle> {
+    styles_where(state, drawn_state)
+}
+
+/// Whether a window in `state` has its frame drawn: [`framed`], or on its way into the dock.
+fn drawn_state(state: &WindowState) -> bool {
+    framed(state) || matches!(state, WindowState::Minimised { .. })
+}
+
+/// How each decorated window, whose state `keep` accepts, looks now.
+fn styles_where(state: &State, keep: fn(&WindowState) -> bool) -> BTreeMap<WindowId, FrameStyle> {
     let over = state.render.frame_over;
     let down = state.render.light_arm.pressed();
-    decorated(state)
+    decorated(state, keep)
         .map(|(id, window)| {
             let activity = match window.emphasis {
                 Emphasis::Key | Emphasis::Main => Activity::Active,
@@ -63,16 +83,18 @@ pub(super) fn styles(state: &State) -> BTreeMap<WindowId, FrameStyle> {
         .collect()
 }
 
-/// The windows that have a server-side frame now: the ones whose client was answered
-/// server-side, and that are neither full screen nor in the dock.
-fn decorated(state: &State) -> impl Iterator<Item = (&WindowId, &casement_core::window::Window)> {
+/// The windows whose client was answered server-side and whose state `keep` accepts.
+fn decorated(
+    state: &State,
+    keep: fn(&WindowState) -> bool,
+) -> impl Iterator<Item = (&WindowId, &casement_core::window::Window)> {
     state
         .core
         .model
         .windows()
         .iter()
         .filter(|(id, _)| state.wl.xdg_decoration.mode_of(**id) == DecorationMode::ServerSide)
-        .filter(|(_, window)| framed(&window.state))
+        .filter(move |(_, window)| keep(&window.state))
 }
 
 /// Whether a window in `state` has a server-side frame, and so its content is clipped at the
@@ -89,7 +111,7 @@ fn framed(state: &WindowState) -> bool {
 /// layout: fill, first placement and the keep-inside clamp hold the frame in the usable area.
 pub(super) fn reserves(state: &State) -> BTreeMap<WindowId, u32> {
     let bar = frame_metrics().titlebar;
-    decorated(state).map(|(id, _)| (*id, bar)).collect()
+    decorated(state, framed).map(|(id, _)| (*id, bar)).collect()
 }
 
 /// What is under `at`: a frame part, or else the surface there.
@@ -377,6 +399,8 @@ mod tests {
         ];
         for (name, state, want) in table {
             assert_eq!(framed(&state), want, "{name}");
+            let drawn = want || name == "in the dock";
+            assert_eq!(drawn_state(&state), drawn, "{name} drawn");
         }
     }
 }

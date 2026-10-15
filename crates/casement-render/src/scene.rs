@@ -175,7 +175,15 @@ pub fn output_elements<R: Compositor>(
                         .map(|style| ClipShape::of_content(content, style.look.radius, view));
                     let (front, back) = style
                         .map(|style| {
-                            frame_elements(placed.window, style, content, view, book, renderer)
+                            frame_elements(
+                                placed.window,
+                                style,
+                                content,
+                                placed.opacity,
+                                view,
+                                book,
+                                renderer,
+                            )
                         })
                         .unwrap_or_default();
                     elements.extend(front);

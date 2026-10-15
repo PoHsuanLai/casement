@@ -135,7 +135,7 @@ pub fn frame(state: &mut State, output: &OutputKey) {
         mode: config.mode.size,
     };
     let layers = LayerDraw {
-        frames: frames::styles(state),
+        frames: frames::drawn(state),
         ..layers_on(&state.core.model, output)
     };
     let capture = tty::capture_watch(&state.wl.image_capture.book, &state.wl.screencopy, output);
