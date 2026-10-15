@@ -1,13 +1,16 @@
 //! `quire_shell` (P2-Q2): the shell's surface roles, minimise targets and the events only the
 //! compositor sees. Shell connections only.
 
-use crate::protocol::xdg_shell::{map_toplevel, windows};
+use crate::protocol::xdg_shell::{map_toplevel, pointer, rect_of, settle, windows};
 use casement_core::geometry::PhysicalSize;
 use casement_core::input::{DeviceClass, Edge, KeyCode};
 use casement_core::policy::ConnectionRole;
+use casement_core::window::{Light, MenuEntry, WindowState, menu_point};
 use casement_ipc::dbus::ConnectRefusal;
+use casement_layout::{GroupHover, Scheme, frame_style};
 use casement_protocols::vocab::ShellRole as ModelRole;
-use casement_testclient::quire::shell::{ShellError, ShellHandle, ShellRole};
+use casement_testclient::misc::decoration::DecorationManager;
+use casement_testclient::quire::shell::{ShellError, ShellHandle, ShellRole, WindowEntry};
 use casement_testclient::surface::layer::{
     Anchor, KeyboardInteractivity, Layer, LayerAsk, LayerSurface,
 };
@@ -16,7 +19,9 @@ use casement_testclient::{Pattern, shm_buffer};
 use casement_testkit::fakes::FakeCgroups;
 use casement_testkit::{ClientId, Fixture, FixtureSpec, TestOrigin};
 use casement_wayland::foreign_toplevel_list::identifier_of;
+use ds_core::vocab::Activity;
 use porter_core::SandboxFacts;
+use std::time::Duration;
 
 const INTERFACE: &str = "quire_shell_v1";
 
@@ -262,4 +267,98 @@ fn modifiers_reach_the_shell_without_focus() {
     fixture.input().key(device, KEY_LEFTMETA, Edge::Release);
     fixture.pump();
     assert_eq!(shell.modifiers_of(bar.surface()), [command, 0]);
+}
+
+/// Maps a window whose client was answered server-side (the Mac frame is casement's): the
+/// toplevel is decorated before its first commit, then it maps at `size`.
+fn map_framed(fixture: &mut Fixture, id: ClientId, base: &WmBase, size: (u32, u32)) {
+    let manager = DecorationManager::bind(fixture.client(id)).expect("xdg_decoration");
+    let top = base.toplevel(fixture.client(id));
+    let _decoration = manager.decorate(fixture.client(id), &top);
+    top.commit_bare();
+    fixture.pump();
+    assert!(top.ack_latest().is_some(), "the initial configure arrives");
+    let buffer = shm_buffer(
+        fixture.client(id),
+        PhysicalSize {
+            w: size.0,
+            h: size.1,
+        },
+        Pattern::Gradient,
+    );
+    top.show(&buffer);
+    fixture.pump();
+}
+
+/// The pointer resting on the green light for half a second asks the shell for the window's
+/// menu, at the light's left edge a little under it, with the entries the window's state
+/// offers; a pick of Left tiles the window to the left half.
+#[test]
+fn resting_on_the_green_light_shows_the_menu_and_a_pick_tiles_the_window() {
+    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let app = fixture.connect(ConnectionRole::Public);
+    let base = WmBase::bind(fixture.client(app), 7);
+    map_framed(&mut fixture, app, &base, (400, 300));
+    let window = windows(&fixture)[0];
+    let (_, shell) = shell_client(&mut fixture);
+    settle(&mut fixture);
+
+    // The light is where the frame puts it round the content (the layout's rectangle).
+    let content = rect_of(&fixture, window);
+    let style = frame_style(Scheme::Light, Activity::Active, GroupHover::Away);
+    let light = style.around(content).light(Light::Zoom);
+    let device = pointer(&mut fixture);
+    fixture.input().pointer_to(device, light.centre());
+    fixture.pump();
+    assert!(
+        shell.window_menus().is_empty(),
+        "not before the rest is long enough"
+    );
+    fixture.advance(Duration::from_millis(300));
+    assert!(shell.window_menus().is_empty(), "300 ms is not a rest");
+    fixture.advance(Duration::from_millis(400));
+
+    let menus = shell.window_menus();
+    assert_eq!(menus.len(), 1, "one menu: {menus:?}");
+    let at = menu_point(light);
+    assert_eq!(menus[0].toplevel, identifier_of(window));
+    assert_eq!(menus[0].at, (at.x, at.y));
+    let on = |entry: MenuEntry| menus[0].enabled & (1 << entry.code()) != 0;
+    assert!(
+        on(MenuEntry::EnterFullScreen),
+        "a window can enter full screen"
+    );
+    assert!(!on(MenuEntry::ExitFullScreen), "it is not in full screen");
+    assert!(on(MenuEntry::Left), "Left is offered");
+    assert!(!on(MenuEntry::ReturnToPreviousSize), "nothing to return to");
+    assert!(
+        !on(MenuEntry::TileLeftOfScreen),
+        "Split View is not built: dimmed"
+    );
+
+    shell.window_menu_pick(&identifier_of(window), WindowEntry::Left);
+    fixture.pump();
+    assert!(matches!(
+        fixture.model().windows()[&window].state,
+        WindowState::Tiled { .. }
+    ));
+    assert!(fixture.client(app).protocol_error().is_none());
+}
+
+/// A pick naming no window, or an entry the XML does not name, changes nothing and is no
+/// protocol error.
+#[test]
+fn a_pick_for_nothing_is_ignored() {
+    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let app = fixture.connect(ConnectionRole::Public);
+    let base = WmBase::bind(fixture.client(app), 7);
+    let _top = map_toplevel(&mut fixture, app, &base, (400, 300));
+    let window = windows(&fixture)[0];
+    let (id, shell) = shell_client(&mut fixture);
+    let before = fixture.model().windows()[&window].state.clone();
+    shell.window_menu_pick("w999", WindowEntry::Left);
+    shell.window_menu_pick("not-ours", WindowEntry::Fill);
+    fixture.pump();
+    assert!(fixture.client(id).protocol_error().is_none());
+    assert_eq!(fixture.model().windows()[&window].state, before);
 }

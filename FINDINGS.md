@@ -2217,3 +2217,25 @@ To check in a real run: wlcs counts (expect 8 more passes, 9 listed); the caseme
   XML says.
 - **Negative `wl_surface.damage`.** smithay built a negative `Size` and panicked inside dispatch (fuzz seed 4). Fork
   commits `65518b3a` and `90efde43` ignore it, as `damage_buffer` already did, and a negative `xdg_positioner.set_parent_size` (seed 4 again).
+
+## wave-2026-10-15/winwire
+
+The window menu's wire, end to end (casement-protocols `lane/winwire`, casement, sill). Written without a compiler.
+
+- **Protocol.** `quire_shell_v1` (version 1, changed in place as the draft allows; no pinned bytes touched): enum
+  `window_entry` (15, codes = `MenuEntry::code`), event `window_menu(toplevel, x, y, enabled)`, request
+  `window_menu_pick(toplevel, entry)`. casement-protocols also has vocab `WindowEntry` and the desktop-client
+  `ShellEvent::WindowMenu` / `DesktopCommand::PickWindowMenu`. Land casement-protocols first.
+- **apply_note.** `ShellNote::WindowMenu` sends `window_menu(identifier_of(window), at.x, at.y, show.enabled())` to
+  every bound shell object. **Dispatch.** `window_menu_pick` resolves `window_of_identifier` (and the model knowing the
+  window) and `MenuEntry::from_code`; `on_window_menu_pick` feeds `ShellRequest::WindowMenuPick`. An unknown window or
+  entry is ignored, no protocol error (the menu may be on screen while the window goes away).
+- **Test client.** `ShellHandle::window_menu_pick`, `ShellHandle::window_menus()` (`WindowMenuSeen`).
+- **Tests.** `protocol/quire_shell.rs`: `resting_on_the_green_light_shows_the_menu_and_a_pick_tiles_the_window`,
+  `a_pick_for_nothing_is_ignored`; a doc test on `on_window_menu_pick`. No golden or `globals.txt` changed (no version bump).
+- **Check at the gate.** The light test computes the zoom light from `rect_of(window).origin` as the content origin and
+  `frame_style(..).around(content)`; if the layout rectangle includes the titlebar, the expected point is off by the bar
+  height and the test fails at the first `window_menus()` assert. `Fixture::advance` must fire `LightDwell` (the
+  timer book). Multiple bound shell objects each get the event.
+- **Real run.** Rest the pointer half a second on the green light: sill's menu appears under it; a pick moves the window;
+  clicking away sends nothing.

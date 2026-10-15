@@ -8,7 +8,7 @@ use wayland_client::protocol::wl_surface::WlSurface;
 use wayland_client::{Connection, Dispatch, QueueHandle, WEnum};
 
 pub use casement_protocols::client::quire_shell_v1::quire_shell_v1::{
-    Error as ShellError, MacMods, ShellRole,
+    Error as ShellError, MacMods, ShellRole, WindowEntry,
 };
 
 /// What a shell object was told.
@@ -16,6 +16,19 @@ pub use casement_protocols::client::quire_shell_v1::quire_shell_v1::{
 pub struct ShellEvents {
     /// Every `modifiers`, in order: the surface it was addressed to and the key set.
     pub modifiers: Vec<(WlSurface, u32)>,
+    /// Every `window_menu`, in order.
+    pub window_menus: Vec<WindowMenuSeen>,
+}
+
+/// One `window_menu` the shell was told.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WindowMenuSeen {
+    /// The window's identifier.
+    pub toplevel: String,
+    /// Where the menu opens, in global logical pixels.
+    pub at: (i32, i32),
+    /// The bit per entry code that can be picked.
+    pub enabled: u32,
 }
 
 /// A shell object's log.
@@ -62,6 +75,16 @@ impl ShellHandle {
         self.object.clear_minimise_target(toplevel.to_owned());
     }
 
+    /// Picks `entry` in the menu of the window `toplevel`.
+    pub fn window_menu_pick(&self, toplevel: &str, entry: WindowEntry) {
+        self.object.window_menu_pick(toplevel.to_owned(), entry);
+    }
+
+    /// The window menus the compositor asked for, in order.
+    pub fn window_menus(&self) -> Vec<WindowMenuSeen> {
+        self.log.with(|seen| seen.window_menus.clone())
+    }
+
     /// The key sets sent to `surface`, in order.
     pub fn modifiers_of(&self, surface: &WlSurface) -> Vec<u32> {
         self.log.with(|seen| {
@@ -83,12 +106,27 @@ impl Dispatch<QuireShellV1, ShellLog> for Host {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let quire_shell_v1::Event::Modifiers { surface, mods } = event {
-            let bits = match mods {
-                WEnum::Value(mods) => mods.bits(),
-                WEnum::Unknown(raw) => raw,
-            };
-            log.with(|seen| seen.modifiers.push((surface, bits)));
+        match event {
+            quire_shell_v1::Event::Modifiers { surface, mods } => {
+                let bits = match mods {
+                    WEnum::Value(mods) => mods.bits(),
+                    WEnum::Unknown(raw) => raw,
+                };
+                log.with(|seen| seen.modifiers.push((surface, bits)));
+            }
+            quire_shell_v1::Event::WindowMenu {
+                toplevel,
+                x,
+                y,
+                enabled,
+            } => log.with(|seen| {
+                seen.window_menus.push(WindowMenuSeen {
+                    toplevel,
+                    at: (x, y),
+                    enabled,
+                });
+            }),
+            _ => {}
         }
     }
 }

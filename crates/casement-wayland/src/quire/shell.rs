@@ -9,11 +9,12 @@
 //! are ignored until P3-Z gives them their machines.
 
 use super::{Advertised, code_of};
-use crate::foreign_toplevel_list::window_of_identifier;
+use crate::foreign_toplevel_list::{identifier_of, window_of_identifier};
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::policy::GlobalKind;
 use casement_core::shell::{ShellNote, ShellRequest};
+use casement_core::window::MenuEntry;
 use casement_core::{Event, LayerKey, WindowId};
 use casement_protocols::server::quire_shell_v1::quire_shell_v1::{self, QuireShellV1};
 use casement_protocols::vocab::{MacMods, ShellRole, WireCode};
@@ -198,6 +199,11 @@ where
                     Err(refusal) => refuse_target(resource, refusal),
                 }
             }
+            quire_shell_v1::Request::WindowMenuPick { toplevel, entry } => {
+                let window = window_of_identifier(&toplevel).filter(|id| state.window_known(*id));
+                let entry = code_of(entry).and_then(MenuEntry::from_code);
+                state.quire_shell_events(on_window_menu_pick(window, entry));
+            }
             // The switcher, overview and show-desktop requests arrive with P3-Z.
             _ => {}
         }
@@ -273,6 +279,26 @@ pub fn on_clear_minimise_target(
     })])
 }
 
+/// `window_menu_pick`: the entry `entry` of the menu of `window`. A window the model does not
+/// know and an entry the XML does not name (both `None`) are ignored, with no error: the menu
+/// was on screen while the window went away.
+///
+/// ```
+/// use casement_core::WindowId;
+/// use casement_core::window::MenuEntry;
+/// use casement_wayland::quire::shell::on_window_menu_pick;
+/// assert_eq!(on_window_menu_pick(Some(WindowId(1)), Some(MenuEntry::Left)).len(), 1);
+/// assert!(on_window_menu_pick(None, Some(MenuEntry::Left)).is_empty());
+/// assert!(on_window_menu_pick(Some(WindowId(1)), None).is_empty());
+/// ```
+pub fn on_window_menu_pick(window: Option<WindowId>, entry: Option<MenuEntry>) -> Vec<Event> {
+    window
+        .zip(entry)
+        .map(|(window, entry)| Event::Shell(ShellRequest::WindowMenuPick { window, entry }))
+        .into_iter()
+        .collect()
+}
+
 /// A bound object went away: the roles it left are not forgotten (the surfaces stay until
 /// they unmap), only the object is.
 pub fn on_shell_gone(part: &mut QuireShellPart, shell: &QuireShellV1) {
@@ -327,11 +353,12 @@ pub fn apply_note(part: &mut QuireShellPart, note: &ShellNote) -> Result<(), Way
                 }
             }
         }
-        // The wire step waits for the protocol's `window_menu` event and `window_menu_pick`
-        // request (the interface ask in FINDINGS, `wave-2026-10-15/winmenu`): until they exist
-        // the menu is asked for and nothing is shown. `WindowMenuShow::enabled` is the bit set
-        // the event will carry, and `MenuEntry::from_code` reads the pick.
-        ShellNote::WindowMenu(_) => {}
+        ShellNote::WindowMenu(show) => {
+            let identifier = identifier_of(show.window);
+            for shell in &part.bound {
+                shell.window_menu(identifier.clone(), show.at.x, show.at.y, show.enabled());
+            }
+        }
         _ => {}
     }
     Ok(())
