@@ -170,7 +170,7 @@ fn the_shadow_fades_with_the_window() {
         "the shadow darkens the probe: {before} against {wanted}"
     );
 
-    top.destroy();
+    desk.close(&top);
     desk.fixture.pump();
     let mut seen = vec![before];
     for _ in 0..12 {

@@ -5,7 +5,7 @@ use casement_core::geometry::{LogicalPoint, PhysicalSize};
 use casement_core::input::DeviceClass;
 use casement_core::policy::ConnectionRole;
 use casement_core::{OutputName, WindowId};
-use casement_testclient::misc::decoration::DecorationManager;
+use casement_testclient::misc::decoration::{Decoration, DecorationManager};
 use casement_testclient::misc::viewporter::Viewporter;
 use casement_testclient::surface::layer::{
     Anchor, KeyboardInteractivity, Layer, LayerAsk, LayerSurface,
@@ -71,6 +71,9 @@ pub struct Desk<'a> {
     pub base: WmBase,
     /// What stays alive.
     pub kept: Kept,
+    /// The decoration object of each framed window, by its surface: a window must lose it
+    /// before it goes (`Desk::close`).
+    decorations: Vec<(WlSurface, Decoration)>,
 }
 
 impl<'a> Desk<'a> {
@@ -93,6 +96,7 @@ impl<'a> Desk<'a> {
             id,
             base,
             kept: Kept::default(),
+            decorations: Vec::new(),
         }
     }
 
@@ -159,7 +163,8 @@ impl<'a> Desk<'a> {
             let client = self.fixture.client(self.id);
             let manager = DecorationManager::bind(client).expect("xdg_decoration");
             let decoration = manager.decorate(client, &top);
-            self.kept.keep((manager, decoration));
+            self.kept.keep(manager);
+            self.decorations.push((top.surface.clone(), decoration));
         }
         top.commit_bare();
         self.fixture.pump();
@@ -238,6 +243,20 @@ impl<'a> Desk<'a> {
         layer.show(self.fixture.client(self.id), &buffer);
         self.fixture.pump();
         self.kept.keep((layer, buffer));
+    }
+
+    /// Closes `top` the way a toolkit does: its decoration object first (xdg-decoration says it
+    /// must be destroyed before the toplevel, and the compositor ends the client's connection,
+    /// every surface of it, if it is not), then the toplevel.
+    pub fn close(&mut self, top: &Toplevel) {
+        let (gone, kept): (Vec<_>, Vec<_>) = std::mem::take(&mut self.decorations)
+            .into_iter()
+            .partition(|(surface, _)| *surface == top.surface);
+        self.decorations = kept;
+        for (_, decoration) in gone {
+            decoration.decoration.destroy();
+        }
+        top.destroy();
     }
 
     /// Plugs a pointer and puts it at `at` (logical).

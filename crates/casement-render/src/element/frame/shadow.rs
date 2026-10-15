@@ -240,13 +240,25 @@ fn along(layer: &ShadowLayer, side: Side) -> i32 {
     }
 }
 
-/// The strip for `side`: the blurred straight edge from `MARGIN` outside to `EDGE_DEPTH` inside.
-/// A top or left strip runs outside first; a bottom or right one is the other way round, so
-/// every strip reads outwards in the direction of the screen.
+/// How many pixels an edge strip is across its length: three identical ones. A strip is the same
+/// along the whole edge, so one would do, but it is drawn stretched along the edge, and a
+/// renderer that filters the stretch (pixman does, bilinearly, with nothing beyond the image's
+/// own edge) fades the first and last half texel of a one-pixel strip, a seam where it meets the
+/// corner tiles. The strip is drawn from the middle pixel alone ([`STRIP_PAD`] in from each end),
+/// so the filter finds the same pixel on both sides of every pixel it draws.
+pub(crate) const STRIP_ACROSS: u32 = 3;
+
+/// How many pixels of an edge strip lie past each end of the part of it that is drawn.
+pub(crate) const STRIP_PAD: u32 = (STRIP_ACROSS - 1) / 2;
+
+/// The strip for `side`: the blurred straight edge from `MARGIN` outside to `EDGE_DEPTH` inside,
+/// [`STRIP_ACROSS`] identical pixels wide. A top or left strip runs outside first; a bottom or
+/// right one is the other way round, so every strip reads outwards in the direction of the screen.
 fn strip(layers: &[ShadowLayer], side: Side, per: f32) -> Raster {
     let n = pixels(MARGIN + EDGE_DEPTH, per);
-    let argb = (0..n)
-        .flat_map(|j| {
+    let across = STRIP_ACROSS as usize;
+    let line: Vec<[u8; 4]> = (0..n)
+        .map(|j| {
             let i = match side {
                 Side::Top | Side::Left => j,
                 Side::Bottom | Side::Right => n - 1 - j,
@@ -262,14 +274,19 @@ fn strip(layers: &[ShadowLayer], side: Side, per: f32) -> Raster {
         .collect();
     match side {
         Side::Top | Side::Bottom => Raster {
-            w: 1,
+            w: STRIP_ACROSS,
             h: n as u32,
-            argb,
+            argb: line
+                .iter()
+                .flat_map(|px| std::iter::repeat_n(*px, across).flatten())
+                .collect(),
         },
         Side::Left | Side::Right => Raster {
             w: n as u32,
-            h: 1,
-            argb,
+            h: STRIP_ACROSS,
+            argb: (0..across)
+                .flat_map(|_| line.iter().flatten().copied())
+                .collect(),
         },
     }
 }

@@ -3466,3 +3466,26 @@ Written without a build or a run (rule of the lane); the orchestrator's run sett
   a probe on the shadow read 0 against 0 (the scene tests now put a light wallpaper layer under the
   window, `Desk::wallpaper`); a hovered light's middle pixel is the mark's ink (`#4d0000` on Close, chroma
   77), so the colour is read beside the mark.
+
+### cas27-ignored, second pass (2026-10-16): what the blessed run showed
+
+Written without a build or a run (rule of the lane).
+
+- **A Scale flight (and Mission Control) drew the content at its full size inside a shrunk frame.** The flight2 and
+  overview notes say the tree is drawn "at the ratio" through `render_elements_from_surface_tree`'s `scale`; that
+  argument only places the subsurfaces, a surface element's size always comes from the scale the damage tracker
+  asks with (the output's). Fixed in `element/window.rs`: the tree is laid out at its real size and each surface
+  is wrapped in smithay's `RescaleRenderElement` about the window geometry's corner (new variant
+  `CasementElement::Stretched`); a clipped window's `RoundedClipElement` carries the same stretch (`.stretched`).
+  `popup_elements_riding` does the same for menus (its `ridden_corner` arithmetic is gone: the rescale about the
+  corner moves the popup by the ratio). `window_surfaces` lost its `ratio` argument.
+- **Edge strips of the shadow fade at their ends on pixman.** A strip was one pixel across and drawn stretched along
+  the edge; pixman filters a stretch bilinearly with nothing beyond the image, so the first and last half texel
+  blend with transparent: the shadow is half strength where a strip meets a corner tile (a visible step on a
+  light ground). Strips are now `STRIP_ACROSS` = 3 identical pixels across and drawn from the middle one
+  (`frame::edge_inside`), so the filter always finds the same pixel. GLES clamps and was not affected.
+- **Closing a framed toplevel in a test killed the client.** xdg-decoration says the decoration object goes before its
+  toplevel; smithay posts `orphaned` and the compositor drops the connection, so every surface of the client
+  (the wallpaper layer of the shadow test) vanished at once. `Desk::close` destroys the decoration first.
+- **Open: the Genie draws nothing on pixman** (the frame is the bare desktop and the cursor). Not found by reading;
+  see the lane report. `assert_whole` in `scene/minimise.rs` fails on it with a clear message.
