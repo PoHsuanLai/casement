@@ -1,11 +1,22 @@
 //! A server-side frame as elements: the titlebar with its lights in front of the window's
-//! surfaces, the shadow behind them. Both are casement's own rasters (`frame/raster.rs`),
-//! cached in the [`TextureBook`] per window, size, scale and look.
+//! surfaces, the shadow behind them. Both are casement's own rasters. The titlebar (`frame/raster.rs`)
+//! is cached in the [`TextureBook`] per window, size, scale and look; the shadow is eight tiles
+//! (`frame/shadow.rs`) cached per scale, radius and layers, with no window size in the key.
 
 mod raster;
+mod shadow;
+mod shadow_set;
+mod slices;
 mod title;
 
+pub(crate) use shadow::Tiles;
+pub(crate) use shadow_set::{ShadowKey, ShadowSet, key as shadow_key};
 pub use title::TitleDraw;
+
+/// The tiles of `look`'s shadow at `scale`.
+pub(crate) fn shadow_tiles(look: &FrameLook, scale: Scale) -> Tiles {
+    shadow::tiles(&look.shadow, look.radius, scale)
+}
 
 use super::CasementElement;
 use super::window::alpha;
@@ -15,7 +26,8 @@ use crate::scene::convert::{on_output, sub_of};
 use crate::texture_book::TextureBook;
 use casement_core::WindowId;
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize, buffer_size};
-use casement_core::window::FrameStyle;
+use casement_core::window::{FrameLook, FrameStyle};
+use ds_core::geometry::scale::Scale;
 use ds_core::vocab::Fraction;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::Kind;
@@ -85,7 +97,7 @@ pub fn frame_elements<R: Compositor>(
                 view,
                 bar.origin,
                 bar.size,
-                (pixels.w, pixels.h),
+                whole(pixels.w, pixels.h),
                 faded,
                 &buffer,
             )
@@ -97,46 +109,7 @@ pub fn frame_elements<R: Compositor>(
         .into_iter()
         .chain(front)
         .collect();
-    let margin = i32::try_from(raster::SHADOW_MARGIN).unwrap_or(0);
-    let reach = LogicalRect::new(
-        LogicalPoint {
-            x: outline.origin.x.saturating_sub(margin),
-            y: outline.origin.y.saturating_sub(margin),
-        },
-        LogicalSize {
-            w: outline.size.w + 2 * raster::SHADOW_MARGIN,
-            h: outline.size.h + 2 * raster::SHADOW_MARGIN,
-        },
-    );
-    let back = view
-        .area
-        .intersection(&reach)
-        .and_then(|_| {
-            let buffer = book.cache().frame(
-                (
-                    window,
-                    1,
-                    120,
-                    outline.size.w,
-                    outline.size.h,
-                    style.look,
-                    0,
-                ),
-                || to_buffer(&raster::shadow(&style.look, outline.size.w, outline.size.h)),
-            );
-            element(
-                renderer,
-                view,
-                reach.origin,
-                reach.size,
-                (reach.size.w, reach.size.h),
-                faded,
-                &buffer,
-            )
-        })
-        .map(CasementElement::Memory)
-        .into_iter()
-        .collect();
+    let back = shadow_elements(window, (style, outline), faded, (view, book), renderer);
     (front, back)
 }
 
@@ -182,7 +155,7 @@ fn title_element<R: Compositor>(
         view,
         bar.origin,
         bar.size,
-        (pixels.w, pixels.h),
+        whole(pixels.w, pixels.h),
         faded,
         &buffer,
     )
@@ -204,15 +177,81 @@ fn to_buffer(made: &raster::Raster) -> MemoryRenderBuffer {
     )
 }
 
+/// The whole of a buffer `w` by `h` pixels.
+fn whole(w: u32, h: u32) -> Rectangle<f64, Logical> {
+    Rectangle::from_size((f64::from(w), f64::from(h)).into())
+}
+
+/// The window's shadow: its tiles drawn round `outline` (relative to the outline's corner, as
+/// `slices` places them). The same eight tiles serve every size of window, so a window being
+/// resized changes only the elements' places and sizes.
+fn shadow_elements<R: Compositor>(
+    window: WindowId,
+    (style, outline): (&FrameStyle, LogicalRect),
+    faded: f32,
+    (view, book): (&OutputView, &TextureBook),
+    renderer: &mut R,
+) -> Vec<CasementElement<R>> {
+    let margin = i32::try_from(slices::MARGIN).unwrap_or(0);
+    let reach = LogicalRect::new(
+        LogicalPoint {
+            x: outline.origin.x.saturating_sub(margin),
+            y: outline.origin.y.saturating_sub(margin),
+        },
+        LogicalSize {
+            w: outline.size.w + 2 * slices::MARGIN,
+            h: outline.size.h + 2 * slices::MARGIN,
+        },
+    );
+    if view.area.intersection(&reach).is_none() {
+        return Vec::new();
+    }
+    let set = book
+        .cache()
+        .shadow(window, shadow_key(&style.look, view.scale), || {
+            shadow_tiles(&style.look, view.scale)
+        });
+    slices::slices(outline.size, set.inner())
+        .into_iter()
+        .filter_map(|slice| {
+            let dest = LogicalRect::new(
+                LogicalPoint {
+                    x: outline.origin.x.saturating_add(slice.dest.origin.x),
+                    y: outline.origin.y.saturating_add(slice.dest.origin.y),
+                },
+                slice.dest.size,
+            );
+            view.area.intersection(&dest)?;
+            let (buffer, raster) = set.of(slice.piece);
+            let tile = slices::tile_size(slice.piece, set.inner());
+            let per = |pixels: u32, logical: u32| f64::from(pixels) / f64::from(logical.max(1));
+            let (px, py) = (per(raster.w, tile.w), per(raster.h, tile.h));
+            let src = Rectangle::<f64, Logical>::new(
+                (
+                    f64::from(slice.src.origin.x) * px,
+                    f64::from(slice.src.origin.y) * py,
+                )
+                    .into(),
+                (
+                    f64::from(slice.src.size.w) * px,
+                    f64::from(slice.src.size.h) * py,
+                )
+                    .into(),
+            );
+            element(renderer, view, dest.origin, dest.size, src, faded, buffer)
+                .map(CasementElement::Memory)
+        })
+        .collect()
+}
+
 /// `buffer` drawn with its top-left at the global logical `origin`, stretched to `size`
-/// logical pixels (the buffer is native for a titlebar and one pixel to a logical pixel for a
-/// shadow).
+/// logical pixels; `src` is the part of the buffer shown, in its pixels.
 fn element<R: Compositor>(
     renderer: &mut R,
     view: &OutputView,
     origin: LogicalPoint,
     size: LogicalSize,
-    pixels: (u32, u32),
+    src: Rectangle<f64, Logical>,
     alpha: f32,
     buffer: &MemoryRenderBuffer,
 ) -> Option<MemoryRenderBufferRenderElement<R>> {
@@ -222,9 +261,7 @@ fn element<R: Compositor>(
         on_output(sub_of(origin), view).to_f64(),
         buffer,
         Some(alpha),
-        Some(Rectangle::<f64, Logical>::from_size(
-            (f64::from(pixels.0), f64::from(pixels.1)).into(),
-        )),
+        Some(src),
         Some(Size::<i32, Logical>::from((side(size.w), side(size.h)))),
         Kind::Unspecified,
     )
