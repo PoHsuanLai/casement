@@ -317,7 +317,7 @@ mod tests {
         let scale_ppm = i64::from(slots[0].rect.size.w) * 1_000_000 / 1800;
         assert!(scale_ppm < 700_000, "{scale_ppm}");
         let bar = Ruler::reserved(28, scale_ppm);
-        assert!(bar < 28 && bar >= 1, "{bar}");
+        assert!((1..28).contains(&bar), "{bar}");
         assert!(
             i64::from(slots[0].rect.origin.y) >= 24 + 112 + bar,
             "{:?}",

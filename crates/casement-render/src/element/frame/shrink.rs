@@ -31,6 +31,7 @@ impl Shrink {
     pub(crate) const NONE: Shrink = Shrink { full: 1, drawn: 1 };
 
     /// Whether this is no shrink at all.
+    #[cfg(test)]
     pub(crate) fn is_none(self) -> bool {
         self.full == self.drawn
     }
@@ -74,6 +75,7 @@ impl Shrink {
     }
 
     /// A titlebar's height shrunk (at least one pixel for a titlebar that has any).
+    #[cfg(test)]
     pub(crate) fn bar(self, titlebar: u32) -> u32 {
         let shrunk = u32::try_from(self.length(i64::from(titlebar))).unwrap_or(0);
         match titlebar {

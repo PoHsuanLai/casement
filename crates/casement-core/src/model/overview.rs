@@ -145,7 +145,7 @@ impl Model {
         })
     }
 
-    fn leave_overview(self, picked: Option<OverviewPick>) -> Moved {
+    pub(super) fn leave_overview(self, picked: Option<OverviewPick>) -> Moved {
         if !matches!(self.overview, Overview::Entering | Overview::Open) {
             return Moved::of(self);
         }
