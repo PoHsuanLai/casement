@@ -2,8 +2,10 @@
 //! the pick, a cancel, leaving, closing one window and the divider.
 
 use crate::support::driver::{Op, Run, last, map, plug, request, run, unmap};
-use crate::support::proven;
+use crate::support::{headless, proven};
+use casement_core::desktop::DesktopRequest;
 use casement_core::focus::TokenCheck;
+use casement_core::input::{DesktopCommand, SpaceStep};
 use casement_core::shell::{ShellNote, ShellRequest, SplitChoices};
 use casement_core::space::{SpaceContent, SplitPair};
 use casement_core::window::{MenuEntry, SplitSide, WindowState};
@@ -298,4 +300,81 @@ fn the_divider_moves_within_its_limits() {
         })],
     );
     assert!(kept(&alone).is_empty());
+}
+
+fn command(command: DesktopCommand) -> Op {
+    Op::Command(command)
+}
+
+#[test]
+fn the_key_command_tiles_the_key_window_like_the_menu_entry() {
+    let cases = [
+        (
+            "left",
+            DesktopCommand::SplitTile(SplitSide::Left),
+            SplitSide::Left,
+        ),
+        (
+            "right",
+            DesktopCommand::SplitTile(SplitSide::Right),
+            SplitSide::Right,
+        ),
+    ];
+    for (name, wanted, side) in cases {
+        let got = then(desktop(2), vec![command(wanted)]);
+        assert!(full(&got, 1), "{name}");
+        assert_eq!(notes(&got), vec![choose(1, side, &[2])], "{name}");
+    }
+    let nobody = then(
+        vec![plug("HEADLESS-1")],
+        vec![command(DesktopCommand::SplitTile(SplitSide::Left))],
+    );
+    assert!(kept(&nobody).is_empty());
+}
+
+#[test]
+fn only_windows_of_the_desktop_the_first_came_from_can_be_picked() {
+    let mail = proven("org.quire.Mail");
+    let mut ops = desktop(2);
+    ops.extend([
+        Op::Event(Event::Desktop(DesktopRequest::CreateSpace {
+            output: headless("HEADLESS-1").key,
+        })),
+        command(DesktopCommand::SwitchSpace(SpaceStep::Next)),
+        map(3, &mail, TokenCheck::Missing),
+        command(DesktopCommand::SwitchSpace(SpaceStep::Previous)),
+    ]);
+    let before = run(ops.clone());
+    let windows = before.model.windows();
+    assert_ne!(
+        windows[&WindowId(2)].place,
+        windows[&WindowId(3)].place,
+        "window 3 is on another desktop"
+    );
+    let got = then(ops, vec![menu(1, MenuEntry::TileLeftOfScreen)]);
+    assert_eq!(notes(&got), vec![choose(1, SplitSide::Left, &[2])]);
+}
+
+#[test]
+fn showing_another_space_while_choosing_cancels_the_choice() {
+    let mut ops = desktop(2);
+    ops.push(menu(1, MenuEntry::TileLeftOfScreen));
+    let choosing = run(ops.clone());
+    assert_eq!(notes(&choosing), vec![choose(1, SplitSide::Left, &[2])]);
+    let away = then(
+        ops.clone(),
+        vec![command(DesktopCommand::SwitchSpace(SpaceStep::Previous))],
+    );
+    assert_eq!(notes(&away), vec![ShellNote::SplitChoiceEnd(WindowId(1))]);
+    assert_eq!(kept(&away), vec![SpaceContent::FullScreen(WindowId(1))]);
+    assert!(full(&away, 1));
+    // The choice is over: a pick now changes nothing.
+    let mut late = ops;
+    late.extend([
+        command(DesktopCommand::SwitchSpace(SpaceStep::Previous)),
+        pick(2),
+    ]);
+    let late = run(late);
+    assert_eq!(kept(&late), vec![SpaceContent::FullScreen(WindowId(1))]);
+    assert!(!full(&late, 2));
 }

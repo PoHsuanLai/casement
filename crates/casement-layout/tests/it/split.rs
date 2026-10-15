@@ -143,3 +143,102 @@ fn a_pair_with_a_window_the_space_lacks_gets_no_target() {
     let got = RustScene.arrange(&spec, &knobs());
     assert!(got.windows.is_empty());
 }
+
+fn max_size(w: u32, h: u32) -> SizeLimits {
+    SizeLimits {
+        min: size(0, 0),
+        max: MaxSize::Bounded(size(w, h)),
+    }
+}
+
+#[test]
+fn the_divider_strip_is_the_gap_between_the_halves() {
+    let full = rect(0, 0, 1920, 1080);
+    let cases = [
+        ("the middle", 500, 956),
+        ("a narrow leading half", 300, 573),
+        ("a wide leading half", 800, 1529),
+    ];
+    for (name, share, lead_w) in cases {
+        let got = RustScene.arrange(&split(full, share, ANY_SIZE, ANY_SIZE), &knobs());
+        assert_eq!(got.dividers.len(), 1, "{name}");
+        let divider = &got.dividers[0];
+        assert_eq!(
+            divider.strip,
+            rect(i32::try_from(lead_w).expect("small"), 0, 8, 1080),
+            "{name}"
+        );
+        assert_eq!(divider.span, full, "{name}");
+        assert_eq!(
+            (divider.leading, divider.trailing),
+            (WindowId(1), WindowId(2))
+        );
+    }
+    let none = RustScene.arrange(&one_desktop(full, Vec::new()), &knobs());
+    assert!(none.dividers.is_empty() && none.backdrops.is_empty());
+}
+
+#[test]
+fn a_window_with_a_maximum_narrower_than_its_half_is_centred_on_a_backdrop() {
+    let full = rect(0, 0, 1920, 1080);
+    // The halves are 956 wide each; the second starts at 964.
+    let cases = [
+        ("no maximum", ANY_SIZE, ANY_SIZE, None, None),
+        (
+            "a narrow leading window",
+            max_size(600, 5000),
+            ANY_SIZE,
+            Some(rect(178, 0, 600, 1080)),
+            None,
+        ),
+        (
+            "a narrow trailing window",
+            ANY_SIZE,
+            max_size(500, 5000),
+            None,
+            Some(rect(1192, 0, 500, 1080)),
+        ),
+        (
+            "a maximum wider than the half",
+            max_size(3000, 3000),
+            ANY_SIZE,
+            None,
+            None,
+        ),
+        (
+            "a short window is centred upwards too",
+            max_size(956, 400),
+            ANY_SIZE,
+            Some(rect(0, 340, 956, 400)),
+            None,
+        ),
+        (
+            "a zero side means none",
+            max_size(0, 0),
+            ANY_SIZE,
+            None,
+            None,
+        ),
+    ];
+    for (name, lead, trail, want_lead, want_trail) in cases {
+        let got = RustScene.arrange(&split(full, 500, lead, trail), &knobs());
+        let by = |n: u64| {
+            got.windows
+                .iter()
+                .find(|t| t.window.0 == n)
+                .expect("target")
+        };
+        assert_eq!(
+            by(1).rect,
+            want_lead.unwrap_or(rect(0, 0, 956, 1080)),
+            "{name}"
+        );
+        assert_eq!(
+            by(2).rect,
+            want_trail.unwrap_or(rect(964, 0, 956, 1080)),
+            "{name}"
+        );
+        assert_eq!(by(1).size, ConfigureNeed::Resize(by(1).rect.size), "{name}");
+        assert_eq!(got.backdrops.len(), 1, "{name}");
+    }
+}

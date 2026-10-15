@@ -3,6 +3,7 @@
 //! One integration binary: every former `tests/*.rs` is a module here, and `support` is shared.
 
 mod chrome;
+mod divider;
 mod knobs;
 mod limits;
 mod of_model;

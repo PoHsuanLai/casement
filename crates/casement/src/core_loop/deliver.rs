@@ -7,6 +7,7 @@
 //! remembered (`seat.taken`), so their releases are not delivered either. Keys wait at the
 //! text-input gate while an input method is about to grab the keyboard.
 
+use super::divider;
 use super::frames;
 use super::grab;
 use super::scene::{Hit, hit_test, stack};
@@ -382,6 +383,19 @@ fn motion(
         return;
     }
     let stacked = stack(state);
+    if divider::moved(state, &stacked, logical(at)) == grab::Follow::Taken {
+        // The strip between Split View halves (or a drag of it): the pointer moves, the clients
+        // under it are left and hear nothing.
+        state.render.chrome.cursor_at = logical(at);
+        let delivery = PointerDelivery::Motion {
+            focus: None,
+            at: sub_of(at),
+            delta,
+            time: event.at,
+        };
+        log(seat::apply_pointer(seat, state, delivery));
+        return;
+    }
     let over = frames::under(state, &stacked, logical(at));
     let under = match over {
         Some(_) => None,
@@ -415,13 +429,34 @@ fn pressed(
     button: casement_core::input::ButtonCode,
     edge: Edge,
 ) {
-    let ends_grab = edge == Edge::Release && grab::ends_with(state, button);
+    let ends_grab = edge == Edge::Release
+        && (grab::ends_with(state, button) || divider::ends_with(state, button));
     press_edge(state, seat, event, button, edge);
     if ends_grab {
         // The grab left the pointer over nothing; it is over what it is over again now, and the
         // client under it is told (after the release, which that client never saw the press of).
         refocus(state);
     }
+}
+
+/// A press on a Split View divider starts its drag (when the reach table allows it) and is never
+/// delivered to a client; its release is swallowed with it. Whether the press was on one.
+fn press_on_divider(
+    state: &mut State,
+    event: &InputEvent,
+    at: LogicalPoint,
+    button: casement_core::input::ButtonCode,
+) -> bool {
+    let stacked = stack(state);
+    let Some(found) = divider::under_pointer(state, &stacked, at) else {
+        return false;
+    };
+    state.wl.seat.taken = std::mem::take(&mut state.wl.seat.taken).take_button(button);
+    let target = InputTarget::Window(found.leading);
+    if !refused(state, event, &target, InputUse::Press) {
+        divider::begin(state, found, button);
+    }
+    true
 }
 
 fn press_edge(
@@ -433,6 +468,7 @@ fn press_edge(
 ) {
     if edge == Edge::Release {
         grab::end(state, button);
+        divider::end(state, button);
         let (taken, fate) = std::mem::take(&mut state.wl.seat.taken).release_button(button);
         state.wl.seat.taken = taken;
         if fate == PressFate::Taken {
@@ -443,13 +479,14 @@ fn press_edge(
     let Some(here) = pointer_at(seat) else {
         return;
     };
-    let (over, under) = frames::pick(
-        state,
-        LogicalPoint {
-            x: here.0,
-            y: here.1,
-        },
-    );
+    let at = LogicalPoint {
+        x: here.0,
+        y: here.1,
+    };
+    if edge == Edge::Press && press_on_divider(state, event, at, button) {
+        return;
+    }
+    let (over, under) = frames::pick(state, at);
     if let (Some(over), Edge::Press) = (over, edge) {
         // A frame's press never reaches a client; its release is swallowed with it.
         state.wl.seat.taken = std::mem::take(&mut state.wl.seat.taken).take_button(button);
@@ -667,7 +704,7 @@ pub(super) fn start_pointer(state: &mut State) {
 /// The pointer has not moved, but what is under it may have (a surface mapped, unmapped or
 /// moved): the surface now there gets the pointer (A16).
 pub(super) fn refocus(state: &mut State) {
-    if state.wl.seat.grab.is_some() {
+    if state.wl.seat.grab.is_some() || divider::is_dragging(state) {
         // An interactive move or resize holds the pointer: no client is under it until it ends.
         return;
     }

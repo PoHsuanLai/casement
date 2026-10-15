@@ -28,6 +28,7 @@ use smithay::wayland::compositor::{
 };
 
 mod deliver;
+mod divider;
 mod frames;
 mod grab;
 mod idle;
@@ -41,6 +42,7 @@ mod titles;
 pub(crate) mod tty;
 mod windows;
 
+pub(crate) use divider::DividerPointer;
 pub(crate) use frames::Over as FrameOver;
 pub(crate) use grab::start as start_grab;
 pub(crate) use idle::sync_inhibitors;
@@ -141,6 +143,7 @@ pub fn frame(state: &mut State, output: &OutputKey) {
         frames: styles,
         titles,
         minimise_effect: state.core.model.settings().windows.minimise_effect,
+        backdrop: divider::backdrop(state, output),
         ..layers_on(&state.core.model, output)
     };
     let capture = tty::capture_watch(&state.wl.image_capture.book, &state.wl.screencopy, output);
