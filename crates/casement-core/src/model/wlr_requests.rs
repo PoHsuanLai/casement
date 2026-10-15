@@ -22,6 +22,9 @@ impl Model {
             return Moved::of(self).with(Effect::Note(CoreNote::UnknownWindow(window)));
         }
         match request {
+            WlrToplevelRequest::Maximise(Toggle::On) => {
+                self.out_of_the_dock(window, ToplevelRequest::Maximise(Toggle::On))
+            }
             WlrToplevelRequest::Maximise(toggle) => {
                 self.request(window, ToplevelRequest::Maximise(toggle))
             }
@@ -29,6 +32,16 @@ impl Model {
                 self.request(window, ToplevelRequest::Minimise)
             }
             WlrToplevelRequest::Minimise(Toggle::Off) => self.unminimised(window),
+            WlrToplevelRequest::FullScreen {
+                toggle: Toggle::On,
+                output,
+            } => self.out_of_the_dock(
+                window,
+                ToplevelRequest::FullScreen {
+                    toggle: Toggle::On,
+                    output,
+                },
+            ),
             WlrToplevelRequest::FullScreen { toggle, output } => {
                 self.request(window, ToplevelRequest::FullScreen { toggle, output })
             }
@@ -40,6 +53,13 @@ impl Model {
                 Moved::of(self.with_window_list_rect(window, rect))
             }
         }
+    }
+
+    /// A window-list client asked a minimised window to take a state (fill, full screen): it
+    /// comes back from the dock first (the restore animation plays), then takes the state.
+    fn out_of_the_dock(self, window: WindowId, then: ToplevelRequest) -> Moved {
+        self.unminimised(window)
+            .then(|model| model.request(window, then))
     }
 
     /// A minimised window comes back from the dock (and is activated, as a click on its tile
