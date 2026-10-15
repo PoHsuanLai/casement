@@ -144,7 +144,10 @@ pub fn strip_plans(
                 return None;
             }
             let ratio = (d.w / src.w, d.h / source_h);
-            let band_top = origin.y + (strip.top * src.h * ratio.1).round() as i32;
+            // The shift is one rounded difference, so a strip at rest (where the difference is
+            // float noise round zero) is not moved by a half-pixel tie between two roundings.
+            let shift_y = (d.y - (src.y + strip.top * src.h * ratio.1)).round() as i32;
+            let band_top = y0 - shift_y;
             // Every strip but the last runs one pixel into the next, so rounding leaves no seam.
             let overlap = match index == last {
                 true => 0,
@@ -158,7 +161,7 @@ pub fn strip_plans(
                     (origin.x, band_top).into(),
                     (x1 - x0, y1 - y0 + overlap).into(),
                 ),
-                shift: (x0 - origin.x, y0 - band_top).into(),
+                shift: (x0 - origin.x, shift_y).into(),
             })
         })
         .collect()
