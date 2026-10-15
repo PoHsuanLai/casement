@@ -9,7 +9,7 @@ use casement_core::WindowId;
 use casement_core::window::{FrameMetrics, FrameStyle};
 use casement_layout::frame_metrics;
 use casement_motion::OutputFrame;
-use casement_render::{OutputView, TitleDraw, window_content};
+use casement_render::{OutputView, TitleDraw, window_drawn};
 use std::collections::BTreeMap;
 
 /// What the title keeps clear in a titlebar of `metrics`: the lights and one gap after them on
@@ -41,6 +41,7 @@ pub(super) fn of(
     } = &mut state.render;
     let raster = titles.get_or_insert_with(|| TitleRaster::system(margins(&frame_metrics())));
     let model = &state.core.model;
+    let effect = model.settings().windows.minimise_effect;
     frame
         .windows
         .iter()
@@ -48,7 +49,9 @@ pub(super) fn of(
             let style = styles.get(&placed.window)?;
             let window = model.windows().get(&placed.window)?;
             let entry = textures.window(&placed.window)?;
-            let bar = style.around(window_content(placed, &entry.root)).titlebar();
+            let bar = style
+                .around(window_drawn(placed, &entry.root, effect))
+                .titlebar();
             let key = TitleKey::new(
                 &window.title.0,
                 bar.size.w,

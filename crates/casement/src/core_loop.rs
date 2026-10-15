@@ -140,6 +140,7 @@ pub fn frame(state: &mut State, output: &OutputKey) {
     let layers = LayerDraw {
         frames: styles,
         titles,
+        minimise_effect: state.core.model.settings().windows.minimise_effect,
         ..layers_on(&state.core.model, output)
     };
     let capture = tty::capture_watch(&state.wl.image_capture.book, &state.wl.screencopy, output);

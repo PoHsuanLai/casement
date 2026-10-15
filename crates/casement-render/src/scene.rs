@@ -4,13 +4,14 @@ pub(crate) mod convert;
 
 use crate::compositor::Compositor;
 use crate::element::{
-    CasementElement, ClipShape, FrameDraw, LockCoverElement, Rgba8, TitleDraw, cursor_elements,
-    frame_elements, layer_elements, popup_elements, surface_origin_logical, window_content,
-    window_elements,
+    CasementElement, ClipShape, FlightDraw, FrameDraw, LockCoverElement, Rgba8, TitleDraw, at_rest,
+    choose, cursor_elements, drawn_content, frame_elements, genie_elements, layer_elements,
+    popup_elements, surface_origin_logical, window_content, window_elements, window_surfaces,
 };
 use crate::texture_book::TextureBook;
 use casement_core::geometry::{LogicalPoint, LogicalRect, PhysicalRect, PhysicalSize, SubPoint};
 use casement_core::layer::Arranged;
+use casement_core::settings::MinimiseEffect;
 use casement_core::window::FrameStyle;
 use casement_core::{LayerKey, OutputKey, WindowId};
 use casement_motion::{OutputFrame, PlacedWindow};
@@ -56,6 +57,8 @@ pub struct LayerDraw {
     /// The title pixels laid over each framed window's titlebar (made by `casement-chrome`). A
     /// framed window not in it has no title drawn.
     pub titles: BTreeMap<WindowId, TitleDraw>,
+    /// How a window in a minimise flight is drawn (`windows.minimise_effect`).
+    pub minimise_effect: MinimiseEffect,
 }
 
 /// What the compositor draws over everything: the cursor and lock covers.
@@ -161,6 +164,37 @@ pub fn output_elements<R: Compositor>(
         |placed: &[&PlacedWindow], elements: &mut Vec<CasementElement<R>>, renderer: &mut R| {
             for placed in placed.iter().rev() {
                 if let Some(entry) = book.window(&placed.window) {
+                    let flight = choose(layers.minimise_effect, placed);
+                    let style = layers.frames.get(&placed.window);
+                    let title = layers.titles.get(&placed.window);
+                    if let FlightDraw::Genie(flight) = flight {
+                        // The genie cuts the window as it stands at rest, and the strips go
+                        // where the curve says; popups and the shadow stay behind.
+                        let rest = at_rest(placed, &flight);
+                        let content = window_content(&rest, &entry.root);
+                        let (front, _) = style
+                            .map(|style| {
+                                let draw = FrameDraw {
+                                    style,
+                                    title,
+                                    content,
+                                    opacity: placed.opacity,
+                                };
+                                frame_elements(placed.window, draw, view, book, renderer)
+                            })
+                            .unwrap_or_default();
+                        let front = front
+                            .into_iter()
+                            .filter_map(|element| match element {
+                                CasementElement::Memory(memory) => Some(memory),
+                                _ => None,
+                            })
+                            .collect();
+                        let visual = style.map_or(content, |style| style.around(content).outline());
+                        let surfaces = window_surfaces(&rest, (1.0, 1.0), view, book, renderer);
+                        elements.extend(genie_elements(&flight, visual, front, surfaces, view));
+                        continue;
+                    }
                     let origin = surface_origin_logical(
                         &entry.root,
                         LogicalPoint {
@@ -168,12 +202,19 @@ pub fn output_elements<R: Compositor>(
                             y: placed.at.y.round_logical(),
                         },
                     );
-                    elements.extend(popup_elements(&entry.root, origin, view, renderer));
+                    if flight == FlightDraw::Still {
+                        elements.extend(popup_elements(&entry.root, origin, view, renderer));
+                    }
                     // A window casement frames is clipped at its bottom corners, unless it
                     // covers the screen (macOS drops the radius in full screen; a zoomed
                     // window keeps it). A window with its own frame is not in `frames`.
-                    let style = layers.frames.get(&placed.window);
-                    let content = window_content(placed, &entry.root);
+                    // The frame goes round the content as it is drawn: shrunk, for a window
+                    // that flies scaled.
+                    let content = drawn_content(
+                        placed,
+                        window_content(placed, &entry.root),
+                        layers.minimise_effect,
+                    );
                     let clip = style
                         .filter(|_| !layers.full_screen.contains(&placed.window))
                         .map(|style| ClipShape::of_content(content, style.look.radius, view));
@@ -183,7 +224,7 @@ pub fn output_elements<R: Compositor>(
                                 placed.window,
                                 FrameDraw {
                                     style,
-                                    title: layers.titles.get(&placed.window),
+                                    title,
                                     content,
                                     opacity: placed.opacity,
                                 },

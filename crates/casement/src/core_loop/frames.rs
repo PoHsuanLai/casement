@@ -174,6 +174,8 @@ pub(super) fn contents(state: &State) -> BTreeMap<WindowId, LogicalRect> {
         .outputs
         .into_iter()
         .flat_map(|frame| frame.windows)
+        // A window in a minimise flight takes no pointer input (see `scene::stack`).
+        .filter(|placed| placed.flight.is_none())
         .filter_map(|placed| {
             let entry = book.window(&placed.window)?;
             Some((placed.window, window_content(&placed, &entry.root)))
