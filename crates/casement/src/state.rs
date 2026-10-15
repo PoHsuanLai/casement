@@ -104,6 +104,8 @@ pub struct RenderState {
     pub frame_faults: RepeatGate<OutputName>,
     /// The server-side frame part the pointer is on, if any.
     pub(crate) frame_over: Option<crate::core_loop::FrameOver>,
+    /// The pointer and a Split View divider: over its strip, or dragging it.
+    pub(crate) divider: crate::core_loop::DividerPointer,
     /// The last titlebar press, for the double click.
     pub clicks: casement_core::window::ClickTracker,
     /// The traffic light held down, if any (a light acts on release).
@@ -320,6 +322,7 @@ impl State {
             presence: crate::core_loop::Presence::default(),
             frame_faults: RepeatGate::new(FAULT_LOG_EVERY),
             frame_over: None,
+            divider: crate::core_loop::DividerPointer::default(),
             clicks: casement_core::window::ClickTracker::default(),
             light_arm: casement_core::window::LightArm::default(),
             light_dwell: casement_core::window::Dwell::default(),

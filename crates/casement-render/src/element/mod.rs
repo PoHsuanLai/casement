@@ -23,7 +23,7 @@ pub use flight::{
     scaled_content, strip_plans,
 };
 pub use frame::{FrameDraw, TitleDraw, frame_elements};
-pub(crate) use frame::{ShadowKey, ShadowSet, Tiles};
+pub(crate) use frame::{Raster, ShadowKey, ShadowSet, Tiles, WholeShadow};
 #[cfg(test)]
 pub(crate) use frame::{shadow_key, shadow_tiles};
 pub use geometry::{geometry_size, surface_origin, surface_origin_logical};

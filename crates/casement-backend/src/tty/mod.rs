@@ -93,12 +93,13 @@ pub use udev_real::RealUdev;
 use crate::backend::BackendError;
 use crate::gpu::{FormatSource, RenderNodes};
 use crate::headless::{ConnectorEvent, FrameSource, PresentedFrame};
-use crate::input::{Applied, DeviceSettings, FedInput, InputFeed, PollContext};
+use crate::input::{Applied, DeviceSettings, FedInput, InputFeed, PollContext, PresentDevices};
 use casement_core::gpu::{
     DisplayKind, GpuChoice, OutputRoute, RenderPlan, keep_displays, plan_for,
 };
 use casement_core::input::Keysym;
 use casement_core::output::{OutputConfig, OutputPower};
+use casement_core::settings::PointerSettings;
 use casement_core::time::Mono;
 use casement_core::{DeviceId, OutputName};
 use std::collections::BTreeMap;
@@ -225,6 +226,8 @@ pub struct TtyBackend {
     writeback_job: writeback::WritebackJob,
     /// What each device present or added is (all `Gpu` without a reader of kinds).
     kinds: BTreeMap<DevicePath, DisplayKind>,
+    /// The input devices the seat has, and what each was configured with.
+    present: PresentDevices,
 }
 
 impl TtyBackend {
@@ -279,6 +282,7 @@ impl TtyBackend {
             queued: 0,
             writeback_job: writeback::WritebackJob::default(),
             kinds,
+            present: PresentDevices::default(),
         })
     }
 
@@ -527,18 +531,40 @@ impl TtyBackend {
     /// What the seat's input devices reported since the last call: nothing while the seat is
     /// lent, or when the seat has no input.
     pub fn poll_input(&mut self, context: &PollContext) -> Vec<FedInput> {
-        match (self.seat, &mut self.seams.input) {
+        let fed = match (self.seat, &mut self.seams.input) {
             (SeatState::Held, Some(input)) => input.poll(context),
             _ => Vec::new(),
+        };
+        for item in &fed {
+            match item {
+                FedInput::Appeared(device) => self.present.appeared(device.id, device.class),
+                FedInput::Gone(id) => self.present.gone(*id),
+                _ => {}
+            }
         }
+        fed
     }
 
     /// Configures the input device `device` (it appeared, or the settings changed).
     pub fn configure_device(&mut self, device: DeviceId, settings: &DeviceSettings) -> Applied {
-        match &mut self.seams.input {
+        let applied = match &mut self.seams.input {
             Some(input) => input.apply(device, settings),
             None => Applied::Refused,
+        };
+        if applied != Applied::Refused {
+            self.present.applied(device, *settings);
         }
+        applied
+    }
+
+    /// Configures every pointing device already present that `pointer` no longer matches, so a
+    /// changed setting takes effect at once and not after a replug. What each device answered.
+    pub fn reconfigure_pointers(&mut self, pointer: &PointerSettings) -> Vec<(DeviceId, Applied)> {
+        self.present
+            .changes(pointer)
+            .into_iter()
+            .map(|(device, settings)| (device, self.configure_device(device, &settings)))
+            .collect()
     }
 }
 

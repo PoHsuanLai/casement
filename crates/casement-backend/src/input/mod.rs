@@ -12,6 +12,7 @@ mod convert;
 mod device_spec;
 mod devices;
 mod feed;
+mod present;
 mod virtual_events;
 mod virtual_input;
 
@@ -25,6 +26,7 @@ pub use devices::{AccelProfile, Applied, DeviceSetting, DeviceSettings, InputDev
 pub use feed::{FedDevice, FedInput, InputFeed, PollContext};
 #[cfg(feature = "libinput")]
 pub use libinput_real::RealInputFeed;
+pub use present::PresentDevices;
 pub use virtual_events::{
     EventStamp, VirtualAxis, VirtualButton, VirtualGestureBegin, VirtualGestureEnd, VirtualKey,
     VirtualMotion, VirtualMotionTo, VirtualPinchUpdate, VirtualSwipeUpdate, VirtualSwitch,

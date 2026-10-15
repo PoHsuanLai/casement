@@ -25,8 +25,8 @@ mod spec;
 mod taffy_bridge;
 
 pub use arrangement::{
-    Arrangement, ConfigureNeed, LayoutReport, OverviewSlot, SlotKind, SpaceTarget, SpaceThumb,
-    WindowTarget,
+    Arrangement, BackdropTarget, ConfigureNeed, DividerTarget, LayoutReport, OverviewSlot,
+    SlotKind, SpaceTarget, SpaceThumb, WindowTarget,
 };
 pub use ds_style::appearance::theme::{Scheme, Theme};
 pub use ds_style::tokens::chrome::GroupHover;

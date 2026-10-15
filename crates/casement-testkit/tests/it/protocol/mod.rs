@@ -38,6 +38,7 @@ mod presentation;
 mod primary_selection;
 mod quire_desktop;
 mod quire_shell;
+mod quire_shell_divider;
 mod quire_window;
 mod relative_pointer;
 mod sandbox;

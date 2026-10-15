@@ -1,7 +1,6 @@
 //! The renderer trait casement composites with.
 
 use crate::element::{BlurV0Element, RoundedClipElement};
-use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::pixman::PixmanRenderer;
 use smithay::backend::renderer::{ImportAll, ImportMem, Renderer, RendererSuper};
@@ -49,9 +48,9 @@ pub trait Compositor:
     }
 
     /// A framed window's surface clipped at its bottom corners: draw `clip` at `dst` where
-    /// `damage` (relative to `dst`) asks. The default draws the surface unclipped (pixman, the
-    /// dummy renderer; FINDINGS, `wave-2026-10-15/clip`); a renderer with shaders masks the
-    /// corners.
+    /// `damage` (relative to `dst`) asks. The default clips by pieces weighted by coverage
+    /// (pixman, the dummy renderer, a multi-GPU copy; FINDINGS, `wave-2026-10-15/corners`); a
+    /// renderer with shaders masks the corners in the fragment shader.
     fn draw_rounded_clip(
         frame: &mut Self::Frame<'_, '_>,
         clip: &RoundedClipElement<Self>,
@@ -61,8 +60,8 @@ pub trait Compositor:
         opaque_regions: &[Rectangle<i32, Physical>],
         cache: Option<&UserDataMap>,
     ) -> Result<(), Self::Error> {
-        clip.surface()
-            .draw(frame, src, dst, damage, opaque_regions, cache)
+        let _ = cache;
+        clip.draw_banded(frame, src, dst, damage, opaque_regions)
     }
 }
 

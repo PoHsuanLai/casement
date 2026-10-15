@@ -181,6 +181,7 @@ fn commands_with_nothing_to_act_on_do_nothing() {
         DesktopCommand::QuitActive,
         DesktopCommand::ForceQuitPanel,
         DesktopCommand::Place(casement_protocols::vocab::PlaceTarget::Fill),
+        DesktopCommand::SplitTile(casement_core::window::SplitSide::Left),
     ] {
         let after = run_from(empty.model.clone(), vec![Op::Command(command)]);
         assert_same_world(&after.model, &empty.model, &format!("{command:?}"));

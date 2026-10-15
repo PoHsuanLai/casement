@@ -25,9 +25,6 @@ use porter_core::SpaceId;
 /// Where a new Split View's divider starts: the middle.
 const MIDDLE: Fraction = Fraction(500);
 
-/// The divider may be dragged no nearer an edge than this share, in thousandths.
-const NEAREST: (u16, u16) = (200, 800);
-
 /// A Split View whose other half is being chosen.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct SplitChoice {
@@ -37,6 +34,9 @@ pub(super) struct SplitChoice {
     side: SplitSide,
     /// Its full-screen Space, which becomes the Split View.
     space: SpaceId,
+    /// The desktop the first window came from: only windows of that desktop can be picked. None
+    /// when it was on every desktop (any desktop of its output then).
+    desktop: Option<SpaceId>,
 }
 
 impl Model {
@@ -49,9 +49,13 @@ impl Model {
             return Moved::of(self);
         }
         let first = window.id;
+        let desktop = match &window.place {
+            SpacePlace::On(id) => Some(id.clone()),
+            SpacePlace::AllSpaces => None,
+        };
         self.choice_over()
             .then(|model| model.enter_full_screen(window, None))
-            .then(|model| model.choosing(first, side))
+            .then(|model| model.choosing(first, side, desktop))
     }
 
     /// The shell picked `picked` for the other half. A pick that is not a candidate now changes
@@ -65,8 +69,7 @@ impl Model {
             return self.choice_over();
         }
         let restore = self.windows.get(&picked).and_then(|w| w.state.restore());
-        let Some(restore) =
-            restore.filter(|_| self.split_candidates(choice.first).contains(&picked))
+        let Some(restore) = restore.filter(|_| self.split_candidates(&choice).contains(&picked))
         else {
             return Moved::of(self);
         };
@@ -124,7 +127,7 @@ impl Model {
         let Some((id, pair)) = found else {
             return Moved::of(self);
         };
-        let divider = Fraction(share.0.clamp(NEAREST.0, NEAREST.1));
+        let divider = Fraction(share.0.clamp(SplitPair::NEAREST.0, SplitPair::NEAREST.1));
         if divider == pair.divider {
             return Moved::of(self);
         }
@@ -159,6 +162,15 @@ impl Model {
             .collect()
     }
 
+    /// Another Space than the choosing's own is shown: the choosing is cancelled and the first
+    /// window stays alone, full screen (as on the Mac, where switching away abandons it).
+    pub(super) fn choice_unless_on(self, shown: &SpaceId) -> Moved {
+        match self.split_choice.as_ref().map(|choice| &choice.space) {
+            Some(own) if own != shown => self.choice_over(),
+            _ => Moved::of(self),
+        }
+    }
+
     /// The choosing is over when it was for one of `windows`.
     pub(super) fn choice_over_for(self, windows: &[WindowId]) -> Moved {
         match self.split_choice.as_ref().map(|choice| choice.first) {
@@ -180,26 +192,35 @@ impl Model {
 
     /// `first` is full screen in its own Space: the shell is told which windows can fill the
     /// other half, unless there are none.
-    fn choosing(self, first: WindowId, side: SplitSide) -> Moved {
+    fn choosing(self, first: WindowId, side: SplitSide, desktop: Option<SpaceId>) -> Moved {
         let space = self.windows.get(&first).and_then(|w| match &w.state {
             WindowState::FullScreen { space, .. } => Some(space.clone()),
             _ => None,
         });
-        let candidates = self.split_candidates(first);
-        match (space, candidates.is_empty()) {
-            (Some(space), false) => {
+        let Some(space) = space else {
+            return Moved::of(self);
+        };
+        let choice = SplitChoice {
+            first,
+            side,
+            space,
+            desktop,
+        };
+        let candidates = self.split_candidates(&choice);
+        match candidates.is_empty() {
+            false => {
                 let note = ShellNote::SplitChoose(SplitChoices {
                     first,
                     side,
                     candidates,
                 });
                 let model = Model {
-                    split_choice: Some(SplitChoice { first, side, space }),
+                    split_choice: Some(choice),
                     ..self
                 };
                 Moved::of(model).with(Effect::Shell(note))
             }
-            _ => Moved::of(self),
+            true => Moved::of(self),
         }
     }
 
@@ -209,40 +230,49 @@ impl Model {
         space.is_some_and(|space| space.content == SpaceContent::FullScreen(choice.first))
     }
 
-    /// The windows that can fill the other half beside `first`, most recently raised first:
-    /// the visible, ordinary windows on the desktops of `first`'s output.
-    fn split_candidates(&self, first: WindowId) -> Vec<WindowId> {
+    /// The windows that can fill the other half beside the choice's first window, most recently
+    /// raised first: the visible, ordinary windows on the desktop it came from.
+    fn split_candidates(&self, choice: &SplitChoice) -> Vec<WindowId> {
+        let first = choice.first;
         let Some(output) = self.windows.get(&first).and_then(|w| self.output_of(w)) else {
             return Vec::new();
         };
         let mut found: Vec<&Window> = self
             .windows
             .values()
-            .filter(|window| window.id != first && self.can_share(window, &output))
+            .filter(|window| window.id != first)
+            .filter(|window| can_share(self, window, &output, choice.desktop.as_ref()))
             .collect();
         found.sort_by_key(|window| std::cmp::Reverse(window.stack));
         found.into_iter().map(|window| window.id).collect()
     }
+}
 
-    /// Whether `window` can take half a screen of `output`: an ordinary window of a shown app,
-    /// out of the dock, on a desktop of that output.
-    fn can_share(&self, window: &Window, output: &OutputKey) -> bool {
-        let on_desktop = match &window.place {
-            SpacePlace::On(id) => self.spaces.get(id).is_some_and(|space: &Space| {
-                space.output == *output && matches!(space.content, SpaceContent::Desktop)
-            }),
-            SpacePlace::AllSpaces => false,
-        };
-        let hidden = self
-            .apps
-            .get(&window.app)
-            .is_some_and(|app| matches!(app.visibility, AppVisibility::Hidden { .. }));
-        let ordinary = !matches!(window.role, WindowRole::Shell)
-            && window.parent == Parent::None
-            && !matches!(
-                window.state,
-                WindowState::Minimised { .. } | WindowState::FullScreen { .. }
-            );
-        on_desktop && !hidden && ordinary
-    }
+/// Whether `window` can take half a screen of `output`: an ordinary window of a shown app, out
+/// of the dock, on `desktop` (any desktop of the output when none is named).
+fn can_share(
+    model: &Model,
+    window: &Window,
+    output: &OutputKey,
+    desktop: Option<&SpaceId>,
+) -> bool {
+    let on_desktop = match &window.place {
+        SpacePlace::On(id) => model.spaces.get(id).is_some_and(|space: &Space| {
+            space.output == *output
+                && matches!(space.content, SpaceContent::Desktop)
+                && desktop.is_none_or(|wanted| wanted == id)
+        }),
+        SpacePlace::AllSpaces => false,
+    };
+    let hidden = model
+        .apps
+        .get(&window.app)
+        .is_some_and(|app| matches!(app.visibility, AppVisibility::Hidden { .. }));
+    let ordinary = !matches!(window.role, WindowRole::Shell)
+        && window.parent == Parent::None
+        && !matches!(
+            window.state,
+            WindowState::Minimised { .. } | WindowState::FullScreen { .. }
+        );
+    on_desktop && !hidden && ordinary
 }

@@ -7,15 +7,18 @@ mod convert;
 mod doc;
 mod schema;
 mod sections;
+mod version;
 
 pub use action::ActionWords;
 pub use convert::to_core;
+pub(crate) use doc::watch;
 pub use doc::{CasementDoc, load};
 pub use schema::{schema, write_schema};
 pub use sections::{
     BindingsSection, FirstSight, GpuSection, KeyboardSection, OutputsSection, PointerSection,
     SpacesSection, TouchpadSection, WindowsSection,
 };
+pub use version::{Stamped, Version, stamp_version};
 
 /// Why the settings could not be read or the schema written.
 #[derive(Debug, thiserror::Error)]

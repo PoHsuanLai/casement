@@ -28,6 +28,7 @@ use smithay::wayland::compositor::{
 };
 
 mod deliver;
+mod divider;
 mod frames;
 mod grab;
 mod idle;
@@ -41,6 +42,7 @@ mod titles;
 pub(crate) mod tty;
 mod windows;
 
+pub(crate) use divider::DividerPointer;
 pub(crate) use frames::Over as FrameOver;
 pub(crate) use grab::start as start_grab;
 pub(crate) use idle::sync_inhibitors;
@@ -102,14 +104,17 @@ pub(super) fn standing_in(now: Mono) -> Model {
     )
 }
 
-/// New keyboard settings reach clients already bound (`repeat_info`).
-fn note_settings(state: &State, events: &[Event]) {
-    let seat = &state.wl.seat.seat;
+/// New settings reach what is already running, at once: the keyboard's repeat to the clients
+/// already bound (`repeat_info`), the pointer's to the devices already present.
+fn note_settings(state: &mut State, events: &[Event]) {
     for event in events {
-        if let Event::SettingsChanged(settings) = event
-            && let Err(fault) = casement_wayland::seat::apply_repeat_info(seat, &settings.keyboard)
-        {
-            tracing::warn!(%fault, "repeat info did not follow the settings");
+        if let Event::SettingsChanged(settings) = event {
+            if let Err(fault) =
+                casement_wayland::seat::apply_repeat_info(&state.wl.seat.seat, &settings.keyboard)
+            {
+                tracing::warn!(%fault, "repeat info did not follow the settings");
+            }
+            tty::reconfigure_pointers(state, &settings.pointer);
         }
     }
 }
@@ -141,6 +146,7 @@ pub fn frame(state: &mut State, output: &OutputKey) {
         frames: styles,
         titles,
         minimise_effect: state.core.model.settings().windows.minimise_effect,
+        backdrop: divider::backdrop(state, output),
         ..layers_on(&state.core.model, output)
     };
     let capture = tty::capture_watch(&state.wl.image_capture.book, &state.wl.screencopy, output);
