@@ -53,6 +53,7 @@ fn icon_search(backend: BackendChoice) -> IconSearch {
         return IconSearch::Off;
     }
     IconSearch::xdg(
+        std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from),
         std::env::var_os("XDG_DATA_HOME").map(PathBuf::from),
         std::env::var_os("HOME").map(PathBuf::from),
         std::env::var("XDG_DATA_DIRS").ok(),
