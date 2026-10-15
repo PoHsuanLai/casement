@@ -9,12 +9,15 @@
 mod book;
 mod cursor;
 mod damage;
+mod dma;
 
 pub use book::CaptureBook;
 pub use cursor::{
     CursorBook, CursorHold, CursorSessionId, CursorView, Placement, image_size, place,
+    sent_image_size,
 };
 pub use damage::{DamageLog, DamageLogs, Since};
+pub use dma::dma_offer;
 
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::OutputKey;
