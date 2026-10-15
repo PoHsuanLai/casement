@@ -102,6 +102,27 @@ impl CapturedFrame {
             bytes,
         }
     }
+
+    /// A frame of `area` from `argb`, tightly packed rows already in little-endian `Argb8888`
+    /// byte order (B, G, R, A): a cursor raster as it is.
+    ///
+    /// ```
+    /// use casement_core::geometry::PhysicalRect;
+    /// use casement_render::pass::{CaptureFormat, CapturedFrame};
+    ///
+    /// let area = PhysicalRect { x: 0, y: 0, w: 1, h: 1 };
+    /// let frame = CapturedFrame::from_argb(area, vec![3, 2, 1, 4]);
+    /// assert_eq!(frame.format, CaptureFormat::Argb8888);
+    /// assert_eq!(frame.bytes, [3, 2, 1, 4]);
+    /// ```
+    pub fn from_argb(area: PhysicalRect, argb: Vec<u8>) -> CapturedFrame {
+        CapturedFrame {
+            area,
+            format: CaptureFormat::Argb8888,
+            stride: area.w.saturating_mul(4),
+            bytes: argb,
+        }
+    }
 }
 
 /// Reads `request.area` of `target`, which the last render drew into.

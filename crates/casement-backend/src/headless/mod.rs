@@ -2,6 +2,7 @@
 //! clock, a render-cost model, and [`crate::VirtualInput`] on the same input path libinput
 //! takes. What every test and every jailed run uses (11 §2).
 
+mod bare;
 mod cost;
 mod gamma;
 mod input;
@@ -22,7 +23,8 @@ pub use virtual_output::{EdidSource, FixtureName, GpuId, SpecError, VirtualOutpu
 
 use crate::backend::BackendError;
 use crate::input::VirtualInput;
-use casement_core::geometry::{LogicalPoint, PhysicalSize};
+use bare::BareLayer;
+use casement_core::geometry::{LogicalPoint, PhysicalRect, PhysicalSize};
 use casement_core::output::{
     EdidFacts, EdidSerial, Mode, OutputConfig, OutputFacts, OutputPower, PhysicalMm,
 };
@@ -265,23 +267,54 @@ impl HeadlessBackend {
                 canvas.mark_drawn();
                 drawn
             }
-            None => Drawn::Nothing,
+            None => Drawn::Nothing(Vec::new()),
+        };
+        // The same frame again without the cursor, for the captures that do not ask for it.
+        if output.bare.is_none() {
+            output.bare = BareLayer::start(renderer, &output.spec);
+        }
+        let bare = match output.bare.as_mut() {
+            Some(layer) => layer.draw(renderer, source).unwrap_or_else(|error| {
+                tracing::warn!(output = name.as_str(), %error, "the bare frame was not drawn");
+                Drawn::Unchanged
+            }),
+            None => Drawn::Unchanged,
+        };
+        let bare = match bare {
+            Drawn::Pixels(bytes, _) => Some(RgbaFrame { size, bytes }),
+            _ => None,
         };
         output.presented = output.presented.saturating_add(1);
-        let pixels = match drawn {
-            Drawn::Pixels(bytes) => Some(FramePixels::Rgba(RgbaFrame { size, bytes })),
-            Drawn::Nothing => Some(FramePixels::Dummy),
-            Drawn::Unchanged => None,
+        let (pixels, damage) = match drawn {
+            Drawn::Pixels(bytes, damage) => {
+                (Some(FramePixels::Rgba(RgbaFrame { size, bytes })), damage)
+            }
+            Drawn::Nothing(damage) => (Some(FramePixels::Dummy), damage),
+            Drawn::Unchanged => (None, Vec::new()),
         };
-        output.last = match (pixels, output.last.take()) {
-            (Some(pixels), _) => Some(PresentedFrame { seq, at, pixels }),
-            (None, Some(last)) => Some(PresentedFrame { seq, at, ..last }),
-            (None, None) => Some(PresentedFrame {
+        output.last = Some(match (pixels, output.last.take()) {
+            (Some(pixels), last) => PresentedFrame {
+                seq,
+                at,
+                pixels,
+                damage,
+                bare: bare.or_else(|| last.and_then(|last| last.bare)),
+            },
+            (None, Some(last)) => PresentedFrame {
+                seq,
+                at,
+                pixels: last.pixels,
+                damage,
+                bare: bare.or(last.bare),
+            },
+            (None, None) => PresentedFrame {
                 seq,
                 at,
                 pixels: FramePixels::Dummy,
-            }),
-        };
+                damage,
+                bare,
+            },
+        });
         Ok(Shown::Frame)
     }
 
@@ -383,8 +416,14 @@ pub struct PresentedFrame {
     pub seq: VblankSeq,
     /// When.
     pub at: Mono,
-    /// Its pixels.
+    /// Its pixels, with the cursor drawn.
     pub pixels: FramePixels,
+    /// What changed since the frame before, in the frame's pixels (empty when nothing did: the
+    /// scene was still).
+    pub damage: Vec<PhysicalRect>,
+    /// The same pixels without the cursor, once the output has drawn a frame and the renderer
+    /// reads frames back.
+    pub bare: Option<RgbaFrame>,
 }
 
 /// A presented frame's pixels. Every renderer reads back `Abgr8888` (RGBA byte order), so

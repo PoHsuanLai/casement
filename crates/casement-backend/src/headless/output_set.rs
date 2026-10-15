@@ -1,6 +1,7 @@
 //! The plugged virtual outputs: each with its offscreen target, damage tracker and last
 //! presented frame.
 
+use super::bare::BareLayer;
 use super::renderer::Canvas;
 use super::{PresentedFrame, VirtualOutputSpec};
 use casement_core::OutputName;
@@ -29,6 +30,8 @@ pub struct VirtualOutput {
     /// The offscreen image it draws into (none when the renderer could not make one: the
     /// output then presents blank frames).
     pub(super) canvas: Option<Canvas>,
+    /// The same frames drawn again without the cursor (made with the first frame).
+    pub(super) bare: Option<BareLayer>,
 }
 
 impl VirtualOutput {
@@ -42,6 +45,7 @@ impl VirtualOutput {
             presented: 0,
             gamma: GammaRamp::Identity,
             canvas,
+            bare: None,
         }
     }
 
@@ -52,6 +56,7 @@ impl VirtualOutput {
             tracker: tracker_of(&spec),
             spec,
             canvas,
+            bare: None,
             last: None,
             ..self
         }
@@ -59,7 +64,7 @@ impl VirtualOutput {
 }
 
 /// A damage tracker for `spec`'s mode, scale and transform.
-fn tracker_of(spec: &VirtualOutputSpec) -> OutputDamageTracker {
+pub(super) fn tracker_of(spec: &VirtualOutputSpec) -> OutputDamageTracker {
     let size = (
         i32::try_from(spec.mode.size.w).unwrap_or(i32::MAX),
         i32::try_from(spec.mode.size.h).unwrap_or(i32::MAX),
