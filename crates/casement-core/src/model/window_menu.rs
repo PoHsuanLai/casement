@@ -46,7 +46,6 @@ impl Model {
             ),
             MenuAction::Place(target) => self.place(&window, target),
             MenuAction::SplitTile(side) => self.split_view(&window, side),
-            _ => Moved::of(self),
         }
     }
 }
