@@ -3304,3 +3304,39 @@ Lane cas12-winit: the winit backend usable for hands-on testing in a host deskto
 - **By hand.** The manual-checks entry; also whether the first pointer motion lands under the host pointer (absolute
   motion needs a first `PointerMoved` from the host), and whether a 2x window with the host's fractional scale (1.25)
   keeps the picture sharp.
+
+## cas13-mcicons: the app icon under each window in Mission Control (2026-10-15)
+
+`casement-icons` finds the icon, `casement-layout` places it (`OverviewSlot::icon`), `casement-render` draws it
+(`OverviewIcon`, `icon_place`, `icon_element`), `casement::icons` (`IconSearch`, `IconBook`) and
+`core_loop/overview.rs` join them. Departures from the Mac:
+
+- **The spread does not make room for the icons.** The icon hangs 26 px below its slot (a 64 px icon, its middle 6 px
+  below the bottom edge); the spread's gap between rows is 24, so in a crowded row pair the icon overlaps the top of the
+  window below it (and its frame). The Mac's cell is taller. Adding the icon's lower half to a cell's height changes
+  every spread golden, so it waits for a deliberate bless.
+- **The title moves down.** The hovered window's title sits under the icon, not under the window, so the two never
+  overlap. The Mac shows no title there.
+- **Looked up on the first frame, not at the key press.** The icon is found the first frame Mission Control is drawn
+  (`IconBook::draw_of` reads the desktop entry and the icon file once per window and size), then kept until Mission
+  Control is closed. A change of icon or app id while it is open shows at the next opening.
+- **How the icon arrives.** It is not animated by itself: its size and opacity follow how far the window has flown from its
+  desktop size to its slot (`icon_place`), so it grows and fades in with the slot and leaves with it. On the way out the
+  layout has no slots, so `IconBook::remembered` keeps the last ones.
+- **The theme.** `SystemTheme` looks in `hicolor` (and the themes it falls back to, then `/usr/share/pixmaps`): casement
+  has no icon-theme setting yet. `freedesktop-icons` reads the process's own folders (`$XDG_DATA_DIRS`) and cannot be
+  pointed elsewhere, so `ThemeLookup` is the seam the tests fake.
+- **No icons without a person.** `IconSearch::Off` (the default, and the headless backend in `main`) looks for and draws
+  nothing, so no golden and no jail run changes. The test kit passes `Off`.
+- **The plate.** An app with no icon gets a plain rounded plate in quire's raised ground (`overview_plate`), drawn by
+  `casement_icons::plate`; no letter or glyph.
+- **Not looked at.** An `Icon=` with an extension-less absolute path, `.xpm` icons and animated icons are skipped
+  (the next place in the order is tried). `Icon=` keys with a locale are ignored.
+
+Spots a real build checks first: `resvg::render(&tree, transform, &mut pixmap.as_mut())` and
+`usvg::Tree::from_data(bytes, &usvg::Options::default())` (resvg 0.48.1 with its default features off: no text, so no
+fontdb needed); `tree.size().width()`; `Pixmap::take()` (premultiplied RGBA); `image::DynamicImage::resize` with
+`FilterType::Lanczos3`; `freedesktop_icons::lookup(name).with_size(u16).with_theme(&str).find()`; `ArgbImage::from_shm`
+for the toplevel's own buffers (`casement_render::pass`); the borrow split in `icons_of` (`icons` and `textures` out of
+`state.render` while `state.core` is read); `scripts/check-boundary.sh` rows B4/B15 (resvg without `text` must not pull
+parley or fontique into the graph).
