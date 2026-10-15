@@ -178,8 +178,8 @@ mod tests {
             made.set(made.get() + 1);
             crate::element::shadow_tiles(&look, Scale::ONE)
         };
-        let a = cache.shadow(WindowId(1), shadow_key(&look, Scale::ONE), &mut make);
-        let b = cache.shadow(WindowId(2), shadow_key(&look, Scale::ONE), &mut make);
+        let a = cache.shadow(WindowId(1), shadow_key(&look, Scale::ONE), make);
+        let b = cache.shadow(WindowId(2), shadow_key(&look, Scale::ONE), make);
         assert_eq!(made.get(), 1);
         assert!(!Rc::ptr_eq(&a, &b));
     }

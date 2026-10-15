@@ -16,7 +16,9 @@ mod window;
 pub use blur_v0::BlurV0Element;
 pub use cursor::{CursorFace, cursor_elements, cursor_face, cursor_pixels};
 pub use frame::{FrameDraw, TitleDraw, frame_elements};
-pub(crate) use frame::{ShadowKey, ShadowSet, Tiles, shadow_key, shadow_tiles};
+pub(crate) use frame::{ShadowKey, ShadowSet, Tiles};
+#[cfg(test)]
+pub(crate) use frame::{shadow_key, shadow_tiles};
 pub use geometry::{geometry_size, surface_origin, surface_origin_logical};
 pub use layer::layer_elements;
 pub use lock_cover::LockCoverElement;
