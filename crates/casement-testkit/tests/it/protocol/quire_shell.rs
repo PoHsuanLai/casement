@@ -3,17 +3,13 @@
 
 use crate::protocol::xdg_shell::{map_toplevel, pointer, rect_of, settle, windows};
 use casement_core::WindowId;
-use casement_core::geometry::LogicalRect;
 use casement_core::geometry::PhysicalSize;
 use casement_core::input::{DeviceClass, Edge, KeyCode};
 use casement_core::policy::ConnectionRole;
 use casement_core::space::SpaceContent;
 use casement_core::window::{Light, MenuEntry, WindowState, menu_point};
 use casement_ipc::dbus::ConnectRefusal;
-use casement_layout::{
-    GroupHover, LayoutKnobs, RustScene, SceneLayout, Scheme, frame_metrics, frame_style,
-    spec_of_framed,
-};
+use casement_layout::{GroupHover, Scheme, frame_style};
 use casement_protocols::vocab::ShellRole as ModelRole;
 use casement_testclient::misc::decoration::DecorationManager;
 use casement_testclient::quire::shell::{
@@ -29,7 +25,6 @@ use casement_testkit::{ClientId, Fixture, FixtureSpec, TestOrigin};
 use casement_wayland::foreign_toplevel_list::identifier_of;
 use ds_core::vocab::Activity;
 use porter_core::SandboxFacts;
-use std::collections::BTreeMap;
 use std::time::Duration;
 
 const INTERFACE: &str = "quire_shell_v1";
@@ -299,23 +294,6 @@ fn map_framed(fixture: &mut Fixture, id: ClientId, base: &WmBase, size: (u32, u3
     fixture.pump();
 }
 
-/// Where a server-side-framed `window`'s content is: the layout with the titlebar reserved
-/// above it, as casement arranges it.
-fn framed_rect_of(fixture: &Fixture, window: WindowId) -> LogicalRect {
-    let model = fixture.model();
-    let frames = BTreeMap::from([(window, frame_metrics().titlebar)]);
-    RustScene
-        .arrange(
-            &spec_of_framed(model, &frames),
-            &LayoutKnobs::of(model.settings()),
-        )
-        .windows
-        .iter()
-        .find(|target| target.window == window)
-        .map(|target| target.rect)
-        .expect("the window is arranged")
-}
-
 /// The pointer resting on the green light for half a second asks the shell for the window's
 /// menu, at the light's left edge a little under it, with the entries the window's state
 /// offers; a pick of Left tiles the window to the left half.
@@ -330,7 +308,7 @@ fn resting_on_the_green_light_shows_the_menu_and_a_pick_tiles_the_window() {
     settle(&mut fixture);
 
     // The light is where the frame puts it round the content (the layout's rectangle).
-    let content = framed_rect_of(&fixture, window);
+    let content = fixture.framed_content_of(window);
     let style = frame_style(Scheme::Light, Activity::Active, GroupHover::Away);
     let light = style.around(content).light(Light::Zoom);
     let device = pointer(&mut fixture);
