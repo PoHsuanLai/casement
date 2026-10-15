@@ -41,8 +41,8 @@ pub(super) fn name_of_curve(curve: TransferCurve, version: u32) -> TransferFunct
 
 /// A chromaticity in millionths on the wire as ten-thousandths, rounded; none outside 0..1.
 fn narrow(value: i32) -> Option<u16> {
-    let scaled = u16::try_from((i64::from(value) + 50).div_euclid(100)).ok()?;
-    (scaled <= 10_000).then_some(scaled)
+    let millionths = u32::try_from(value).ok().filter(|v| *v <= 1_000_000)?;
+    u16::try_from((millionths + 50) / 100).ok()
 }
 
 /// A chromaticity in ten-thousandths as millionths.

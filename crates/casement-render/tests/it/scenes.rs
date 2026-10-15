@@ -10,6 +10,7 @@
 
 use crate::support;
 
+use casement_core::WindowId;
 use casement_core::geometry::{
     LogicalPoint, LogicalRect, LogicalSize, PhysicalRect, PhysicalSize, SubPx,
 };
@@ -17,7 +18,8 @@ use casement_motion::{OutputFrame, StripOffset};
 use casement_render::golden::GoldenTier;
 use casement_render::{
     BlurV0Element, CasementElement, ChromeLayer, CursorDraw, CursorShape, LayerDraw, OutputView,
-    Rgba8, TextureBook, cursor_elements, output_elements, solid_rect,
+    Rgba8, TextureBook, TilePreview, cursor_elements, output_elements, solid_rect,
+    tile_preview_elements,
 };
 use ds_core::geometry::scale::Scale;
 use smithay::backend::renderer::element::Id;
@@ -415,4 +417,39 @@ fn a_blur_follows_what_moves_under_it() {
     }
     let full = render_once(&mut renderer, size, 1.0, &frame(150));
     assert!(last == full, "incremental blur equals a full render");
+}
+
+/// The plate of a drag to the left edge: a translucent accent over grey, rounded corners.
+fn tile_preview_scene<R: Offscreen1>(renderer: &mut R, scale: u32) -> image::RgbaImage {
+    let view = view(0, 0, 320, 200, scale);
+    let preview = TilePreview {
+        window: WindowId(1),
+        rect: LogicalRect::new(LogicalPoint { x: 8, y: 8 }, LogicalSize { w: 148, h: 184 }),
+        fill: Rgba8 {
+            r: 4,
+            g: 46,
+            b: 89,
+            a: 89,
+        },
+        radius: 10,
+    };
+    let mut elements = tile_preview_elements(&preview, &view, renderer);
+    elements.push(page(&view, GREY));
+    let size = size_of(&view);
+    image_of(
+        size,
+        render_once(renderer, size, view.scale.as_f64(), &elements),
+    )
+}
+
+#[test]
+fn the_tile_preview_matches_its_pixman_goldens() {
+    let mut renderer = pixman();
+    for (scale, name) in [(120, "1x"), (180, "1.5x"), (240, "2x")] {
+        check(
+            &format!("tile-preview-{name}"),
+            GoldenTier::Exact,
+            &tile_preview_scene(&mut renderer, scale),
+        );
+    }
 }
