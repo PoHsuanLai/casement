@@ -28,6 +28,7 @@ impl Model {
             ShellRequest::SplitPick { window } => self.split_pick(window),
             ShellRequest::SplitCancel => self.split_cancel(),
             ShellRequest::SplitDivide { window, share } => self.split_divide(window, share),
+            ShellRequest::Overview { mode, toggle } => self.overview_asked(mode, toggle),
         }
     }
 

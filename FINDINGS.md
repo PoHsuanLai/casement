@@ -2539,6 +2539,75 @@ The window shadow stops re-rastering per frame. Written without a compiler (wave
   bottom corners, and has no seam where a strip meets a corner (look at light and dark); the dim shadow under a fade (`opacity`)
   fades with the window; a very small window (a 100x60 dialog) has a plausible shadow.
 
+## wave-2026-10-15/overview
+
+Mission Control, Sonoma style: the shown Space's windows fly to scaled slots below a strip for the Spaces bar, a click picks
+one, Escape or the same key leaves. Written without a compiler (the lane rules); the gate is the first build.
+
+- **Spread (`casement-layout/src/rust_scene/spread.rs`, `spread_fit.rs`, `overview.rs`).** A21's recipe in whole numbers (no
+  float): one common scale in parts per million; the start is the largest scale whose cells (box plus gap) fill at most 55 % of the
+  area and fit it, replaced by 1 when within a fifth of it; per trial each axis's centres are mapped monotonically onto the area,
+  then a greedy pairwise push in canonical order (position, then id), at most 24 passes, each pair separated along its smaller
+  overlap; a failed trial scales by 85 %, never below `spread_floor`; at the floor a shelf pack is tried, then the cells are
+  clamped inside and `LayoutReport::SpreadOverflow` is reported. A cell is a window's box grown by half the gap on every side, so
+  non-overlap means the whole gap. The box is the scaled content plus the frame's `reserve_top` at its own (unscaled) height,
+  because the frame is drawn at full metrics round the scaled content. The strip is 112 px (a quarter of the area at most).
+  Targets stay at their desktop rectangles, so the windows fly back when the mode returns to a desktop. `OverviewSlot` still has
+  no `output` (A29): `Goals` finds the output in the target. Only Mission Control makes slots; App Expose and Show Desktop still
+  arrange as a desktop. `LayoutReport::RowsCrowded` is unused. No `SpaceThumb`s: sill draws the Spaces bar.
+- **`tests/it/spread.rs` un-ignored.** It was P3-Z's property (`overview.len() == windows`, inside the usable area, a gap of 20
+  unless overflow reported, deterministic). `.proptest-regressions` kept. Table tests beside the code: `spread.rs` (empty, one
+  window keeps its size below the strip, order kept, the frame's reserve, a crowd shrinks every window the same, 60 windows at the
+  floor report overflow) and `spread_fit.rs` (overlap, push, hold inside, shelf, start order).
+- **Model (`casement-core`).** `Overview { Closed, Entering, Open, Leaving }` (`overview.rs`), `Model::overview()`,
+  `toggle_overview`, `open_overview`, `close_overview(Option<OverviewPick>)` (`model/overview.rs`). Entering and leaving each
+  `Relayout(Cause::Overview)`, arm `TimerKey::OverviewSettle` (350 ms: the windows' spring settles, then open or closed) and tell
+  the shell (`ShellNote::Overview`). A leave with a pick feeds `FocusIn::Press` on the window first, so it is raised and keyed as
+  a press would. Leaving lays the windows out as a desktop again (the model reads `Desktop` for `Leaving` and `Closed`), so
+  motion flies them back. A locked session ignores every way in. Not done: a Space switch, a lock or a new window does not close
+  the overview (a new window gets a slot at once); the model does not close it when its last window goes.
+- **The ways in.** `DesktopCommand::MissionControl` (a toggle; the config word `mission_control`; the chordkit standard action
+  `MissionControl` is bound to it: Ctrl+Up on our desktop) and the shell's own `quire_shell_v1.overview(mode, toggle)` request
+  (`ShellRequest::Overview`, `quire/shell_overview.rs`): Mission Control on or off, the other modes change nothing. The wire
+  event `overview_state(mode, state, progress)` is sent (progress 0 entering and closed, 1000 open and leaving). The wire
+  already had all of this; no protocol change. sill's `mission_control_chrome()` is still an empty function.
+- **Input (`core_loop/overview.rs`, `deliver.rs`).** While the overview is not closed, the windows take no input: motion goes to
+  the seat with no focus and sets the hovered window (the front-most slot with its frame above it), a press picks that window
+  (or leaves from the picture) and its release is swallowed, scrolls, gestures and touches are dropped, Escape (no modifiers,
+  entering or open) is turned into the toggle command. Keys are otherwise delivered to the key window. A press while leaving
+  does nothing.
+- **Drawing (`casement-render`).** `LayerDraw.overview: OverviewDraw` (`Off`, `On { hover }`). While on, a window not in a
+  minimise flight is drawn as a `Scale` flight of zero progress, so the existing rescaling path does everything: surfaces at
+  `placed.size` over the window geometry, the frame and its clip round `drawn_content`, no popups, no blur. `titles::of` makes the
+  title for the scaled bar by the same rule. New: a dimming layer (premultiplied black, alpha 64, behind the windows and in front of
+  the bottom and background layers, so the bar and dock stay bright), a 3 px ring round the hovered window's frame, and its title
+  under it (`label_element`, a second `TitleRaster` with no margins, Dark scheme so the ink is light; 160 to 480 px wide, 22 px
+  tall, built every frame while hovering).
+- **Departures.** (1) The frame is not scaled with the window: lights and titlebar keep their full size round a small slot (the
+  existing Scale-flight behaviour). macOS scales it. The box reserves that size. A fix is a scaled `FrameStyle`. (2) The ring colour
+  is the Mac blue written as a constant in `element/overview.rs`, and the dim alpha too: no ds-style token is read. (3) The
+  title under the window has no app icon. (4) The hover label's buffer is made per frame while hovering (no cache). (5) The
+  motion goals, settle time and the spring are the `Overview` cause's `Move` response; 350 ms is a guess to confirm in a real
+  run. (6) Windows of other Spaces, full-screen and Split View Spaces: the overview of such a Space has no slots (the
+  windows just fly to nothing: they are not in `overview`, so they stay put), where macOS shows the Spaces bar only.
+  (7) `casement-scene-css/tests/parity.rs` (P3-CSS) stays ignored: its bodies are `todo!` for the whole CSS scene (every layout
+  of 500 specs), none of which this lane's code touches.
+- **Tests.** casement-core `model_overview.rs` (state walks for the command and the shell request, relayout and timer effects, no
+  output, a pick raises and keys, a leave without a pick, picks while closed or leaving); `model_props.rs` gets the command in its
+  generator. casement-testkit `protocol/quire_shell_overview.rs` (shell opens it and hears Entering then Open with progress, a
+  click on a slot picks, a click on the picture leaves with nothing picked, Escape leaves, the shell closes it and App Expose is
+  ignored). `casement/src/core_loop/overview.rs` (the reach of a slot with its frame), `keymap/shell.rs` (Ctrl+Up),
+  `tests/it/config.rs` (the word round-trips), `element/overview.rs` (physical rectangles at 1x and 2x).
+  Ignored test un-ignored: `casement-layout/tests/it/spread.rs`. No golden changed.
+- **Gate and real run.** Likeliest compile faults: `core_loop/deliver.rs` (the Escape check in the `apply_key` filter closure reads
+  `state` as `&State` while the closure may hold `&mut`), `scene.rs` (`in_overview` and the let-chain in `draw_windows`, the
+  closure passing `renderer` into `and_then`), `spread_fit.rs::start` (a closure taking a `fn` pointer), `model/overview.rs`
+  (`Model { .. }.then_pick`), `shell_overview.rs` (`code_of` over the shell's enums), the testclient's `Toggle` re-export from
+  the desktop protocol. Real run: Ctrl+Up opens it, the windows fly out in about a third of a second and keep their left/right
+  and top/bottom order; the Spaces strip at the top stays empty (sill draws it); hover rings a window and shows its title; a
+  click raises and keys it and the windows fly back; Escape and Ctrl+Up leave; the pointer is an arrow; typing in the key window
+  still works; the bar and dock are not dimmed; 1.5x and 2x scales have no seam in the ring; with 20 windows the scale is about 0.3
+  and at 50 the overflow report is logged.
 ## wave-2026-10-15/capture3
 
 Nothing here compiled or ran (the lane does not build). Closes the four "Capture limits" of `capture` and `capture2`.

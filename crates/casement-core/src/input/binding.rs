@@ -57,6 +57,8 @@ pub enum DesktopCommand {
     SwitchSpace(SpaceStep),
     /// Place the key window.
     Place(PlaceTarget),
+    /// Open Mission Control, or close it when it is open.
+    MissionControl,
     /// Tile the key window to one side of the screen in a Split View (Window, Tile Window to
     /// Left / Right of Screen). Bound to no chord by default, as on the Mac.
     SplitTile(SplitSide),

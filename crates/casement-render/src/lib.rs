@@ -43,5 +43,8 @@ pub use element::{
     window_content, window_drawn, window_elements, window_surfaces,
 };
 pub use gl_raw::{gles_on, surfaceless_gles};
-pub use scene::{ChromeLayer, CursorDraw, CursorShape, LayerDraw, OutputView, output_elements};
+pub use scene::{
+    ChromeLayer, CursorDraw, CursorShape, LayerDraw, OutputView, OverviewDraw, OverviewHover,
+    output_elements,
+};
 pub use texture_book::{SurfaceEntry, TextureBook};

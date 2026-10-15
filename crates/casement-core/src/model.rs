@@ -21,6 +21,7 @@ mod lock;
 mod moved;
 mod output_requests;
 mod outputs;
+mod overview;
 mod published;
 mod query;
 mod requests;
@@ -48,10 +49,12 @@ use crate::invariants::{self, InvariantBreak};
 use crate::layer::LayerBook;
 use crate::lock::LockState;
 use crate::output::{OutputConfig, OutputFacts};
+use crate::overview::Overview;
 use crate::settings::CasementSettings;
 use crate::space::{SpaceBook, SpaceFile, SpaceSeed};
 use crate::time::{Mono, TimerBook};
 use moved::Moved;
+pub use overview::OverviewPick;
 pub use query::OpeningRoom;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -79,6 +82,8 @@ pub struct Model {
     /// The Split View whose other half is being chosen, if one is (`model/split.rs`).
     split_choice: Option<split::SplitChoice>,
     lock: LockState,
+    /// Mission Control's life (`model/overview.rs`).
+    overview: Overview,
     focus: Focus,
     timers: TimerBook,
     settings: CasementSettings,
@@ -115,6 +120,7 @@ impl Model {
             demand: None,
             split_choice: None,
             lock: LockState::Unlocked,
+            overview: Overview::Closed,
             focus: Focus::none(),
             timers: TimerBook::empty(),
             settings,

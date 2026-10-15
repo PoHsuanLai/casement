@@ -22,6 +22,7 @@ impl Model {
             (Gone::Yes, _) => Moved::of(model).with(Effect::Note(CoreNote::StaleTimer(key))),
             (Gone::No, TimerKey::Ping(client)) => model.not_responding(*client),
             (Gone::No, TimerKey::LockWait) => model.lock_wait_over(),
+            (Gone::No, TimerKey::OverviewSettle) => model.overview_settled(),
             (Gone::No, _) => Moved::of(model),
         }
     }
@@ -43,7 +44,7 @@ impl Model {
             | TimerKey::LightDwell
             | TimerKey::TrustedArm(_)
             | TimerKey::LeaseYield(_) => None,
-            TimerKey::LockWait => Some(Gone::No),
+            TimerKey::LockWait | TimerKey::OverviewSettle => Some(Gone::No),
         }
     }
 

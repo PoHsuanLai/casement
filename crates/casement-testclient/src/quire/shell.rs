@@ -7,8 +7,9 @@ use casement_protocols::client::quire_shell_v1::quire_shell_v1::{self, QuireShel
 use wayland_client::protocol::wl_surface::WlSurface;
 use wayland_client::{Connection, Dispatch, QueueHandle, WEnum};
 
+pub use casement_protocols::client::quire_desktop_v1::quire_desktop_window_v1::Toggle;
 pub use casement_protocols::client::quire_shell_v1::quire_shell_v1::{
-    Error as ShellError, MacMods, ShellRole, SplitSide, WindowEntry,
+    Error as ShellError, MacMods, OverviewMode, OverviewState, ShellRole, SplitSide, WindowEntry,
 };
 
 /// What a shell object was told.
@@ -22,6 +23,9 @@ pub struct ShellEvents {
     pub split_choices: Vec<SplitChoiceSeen>,
     /// The first window of every `split_choice_end`, in order.
     pub split_ends: Vec<String>,
+    /// Every `overview_state`, in order: the state (`None` for a code this client does not
+    /// know) and the progress in thousandths.
+    pub overview_states: Vec<(Option<OverviewState>, u32)>,
 }
 
 /// One `split_choose` the shell was told, and the `split_candidate`s after it.
@@ -93,6 +97,16 @@ impl ShellHandle {
     /// Picks `entry` in the menu of the window `toplevel`.
     pub fn window_menu_pick(&self, toplevel: &str, entry: WindowEntry) {
         self.object.window_menu_pick(toplevel.to_owned(), entry);
+    }
+
+    /// Opens (on) or closes (off) the overview `mode`.
+    pub fn overview(&self, mode: OverviewMode, toggle: Toggle) {
+        self.object.overview(mode, toggle);
+    }
+
+    /// The overview states the compositor sent, in order, with their progress.
+    pub fn overview_states(&self) -> Vec<(Option<OverviewState>, u32)> {
+        self.log.with(|seen| seen.overview_states.clone())
     }
 
     /// Picks `toplevel` for the other half of the Split View being chosen.
@@ -185,6 +199,15 @@ impl Dispatch<QuireShellV1, ShellLog> for Host {
             quire_shell_v1::Event::SplitChoiceEnd { first } => {
                 log.with(|seen| seen.split_ends.push(first));
             }
+            quire_shell_v1::Event::OverviewState {
+                state, progress, ..
+            } => log.with(|seen| {
+                let state = match state {
+                    WEnum::Value(state) => Some(state),
+                    WEnum::Unknown(_) => None,
+                };
+                seen.overview_states.push((state, progress));
+            }),
             _ => {}
         }
     }

@@ -13,6 +13,7 @@ mod genie;
 mod geometry;
 mod layer;
 mod lock_cover;
+mod overview;
 mod popup;
 mod rounded_clip;
 mod shared;
@@ -28,7 +29,7 @@ pub use cursor::{CursorFace, cursor_elements, cursor_face, cursor_pixels};
 pub use flight::{
     FlightDraw, at_rest, choose, drawn_content, rest_place, scale_ratio, scaled_content,
 };
-pub use frame::{FrameDraw, TitleDraw, frame_elements};
+pub use frame::{FrameDraw, TitleDraw, frame_elements, label_element};
 pub(crate) use frame::{Raster, ShadowKey, ShadowSet, Tiles, WholeShadow};
 #[cfg(test)]
 pub(crate) use frame::{shadow_key, shadow_tiles};
@@ -36,6 +37,7 @@ pub use genie::{GenieParts, GenieWindow, genie_elements, genie_window, strip_pla
 pub use geometry::{geometry_size, surface_origin, surface_origin_logical};
 pub use layer::layer_elements;
 pub use lock_cover::LockCoverElement;
+pub use overview::{dim_elements, ring_elements};
 pub use popup::{PopupRide, popup_elements, popup_elements_riding, popup_surfaces};
 pub use rounded_clip::{ClipShape, RoundedClipElement};
 pub use shared::SharedElement;
