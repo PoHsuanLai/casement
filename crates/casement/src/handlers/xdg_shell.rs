@@ -218,6 +218,8 @@ impl XdgShellHandler for State {
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
         xdg_foreign::on_surface_destroyed(&self.wl.xdg_foreign, surface.wl_surface());
         if let Some(window) = self.wl.xdg_shell.window_of_surface(surface.wl_surface()) {
+            // Its buffer may still be attached: the window's last image is kept before it goes.
+            core_loop::keep_body_before_destroy(self, window);
             xdg_toplevel_tag::on_forgotten(&mut self.wl.xdg_toplevel_tag, window);
             self.wl.quire_window.windows.remove(&window);
             self.wl.xdg_decoration.forget(window);

@@ -2887,3 +2887,91 @@ Nothing here compiled or ran (the lane does not build). Closes the two gaps `cap
   a cursor with a viewport or `buffer_scale 2` (Firefox, KDE apps) in a cursor-session capture (remote-desktop viewer) matches the
   screen; a GPU-modifier buffer after the display GPU is busy mid-frame (`try_borrow` fails: expect the info line, then software).
   With two GPUs only the first device's renderer is lent; a buffer allocated on the other GPU fails over to software.
+
+## wave-2026-10-15/closesnap
+
+A closing window fades and shrinks as one: the body now goes with the frame (the follow-up "A closing window loses its frame at once",
+and the "Not solved: the content of a closed window" row of flight2). Written without a compiler (wave rule); the orchestrator builds.
+
+- **What is kept.** The window's last image, drawn alone through the pass window capture uses (`window_rgba` ->
+  `render_offscreen`, content size at its output's scale), read back as RGBA and baked into a `ClosingBody` (casement-render
+  `element/closing_body.rs`): the bottom corners are cut by `ClipShape::coverage` at the kept radius, the channels are put in
+  Argb8888 order, and it is a `MemoryRenderBuffer`. `ClosingFrame` gained `body: Option<ClosingBody>` (and lost `Copy`).
+  `closing_elements` draws front (titlebar, lights, title), then the body as one `MemoryRenderBufferRenderElement` stretched over the
+  sampled content rectangle at the sampled opacity, then the shadow.
+- **Departure: a memory buffer, not an `Offscreen<GlesTexture>` texture.** The task suggested a GPU texture and
+  `TextureRenderElement`. The `Compositor` trait is generic over GLES, pixman and the dummy renderer, and the frame is built for
+  whichever the backend runs, so a texture type cannot ride in `ClosingFrame`. The existing window-capture pass already renders a
+  window offscreen on all three and on the tty seat's pixman shadow, and a memory buffer draws on every renderer (smithay caches the
+  upload per renderer). Cost: one GPU read-back at close (a one-off stall, once per closing window) and one upload on the first
+  frame. If the stall shows on a 4K window, the follow-up is a GLES-only `Offscreen<GlesTexture>` variant behind `Compositor`.
+- **Departure: the rounded clip is baked, not applied per frame.** The corner cut is made once at the window's rest size; the body
+  then shrinks with its corners (the frame's own radius does not shrink either, so they stay matched to within the shrink).
+- **When it is taken.** Two points, both while the window is still in the model and the old buffer still attached:
+  a pre-commit hook added in `new_surface` (`handlers/compositor.rs`) that sees `BufferAssignment::Removed` pending on the root of a
+  window the book draws (a client that unmaps by a null commit), and `toplevel_destroyed` (`handlers/xdg_shell.rs`) before the model
+  hears of it (a client that destroys the toplevel with its buffer attached). A winit backend has no offscreen pass: no image, the
+  window and its frame go at once as before.
+- **Which windows.** Only a window the loop kept a frame for (`RenderState::closing`, i.e. framed), with a size, that fits the cap, with
+  no image yet (`bodies.rs::verdict`, table test). The task said "motion on, not reduced motion": the loop passes
+  `MotionLevel::default()` (Standard) to `retarget` and there is no setting, and `retarget` cross-fades a departing window even under
+  Reduced (only the travel snaps), so every framed window animates its close and the level does not gate the snapshot. If a motion
+  setting lands, `Facts` gets the level.
+- **Freed when.** `closing::forget` (every frame) drops an image whose window is back in the model (a client that hid and re-showed
+  it) or no longer in the motion scene (the fade is over). Cap: 6 images and 192 MiB together, oldest dropped first (`Bodies::admit`,
+  tested); one image over the byte cap alone is not taken (`TooBig`).
+- **The switch is gone.** `ClosingFrames`/`CLOSING_FRAMES` removed. `closing::on` returns a window only when it has an image, so a
+  window without one (winit, too big, the read-back failed) has no frame either, as before flight2.
+- **Per output.** One image at the scale of the output the window was on, stretched to the sampled rectangle on every output the
+  window is drawn on (a window straddling two outputs of different scales is slightly soft on the other).
+- **Tests added.** casement-render: `closing_body.rs` unit (bake: channel order, square top, cut bottom corners, bad length/empty;
+  equality by id), doc test on `ClosingBody::from_rgba`; `tests/it/closing_body.rs` on pixman (stretched over the content, outside
+  stays black; half opacity is half over black). casement: `core_loop/bodies.rs` (verdict table; scale counts in the weight; oldest
+  dropped past the count; re-admit replaces; finished windows freed). No golden and no `expected-failures.txt` change were made by
+  hand; a testkit scene that closes a framed window mid-fade (pixman, the dummy renderer reads back zeros) may now show the frame
+  where it showed nothing: bless with a reason if one exists.
+- **Gate.** Likeliest compile faults: `bodies.rs` (`Kept` pattern with `..` on a `pub(crate)` struct from a sibling module; the guard in
+  `admit`'s match; `content_and_scale` made `pub(crate)`, `window_rgba` re-exported without the `debug-inject` cfg), the pre-commit
+  hook's `with_states` closure type in `before_commit`, `ClosingBody::element`'s `from_buffer` generics, `ClosingFrame` losing `Copy`
+  (`scene.rs`, `titles.rs`), `LayerDraw`'s derives with the new field. Real run: close a framed window of a client that unmaps by a null
+  commit and one that destroys the toplevel (a terminal, a browser): the body shrinks and fades with the frame, no empty-body ghost, the
+  last image is the window as it was (not blank), bottom corners rounded; close two at once; close a 4K window (the read-back stall at
+  the moment of closing); an app quitting with many windows (the cap); `grim` after the fade shows nothing left behind; watch memory
+  after many closes (the images are freed when the fade ends).
+## wave-2026-10-15/kbdlive
+
+Lane `kbdlive` (not compiled; the orchestrator gates). Closes input2's departure 1: the keyboard layout follows
+`settings.toml`.
+
+- **What changed.** `settings_live::followed` now also takes `keyboard.xkb_*` from the file. `settings_live::apply`
+  first calls `switch_keymap`: if the wanted names differ from the ones the seat's keymap was compiled from, it
+  calls smithay `KeyboardHandle::set_xkb_config` (through `casement_wayland::seat_keymap::switch_layout`), and the
+  model is told the names the keyboard runs with afterwards (the new ones, or the old ones on failure). Repeat
+  rate and delay already followed (`apply_repeat_info`). New pure `casement_wayland::seat_keymap`: `KeymapBook`
+  (on `SeatPart.keymap`; the running names and the last refused ones), `plan` -> `KeymapStep::{Unchanged, Refused,
+  Compile}`, `refuse` -> `Report::{Say, Quiet}`; `xkb_config(&XkbNames)` is shared with `SeatPart::new`.
+- **Bad keymap.** `set_xkb_config` compiles before touching anything, so a failure leaves the keyboard as it was;
+  we log one warning per distinct refused set of names (the same bad file read again, or an unrelated edit while it
+  stays bad, is quiet) and the model keeps the old layout, so the model and the seat never disagree.
+- **Modifier and held-key state (smithay's behaviour, `update_xkb_state`).** Keys still held are replayed onto
+  the new xkb state, so a held key stays held and its release is matched; modifiers are recomputed from those
+  keys and sent to the focused client after the new keymap. Latched and locked modifiers (Caps Lock, a sticky
+  Shift) are NOT carried over; LEDs are updated. A held key's already-sent press is not re-sent or re-interpreted
+  and the clients' own repeat timers are untouched. Our shell bindings read keysyms from the live xkb state per
+  key (`cmd+space` and the like are modifier plus a key whose symbol is `space` in every layout); a binding on a
+  letter follows the new layout's symbol for that key, as on the Mac.
+- **Tests.** Pure: `seat_keymap` tests (`a_layout_change_compiles_and_the_same_names_or_a_refused_pair_do_not`,
+  `a_refusal_is_reported_once_per_pair_of_names`, `a_switch_forgets_the_refusal`); table
+  `the_file_changes_the_pointer_the_repeat_and_the_layout_and_nothing_else` (renamed; the layout row flipped from
+  "waits for a restart"); doc test of `KeymapBook::new`. Fixture: `a_layout_change_in_the_settings_file_sends_a_new_keymap`
+  (second `wl_keyboard.keymap` after a layout change; none for the same file, an unrelated section, or a layout
+  that does not compile; the model keeps the old names). It counts keymap events, it does not read the keymap
+  text. No golden or expected-failures changed.
+- **Departures.** The test uses `no_such_layout_zz` as the uncompilable layout: it relies on libxkbcommon
+  refusing an unknown layout name (it does with the stock xkeyboard-config); if the gate's data lets it through,
+  pick another bad name (a bad `xkb_rules`, say). Windows, spaces, outputs stay read at start.
+- **Only a real run proves.** Editing `keyboard.xkb_layout` (e.g. `us` to `de`, or `us,de` with
+  `grp:alt_shift_toggle` options) in `~/.config/casement/settings.toml` while a terminal has focus: the next key
+  types the new layout at once with no restart; a held modifier key still releases cleanly; Caps Lock is cleared by
+  the switch; a typo in the layout leaves typing unchanged and one warning in the log; `cmd+space` still works.
+  Toolkits that cache the keymap (GTK, Qt, Xwayland through xwayland-satellite) must take the new `keymap` event.

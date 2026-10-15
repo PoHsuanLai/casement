@@ -58,6 +58,7 @@ pub mod quire_window;
 pub mod relative_pointer;
 pub mod screencopy;
 pub mod seat;
+pub mod seat_keymap;
 pub mod security_context;
 pub mod session_lock;
 pub mod shm;

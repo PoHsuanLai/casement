@@ -55,6 +55,8 @@ impl CompositorHandler for State {
         #[cfg(feature = "testing")]
         crate::relax::install(surface);
         add_pre_commit_hook::<State, _>(surface, |state, _display, surface| {
+            // A commit that takes the buffer away unmaps a window: its image is kept first.
+            core_loop::keep_body_before_commit(state, surface);
             let events = commit_timing::on_barrier(&mut state.wl.commit_timing, surface);
             feed(state, events);
         });

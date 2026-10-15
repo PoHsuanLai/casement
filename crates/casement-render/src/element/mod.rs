@@ -5,6 +5,7 @@
 mod blur_v0;
 mod clip_strip;
 mod closing;
+mod closing_body;
 mod cursor;
 mod flight;
 mod frame;
@@ -23,6 +24,7 @@ mod window;
 pub use blur_v0::BlurV0Element;
 pub use clip_strip::ClipStripElement;
 pub use closing::{ClosingFrame, closing_content, closing_elements};
+pub use closing_body::ClosingBody;
 pub use cursor::{CursorFace, cursor_elements, cursor_face, cursor_pixels};
 pub use flight::{
     FlightDraw, at_rest, choose, drawn_content, rest_place, scale_ratio, scaled_content,
