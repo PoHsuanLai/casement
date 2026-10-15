@@ -163,11 +163,7 @@ fn the_divider_strip_is_the_gap_between_the_halves() {
         let got = RustScene.arrange(&split(full, share, ANY_SIZE, ANY_SIZE), &knobs());
         assert_eq!(got.dividers.len(), 1, "{name}");
         let divider = &got.dividers[0];
-        assert_eq!(
-            divider.strip,
-            rect(i32::try_from(lead_w).expect("small"), 0, 8, 1080),
-            "{name}"
-        );
+        assert_eq!(divider.strip, rect(lead_w, 0, 8, 1080), "{name}");
         assert_eq!(divider.span, full, "{name}");
         assert_eq!(
             (divider.leading, divider.trailing),
