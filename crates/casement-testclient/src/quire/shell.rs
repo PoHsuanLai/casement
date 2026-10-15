@@ -10,8 +10,8 @@ use wayland_client::{Connection, Dispatch, QueueHandle, WEnum};
 
 pub use casement_protocols::client::quire_desktop_v1::quire_desktop_window_v1::Toggle;
 pub use casement_protocols::client::quire_shell_v1::quire_shell_v1::{
-    Error as ShellError, MacMods, OverviewMode, OverviewState, ShellRole, Shown, SplitSide,
-    WindowEntry,
+    DragOutcome, Error as ShellError, MacMods, OverviewMode, OverviewState, ShellRole, Shown,
+    SplitSide, WindowEntry,
 };
 
 /// What a shell object was told.
@@ -37,6 +37,11 @@ pub struct ShellEvents {
     /// Every `drop_target_new` (version 3), in order: the output and whether the dragged window
     /// is over its new-Space tile (`None` for a code this client does not know).
     pub drop_targets_new: Vec<(WlOutput, Option<Shown>)>,
+    /// Every `window_drag_begin` (version 4), in order: the output and the window's identifier.
+    pub drag_begins: Vec<(WlOutput, String)>,
+    /// Every `window_drag_end` (version 4), in order: the output, the window's identifier and the
+    /// outcome (`None` for a code this client does not know).
+    pub drag_ends: Vec<(WlOutput, String, Option<DragOutcome>)>,
 }
 
 /// A bound `wl_output` and the connector name it reported.
@@ -90,7 +95,7 @@ pub struct ShellHandle {
 }
 
 impl ShellHandle {
-    /// Binds the global at `version` (1, 2 or 3).
+    /// Binds the global at `version` (1, 2, 3 or 4).
     pub fn bind(client: &mut TestClient, version: u32) -> ShellHandle {
         let log = ShellLog::default();
         let object = client
@@ -142,6 +147,16 @@ impl ShellHandle {
     pub fn space_target_new(&self, output: &WlOutput, at: (i32, i32), size: (u32, u32)) {
         self.object
             .space_target_new(output, at.0, at.1, size.0, size.1);
+    }
+
+    /// The `window_drag_begin` events, in order.
+    pub fn drag_begins(&self) -> Vec<(WlOutput, String)> {
+        self.log.with(|seen| seen.drag_begins.clone())
+    }
+
+    /// The `window_drag_end` events, in order.
+    pub fn drag_ends(&self) -> Vec<(WlOutput, String, Option<DragOutcome>)> {
+        self.log.with(|seen| seen.drag_ends.clone())
     }
 
     /// The `drop_target_new` events, in order.
@@ -311,6 +326,20 @@ impl Dispatch<QuireShellV1, ShellLog> for Host {
                     WEnum::Unknown(_) => None,
                 };
                 seen.drop_targets_new.push((output, over));
+            }),
+            quire_shell_v1::Event::WindowDragBegin { output, toplevel } => {
+                log.with(|seen| seen.drag_begins.push((output, toplevel)));
+            }
+            quire_shell_v1::Event::WindowDragEnd {
+                output,
+                toplevel,
+                outcome,
+            } => log.with(|seen| {
+                let outcome = match outcome {
+                    WEnum::Value(outcome) => Some(outcome),
+                    WEnum::Unknown(_) => None,
+                };
+                seen.drag_ends.push((output, toplevel, outcome));
             }),
             _ => {}
         }

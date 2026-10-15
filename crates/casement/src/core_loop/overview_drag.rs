@@ -1,7 +1,7 @@
 //! Dragging a window to a Space in Mission Control, as the loop carries it: a press on a slot
 //! starts a [`Drag`]; past the threshold the window follows the pointer (its slot moves, motion
-//! carries the picture), the shell hears which Space target is under it (`drop_target`), and the
-//! release drops it on that Space, flies it back to its slot, or, if the pointer never moved
+//! carries the picture), the shell hears the drag begin (`window_drag_begin`) and which Space
+//! target is under it (`drop_target`), and the release drops it on that Space, flies it back to its slot, or, if the pointer never moved
 //! far, picks it as a press always did. The machine and the targets are `casement-core`'s
 //! (`overview_drag`); this is the glue to the seat, motion and the model.
 
@@ -13,9 +13,9 @@ use casement_core::geometry::LogicalPoint;
 use casement_core::input::InputEvent;
 use casement_core::overview_drag::{Drag, Landing, Moved, Over, Released};
 use casement_core::shell::ShellNote;
-use casement_core::{Cause, Effect, Event, OverviewPick, WindowId};
+use casement_core::{Cause, Effect, Event, OutputKey, OverviewPick, WindowId};
 use casement_motion::retarget;
-use casement_protocols::vocab::Shown;
+use casement_protocols::vocab::{DragOutcome, Shown};
 use casement_render::{CursorDraw, CursorShape};
 
 /// Whether the drag took the pointer move.
@@ -46,6 +46,7 @@ pub(super) fn moved(state: &mut State, at: LogicalPoint) -> Follow {
     }
     let drag = std::mem::take(&mut state.render.overview_drag);
     let before = drag.over().cloned();
+    let started = !drag.is_dragging();
     let (drag, step) = {
         let model = &state.core.model;
         drag.moved(at, &state.wl.quire_shell.space_targets, |output| {
@@ -64,6 +65,12 @@ pub(super) fn moved(state: &mut State, at: LogicalPoint) -> Follow {
     follow(state, window, top_left);
     state.render.overview_hover = Some(window);
     state.render.chrome.cursor = CursorDraw::Named(CursorShape::Grabbing);
+    if started {
+        announce(state, |output| ShellNote::WindowDragBegin {
+            output,
+            window,
+        });
+    }
     if let Some(now) = changed {
         tell(state, before.as_ref(), now.as_ref());
     }
@@ -74,8 +81,14 @@ pub(super) fn moved(state: &mut State, at: LogicalPoint) -> Follow {
 pub(super) fn released(state: &mut State) {
     let drag = std::mem::take(&mut state.render.overview_drag);
     let over = drag.over().cloned();
+    let dragged = drag.window().filter(|_| drag.is_dragging());
     let ended = drag.released();
     if !escape_leaves(state) {
+        // Mission Control is already leaving: a drag that began is over, with nothing dropped.
+        if let Some(window) = dragged {
+            tell(state, over.as_ref(), None);
+            finish(state, window, DragOutcome::Cancelled);
+        }
         return;
     }
     match ended {
@@ -88,11 +101,15 @@ pub(super) fn released(state: &mut State) {
             over: target,
         } => {
             tell(state, Some(&target), None);
-            let ask = match target.landing {
-                Landing::Space(space) => WindowAsk::ToSpace(space),
+            let (ask, outcome) = match target.landing {
+                Landing::Space(space) => (WindowAsk::ToSpace(space), DragOutcome::DroppedOnSpace),
                 // `NewSpace` (the enum grows).
-                _ => WindowAsk::ToNewSpace(target.output),
+                _ => (
+                    WindowAsk::ToNewSpace(target.output),
+                    DragOutcome::DroppedOnNew,
+                ),
             };
+            finish(state, window, outcome);
             land(state, window, ask);
         }
         Released::FlyBack { window, at } => {
@@ -100,8 +117,12 @@ pub(super) fn released(state: &mut State) {
             // Off every target but over another output: the window goes to the Space that
             // output shows, as a window dragged to another display does on a Mac.
             match shown_space_at(state, window, at) {
-                Some(space) => land(state, window, WindowAsk::ToSpace(space)),
+                Some(space) => {
+                    finish(state, window, DragOutcome::DroppedOnSpace);
+                    land(state, window, WindowAsk::ToSpace(space));
+                }
                 None => {
+                    finish(state, window, DragOutcome::Cancelled);
                     state.render.overview_hover = None;
                     super::relayout(state, &Cause::Overview);
                 }
@@ -109,6 +130,38 @@ pub(super) fn released(state: &mut State) {
         }
         _ => {}
     }
+}
+
+/// Mission Control leaves while a window is being dragged: the drag is over, nothing dropped.
+pub(super) fn abandon(state: &mut State) {
+    let drag = std::mem::take(&mut state.render.overview_drag);
+    if let (true, Some(window)) = (drag.is_dragging(), drag.window()) {
+        tell(state, drag.over(), None);
+        finish(state, window, DragOutcome::Cancelled);
+    }
+}
+
+/// The shell hears the drag of `window` is over, and how (`window_drag_end`).
+fn finish(state: &mut State, window: WindowId, outcome: DragOutcome) {
+    announce(state, |output| ShellNote::WindowDragEnd {
+        output,
+        window,
+        outcome,
+    });
+}
+
+/// One note for every output Mission Control is up on (it is up on all of them at once).
+fn announce(state: &mut State, note: impl Fn(OutputKey) -> ShellNote) {
+    let notes: Vec<Effect> = state
+        .core
+        .model
+        .outputs()
+        .0
+        .keys()
+        .cloned()
+        .map(|output| Effect::Shell(note(output)))
+        .collect();
+    exec::exec(state, notes);
 }
 
 /// Carries out a drop: the model moves `window` (or refuses), and the picture is laid out again

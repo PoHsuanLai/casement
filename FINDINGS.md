@@ -3340,3 +3340,13 @@ fontdb needed); `tree.size().width()`; `Pixmap::take()` (premultiplied RGBA); `i
 for the toplevel's own buffers (`casement_render::pass`); the borrow split in `icons_of` (`icons` and `textures` out of
 `state.render` while `state.core` is read); `scripts/check-boundary.sh` rows B4/B15 (resvg without `text` must not pull
 parley or fontique into the graph).
+
+## wave-2026-10-15/dragstart
+
+`quire_shell_v1` is served at **version 4** (lane `cas17-dragstart`, written without a compiler; needs casement-protocols
+`08bcc62`). `window_drag_begin(output, toplevel)` goes out once per output when a press on a Mission Control slot passes the
+drag threshold (`Drag` goes from `Pressed` to `Dragging`), before any `drop_target`. `window_drag_end(output, toplevel,
+outcome)` goes out once per output after the highlight is cleared: `dropped_on_space` (a target, or the Space the other
+output shows), `dropped_on_new` (the new-desktop tile), `cancelled` (flew back, or Mission Control left mid-drag). Only
+objects bound at version 4 or later hear them. Tests: `quire_shell_drop.rs`
+`the_shell_hears_a_window_drag_begin_and_end_with_its_outcome`.

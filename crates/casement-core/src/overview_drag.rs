@@ -269,6 +269,22 @@ impl Drag {
         }
     }
 
+    /// Whether the press has become a drag (the pointer moved past [`DRAG_THRESHOLD`]).
+    ///
+    /// ```
+    /// use casement_core::geometry::LogicalPoint;
+    /// use casement_core::input::Origin;
+    /// use casement_core::overview_drag::Drag;
+    /// use casement_core::WindowId;
+    ///
+    /// let at = LogicalPoint { x: 5, y: 5 };
+    /// assert!(!Drag::press(WindowId(3), Origin::Test, at, at).is_dragging());
+    /// assert!(!Drag::Idle.is_dragging());
+    /// ```
+    pub fn is_dragging(&self) -> bool {
+        matches!(self, Drag::Dragging { .. })
+    }
+
     /// The target under the pointer while dragging.
     pub fn over(&self) -> Option<&Over> {
         match self {
