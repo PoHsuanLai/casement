@@ -3626,3 +3626,40 @@ Written without a build or a wlcs run (rule of the lane); the orchestrator's run
   (`Endpoint::connector`), written by sill's Night Shift when `display.night_warmth = "hardware"`
   and the software light is on for the rest, and `[]` (or removed) otherwise. A DDC monitor whose
   connector sill could not match to a bus is not listed (sill cannot name it either).
+
+### cas28-daily: the night light tick and X11 force quit land (2026-10-16)
+
+- **Tick producer.** `time/local_minute.rs`: a calloop timer (`Timer::immediate()`, so the first
+  tick is the loop's first turn) reads `jiff::Zoned::now()` (the system time zone), feeds
+  `Event::NightLightTick(minute_of(&now))` and sleeps `until_next_minute(&now)`, so each firing
+  re-reads the clock. After a suspend the monotonic timer fires late and re-syncs at once; a
+  clock or zone change is caught at the next boundary at the latest. `run.rs` attaches it only
+  for the monotonic session clock (virtual and stepped runs have no wall time). On a DST day the
+  minute is the wall clock's, so the spring-forward hour is skipped and the fall-back hour
+  repeats (a fade is measured in minutes of the wall clock, as the schedule is). Tested with
+  zones from POSIX strings (no zoneinfo read). Uncertain: whether jiff re-reads `/etc/localtime`
+  often enough to follow a zone change without a restart (it caches the system zone for a
+  short while); not tested, since a test cannot move the real zone.
+- **X11 force quit.** `xwayland/xres.rs` asks the X server (a throw-away `x11rb` connection to
+  the served display, on a thread the loop waits 750 ms for) for the root's children with their
+  `WM_CLASS` and `XResQueryClientIds` / `LocalClientPID`; `xwayland/owners.rs` is the pure
+  decision (class or instance equals the app's claimed id, case-insensitively; never the
+  satellite, casement, init, pid 0 or a negative pid). `Processes` now remembers the satellite's
+  connection as an X11 carrier (`carries_x11`), and `exec::quit::pids_of` adds the X11 pids when
+  a terminated connection is that one.
+- **Not done: more than one X11 app.** `Model::sole_clients_of` names a connection only when all
+  its windows belong to the app, and the test `a_connection_that_carries_two_apps_is_never_force_quit`
+  holds that rule. With two X11 apps open, the satellite connection carries both, so
+  `force_quit_app` finds no client and does nothing; the X11 route is reached only when the app
+  is the sole X11 app. Fixing it needs the model to know a window is X11 (a marker on the
+  connection or window, from the edge) and to name the app's windows rather than connections;
+  that is a model decision (what a force quit of one of two X11 apps should do to the other's
+  windows is nothing, which the X route gives) left to the owner.
+- **Not done / uncertain.** (1) Only the root's direct children are listed: satellite does not
+  reparent X11 windows, so these are the top-levels, but a window manager that did would hide the
+  client windows one level down. (2) Xwayland's own pid is not named as spared: it owns no
+  top-level windows with a `WM_CLASS`, and the server's own resources have no client pid, but this
+  was not run against a real Xwayland (the lane may not build or run it). (3) `XResQueryClientIds`
+  needs X-Resource 1.2 (Xwayland has it since 1.20); no `XResQueryVersion` is sent first.
+  (4) The wait for the X server is a blocked loop turn of at most 750 ms, twice per force quit
+  (the `SIGTERM` and the later `SIGKILL`).
