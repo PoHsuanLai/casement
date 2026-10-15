@@ -15,8 +15,8 @@ pub(crate) use doc::watch;
 pub use doc::{CasementDoc, load};
 pub use schema::{schema, write_schema};
 pub use sections::{
-    BindingsSection, FirstSight, GesturesSection, GpuSection, KeyboardSection, OutputsSection,
-    PointerSection, SpacesSection, TouchpadSection, WindowsSection,
+    BindingsSection, FirstSight, GesturesSection, GpuSection, KeyboardSection, NightLightSection,
+    OutputsSection, PointerSection, SpacesSection, TouchpadSection, WindowsSection,
 };
 pub use version::{Stamped, Version, stamp_version};
 

@@ -3,6 +3,9 @@
 //! already bound, at once, as a change in System Settings does on the Mac. (The core loop does
 //! the reaching when the model is told, `core_loop::feed`.)
 //!
+//! The night light follows as well (its mode, times, warmth, fade and the displays it leaves
+//! alone, which sill writes when it turns Night Shift on): the model re-drives every output.
+//!
 //! The keyboard layout follows too: a changed `keyboard.xkb_*` is compiled and put on the seat's
 //! keyboard (every bound client gets the new keymap, as an input-source change does on the Mac).
 //! A layout that does not compile keeps the old keymap, is reported once, and the model keeps
@@ -19,7 +22,8 @@ use ds_core::spawner::Spawner;
 use smithay::reexports::calloop::channel::{self, Event as ChannelEvent};
 
 /// `current` with the parts that follow the file taken from `doc`: the pointer's settings, the
-/// key repeat and the keyboard layout. Everything else, the keymap's bindings among it, stays.
+/// key repeat, the keyboard layout and the night light. Everything else, the keymap's bindings
+/// among it, stays.
 ///
 /// ```
 /// use casement::config::CasementDoc;
@@ -34,6 +38,7 @@ pub fn followed(current: &CasementSettings, doc: &CasementDoc) -> CasementSettin
     CasementSettings {
         pointer: read.pointer,
         gestures: read.gestures,
+        night_light: read.night_light,
         keyboard: KeyboardSettings {
             repeat_delay: read.keyboard.repeat_delay,
             repeat_rate: read.keyboard.repeat_rate,

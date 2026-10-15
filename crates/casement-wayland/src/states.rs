@@ -4,8 +4,8 @@ use crate::client::{ClientMint, ClientState};
 #[cfg(feature = "quire")]
 use crate::quire;
 use crate::{
-    alpha_modifier, background_effect, capture_source, commit_timing, compositor, content_type,
-    cursor_shape, data_device, dmabuf, ext_data_control, fifo, foreign_toplevel_list,
+    alpha_modifier, background_effect, capture_source, color_management, commit_timing, compositor,
+    content_type, cursor_shape, data_device, dmabuf, ext_data_control, fifo, foreign_toplevel_list,
     fractional_scale, gamma, idle_inhibit, idle_notify, image_capture, input_method, layer_shell,
     output, output_management, output_power, pointer_constraints, pointer_gestures, presentation,
     primary_selection, quire_window, relative_pointer, seat, security_context, session_lock, shm,
@@ -48,6 +48,8 @@ pub struct WaylandStates<D: SeatHandler + 'static> {
     pub fifo: fifo::FifoPart,
     /// `wp_commit_timing_manager_v1`.
     pub commit_timing: commit_timing::CommitTimingPart,
+    /// `wp_color_manager_v1`.
+    pub color_management: color_management::ColorPart,
     /// `wp_content_type_manager_v1`.
     pub content_type: content_type::ContentTypePart,
     /// `xdg_wm_base`.

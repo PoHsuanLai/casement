@@ -7,11 +7,13 @@
 //! timers read the wall clock and cannot be virtualised.
 
 mod calloop;
+mod local_minute;
 mod source;
 mod virtual_clock;
 mod watchdog;
 
 pub use calloop::arm;
+pub use local_minute::{minute_of, tick_every_minute, until_next_minute};
 pub use source::ClockSource;
 pub use virtual_clock::{SharedClock, VirtualTimerSource};
 pub use watchdog::ping_every;

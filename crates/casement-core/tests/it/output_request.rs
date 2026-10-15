@@ -1,13 +1,16 @@
 //! A client's output change request, resolved against the display's facts (P1-M1), and what
 //! the model does with one.
 
-use crate::support::driver::{plug, run};
-use crate::support::{display, headless, mode};
+use crate::support::driver::{Op, plug, run, run_from};
+use crate::support::{display, headless, mode, ms};
 use casement_core::geometry::{LogicalPoint, Transform};
 use casement_core::output::{
-    ModePreference, OutputChangeSet, OutputConfig, OutputPower, OutputRefusal, resolve_change,
+    GammaRamp, GammaTable, Kelvin, MinuteOfDay, ModePreference, OutputChangeSet, OutputConfig,
+    OutputPower, OutputRefusal, resolve_change,
 };
-use casement_core::{Effect, Event};
+use casement_core::settings::{CasementSettings, NightLightMode, NightLightSettings};
+use casement_core::space::SpaceSeed;
+use casement_core::{Effect, Event, Model, OutputKey};
 use ds_core::geometry::scale::Scale;
 
 fn current(facts: &casement_core::output::OutputFacts) -> OutputConfig {
@@ -169,4 +172,114 @@ fn gamma_for_a_plugged_output_becomes_an_effect_and_for_a_gone_one_nothing() {
     let at = model.now().after(std::time::Duration::from_millis(1));
     let (_, effects) = model.step(Event::GammaSet { output: gone, ramp }, at);
     assert!(effects.is_empty());
+}
+
+/// Night light all day (no fade) leaving `skipping` alone.
+fn night(skipping: &[&str]) -> CasementSettings {
+    let day = (MinuteOfDay::wrapping(0), MinuteOfDay::wrapping(0));
+    let light = NightLightSettings::new(NightLightMode::Always, day, Kelvin::NIGHT, 0)
+        .skipping(skipping.iter().map(|name| (*name).to_owned()).collect());
+    CasementSettings {
+        night_light: light,
+        ..CasementSettings::defaults()
+    }
+}
+
+fn night_model(skipping: &[&str]) -> Model {
+    Model::new(night(skipping), ms(0), SpaceSeed::from_entropy([9; 16]))
+}
+
+fn tick(minute: u16) -> Op {
+    Op::Event(Event::NightLightTick(MinuteOfDay::wrapping(minute)))
+}
+
+fn settings(skipping: &[&str]) -> Op {
+    Op::Event(Event::SettingsChanged(Box::new(night(skipping))))
+}
+
+/// The gamma ramps one step asked for, by output.
+fn ramps(effects: &[Effect]) -> Vec<(OutputKey, GammaRamp)> {
+    effects
+        .iter()
+        .filter_map(|effect| match effect {
+            Effect::SetGamma(key, ramp) => Some((key.clone(), ramp.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+fn is_table(ramp: &GammaRamp) -> bool {
+    matches!(ramp, GammaRamp::Table(_))
+}
+
+#[test]
+fn night_light_warms_each_output_it_is_not_told_to_leave_alone_once() {
+    let (one, two) = (headless("HEADLESS-1").key, headless("HEADLESS-2").key);
+    let ops = vec![plug("HEADLESS-1"), plug("HEADLESS-2"), tick(720), tick(721)];
+    let run = run_from(night_model(&["HEADLESS-2"]), ops);
+    assert!(
+        run.effects[..2].iter().all(|step| ramps(step).is_empty()),
+        "nothing is driven before the first tick"
+    );
+    let first = ramps(&run.effects[2]);
+    assert_eq!(
+        first.len(),
+        1,
+        "the skipped output is not touched: {first:?}"
+    );
+    assert_eq!(first[0].0, one);
+    assert!(is_table(&first[0].1));
+    assert_ne!(first[0].0, two);
+    assert!(
+        ramps(&run.effects[3]).is_empty(),
+        "a steady minute asks nothing"
+    );
+}
+
+#[test]
+fn a_changed_skip_list_takes_effect_at_once_and_a_held_output_is_left_to_its_client() {
+    let one = headless("HEADLESS-1").key;
+    let client = GammaTable::new(vec![0, 65535], vec![0, 65535], vec![0, 65535]).expect("a table");
+    let ops = vec![
+        plug("HEADLESS-1"),
+        tick(0),
+        settings(&["HEADLESS-1"]),
+        settings(&[]),
+        Op::Event(Event::GammaSet {
+            output: one.clone(),
+            ramp: GammaRamp::Table(client.clone()),
+        }),
+        tick(1),
+        Op::Event(Event::GammaSet {
+            output: one.clone(),
+            ramp: GammaRamp::Identity,
+        }),
+    ];
+    let run = run_from(night_model(&[]), ops);
+    assert!(is_table(&ramps(&run.effects[1])[0].1), "warmed at the tick");
+    assert_eq!(
+        ramps(&run.effects[2]),
+        vec![(one.clone(), GammaRamp::Identity)],
+        "listed: back to its own curve"
+    );
+    let rewarmed = ramps(&run.effects[3]);
+    assert_eq!(rewarmed.len(), 1);
+    assert!(is_table(&rewarmed[0].1), "unlisted: warmed again");
+    assert_eq!(
+        ramps(&run.effects[4]),
+        vec![(one.clone(), GammaRamp::Table(client))],
+        "the client's table goes through"
+    );
+    assert!(
+        ramps(&run.effects[5]).is_empty(),
+        "the client holds the output"
+    );
+    let released = ramps(&run.effects[6]);
+    assert_eq!(
+        released.len(),
+        2,
+        "its identity, then the night light again"
+    );
+    assert_eq!(released[0].1, GammaRamp::Identity);
+    assert!(is_table(&released[1].1));
 }

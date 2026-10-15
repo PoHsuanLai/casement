@@ -5,6 +5,7 @@ mod bindings;
 mod gestures;
 mod gpu;
 mod keyboard;
+mod night_light;
 mod outputs;
 mod pointer;
 mod spaces;
@@ -13,6 +14,7 @@ mod windows;
 pub use gestures::{GestureSettings, SwipeFingers};
 pub use gpu::GpuSettings;
 pub use keyboard::{KeyboardSettings, RepeatRate, XkbNames};
+pub use night_light::{NightLightMode, NightLightSettings, OutputWarming};
 pub use outputs::OutputSettings;
 pub use pointer::{AccelProfile, PointerProfile, PointerSettings};
 pub use spaces::SpaceSettings;
@@ -39,6 +41,8 @@ pub struct CasementSettings {
     pub gestures: GestureSettings,
     /// Which GPU renders.
     pub gpu: GpuSettings,
+    /// Night light.
+    pub night_light: NightLightSettings,
 }
 
 impl CasementSettings {
@@ -54,6 +58,7 @@ impl CasementSettings {
             pointer: PointerSettings::defaults(),
             gestures: GestureSettings::defaults(),
             gpu: GpuSettings::defaults(),
+            night_light: NightLightSettings::defaults(),
         }
     }
 }

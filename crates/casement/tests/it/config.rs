@@ -10,10 +10,10 @@ use casement::config::{
 use casement_core::input::{
     Argv, Binding, BindingAction, Bindings, Chord, DbusCall, DesktopCommand, SpaceStep,
 };
-use casement_core::output::ScalePolicy;
+use casement_core::output::{Kelvin, ScalePolicy};
 use casement_core::settings::{
-    AccelProfile, CasementSettings, Enabled, FirstClick, MinimiseEffect, RepeatRate,
-    TitleDoubleClick,
+    AccelProfile, CasementSettings, Enabled, FirstClick, MinimiseEffect, NightLightMode,
+    RepeatRate, TitleDoubleClick,
 };
 use casement_core::window::SplitSide;
 use casement_protocols::vocab::PlaceTarget;
@@ -537,9 +537,10 @@ fn stamping_a_missing_file_writes_nothing() {
 }
 
 /// Each row: what a change in the file does to the settings casement runs with. Only the
-/// pointer, the key repeat and the keyboard layout follow; the bindings the keymap gave stay.
+/// pointer, the key repeat, the keyboard layout and the night light follow (sill rewrites the
+/// night light's keys when Night Shift is switched); the bindings the keymap gave stay.
 #[test]
-fn the_file_changes_the_pointer_the_repeat_and_the_layout_and_nothing_else() {
+fn the_file_changes_the_pointer_the_repeat_the_layout_and_the_night_light_and_nothing_else() {
     use casement::settings_live::followed;
     let current = CasementSettings::defaults();
     let doc = |text: &str| -> CasementDoc {
@@ -555,8 +556,20 @@ fn the_file_changes_the_pointer_the_repeat_and_the_layout_and_nothing_else() {
     let next = followed(
         &current,
         &doc(
-            "[pointer]\ntap = \"on\"\n[keyboard]\nrepeat_rate = 30\nxkb_layout = \"fr\"\n[windows]\nquit_grace_ms = 9000\n",
+            "[pointer]\ntap = \"on\"\n[keyboard]\nrepeat_rate = 30\nxkb_layout = \"fr\"\n[windows]\nquit_grace_ms = 9000\n[night_light]\nmode = \"always\"\nkelvin = 2900\nskip_outputs = [\"DP-1\", \"edid:ACME/M1/S1\"]\n",
         ),
+    );
+    assert_eq!(
+        next.night_light.mode,
+        NightLightMode::Always,
+        "night light follows"
+    );
+    assert_eq!(next.night_light.warmth, Kelvin(2900));
+    assert_eq!(next.night_light.skip_outputs, ["DP-1", "edid:ACME/M1/S1"]);
+    assert_eq!(
+        followed(&next, &doc("")).night_light,
+        CasementSettings::defaults().night_light,
+        "a file without the section is the defaults again, the skip list included"
     );
     assert_eq!(next.pointer.mouse.tap, Enabled::On);
     assert_eq!(next.keyboard.repeat_rate, RepeatRate(30));

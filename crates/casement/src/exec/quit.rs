@@ -2,17 +2,21 @@
 //! of the named connections' sockets (their credentials, read by the kernel when the client
 //! connected), never a process found by name. Only connections that came through the public
 //! socket are signalled: a sandboxed client's credentials are in another process namespace,
-//! and the shell's and the agent tier's connections are not apps to kill.
+//! and the shell's and the agent tier's connections are not apps to kill. The one exception to
+//! "never by name" is X11: xwayland-satellite's connection carries every X11 window and its
+//! pid is no app's, so for an app on that connection the X server is asked which processes own
+//! the windows whose class names the app (`xwayland::owners`).
 
 use crate::state::State;
-use casement_core::ClientKey;
+use crate::xwayland::owners::{self, Spared, XWindows};
+use crate::xwayland::xres::XServer;
 use casement_core::app::{StopSignal, Termination};
 use rustix::process::{Pid, RawPid, Signal, getpid, kill_process};
 use std::collections::BTreeSet;
 
 /// Signals the processes of `stop`'s connections.
 pub(super) fn terminate(state: &mut State, stop: Termination) {
-    let pids = pids_of(state, &stop.clients);
+    let pids = pids_of(state, &stop);
     let signal = match stop.signal {
         StopSignal::Term => Signal::TERM,
         StopSignal::Kill => Signal::KILL,
@@ -21,16 +25,36 @@ pub(super) fn terminate(state: &mut State, stop: Termination) {
     tracing::debug!(app = %stop.app.wire(), signal = ?stop.signal, sent, "an app was force quit");
 }
 
-/// The processes behind these connections: those that came through the public socket, as
-/// recorded when they connected, except xwayland-satellite's: its one connection carries every
-/// X11 program's windows, so signalling it would end all of them (and X11 for the session).
-fn pids_of(state: &State, clients: &[ClientKey]) -> BTreeSet<RawPid> {
+/// The processes behind the connections of `stop`: those that came through the public socket,
+/// as recorded when they connected, except xwayland-satellite's (its one connection carries
+/// every X11 program's windows, so signalling it would end all of them and X11 for the
+/// session), plus the processes the X server names for the app's X11 windows when the
+/// connections include the satellite's.
+fn pids_of(state: &State, stop: &Termination) -> BTreeSet<RawPid> {
     let satellite = state.xwayland.satellite_pid();
-    state
+    let wayland = state
         .processes
-        .of(clients)
-        .filter(|pid| Some(*pid) != satellite)
-        .collect()
+        .of(&stop.clients)
+        .filter(|pid| Some(*pid) != satellite);
+    wayland.chain(x11_pids_of(state, stop, satellite)).collect()
+}
+
+/// The processes that own the X11 windows of `stop`'s app, when one of its connections is the
+/// satellite's and X11 is being served. Never the satellite, this process or init.
+fn x11_pids_of(state: &State, stop: &Termination, satellite: Option<RawPid>) -> BTreeSet<RawPid> {
+    let display = state
+        .xwayland
+        .display()
+        .filter(|_| state.processes.carries_x11(&stop.clients));
+    let Some(display) = display else {
+        return BTreeSet::new();
+    };
+    let windows = XServer::at(display).top_levels();
+    let spared = Spared {
+        satellite,
+        own: getpid().as_raw_pid(),
+    };
+    owners::pids_of_app(&windows, &owners::name_of(&stop.app), &spared)
 }
 
 /// Sends `signal` to each of `pids`, except init and `own` (this process). How many were sent.
