@@ -177,7 +177,7 @@ impl TitleRaster {
                     .hint(false)
                     .normalized_coords(face.normalized_coords())
                     .fill_glyphs(run.positioned_glyphs().map(|g| vello_cpu::Glyph {
-                        id: g.id as u32,
+                        id: g.id,
                         x: g.x,
                         y: g.y,
                     }));
@@ -218,7 +218,9 @@ mod tests {
     fn premultiplied(pixels: &TitlePixels) -> bool {
         pixels
             .rgba
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .all(|px| px[..3].iter().all(|c| *c <= px[3]))
     }
 
@@ -312,7 +314,7 @@ mod tests {
         }
         .in_device(Scale(120));
         for row in pixels.rgba.chunks_exact(pixels.width as usize * 4) {
-            for (x, px) in row.chunks_exact(4).enumerate() {
+            for (x, px) in row.as_chunks::<4>().0.iter().enumerate() {
                 // Two pixels of slack for a glyph's side bearing and its anti-aliased edge.
                 let inside = (left as usize - 2..(pixels.width - right) as usize + 2).contains(&x);
                 assert!(inside || px[3] == 0, "ink at column {x}");
