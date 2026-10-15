@@ -62,10 +62,12 @@ impl Model {
             output: output.clone(),
             space: id.clone(),
         };
+        let shown = id.clone();
         Moved::of(model)
             .with(Effect::Relayout(Cause::SpaceSwitch))
             .with(Effect::RequestFrames(output))
             .then(|model| model.feed(input))
+            .then(move |model| model.choice_unless_on(&shown))
     }
 
     /// `output` shows the Space `step` names, when the row has one there.

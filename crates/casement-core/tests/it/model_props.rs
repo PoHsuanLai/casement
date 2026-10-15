@@ -14,7 +14,7 @@ use casement_core::layer::{
 use casement_core::lock::LockEvent;
 use casement_core::settings::{CasementSettings, Enabled};
 use casement_core::time::TimerKey;
-use casement_core::window::{FirstMouse, MaxSize, Parent, SizeLimits, WindowTitle};
+use casement_core::window::{FirstMouse, MaxSize, Parent, SizeLimits, SplitSide, WindowTitle};
 use casement_core::{
     ClientKey, Event, KeyboardTarget, LayerKey, MappedToplevel, ResizeEdges, ToplevelMeta,
     ToplevelRequest, WindowHintChange, WindowId,
@@ -203,6 +203,8 @@ fn command() -> impl Strategy<Value = DesktopCommand> {
         Just(DesktopCommand::SwitchSpace(SpaceStep::Previous)),
         (1u8..4).prop_map(|n| DesktopCommand::SwitchSpace(SpaceStep::Number(n))),
         place_target().prop_map(DesktopCommand::Place),
+        Just(DesktopCommand::SplitTile(SplitSide::Left)),
+        Just(DesktopCommand::SplitTile(SplitSide::Right)),
     ]
 }
 

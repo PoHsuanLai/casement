@@ -15,6 +15,7 @@ use casement_core::settings::{
     AccelProfile, CasementSettings, Enabled, FirstClick, MinimiseEffect, RepeatRate,
     TitleDoubleClick,
 };
+use casement_core::window::SplitSide;
 use casement_protocols::vocab::PlaceTarget;
 use ds_core::geometry::scale::Scale;
 use ds_core::vocab::Fraction;
@@ -325,6 +326,8 @@ fn every_kind_of_binding_survives_the_document() {
         BindingAction::Desktop(DesktopCommand::Place(PlaceTarget::TopLeft)),
         BindingAction::Desktop(DesktopCommand::Place(PlaceTarget::Fill)),
         BindingAction::Desktop(DesktopCommand::Place(PlaceTarget::Restore)),
+        BindingAction::Desktop(DesktopCommand::SplitTile(SplitSide::Left)),
+        BindingAction::Desktop(DesktopCommand::SplitTile(SplitSide::Right)),
     ];
     let keys = "abcdefghijklmnopqrstuvwxyz".chars();
     let table: BTreeMap<String, ActionWords> = keys

@@ -2443,6 +2443,60 @@ The Split View picker and divider on the wire (casement-protocols `lane/splitwir
   can receive the drag; see sill's findings. A real drag needs: (1) the gap between the two halves routed to a shell
   layer surface or a compositor grab, (2) a resize cursor, (3) persistence of the share if wanted.
 
+## wave-2026-10-15/split2
+
+Split View finished the Mac way: the divider drag, maximum widths, candidates from one desktop, cancel on a Space switch and a
+key command. Written without a compiler (wave rule); the orchestrator builds.
+
+- **Divider drag, compositor-side (sill draws no handle).** `Arrangement` gains `dividers: Vec<DividerTarget>` (the 8 px strip,
+  the row it divides, both windows and their minimum widths; pure `hit(point)` and `share_at(x)`) and `backdrops`. In the loop,
+  `core_loop/divider.rs` holds `RenderState::divider: DividerPointer { Away, Over, Dragging }`. Motion (`deliver::motion`, right
+  after the window-grab follow) asks `divider::moved`: on a strip of the Space the output shows, the cursor is `ResizeEw` and the
+  pointer moves with no focus (clients are left); a press (`press_edge`, before the frame pick) swallows the press and starts the
+  drag with the reach table's say (`InputUse::Press` on the leading window); each motion feeds
+  `ShellRequest::SplitDivide { window: leading, share: share_at(x) }`; the release of the starting button ends it
+  (`ends_with`, so `pressed` refocuses afterwards). The share is `SplitPair::divider`, so it lasts as long as the Space (no
+  persistence across sessions). `share_at` keeps 200..800 (`SplitPair::NEAREST`) and, when both minimum widths fit inside that,
+  each window's minimum; the model clamps again to 200..800 and layout still holds minimums.
+- **Departures.** (1) Any pointer button starts a drag (there is no left-button constant in the loop; frames do the same).
+  (2) No extra throttle: like an interactive resize, each motion is one `feed`, which makes one relayout and one configure per
+  window; the model ignores an unchanged share, so a still pointer sends nothing. (3) A divider yields to the lock, an overlay
+  layer and any window surface in front of it (a popup over the strip); layers under the full-screen windows do not. (4) The
+  divider changes the Space with `Cause::Configure` (snap), not a spring, so the halves follow the pointer exactly.
+- **Backdrop.** Every Split View Space gets a `BackdropTarget`; the loop sets `LayerDraw::backdrop` (dark grey, 28/28/30) for the
+  output whose shown Space it is, and `output_elements` draws one opaque `LockCoverElement` (same element id as the lock cover,
+  which never shares a frame with it) behind the full-screen windows and above the top layers. So the strip is a solid bar, not
+  the wallpaper showing through, and a window centred in its half has something behind it. During a Space slide the backdrop
+  appears and goes at once (it follows the shown Space, not the slide).
+- **Maximum width.** `rust_scene/split.rs::within_max`: a half whose window has a bounded maximum smaller than the half (a zero
+  side means none) centres that size in the half; the window is asked for it. Not done: the share does not shrink a half to a
+  window's maximum (the Mac sizes the halves the same way: the pointer decides).
+- **Candidates from the first window's desktop.** `SplitChoice::desktop` records the first window's `SpacePlace` before it goes
+  full screen; `can_share` (now a free function) requires it. A first window on every desktop (`AllSpaces`) falls back to any
+  desktop of its output, as before.
+- **Switching Space cancels.** `Model::show` ends with `choice_unless_on(shown)`: another Space than the choice's own ends the
+  choosing and sends `SplitChoiceEnd(first)`; the first window stays full screen.
+- **Key command.** `DesktopCommand::SplitTile(SplitSide)`, `SplitSide` now `Hash + Serialize + Deserialize` (`left` / `right`),
+  words `["desktop", "split_tile", "left"]` in the bindings document (`config/action.rs`, header comment updated), no default
+  chord. It runs `split_view` on the key window. casementctl exposes no binding command list (its `DesktopCommand` is the
+  desktop client's, a different type), so nothing changed there; the bindings document is the list.
+- **Tests.** Layout table tests: `tests/it/divider.rs` (strip hit, share from pointer x with limits and minimums),
+  `tests/it/split.rs` (divider strip per share, centred maximum widths and the backdrop). Model (`model_split.rs`): the key
+  command, candidates from one desktop, cancel on a Space switch. `round_trip.rs` pins the serde form; `config.rs` round trips
+  the new words; `model_props.rs` and `model_input.rs` include `SplitTile`. Testkit: `protocol/quire_shell_divider.rs` drives a
+  real pointer through the fixture (press on the strip, drag, release, a press beside the strip). No golden changed.
+- **Gate.** Likeliest compile faults: `core_loop/divider.rs` (borrow of `state.render.divider` before `feed(state, ..)` in
+  `moved`; `bool::then` returning a clone), `deliver.rs` (`press_on_divider`, the early return in `motion`), `model/split.rs`
+  (`can_share` as a free fn over private `Model` fields, `Option::is_none_or`), `spaces.rs` (`move` closure after `then`),
+  `casement-render/src/scene.rs` (`cover(.., colour)`). The test that needs the most from reality is
+  `dragging_the_strip_sets_the_share_...`: it assumes the fixture's two test clients' buffers do not reach the strip and that
+  `pointer_to` then `button` hit the compositor path above (a test client that committed a larger buffer would block the strip).
+  `desktop_filter` test assumes a window mapped while desktop 2 is shown lands on desktop 2.
+- **Real run.** Tile Left of Screen with two windows, pick the second: the strip is a dark bar, the cursor over it is left-right,
+  a drag moves the split live and both clients re-lay out; released, nothing else moves; the share stays until Exit Full Screen.
+  A window with a maximum width sits centred in its half on dark grey. Switching Space while the picker is up closes it.
+  Windows of another desktop are not offered. Look at the frame time during a drag on a large window.
+
 ## wave-2026-10-15/shadow
 
 The window shadow stops re-rastering per frame. Written without a compiler (wave rule); the orchestrator builds.

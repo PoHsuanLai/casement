@@ -12,6 +12,7 @@ use casement_core::output::{
     EdidFacts, EdidSerial, ModePreference, OutputConfig, OutputPower, SavedOutputs, ScalePolicy,
 };
 use casement_core::space::{Space, SpaceContent, SpaceIndex, SplitPair, TaskToken};
+use casement_core::window::SplitSide;
 use casement_core::{LeaseId, WindowId};
 use casement_protocols::vocab::{MacMods, PlaceTarget};
 use ds_core::geometry::scale::Scale;
@@ -105,6 +106,10 @@ fn binding_actions() {
     pinned(
         &BindingAction::Desktop(DesktopCommand::Place(PlaceTarget::TopLeft)),
         r#"{"kind":"desktop","v":{"kind":"place","v":"top_left"}}"#,
+    );
+    pinned(
+        &BindingAction::Desktop(DesktopCommand::SplitTile(SplitSide::Right)),
+        r#"{"kind":"desktop","v":{"kind":"split_tile","v":"right"}}"#,
     );
 }
 
