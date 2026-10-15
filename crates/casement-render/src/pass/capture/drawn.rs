@@ -57,13 +57,12 @@ impl DrawnView {
     }
 }
 
-/// The transform that undoes `transform`: the quarter turns swap, every other one is its own.
+/// The transform that undoes `transform`: the two quarter turns swap; a half turn and every
+/// flipped transform (a mirror, then a turn) undo themselves.
 fn inverse(transform: Transform) -> Transform {
     match transform {
         Transform::R90 => Transform::R270,
         Transform::R270 => Transform::R90,
-        Transform::Flipped90 => Transform::Flipped270,
-        Transform::Flipped270 => Transform::Flipped90,
         other => other,
     }
 }
@@ -194,7 +193,7 @@ mod tests {
                 (8, 8),
                 1,
                 (0.4, 0.6, 2.2, 2.2),
-                (0, 1, 2, 2),
+                (0, 1, 3, 2),
             ),
             (
                 "past the image is cut",
