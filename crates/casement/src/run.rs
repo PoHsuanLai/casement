@@ -317,6 +317,10 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
     if let Watchdog::Every(every) = watchdog {
         crate::time::ping_every(&handle, every);
     }
+    // Night light follows the local wall clock; a virtual or stepped clock run has no wall time.
+    if let crate::time::ClockSource::Monotonic(_) = &state.clock {
+        crate::time::tick_every_minute(&handle);
+    }
     let stop = event_loop.get_signal();
     #[cfg(feature = "debug-inject")]
     let wake = Some(debug::WAITING_TURN);

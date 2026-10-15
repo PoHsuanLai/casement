@@ -245,6 +245,13 @@ fn minimising_the_key_window_moves_the_key_and_activation_brings_it_back() {
     );
     assert!(matches!(state_of(&back, 2), WindowState::New(_)));
     assert_eq!(back.model.focus().key, Some(WindowId(2)));
+    assert!(
+        last(&back).iter().any(|e| matches!(
+            e,
+            Effect::Relayout(Cause::Minimise(target)) if target.output == key
+        )),
+        "it flies out of the dock, the way it flew in"
+    );
 }
 
 #[test]

@@ -45,8 +45,8 @@ fn a_corner_is_the_size_of_the_margin_and_reach_at_the_scale() {
             assert_eq!(corner.argb.len() as u32, want * want * 4);
         }
         let strip = (MARGIN + EDGE_DEPTH) * per;
-        assert_eq!((made.edges[0].w, made.edges[0].h), (1, strip));
-        assert_eq!((made.edges[2].w, made.edges[2].h), (strip, 1));
+        assert_eq!((made.edges[0].w, made.edges[0].h), (STRIP_ACROSS, strip));
+        assert_eq!((made.edges[2].w, made.edges[2].h), (strip, STRIP_ACROSS));
     }
 }
 
@@ -63,7 +63,7 @@ fn the_tiles_hold_no_window_sized_buffer() {
         .sum();
     let side = 2 * (MARGIN + made.inner) as usize;
     assert!(
-        bytes <= 4 * side * side * 4 + 4 * 2 * 2 * 100 * 4,
+        bytes <= 4 * side * side * 4 + 4 * STRIP_ACROSS as usize * 2 * 2 * 100 * 4,
         "{bytes}"
     );
 }
@@ -92,8 +92,8 @@ fn a_falling_shadow_is_stronger_below_than_above() {
 #[test]
 fn an_edge_strip_does_not_change_along_its_axis_and_meets_the_corner() {
     let made = tiles(&quire_like(), 10, Scale::ONE);
-    // The strip is one pixel across by construction; the corner's column at its inner end is
-    // the same profile (no seam where they meet).
+    // The strip is the same pixels along its length by construction; the corner's column at its
+    // inner end is the same profile (no seam where they meet).
     let top = &made.edges[0];
     let corner = &made.corners[0];
     let x = corner.w - 1;
@@ -254,7 +254,10 @@ fn assembled(made: &Tiles, width: u32, height: u32) -> Vec<((u32, u32), [u8; 4])
         };
         for dy in 0..s.dest.size.h {
             for dx in 0..s.dest.size.w {
-                let along = |o: i32, d: u32, len: u32| if len == 1 { 0 } else { o as u32 + d };
+                let along = |o: i32, d: u32, len: u32| match len == STRIP_ACROSS {
+                    true => STRIP_PAD,
+                    false => o as u32 + d,
+                };
                 let (sx, sy) = (
                     along(s.src.origin.x, dx, tile.w),
                     along(s.src.origin.y, dy, tile.h),

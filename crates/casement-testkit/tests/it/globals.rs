@@ -40,6 +40,7 @@ fn module_of(kind: GlobalKind) -> &'static str {
         GlobalKind::Fifo => "fifo",
         GlobalKind::CommitTiming => "commit_timing",
         GlobalKind::ContentType => "content_type",
+        GlobalKind::ColorManagement => "color_management",
         GlobalKind::XdgShell => "xdg_shell",
         GlobalKind::XdgDecoration => "xdg_decoration",
         GlobalKind::XdgActivation => "xdg_activation",
@@ -87,7 +88,7 @@ fn module_of(kind: GlobalKind) -> &'static str {
 }
 
 /// Every P0 global kind (the `match` above fails to compile when one is added).
-const KINDS: [GlobalKind; 47] = [
+const KINDS: [GlobalKind; 48] = [
     GlobalKind::Compositor,
     GlobalKind::Subcompositor,
     GlobalKind::Shm,
@@ -100,6 +101,7 @@ const KINDS: [GlobalKind; 47] = [
     GlobalKind::Fifo,
     GlobalKind::CommitTiming,
     GlobalKind::ContentType,
+    GlobalKind::ColorManagement,
     GlobalKind::XdgShell,
     GlobalKind::XdgDecoration,
     GlobalKind::XdgActivation,

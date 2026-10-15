@@ -2,6 +2,7 @@
 //! the source that dispatches its clients, and the loop's data is the `State` itself.
 
 use crate::state::{StartError, State};
+use casement_wayland::color_management::{self, ColorHandler as _};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 use smithay::reexports::wayland_server::Display;
@@ -43,6 +44,7 @@ pub fn attach_display(
                     Ok(n) => dispatched.set(dispatched.get().saturating_add(n as u64)),
                     Err(error) => tracing::warn!(%error, "dispatching clients failed"),
                 }
+                color_management::send_unsent(state.color_part());
                 Ok(PostAction::Continue)
             },
         )
