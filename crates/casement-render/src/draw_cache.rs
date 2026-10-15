@@ -49,6 +49,8 @@ pub(crate) struct DrawCache {
     whole_sets: RefCell<BTreeMap<WholeAt, Rc<WholeShadow>>>,
     /// The cover's id: one for every output (each output has its own damage tracker).
     cover: Id,
+    /// The id of Mission Control's dimming layer (one for every output).
+    dim: Id,
 }
 
 impl Default for DrawCache {
@@ -61,6 +63,7 @@ impl Default for DrawCache {
             wholes: RefCell::new(BTreeMap::new()),
             whole_sets: RefCell::new(BTreeMap::new()),
             cover: Id::new(),
+            dim: Id::new(),
         }
     }
 }
@@ -69,6 +72,11 @@ impl DrawCache {
     /// The cover's element id.
     pub(crate) fn cover_id(&self) -> Id {
         self.cover.clone()
+    }
+
+    /// The dimming layer's element id.
+    pub(crate) fn dim_id(&self) -> Id {
+        self.dim.clone()
     }
 
     /// The raster of `shape` at `scale` (the scale's numerator), made by `make` the first time.
