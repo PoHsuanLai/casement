@@ -4,9 +4,11 @@
 //!
 //! A window's slot holds its content; a server-side frame reaches `reserve` logical pixels above
 //! it at the window's own size, and the renderer draws the frame scaled with the window, so the
-//! box laid out is the scaled content plus the scaled reserve.
+//! box laid out is the scaled content plus the scaled reserve. Below the content the cell keeps
+//! the lower half of the app icon and the title that shows under it (as the Mac does), so an
+//! icon never covers the window beneath.
 
-use super::icon_rect::icon_rect;
+use super::icon_rect::{below, icon_rect};
 use super::spread_fit::{Cell, held, push_apart, shelf, start};
 use crate::{LayoutKnobs, OverviewSlot, SlotKind};
 use casement_core::WindowId;
@@ -126,7 +128,8 @@ impl<'a> Ruler<'a> {
         (i64::from(reserve) * scale + WHOLE - 1) / WHOLE
     }
 
-    /// Each cell's size at `scale`: the scaled content, the frame's reserve and the gap.
+    /// Each cell's size at `scale`: the scaled content, the frame's reserve, the room below for
+    /// the icon and its title, and the gap.
     fn sizes(&self, scale: i64) -> Vec<(i64, i64)> {
         self.entries
             .iter()
@@ -135,6 +138,7 @@ impl<'a> Ruler<'a> {
                     Self::scaled(e.rect.size.w, scale) + self.gap,
                     Self::scaled(e.rect.size.h, scale)
                         + Self::reserved(e.reserve, scale)
+                        + below(scale)
                         + self.gap,
                 )
             })
@@ -296,12 +300,12 @@ mod tests {
         };
         let entries = [framed];
         let ruler = Ruler::of(&entries, &knobs());
-        // name, scale (millionths), the box's height: content + reserve + the gap of 24
+        // name, scale (millionths), the box's height: content + reserve + the room below + the gap of 24
         let cases = [
-            ("whole", 1_000_000, 600 + 28 + 24),
-            ("half", 500_000, 300 + 14 + 24),
-            ("a third rounds up", 333_333, 199 + 10 + 24),
-            ("a tenth", 100_000, 60 + 3 + 24),
+            ("whole", 1_000_000, 600 + 28 + 68 + 24),
+            ("half", 500_000, 300 + 14 + 52 + 24),
+            ("a third rounds up", 333_333, 199 + 10 + 52 + 24),
+            ("a tenth", 100_000, 60 + 3 + 52 + 24),
         ];
         for (name, scale, want) in cases {
             assert_eq!(ruler.sizes(scale)[0].1, want, "{name}");
@@ -326,6 +330,19 @@ mod tests {
             "{:?}",
             slots[0].rect
         );
+    }
+
+    #[test]
+    fn a_cell_keeps_room_under_the_slot_for_the_icon_and_its_title() {
+        let (slots, _) = spread(&[entry(1, rect(300, 300, 640, 400))], USABLE, &knobs());
+        let s = &slots[0];
+        let slot_bottom = s.rect.origin.y + 400;
+        let title_bottom = i64::from(s.icon.origin.y) + i64::from(s.icon.size.h) + 30;
+        assert!(
+            title_bottom <= i64::from(USABLE.origin.y) + 860,
+            "{title_bottom}"
+        );
+        assert!(s.icon.origin.y < slot_bottom + 6, "{:?}", s.icon);
     }
 
     #[test]

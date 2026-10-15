@@ -4,3 +4,4 @@ mod decode;
 mod desktop_entry;
 mod lookup;
 mod support;
+mod theme;
