@@ -16,7 +16,7 @@ publish = false
 casement-core = { path = "../crates/casement-core" }
 casement-layout = { path = "../crates/casement-layout" }
 # From quire's pinned block (docs/workspace-deps.toml), verbatim:
-blitz-dom = { git = "https://github.com/PoHsuanLai/blitz", rev = "1b23fbd9d6465b7ee8acfe8e7deb36a2d5be6fad", default-features = false, features = ["svg", "system-fonts", "custom-widget", "accessibility"] }
+blitz-dom = { git = "https://github.com/PoHsuanLai/blitz", rev = "063ff2b6495cbdc4a410a84e52079914e9637042", default-features = false, features = ["svg", "system-fonts", "custom-widget", "accessibility"] }
 
 [lints.rust]
 unsafe_code = "deny"
