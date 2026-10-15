@@ -35,6 +35,23 @@ pub struct OverviewPick {
 
 impl Model {
     /// Where Mission Control is.
+    ///
+    /// ```
+    /// use casement_core::Model;
+    /// use casement_core::overview::Overview;
+    /// use casement_core::settings::CasementSettings;
+    /// use casement_core::space::SpaceSeed;
+    /// use casement_core::time::Mono;
+    /// use std::time::Duration;
+    ///
+    /// let epoch = Mono(Duration::ZERO);
+    /// let model = Model::new(CasementSettings::defaults(), epoch, SpaceSeed::from_entropy([7; 16]));
+    /// assert_eq!(model.overview(), Overview::Closed);
+    /// // With no output there is nothing to spread: opening changes nothing.
+    /// let (model, effects) = model.toggle_overview(epoch);
+    /// assert_eq!(model.overview(), Overview::Closed);
+    /// assert!(effects.is_empty());
+    /// ```
     pub fn overview(&self) -> Overview {
         self.overview
     }
