@@ -9,14 +9,15 @@
 
 use super::frames;
 use super::grab;
+use super::overview;
 use super::scene::{Hit, hit_test, stack};
 use crate::exec;
 use crate::state::{PointerStart, State};
 use casement_core::focus::{HitPart, Press};
 use casement_core::geometry::{LogicalPoint, SubPoint, SubPx};
 use casement_core::input::{
-    AxisFrame, BindingAction, Chord, Edge, InputEvent, InputKind, InputTarget, InputUse, KeyCode,
-    Keysym, Origin, Reach, Resolved, TouchStep, resolve,
+    AxisFrame, BindingAction, Chord, DesktopCommand, Edge, InputEvent, InputKind, InputTarget,
+    InputUse, KeyCode, Keysym, Origin, Reach, Resolved, TouchStep, resolve,
 };
 use casement_core::lock::LockState;
 use casement_core::shell::ShellNote;
@@ -35,10 +36,25 @@ use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::SERIAL_COUNTER;
 
+/// The Escape key's keysym.
+const ESCAPE: u32 = 0xff1b;
+
 /// Delivers one event. A refused or unhandled event is dropped (a delivery that fails is
 /// logged: the loop degrades, it does not stop).
 pub(super) fn deliver(state: &mut State, event: &InputEvent) {
     let seat = state.wl.seat.seat.clone();
+    // Mission Control keeps scrolls, gestures and touches from the windows.
+    let others = matches!(
+        event.kind,
+        InputKind::Axis(_)
+            | InputKind::Swipe(_)
+            | InputKind::Pinch(_)
+            | InputKind::Hold(_)
+            | InputKind::Touch(_)
+    );
+    if others && overview::takes_input(state) {
+        return;
+    }
     match &event.kind {
         InputKind::Key { code, edge } => key(state, &seat, event, *code, *edge),
         InputKind::Motion { delta } => {
@@ -259,6 +275,16 @@ fn deliver_key(state: &mut State, seat: &Seat<State>, key: KeyDelivery) {
             }
             return FilterResult::Intercept(None);
         }
+        // Escape leaves Mission Control (the same key as its command, which toggles).
+        let escape = handle
+            .raw_latin_sym_or_raw_current_sym()
+            .is_some_and(|sym| sym.raw() == ESCAPE)
+            && chord_mods(mods) == MacMods::NONE;
+        if live && escape && overview::escape_leaves(state) {
+            return FilterResult::Intercept(Some(BindingAction::Desktop(
+                DesktopCommand::MissionControl,
+            )));
+        }
         let chord = handle.raw_latin_sym_or_raw_current_sym().map(|sym| Chord {
             mods: chord_mods(mods),
             key: Keysym(sym.raw()),
@@ -381,6 +407,10 @@ fn motion(
     if grab::follow(state, logical(at)) == grab::Follow::Taken {
         return;
     }
+    if overview::takes_input(state) {
+        mission_control_motion(state, seat, event, at, delta);
+        return;
+    }
     let stacked = stack(state);
     let over = frames::under(state, &stacked, logical(at));
     let under = match over {
@@ -398,6 +428,29 @@ fn motion(
     state.render.chrome.cursor_at = logical(at);
     let delivery = PointerDelivery::Motion {
         focus: under.map(|(_, surface)| surface),
+        at: sub_of(at),
+        delta,
+        time: event.at,
+    };
+    log(seat::apply_pointer(seat, state, delivery));
+}
+
+/// The pointer moves while Mission Control has it: no client is under it, the seat follows it
+/// and the window it is over is the hovered one.
+fn mission_control_motion(
+    state: &mut State,
+    seat: &Seat<State>,
+    event: &InputEvent,
+    at: (f64, f64),
+    delta: SubPoint,
+) {
+    if refused(state, event, &InputTarget::Nothing, InputUse::Motion) {
+        return;
+    }
+    overview::hover(state, logical(at));
+    state.render.chrome.cursor_at = logical(at);
+    let delivery = PointerDelivery::Motion {
+        focus: None,
         at: sub_of(at),
         delta,
         time: event.at,
@@ -443,6 +496,21 @@ fn press_edge(
     let Some(here) = pointer_at(seat) else {
         return;
     };
+    if edge == Edge::Press && overview::takes_input(state) {
+        // Mission Control takes the press (a pick or a leave); no client sees it or its release.
+        state.wl.seat.taken = std::mem::take(&mut state.wl.seat.taken).take_button(button);
+        if !refused(state, event, &InputTarget::Nothing, InputUse::Press) {
+            overview::press(
+                state,
+                event,
+                LogicalPoint {
+                    x: here.0,
+                    y: here.1,
+                },
+            );
+        }
+        return;
+    }
     let (over, under) = frames::pick(
         state,
         LogicalPoint {
@@ -675,15 +743,19 @@ pub(super) fn refocus(state: &mut State) {
     let Some(here) = pointer_at(&seat) else {
         return;
     };
-    let under = frames::pick(
-        state,
-        LogicalPoint {
-            x: here.0,
-            y: here.1,
-        },
-    )
-    .1
-    .map(|(_, at)| at);
+    // Mission Control has the pointer: no window is under it.
+    let under = match overview::takes_input(state) {
+        true => None,
+        false => frames::pick(
+            state,
+            LogicalPoint {
+                x: here.0,
+                y: here.1,
+            },
+        )
+        .1
+        .map(|(_, at)| at),
+    };
     let now = state.clock.now();
     log(seat::apply_refocus(&seat, state, under, now));
 }

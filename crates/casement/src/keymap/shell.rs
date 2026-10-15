@@ -27,6 +27,10 @@ const ROWS: &[Row] = &[
         Does::Itself(DesktopCommand::ForceQuitPanel),
     ),
     (
+        StandardAction::MissionControl,
+        Does::Itself(DesktopCommand::MissionControl),
+    ),
+    (
         StandardAction::SpaceLeft,
         Does::Itself(DesktopCommand::SwitchSpace(SpaceStep::Previous)),
     ),
@@ -157,6 +161,11 @@ mod tests {
                 "force quit",
                 "option+cmd+Escape",
                 itself(DesktopCommand::ForceQuitPanel),
+            ),
+            (
+                "Mission Control",
+                "ctrl+Up",
+                itself(DesktopCommand::MissionControl),
             ),
             ("Space 1", "ctrl+1", space(1)),
             ("Space 9", "ctrl+9", space(9)),

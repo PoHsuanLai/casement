@@ -318,6 +318,7 @@ fn every_kind_of_binding_survives_the_document() {
         BindingAction::Desktop(DesktopCommand::HideOthers),
         BindingAction::Desktop(DesktopCommand::QuitActive),
         BindingAction::Desktop(DesktopCommand::ForceQuitPanel),
+        BindingAction::Desktop(DesktopCommand::MissionControl),
         BindingAction::Desktop(DesktopCommand::SwitchSpace(SpaceStep::Previous)),
         BindingAction::Desktop(DesktopCommand::SwitchSpace(SpaceStep::Next)),
         BindingAction::Desktop(DesktopCommand::SwitchSpace(SpaceStep::Number(3))),

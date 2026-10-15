@@ -199,6 +199,7 @@ fn command() -> impl Strategy<Value = DesktopCommand> {
         Just(DesktopCommand::HideOthers),
         Just(DesktopCommand::QuitActive),
         Just(DesktopCommand::ForceQuitPanel),
+        Just(DesktopCommand::MissionControl),
         Just(DesktopCommand::SwitchSpace(SpaceStep::Next)),
         Just(DesktopCommand::SwitchSpace(SpaceStep::Previous)),
         (1u8..4).prop_map(|n| DesktopCommand::SwitchSpace(SpaceStep::Number(n))),

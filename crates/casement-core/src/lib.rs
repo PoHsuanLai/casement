@@ -38,6 +38,7 @@ pub mod input;
 pub mod layer;
 pub mod lock;
 pub mod output;
+pub mod overview;
 pub mod policy;
 pub mod settings;
 pub mod shell;
@@ -59,4 +60,4 @@ pub use ids::{
     PopupKey, WindowId,
 };
 pub use invariants::InvariantBreak;
-pub use model::{Model, OpeningRoom, OutputBook, OutputState};
+pub use model::{Model, OpeningRoom, OutputBook, OutputState, OverviewPick};

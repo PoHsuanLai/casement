@@ -135,6 +135,7 @@ impl Model {
                 Some(output) => self.switch(&output, step),
                 None => Moved::of(self),
             },
+            DesktopCommand::MissionControl => self.toggled_overview(),
             DesktopCommand::Place(target) => match key {
                 Some(window) => self.place(&window, target),
                 None => Moved::of(self),

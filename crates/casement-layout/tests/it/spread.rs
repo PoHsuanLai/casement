@@ -53,7 +53,6 @@ fn mission_control(spec: SceneSpec) -> SceneSpec {
 
 proptest! {
     #[test]
-    #[ignore = "P3-Z"]
     fn the_spread_separates_windows_or_reports_overflow(
         sizes in proptest::collection::vec((320u32..1000, 220u32..720, 0i32..1500, 0i32..800), 1..50),
     ) {

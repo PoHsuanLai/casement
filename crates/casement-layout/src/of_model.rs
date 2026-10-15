@@ -1,13 +1,15 @@
 //! The spec of a model: the one place layout reads casement-core's model.
 
 use crate::{
-    OutputSpec, SceneMode, SceneSpec, SpaceArrangement, SpaceSpec, StackIndex, WindowPlacement,
-    WindowSpec,
+    OutputSpec, OverviewKind, SceneMode, SceneSpec, SpaceArrangement, SpaceSpec, StackIndex,
+    WindowPlacement, WindowSpec,
 };
 use casement_core::app::AppVisibility;
+use casement_core::overview::Overview;
 use casement_core::space::{Space, SpaceContent};
 use casement_core::window::{SpacePlace, Window, WindowState};
 use casement_core::{Model, OutputKey, OutputState, WindowId};
+use porter_core::SpaceId;
 use std::collections::BTreeMap;
 
 /// What `model` asks layout to arrange: every plugged output with its usable area (after
@@ -81,9 +83,21 @@ fn output_spec(
         full,
         usable,
         scale: state.config.scale,
-        mode: SceneMode::Desktop { shown },
+        mode: mode_of(model.overview(), shown),
         spaces,
     })
+}
+
+/// What an output shows while Mission Control is `overview`: the spread while the windows fly
+/// out and rest there, the desktop otherwise (the windows fly back to their desktop targets).
+fn mode_of(overview: Overview, shown: SpaceId) -> SceneMode {
+    match overview {
+        Overview::Entering | Overview::Open => SceneMode::Overview {
+            shown,
+            kind: OverviewKind::MissionControl,
+        },
+        _ => SceneMode::Desktop { shown },
+    }
 }
 
 /// Whether a Space is the one its output shows.

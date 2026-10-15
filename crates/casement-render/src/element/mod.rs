@@ -9,6 +9,7 @@ mod frame;
 mod geometry;
 mod layer;
 mod lock_cover;
+mod overview;
 mod popup;
 mod rounded_clip;
 mod shared;
@@ -22,13 +23,14 @@ pub use flight::{
     FlightDraw, at_rest, choose, drawn_content, genie_elements, rest_place, scale_ratio,
     scaled_content, strip_plans,
 };
-pub use frame::{FrameDraw, TitleDraw, frame_elements};
+pub use frame::{FrameDraw, TitleDraw, frame_elements, label_element};
 pub(crate) use frame::{ShadowKey, ShadowSet, Tiles};
 #[cfg(test)]
 pub(crate) use frame::{shadow_key, shadow_tiles};
 pub use geometry::{geometry_size, surface_origin, surface_origin_logical};
 pub use layer::layer_elements;
 pub use lock_cover::LockCoverElement;
+pub use overview::{dim_elements, ring_elements};
 pub use popup::{popup_elements, popup_surfaces};
 pub use rounded_clip::{ClipShape, RoundedClipElement};
 pub use shared::SharedElement;

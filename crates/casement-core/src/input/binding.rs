@@ -56,6 +56,8 @@ pub enum DesktopCommand {
     SwitchSpace(SpaceStep),
     /// Place the key window.
     Place(PlaceTarget),
+    /// Open Mission Control, or close it when it is open.
+    MissionControl,
 }
 
 /// Which Space to show.

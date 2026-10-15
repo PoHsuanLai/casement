@@ -44,6 +44,8 @@ pub enum TimerKey {
     LeaseYield(LeaseId),
     /// A session locker has had as long as it may to make its first lock surface.
     LockWait,
+    /// Mission Control's windows have had their time to fly in or out.
+    OverviewSettle,
 }
 
 /// A timer: when, and what for.

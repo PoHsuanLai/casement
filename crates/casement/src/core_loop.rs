@@ -34,6 +34,7 @@ mod idle;
 mod ime;
 mod input;
 mod menu;
+mod overview;
 mod presence;
 mod scene;
 mod surfaces;
@@ -136,11 +137,13 @@ pub fn frame(state: &mut State, output: &OutputKey) {
         mode: config.mode.size,
     };
     let styles = frames::drawn(state);
-    let titles = titles::of(state, &frame, &view, &styles);
+    let overview = overview::draw(state, &view);
+    let titles = titles::of(state, &frame, &view, &styles, &overview);
     let layers = LayerDraw {
         frames: styles,
         titles,
         minimise_effect: state.core.model.settings().windows.minimise_effect,
+        overview,
         ..layers_on(&state.core.model, output)
     };
     let capture = tty::capture_watch(&state.wl.image_capture.book, &state.wl.screencopy, output);
