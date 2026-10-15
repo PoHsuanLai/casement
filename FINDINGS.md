@@ -3453,6 +3453,33 @@ on hardware**: nothing was timed; whether the 4K read-back stall is gone is for 
   (`pub(super)` in `frame.rs` makes them visible in `element`); `Scale::numerator()`/`Scale::DENOMINATOR` as `raster.rs` uses them;
   `LogicalSize::ZERO`; `model.layers().usable_area(&output, full)` public as `of_model.rs` uses it; `Option<Drag>::filter` (Drag is
   `Copy`); the new `Model::output_rects` (added to `model/query.rs`).
+## cas23-quit: quit, force quit, not responding (P3-QU, 2026-10-15)
+
+- Not responding: input pings the key window's client (`app/quit.rs` `ping_plan`): none while a
+  ping is out or went within 2 s; unanswered after 4 s marks the app `NotResponding`; a pong clears
+  it. Pings follow input to the key window only; the window under the pointer is not pinged, and a
+  hung app is found only when the person types or clicks into its key window (macOS finds it on
+  any click on its window). The model mirrors the timers it arms (`TimerKey::Ping`, new
+  `TimerKey::PingGap`) in its own book so the next input can see them.
+- The busy cursor over a not-responding app's windows is NOT drawn: casement does not draw
+  cursors per surface yet. The state is in the model (`AppLife::NotResponding`) and published to
+  `quire_desktop_v1` (app life and window responsiveness).
+- Quit (Cmd+Q, `desktop_app.quit`): asks every window to close, shows the app as quitting for
+  3 s, then as running again if it is still here (a "Save changes?" sheet). Departure from macOS:
+  an app with no window cannot be asked to quit (there is no window to close and no quit request in
+  `quire_window_v1`); it only shows as quitting for the grace.
+- Force Quit panel (Option-Command-Escape): `ShellNote::ForceQuitPanel(rows)` goes to the shell
+  edge, which has no event to carry it yet (see the interface ask in the lane report); the shell
+  can already draw the list from `quire_desktop_v1` and call `desktop_app.force_quit`.
+- Force quit (`desktop_app.force_quit`): SIGTERM now, SIGKILL 3 s later if the app is still here.
+  macOS kills at once; the TERM first is the plan's. Processes are those of the connections that
+  serve the app and no other app, from the socket credentials (`Client::get_credentials`), only
+  for connections through the public socket. Left alone on purpose: sandboxed clients (their pid
+  is in another namespace), the shell's and agent connections, and a connection that carries
+  windows of several apps (xwayland-satellite: killing it would end every X11 app). X11 apps are
+  therefore not force-quittable until XWayland windows carry `_NET_WM_PID`.
+- casement does not launch apps in a transient scope (spawn.rs starts a plain child), so there
+  is no app scope to signal; the credential pid is the only handle.
 ## wave-2026-10-15/wlcs5
 
 Written without a build or a wlcs run (rule of the lane); the orchestrator's run settles it.

@@ -1,7 +1,7 @@
 //! The closed set of outputs of [`crate::Model::step`]: `casement::exec` is the one place
 //! they are carried out.
 
-use crate::app::AppKey;
+use crate::app::{AppKey, Termination};
 use crate::cause::Cause;
 use crate::desktop::DesktopNote;
 use crate::event::ResizeEdges;
@@ -114,6 +114,8 @@ pub enum Effect {
     Desktop(DesktopNote),
     /// Record or send this to the shell (`quire_shell_v1`; P2-Z).
     Shell(ShellNote),
+    /// Stop an app's processes with a signal (force quit; P3-QU).
+    Terminate(Termination),
 }
 
 /// A toplevel configure.
@@ -246,8 +248,6 @@ pub enum CoreNote {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum Deferred {
-    /// Force quit: the quit machine (P3-Z).
-    ForceQuit,
     /// Reopen an app with no windows: the launch intent (P4).
     Reopen,
 }

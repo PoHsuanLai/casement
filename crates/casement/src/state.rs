@@ -59,6 +59,8 @@ pub struct State {
     pub seams: Seams,
     /// X11 clients through xwayland-satellite (P1-X1 starts it; off until then).
     pub xwayland: XwaylandState,
+    /// The process behind each public connection, for force quit.
+    pub processes: crate::clients::Processes,
     /// The display, for creating globals, inserting clients and sending events. (Not in the
     /// plan's sketch; the handlers need it: FINDINGS.)
     pub display: DisplayHandle,
@@ -362,6 +364,7 @@ impl State {
             clock,
             seams,
             xwayland: XwaylandState::Off,
+            processes: crate::clients::Processes::default(),
             display: dh,
             event_loop: event_loop.clone(),
             #[cfg(feature = "testing")]
