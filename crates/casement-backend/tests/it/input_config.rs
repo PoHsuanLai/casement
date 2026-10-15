@@ -39,3 +39,34 @@ fn the_xkb_names_are_the_stored_ones() {
     assert_eq!(names.options, "grp:alt_shift_toggle");
     assert_eq!(names.rules, "");
 }
+
+#[test]
+fn every_pointing_class_gets_natural_scroll_from_the_defaults() {
+    let settings = PointerSettings::defaults();
+    // A mouse and a trackball are both `Pointer`; libinput calls a pad with finger taps a touchpad.
+    let table = [
+        (DeviceClass::Pointer, Enabled::On),
+        (DeviceClass::Touchpad, Enabled::On),
+    ];
+    for (class, natural) in table {
+        assert_eq!(
+            device_settings(&settings, class).natural_scroll,
+            natural,
+            "{class:?}"
+        );
+    }
+}
+
+#[test]
+fn turning_natural_scroll_off_for_mice_leaves_the_touchpad_natural() {
+    let mut settings = PointerSettings::defaults();
+    settings.mouse.natural_scroll = Enabled::Off;
+    assert_eq!(
+        device_settings(&settings, DeviceClass::Pointer).natural_scroll,
+        Enabled::Off
+    );
+    assert_eq!(
+        device_settings(&settings, DeviceClass::Touchpad).natural_scroll,
+        Enabled::On
+    );
+}

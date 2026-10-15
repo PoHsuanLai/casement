@@ -19,6 +19,7 @@ mod feedback;
 mod node;
 mod plan;
 mod policy;
+mod route;
 
 pub use display::{DisplayKind, keep_displays};
 pub use feedback::{
@@ -27,3 +28,4 @@ pub use feedback::{
 pub use node::{BootVga, ByPathId, DrmNodeId, GpuFacts, VendorFact};
 pub use plan::{PlanRefusal, RenderPlan, plan_for};
 pub use policy::GpuChoice;
+pub use route::OutputRoute;

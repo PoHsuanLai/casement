@@ -4,7 +4,7 @@ use casement_backend::gpu::{GpuError, GpuHandle, RenderNodes};
 use casement_backend::headless::ConnectorEvent;
 use casement_backend::tty::{
     DeviceEvent, DevicePath, SeatState, SessionNote, TtyBackend, TtyNote, TtySeams, TtySession,
-    VtNumber, vt_of_keysym,
+    VtHeld, VtNumber, vt_of_chord, vt_of_keysym,
 };
 use casement_core::gpu::{DrmNodeId, GpuChoice, GpuFacts};
 use casement_core::input::Keysym;
@@ -123,6 +123,36 @@ fn the_vt_chords_map_to_vt_numbers() {
     assert_eq!(vt_of_keysym(Keysym(0x1008fe0d)), None);
     assert_eq!(vt_of_keysym(Keysym(0x1008fe00)), None);
     assert_eq!(vt_of_keysym(Keysym(0x20)), None);
+}
+
+/// (held, modified, raw, expected)
+type ChordRow<'a> = (VtHeld, &'a [Keysym], &'a [Keysym], Option<VtNumber>);
+
+#[test]
+fn ctrl_alt_and_a_function_key_ask_for_that_vt_when_the_keymap_names_none() {
+    let f = |n: u32| [Keysym(0xffbd + n)];
+    let named = [Keysym(0x1008fe05)];
+    let table: [ChordRow; 7] = [
+        (VtHeld::CtrlAlt, &named, &f(5), Some(VtNumber(5))),
+        (VtHeld::CtrlAlt, &f(1), &f(1), Some(VtNumber(1))),
+        (VtHeld::CtrlAlt, &[], &f(12), Some(VtNumber(12))),
+        (
+            VtHeld::CtrlAlt,
+            &[Keysym(0x1008ff11)],
+            &[Keysym(0x1008ff11)],
+            None,
+        ),
+        (VtHeld::Other, &f(2), &f(2), None),
+        (VtHeld::Other, &named, &f(5), Some(VtNumber(5))),
+        (VtHeld::CtrlAlt, &[Keysym(0xffca)], &[Keysym(0xffca)], None),
+    ];
+    for (held, modified, raw, want) in table {
+        assert_eq!(
+            vt_of_chord(held, modified, raw),
+            want,
+            "{held:?} {modified:?}"
+        );
+    }
 }
 
 #[test]

@@ -244,7 +244,15 @@ fn deliver_key(state: &mut State, seat: &Seat<State>, key: KeyDelivery) {
         }
         // A VT chord is the seat's, not a binding's: it works under a lock and a shortcut
         // inhibitor (P1-T).
-        if super::tty::vt_chord(state, &handle.modified_syms(), key.edge).is_some() {
+        if super::tty::vt_chord(
+            state,
+            mods,
+            &handle.modified_syms(),
+            &handle.raw_syms(),
+            key.edge,
+        )
+        .is_some()
+        {
             if key.edge == Edge::Press {
                 state.wl.seat.taken = std::mem::take(&mut state.wl.seat.taken).take_key(key.code);
             }

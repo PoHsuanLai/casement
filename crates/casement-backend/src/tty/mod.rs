@@ -74,7 +74,7 @@ pub use session::{SeatState, SessionNote, TtySession};
 pub use sleep::{SleepInbox, SleepLink, SleepSettled, sleep_channel};
 pub use surface::{DirectCandidate, Presented, QueueOutcome, QueuedFrame, ScanoutSurface};
 pub use udev::{DeviceEvent, DevicePath, DeviceSource};
-pub use vt::{VtNumber, vt_of_keysym};
+pub use vt::{VtHeld, VtNumber, vt_of_chord, vt_of_keysym};
 pub use writeback::{FLIPS_TO_WAIT, RawCapture, Writeback, WritebackError, WritebackMode};
 
 #[cfg(feature = "tty")]
@@ -94,7 +94,9 @@ use crate::backend::BackendError;
 use crate::gpu::{FormatSource, RenderNodes};
 use crate::headless::{ConnectorEvent, FrameSource, PresentedFrame};
 use crate::input::{Applied, DeviceSettings, FedInput, InputFeed, PollContext};
-use casement_core::gpu::{DisplayKind, GpuChoice, RenderPlan, keep_displays, plan_for};
+use casement_core::gpu::{
+    DisplayKind, GpuChoice, OutputRoute, RenderPlan, keep_displays, plan_for,
+};
 use casement_core::input::Keysym;
 use casement_core::output::{OutputConfig, OutputPower};
 use casement_core::time::Mono;
@@ -355,6 +357,12 @@ impl TtyBackend {
         Ok(Some(vt))
     }
 
+    /// Asks the session for VT `vt`.
+    pub fn switch_to(&mut self, vt: VtNumber) -> Result<(), BackendError> {
+        self.seams.session.switch_vt(vt)?;
+        Ok(())
+    }
+
     /// A switch the session itself reported as wanted; a refusal is logged, not fatal.
     fn ask_for_vt(&mut self, vt: VtNumber) {
         if let Err(fault) = self.seams.session.switch_vt(vt) {
@@ -444,6 +452,14 @@ impl TtyBackend {
             self.readback.draw(output, seq, now, source)?;
         }
         Ok(shown)
+    }
+
+    /// The route `output`'s frames take between GPUs; none without a plan or for a connector it
+    /// does not place. The frame loop draws an output with the renderer of
+    /// `route.renders_on()` and copies to `route.scans_out_on()` when they differ; today every
+    /// output is drawn by its scanout GPU (FINDINGS "wave-2026-10-15/session").
+    pub fn route_of(&self, output: &OutputName) -> Option<OutputRoute> {
+        self.plan.as_ref()?.route_of(output)
     }
 
     /// How many frames were queued over the run, on every output.
