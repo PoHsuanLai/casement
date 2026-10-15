@@ -30,16 +30,16 @@ pub enum ShmWriteError {
 
 /// Where a buffer sits in its pool, in bytes and pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Layout {
-    offset: usize,
-    stride: usize,
-    width: usize,
-    height: usize,
+pub(super) struct Layout {
+    pub(super) offset: usize,
+    pub(super) stride: usize,
+    pub(super) width: usize,
+    pub(super) height: usize,
 }
 
 impl Layout {
     /// The layout `data` describes, or `Layout` if a number is negative.
-    fn of(data: &BufferData) -> Result<Layout, ShmWriteError> {
+    pub(super) fn of(data: &BufferData) -> Result<Layout, ShmWriteError> {
         let number = |n: i32| usize::try_from(n).map_err(|_| ShmWriteError::Layout);
         Ok(Layout {
             offset: number(data.offset)?,

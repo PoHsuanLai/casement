@@ -18,9 +18,13 @@ use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::ExportMem;
 use smithay::utils::{Buffer, Rectangle};
 
+mod bitmap;
 mod crop;
+mod dmabuf;
 mod shm;
 
+pub use bitmap::{ArgbImage, ReadError};
+pub use dmabuf::{read_dmabuf, write_dmabuf};
 pub use shm::{ShmWriteError, write_frame};
 
 /// Whether the cursor is in the captured image.

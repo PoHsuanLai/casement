@@ -2,6 +2,7 @@
 
 use casement_core::geometry::PhysicalRect;
 use casement_core::time::Mono;
+use smithay::backend::allocator::Fourcc;
 use smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::zwlr_screencopy_frame_v1::{
     Flags, ZwlrScreencopyFrameV1,
 };
@@ -14,12 +15,15 @@ const DAMAGE_SINCE: u32 = 2;
 const BUFFER_DONE_SINCE: u32 = 3;
 
 /// The buffers the client may copy into: `argb8888` always (the frame's own bytes) and, from
-/// version 3 where several are allowed, `xrgb8888`.
-pub(super) fn announce(frame: &ZwlrScreencopyFrameV1, area: PhysicalRect) {
+/// version 3 where several are allowed, `xrgb8888` and one `linux_dmabuf` for each of `dmabuf`.
+pub(super) fn announce(frame: &ZwlrScreencopyFrameV1, area: PhysicalRect, dmabuf: &[Fourcc]) {
     let stride = area.w.saturating_mul(4);
     frame.buffer(Format::Argb8888, area.w, area.h, stride);
     if frame.version() >= BUFFER_DONE_SINCE {
         frame.buffer(Format::Xrgb8888, area.w, area.h, stride);
+        for code in dmabuf {
+            frame.linux_dmabuf(*code as u32, area.w, area.h);
+        }
         frame.buffer_done();
     }
 }

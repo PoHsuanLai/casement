@@ -49,6 +49,23 @@ impl DmabufPart {
         self.offered.as_ref().map(|offer| offer.main_device)
     }
 
+    /// Every format and modifier the global accepts from clients, over all tranches, each once
+    /// in the order offered; none while nothing is advertised.
+    pub fn accepted(&self) -> Vec<Format> {
+        let mut seen = Vec::new();
+        for format in self
+            .offered
+            .iter()
+            .flat_map(|offer| offer.tranche_list())
+            .flat_map(|tranche| tranche.formats)
+        {
+            if !seen.contains(&format) {
+                seen.push(format);
+            }
+        }
+        seen
+    }
+
     /// The device a buffer of `format` is tagged with (A5): the target of the tranche that
     /// offers it, or the main device for a format no tranche names.
     pub fn source_device(&self, format: Format) -> Option<MainDevice> {

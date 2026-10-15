@@ -9,10 +9,11 @@
 use super::FrameSource;
 use crate::backend::BackendError;
 use casement_core::geometry::{PhysicalRect, PhysicalSize};
-use casement_render::pass::render_window;
+use casement_render::pass::{ArgbImage, CapturedFrame, read_dmabuf, render_window, write_dmabuf};
 use casement_render::{CasementElement, Compositor, render_output};
 use ds_core::geometry::scale::Scale;
-use smithay::backend::allocator::Fourcc;
+use smithay::backend::allocator::dmabuf::Dmabuf;
+use smithay::backend::allocator::{Format, Fourcc, Modifier};
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::pixman::PixmanRenderer;
@@ -112,6 +113,71 @@ impl HeadlessRenderer {
             _ => Err(BackendError::CanvasMismatch),
         }
     }
+}
+
+impl HeadlessRenderer {
+    /// The dma-buf formats and modifiers this renderer can draw a capture into: `Argb8888` and
+    /// `Xrgb8888` of the set it binds as a render target (pixman: linear only). Empty for the
+    /// dummy renderer, which binds nothing.
+    pub fn capture_formats(&self) -> Vec<Format> {
+        let set = match self {
+            #[cfg(feature = "testing")]
+            HeadlessRenderer::Dummy(_) => None,
+            HeadlessRenderer::Pixman(renderer) => Bind::<Dmabuf>::supported_formats(&**renderer),
+            HeadlessRenderer::Gles(renderer) => Bind::<Dmabuf>::supported_formats(&**renderer),
+        };
+        set.map(|set| {
+            set.iter()
+                .filter(|format| matches!(format.code, Fourcc::Argb8888 | Fourcc::Xrgb8888))
+                .copied()
+                .collect()
+        })
+        .unwrap_or_default()
+    }
+
+    /// Draws `frame` into the client's dma-buf `target` (a capture's buffer).
+    pub fn write_dmabuf(
+        &mut self,
+        target: &mut Dmabuf,
+        frame: &CapturedFrame,
+    ) -> Result<(), BackendError> {
+        match self {
+            #[cfg(feature = "testing")]
+            HeadlessRenderer::Dummy(_) => Err(casement_render::RenderError::NoTarget.into()),
+            HeadlessRenderer::Pixman(renderer) => {
+                write_dmabuf(renderer.as_mut(), target, frame).map_err(BackendError::from)
+            }
+            HeadlessRenderer::Gles(renderer) => {
+                write_dmabuf(renderer.as_mut(), target, frame).map_err(BackendError::from)
+            }
+        }
+    }
+
+    /// Reads a client's dma-buf `source` (a cursor surface's buffer) back.
+    pub fn read_dmabuf(&mut self, source: &Dmabuf) -> Result<ArgbImage, BackendError> {
+        match self {
+            #[cfg(feature = "testing")]
+            HeadlessRenderer::Dummy(_) => Err(casement_render::RenderError::NoTarget.into()),
+            HeadlessRenderer::Pixman(renderer) => {
+                read_dmabuf(renderer.as_mut(), source).map_err(BackendError::from)
+            }
+            HeadlessRenderer::Gles(renderer) => {
+                read_dmabuf(renderer.as_mut(), source).map_err(BackendError::from)
+            }
+        }
+    }
+}
+
+/// The formats a software renderer draws a capture into when it has not been started: linear
+/// `Argb8888` and `Xrgb8888`, what pixman binds.
+pub fn linear_capture_formats() -> Vec<Format> {
+    [Fourcc::Argb8888, Fourcc::Xrgb8888]
+        .into_iter()
+        .map(|code| Format {
+            code,
+            modifier: Modifier::Linear,
+        })
+        .collect()
 }
 
 impl HeadlessRenderer {

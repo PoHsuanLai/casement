@@ -17,7 +17,7 @@ pub use input::HeadlessInput;
 #[cfg(feature = "tty")]
 pub(crate) use output_set::transform_of;
 pub use output_set::{OutputSet, VirtualOutput};
-pub use renderer::{HeadlessRenderer, SoftRenderer};
+pub use renderer::{HeadlessRenderer, SoftRenderer, linear_capture_formats};
 pub use vblank::VblankSource;
 pub use virtual_output::{EdidSource, FixtureName, GpuId, SpecError, VirtualOutputSpec};
 
@@ -207,6 +207,28 @@ impl HeadlessBackend {
     ) -> Result<RgbaFrame, BackendError> {
         let bytes = self.renderer.offscreen(size, scale, source)?;
         Ok(RgbaFrame { size, bytes })
+    }
+
+    /// The dma-buf formats a capture can be drawn into by this backend's renderer.
+    pub fn capture_formats(&self) -> Vec<smithay::backend::allocator::Format> {
+        self.renderer.capture_formats()
+    }
+
+    /// Draws `frame` into a client's dma-buf `target` (a capture's buffer).
+    pub fn write_dmabuf(
+        &mut self,
+        target: &mut smithay::backend::allocator::dmabuf::Dmabuf,
+        frame: &casement_render::pass::CapturedFrame,
+    ) -> Result<(), BackendError> {
+        self.renderer.write_dmabuf(target, frame)
+    }
+
+    /// Reads a client's dma-buf `source` back (a cursor surface's buffer).
+    pub fn read_dmabuf(
+        &mut self,
+        source: &smithay::backend::allocator::dmabuf::Dmabuf,
+    ) -> Result<casement_render::pass::ArgbImage, BackendError> {
+        self.renderer.read_dmabuf(source)
     }
 
     /// The virtual input devices.

@@ -493,6 +493,29 @@ impl TtyBackend {
         self.readback.last_frame(output)
     }
 
+    /// The dma-buf formats a capture can be drawn into (the shadow's renderer binds linear
+    /// buffers only).
+    pub fn capture_formats(&self) -> Vec<smithay::backend::allocator::Format> {
+        self.readback.capture_formats()
+    }
+
+    /// Draws `frame` into a client's dma-buf `target` through the software renderer.
+    pub fn write_dmabuf(
+        &mut self,
+        target: &mut smithay::backend::allocator::dmabuf::Dmabuf,
+        frame: &casement_render::pass::CapturedFrame,
+    ) -> Result<(), BackendError> {
+        self.readback.write_dmabuf(target, frame)
+    }
+
+    /// Reads a client's dma-buf `source` back through the software renderer.
+    pub fn read_dmabuf(
+        &mut self,
+        source: &smithay::backend::allocator::dmabuf::Dmabuf,
+    ) -> Result<casement_render::pass::ArgbImage, BackendError> {
+        self.readback.read_dmabuf(source)
+    }
+
     /// Draws `source` alone into a fresh image of `size` at `scale` through the software
     /// renderer and reads it back: a window's pixels for window capture. A client buffer pixman
     /// cannot import (a dma-buf of a GPU) is missing from it, as from the capture shadow.

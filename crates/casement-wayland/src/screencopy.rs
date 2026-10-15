@@ -10,7 +10,8 @@
 //! on the output since the frame the same client last got of it, and reports what changed
 //! ([`crate::image_capture::DamageLogs`]; the whole area for a client's first frame). The
 //! cursor is in the frame when the request's `overlay_cursor` is not 0 and left out when it is
-//! ([`CursorPaint`]); dma-buf buffers are not offered. Visible to the same connections as `ext_image_copy_capture` (the I7 table's
+//! ([`CursorPaint`]); dma-buf buffers are offered through `linux_dmabuf` when the root names formats
+//! ([`ScreencopyOutput::dmabuf`]). Visible to the same connections as `ext_image_copy_capture` (the I7 table's
 //! `ImageCapture`): the public socket and the shell, not a sandbox.
 
 mod region;
@@ -25,6 +26,7 @@ use casement_core::geometry::{PhysicalRect, PhysicalSize, Transform};
 use casement_core::policy::GlobalKind;
 use casement_core::time::Mono;
 use ds_core::geometry::scale::Scale;
+use smithay::backend::allocator::{Buffer as AllocBuffer, Fourcc};
 use smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::{
     zwlr_screencopy_frame_v1::{self, ZwlrScreencopyFrameV1},
     zwlr_screencopy_manager_v1::{self, ZwlrScreencopyManagerV1},
@@ -36,6 +38,7 @@ use smithay::reexports::wayland_server::protocol::wl_shm::Format;
 use smithay::reexports::wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
+use smithay::wayland::dmabuf::get_dmabuf;
 use smithay::wayland::shm::with_buffer_contents;
 use smithay::wayland::{Dispatch2, GlobalDispatch2};
 use std::sync::{Mutex, PoisonError};
@@ -65,6 +68,9 @@ pub struct ScreencopyOutput {
     pub scale: Scale,
     /// Its transform.
     pub transform: Transform,
+    /// The dma-buf formats a copy may be drawn into (announced with `linux_dmabuf`); empty
+    /// offers shared memory only.
+    pub dmabuf: Vec<Fourcc>,
 }
 
 /// How much of an output a request names.
@@ -273,14 +279,16 @@ enum Fit {
 #[derive(Debug)]
 pub struct FrameData {
     target: Option<Target>,
+    dmabuf: Vec<Fourcc>,
     cursor: CursorPaint,
     used: Mutex<Used>,
 }
 
 impl FrameData {
-    fn new(target: Option<Target>, cursor: CursorPaint) -> FrameData {
+    fn new(target: Option<Target>, dmabuf: Vec<Fourcc>, cursor: CursorPaint) -> FrameData {
         FrameData {
             target,
+            dmabuf,
             cursor,
             used: Mutex::new(Used::No),
         }
@@ -293,8 +301,18 @@ impl FrameData {
     }
 }
 
-/// Whether `buffer` is a shared-memory buffer of an offered format that holds `area`.
-fn fits(buffer: &WlBuffer, area: PhysicalRect) -> Fit {
+/// Whether `buffer` is a shared-memory buffer of an offered format that holds `area`, or a
+/// dma-buf of exactly `area`'s size in one of the `dmabuf` formats.
+fn fits(buffer: &WlBuffer, area: PhysicalRect, dmabuf: &[Fourcc]) -> Fit {
+    if let Ok(held) = get_dmabuf(buffer) {
+        let size = held.size();
+        let exact =
+            i64::from(size.w) == i64::from(area.w) && i64::from(size.h) == i64::from(area.h);
+        return match exact && dmabuf.contains(&held.format().code) {
+            true => Fit::Yes,
+            false => Fit::No,
+        };
+    }
     let checked = with_buffer_contents(buffer, |_, _, data| {
         let format = matches!(data.format, Format::Argb8888 | Format::Xrgb8888);
         let size = i64::from(data.width) == i64::from(area.w)
@@ -363,16 +381,20 @@ where
             ),
             _ => return,
         };
-        let target = state
-            .screencopy_output(&output)
-            .and_then(|known| known.target(region));
+        let known = state.screencopy_output(&output);
+        let target = known.as_ref().and_then(|known| known.target(region));
+        let dmabuf = known.map(|known| known.dmabuf).unwrap_or_default();
         let announced = target.as_ref().map(|target| target.area);
         let frame = data_init.init(
             frame,
-            FrameData::new(target, CursorPaint::from_overlay(overlay_cursor)),
+            FrameData::new(
+                target,
+                dmabuf.clone(),
+                CursorPaint::from_overlay(overlay_cursor),
+            ),
         );
         match announced {
-            Some(area) => wire::announce(&frame, area),
+            Some(area) => wire::announce(&frame, area, &dmabuf),
             None => frame.failed(),
         }
     }
@@ -398,10 +420,10 @@ impl FrameData {
         let Some(target) = self.target.clone() else {
             return;
         };
-        if fits(&buffer, target.area) == Fit::No {
+        if fits(&buffer, target.area, &self.dmabuf) == Fit::No {
             frame.post_error(
                 zwlr_screencopy_frame_v1::Error::InvalidBuffer,
-                "the buffer is not a shared-memory buffer of the size and format offered",
+                "the buffer is not of a size and format offered",
             );
             return;
         }

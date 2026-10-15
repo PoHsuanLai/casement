@@ -5,6 +5,8 @@
 
 mod alpha_modifier;
 mod background_effect;
+mod capture_cursor;
+mod capture_dma;
 mod capture_source;
 mod commit_timing;
 mod compositor;
