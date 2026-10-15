@@ -2,7 +2,7 @@
 //! it is drawn from rather than in globals: each cursor's raster per scale, and the lock
 //! cover's element id.
 
-use crate::element::{ShadowKey, ShadowSet, Tiles};
+use crate::element::{Raster, ShadowKey, ShadowSet, Tiles, WholeShadow};
 use crate::scene::CursorShape;
 use casement_core::WindowId;
 use casement_core::window::FrameLook;
@@ -23,6 +23,10 @@ const FRAME_LIMIT: usize = 64;
 /// How many shadow tile sets the cache holds (a set per scale, radius and look: a handful).
 const SHADOW_LIMIT: usize = 8;
 
+/// How many small-window shadow rasters the cache holds (one per size and look; such windows
+/// are few).
+const WHOLE_LIMIT: usize = 16;
+
 /// The renderer's per-instance memory. A buffer that lives across frames keeps its element id
 /// and commit, so a cursor or a cover that does not change damages nothing.
 #[derive(Debug, Clone)]
@@ -36,6 +40,10 @@ pub(crate) struct DrawCache {
     tiles: RefCell<BTreeMap<ShadowKey, Rc<Tiles>>>,
     /// Each window's shadow as buffers, uploaded once from the tiles.
     shadows: RefCell<BTreeMap<(WindowId, ShadowKey), Rc<ShadowSet>>>,
+    /// Small windows' shadows, made once per size, scale, radius and layers.
+    wholes: RefCell<BTreeMap<(ShadowKey, u32, u32), Rc<Raster>>>,
+    /// Each small window's shadow as a buffer, uploaded once from its raster.
+    whole_sets: RefCell<BTreeMap<(WindowId, ShadowKey, u32, u32), Rc<WholeShadow>>>,
     /// The cover's id: one for every output (each output has its own damage tracker).
     cover: Id,
 }
@@ -47,6 +55,8 @@ impl Default for DrawCache {
             frames: RefCell::new(BTreeMap::new()),
             tiles: RefCell::new(BTreeMap::new()),
             shadows: RefCell::new(BTreeMap::new()),
+            wholes: RefCell::new(BTreeMap::new()),
+            whole_sets: RefCell::new(BTreeMap::new()),
             cover: Id::new(),
         }
     }
@@ -97,6 +107,36 @@ impl DrawCache {
             shadows.clear();
         }
         shadows.insert((window, key), Rc::clone(&set));
+        set
+    }
+
+    /// The shadow of `window` when it is too small for the tiles: a raster of its `size`, made
+    /// by `make` the first time any window of that size and look asks.
+    pub(crate) fn whole_shadow(
+        &self,
+        window: WindowId,
+        key: ShadowKey,
+        size: (u32, u32),
+        make: impl FnOnce() -> Raster,
+    ) -> Rc<WholeShadow> {
+        let at = (window, key, size.0, size.1);
+        if let Some(set) = self.whole_sets.borrow().get(&at) {
+            return Rc::clone(set);
+        }
+        let raster = {
+            let mut wholes = self.wholes.borrow_mut();
+            let by_size = (key, size.0, size.1);
+            if wholes.len() >= WHOLE_LIMIT && !wholes.contains_key(&by_size) {
+                wholes.clear();
+            }
+            Rc::clone(wholes.entry(by_size).or_insert_with(|| Rc::new(make())))
+        };
+        let set = Rc::new(WholeShadow::new(raster));
+        let mut sets = self.whole_sets.borrow_mut();
+        if sets.len() >= FRAME_LIMIT {
+            sets.clear();
+        }
+        sets.insert(at, Rc::clone(&set));
         set
     }
 
@@ -196,5 +236,34 @@ mod tests {
             });
         }
         assert_eq!(made.get(), 2);
+    }
+
+    #[test]
+    fn a_small_windows_raster_is_made_once_per_size() {
+        let cache = DrawCache::default();
+        let look = look();
+        let made = std::cell::Cell::new(0);
+        let key = shadow_key(&look, Scale::ONE);
+        let ask = |window: u64, size: (u32, u32)| {
+            cache.whole_shadow(WindowId(window), key, size, || {
+                made.set(made.get() + 1);
+                Raster {
+                    w: size.0,
+                    h: size.1,
+                    argb: vec![0; (size.0 * size.1 * 4) as usize],
+                }
+            })
+        };
+        let a = ask(1, (60, 40));
+        let again = ask(1, (60, 40));
+        assert!(Rc::ptr_eq(&a, &again));
+        let other_window = ask(2, (60, 40));
+        assert!(
+            !Rc::ptr_eq(&a, &other_window),
+            "no two elements share a buffer"
+        );
+        assert_eq!(made.get(), 1, "the raster is shared by size");
+        ask(1, (61, 40));
+        assert_eq!(made.get(), 2, "a new size is a new raster");
     }
 }

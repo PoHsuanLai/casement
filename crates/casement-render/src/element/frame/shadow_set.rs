@@ -1,6 +1,6 @@
 //! A window's shadow as buffers smithay can draw: the tiles of `shadow.rs` uploaded once per
 //! window (two windows never share a buffer, so no two elements in a frame share an id), and
-//! the key the tiles are made under, which holds no window size.
+//! the key the tiles are made under, which holds no window size; and a small window's one raster.
 
 use super::raster::Raster;
 use super::shadow::Tiles;
@@ -49,5 +49,32 @@ impl ShadowSet {
             Piece::Corner(c) => (&self.corners[c.index()], &self.tiles.corners[c.index()]),
             Piece::Edge(s) => (&self.edges[s.index()], &self.tiles.edges[s.index()]),
         }
+    }
+}
+
+/// A small window's shadow: one raster of the window's own size (`shadow::full`) as a buffer.
+#[derive(Debug, Clone)]
+pub(crate) struct WholeShadow {
+    raster: Rc<Raster>,
+    buffer: MemoryRenderBuffer,
+}
+
+impl WholeShadow {
+    /// The buffer of `raster`.
+    pub(crate) fn new(raster: Rc<Raster>) -> WholeShadow {
+        WholeShadow {
+            buffer: to_buffer(&raster),
+            raster,
+        }
+    }
+
+    /// The raster, for its size.
+    pub(crate) fn raster(&self) -> &Raster {
+        &self.raster
+    }
+
+    /// The buffer to draw.
+    pub(crate) fn buffer(&self) -> &MemoryRenderBuffer {
+        &self.buffer
     }
 }

@@ -2484,3 +2484,53 @@ The window shadow stops re-rastering per frame. Written without a compiler (wave
   frame time (no per-frame raster, only the elements' rectangles change); the shadow is sharp at 2x, follows the rounded
   bottom corners, and has no seam where a strip meets a corner (look at light and dark); the dim shadow under a fade (`opacity`)
   fades with the window; a very small window (a 100x60 dialog) has a plausible shadow.
+
+## wave-2026-10-15/corners
+
+Rounded corners and shadows right everywhere (wave 5). Written without a compiler (wave rule); the orchestrator builds.
+
+- **Clip on every renderer.** New `element/rounded_clip/bands.rs`. A clipped draw that has no corner shader draws the window in
+  pieces: the body (damage minus the two radius-sized corner squares) and the fully covered runs of the squares at full strength,
+  then each partly covered pixel of the curve alone with the surface's alpha times its coverage. The pieces are `damage`
+  rectangles in the destination's space and go through `Frame::render_texture_from_to` (or `draw_solid` for a single-pixel
+  buffer), so the texture's own transform never enters. Coverage is `ClipShape::coverage` at the pixel centre, in 32 steps
+  (`LEVELS`; error under 1/64), so a corner costs at most 31 extra draws whatever the radius. It is the default of
+  `Compositor::draw_rounded_clip`, so Pixman, the dummy renderer and a multi-GPU copy renderer (none is wired in the tty path
+  yet; a future `Compositor` impl gets it for free) clip. On GLES `gles::draw` falls back to it for a turned or flipped texture,
+  a y-inverted texture and a single-pixel buffer.
+- **Departures from the brief.** (1) No Pixman mask image per corner, and no clip transformed into texture space: alpha steps
+  on 1-pixel damage rectangles need neither the pixman crate (no Cargo edit) nor the texture matrix, and work for any transform.
+  Cost: up to 31 small draws per clipped surface per frame on those paths (the GLES shader path for an upright texture is
+  unchanged: one draw). (2) The edge is quantised to 32 steps, not exact. (3) The dummy renderer draws nothing, so its only
+  proof is that it compiles and calls the same pieces; the pieces are table-tested as a pure `plan`.
+- **Window capture** (`pass::window_tree`) and the opaque regions are unchanged.
+- **Shadow cut-out.** The tiles are transparent under the window's rounded shape (`shadow::punch`): factor
+  `1 - cover(distance + 0.5 / per, per)`, with the distance from the pixel centre to the window's rounded outline (the same
+  radius as the frame). The cut starts half a device pixel inside the edge, so the window's own anti-aliased edge pixel keeps
+  part of its shadow beneath it, and is complete one pixel in. Edge strips are cut the same way (their 2 px under the edge go
+  to zero from 1 px in). The corner squares inside the curve now show shadow where the window is not (outside the curve) and
+  none where it is. A window drawn at opacity below 1 (fade) has no shadow beneath its body either, as the Mac.
+- **Small windows.** A window with one side under twice the corner reach (`inner_reach`, about 120 to 150 logical px for
+  quire's shadow) and neither side over 240 gets one raster of its own size plus the margin, the true separable Gaussian blur of
+  its rounded shape (`shadow/whole.rs`, sharing `blurred` with the corner tiles), cut out under the window. It is cached by
+  (scale, radius, layers, width, height) in `DrawCache::wholes` (16 sizes), and uploaded once per window and size
+  (`whole_sets`). A window past the limit on a side (a long thin one) keeps the tile pieces and their cropped, slightly strong
+  shadow. Departure: resizing a small window through many sizes makes a raster per size (tens of ms at 1x, up to a couple of
+  hundred at 2x for a 240 px window), so a drag across the threshold may hitch once per size; the cache is bounded.
+- **Tests.** Table: `bands.rs` (every pixel of a 120x80 window is drawn at its coverage, once at most, at scales 1, 1.5 and 2
+  and at an offset; corner pixels; only the damaged part; at most 31 draws; a subsurface inside the curve); `shadow/tests.rs`
+  (cut-out table at scales 1 and 2 for corner and strips, the half-pixel start, rounded versus square corner, sharpness at
+  scale 2 rewritten for the cut, the reference raster now cut out, a large window's whole raster against its pieces within 4/255,
+  a tiny window's whole raster lighter than its cropped pieces, whole raster sizes and cut-out at 1, 1.5 and 2, which sizes get a
+  raster); `draw_cache.rs` (a raster per size, shared by windows, not the buffers). Testkit `scene/clip.rs` runs the corner
+  check on GLES (llvmpipe) and Pixman, for a shm buffer and for a single-pixel buffer under a viewport, and checks the curve
+  is blended. No golden changed (no golden scene binds the decoration manager); no `expected-failures` change.
+- **Gate and real run.** Likeliest compile faults: `bands::draw` generic over `R: Compositor` with `R::Frame<'_, '_>` and
+  `frame.render_texture_from_to` (needs `Frame` in scope), `*color * alpha` on `Color32F`, `Rectangle::subtract_rects` with a
+  `copied()` iterator, the glob `use super::*` in `shadow/tests.rs` reaching `punch`, `full`, `wanted`; `SoftRenderer`'s `Debug`
+  in the testkit messages; `with_renderer` on the spec. Likeliest test-number faults: the "cropped lighter than whole by 4"
+  margin and the "out beyond the corner" shadow being non-zero at 3 px off a radius-20 corner (about 4/255). In a real run:
+  a translucent window (a terminal with opacity) shows no shadow through itself, including at the corners, in light and dark; a
+  Pixman session (`--renderer pixman`) has round bottom corners; a GL client on a y-inverted dma-buf window and a
+  single-pixel-buffer window have round bottom corners without a seam where the curve meets the straight edge; a 100x60
+  dialog's shadow is lighter than before and has no seam; resizing it across 120 px does not hitch badly.
