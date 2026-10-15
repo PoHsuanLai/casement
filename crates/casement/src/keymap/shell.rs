@@ -6,6 +6,7 @@
 
 use super::chord::chord_of;
 use casement_core::input::{Argv, Binding, BindingAction, Bindings, DesktopCommand, SpaceStep};
+use casement_protocols::vocab::PlaceTarget;
 use chordkit::{Action, Keymap, StandardAction};
 
 /// How the compositor carries out one action.
@@ -62,7 +63,51 @@ const ROWS: &[Row] = &[
         StandardAction::ScreenshotTools,
         Does::Sill(&["screenshot", "area"]),
     ),
-    (StandardAction::LogOut, Does::Sill(&["power-menu", "open"])),
+    (StandardAction::LogOut, Does::Sill(&["power-menu", "open"])), // Window > Move & Resize (macOS Sequoia's tiling keys).
+    (
+        StandardAction::TileLeft,
+        Does::Itself(DesktopCommand::Place(PlaceTarget::Left)),
+    ),
+    (
+        StandardAction::TileRight,
+        Does::Itself(DesktopCommand::Place(PlaceTarget::Right)),
+    ),
+    (
+        StandardAction::TileTop,
+        Does::Itself(DesktopCommand::Place(PlaceTarget::Top)),
+    ),
+    (
+        StandardAction::TileBottom,
+        Does::Itself(DesktopCommand::Place(PlaceTarget::Bottom)),
+    ),
+    (
+        StandardAction::TileTopLeft,
+        Does::Itself(DesktopCommand::Place(PlaceTarget::TopLeft)),
+    ),
+    (
+        StandardAction::TileTopRight,
+        Does::Itself(DesktopCommand::Place(PlaceTarget::TopRight)),
+    ),
+    (
+        StandardAction::TileBottomLeft,
+        Does::Itself(DesktopCommand::Place(PlaceTarget::BottomLeft)),
+    ),
+    (
+        StandardAction::TileBottomRight,
+        Does::Itself(DesktopCommand::Place(PlaceTarget::BottomRight)),
+    ),
+    (
+        StandardAction::Fill,
+        Does::Itself(DesktopCommand::Place(PlaceTarget::Fill)),
+    ),
+    (
+        StandardAction::Center,
+        Does::Itself(DesktopCommand::Place(PlaceTarget::Centre)),
+    ),
+    (
+        StandardAction::ReturnToPreviousSize,
+        Does::Itself(DesktopCommand::Place(PlaceTarget::Restore)),
+    ),
 ];
 
 /// The program sill's commands run under.
@@ -193,6 +238,36 @@ mod tests {
             ("area shot", "shift+cmd+4", sill(&["screenshot", "area"])),
             ("shot tools", "shift+cmd+5", sill(&["screenshot", "area"])),
             ("log out", "shift+cmd+q", sill(&["power-menu", "open"])),
+            (
+                "tile left",
+                "ctrl+option+Left",
+                itself(DesktopCommand::Place(PlaceTarget::Left)),
+            ),
+            (
+                "tile bottom",
+                "ctrl+option+Down",
+                itself(DesktopCommand::Place(PlaceTarget::Bottom)),
+            ),
+            (
+                "top left quarter",
+                "ctrl+option+u",
+                itself(DesktopCommand::Place(PlaceTarget::TopLeft)),
+            ),
+            (
+                "fill",
+                "ctrl+option+f",
+                itself(DesktopCommand::Place(PlaceTarget::Fill)),
+            ),
+            (
+                "centre",
+                "ctrl+option+c",
+                itself(DesktopCommand::Place(PlaceTarget::Centre)),
+            ),
+            (
+                "return to previous size",
+                "ctrl+option+r",
+                itself(DesktopCommand::Place(PlaceTarget::Restore)),
+            ),
             ("copy is an app's", "cmd+c", None),
             ("close is the app's menu", "cmd+w", None),
             ("minimise is the app's menu", "cmd+m", None),
