@@ -5,14 +5,15 @@
 //! upright texture, `v_coords = (position * ratio + src.loc) / texture size`, so
 //! `position = v_coords * (texture size * ratio) - src.loc * ratio`, where `position` is in
 //! physical pixels from the element's top-left and `ratio` is `dst.size / src.size`. A texture
-//! that is turned, flipped or upside down is drawn unclipped. The compiled shader is kept in
-//! the EGL context's user data, one per renderer.
+//! that is turned, flipped or upside down, and a single-pixel buffer, take the renderer-neutral
+//! draw in `bands.rs` instead. The compiled shader is kept in the EGL context's user data, one
+//! per renderer.
 
 use super::{ClipShape, RoundedClipElement};
 use smithay::backend::renderer::element::surface::{
     WaylandSurfaceRenderElement, WaylandSurfaceTexture,
 };
-use smithay::backend::renderer::element::{Element, RenderElement};
+use smithay::backend::renderer::element::Element;
 use smithay::backend::renderer::gles::{
     GlesError, GlesFrame, GlesRenderer, GlesTexProgram, GlesTexture, Uniform, UniformName,
     UniformType,
@@ -108,6 +109,7 @@ pub(super) fn draw(
     opaque_regions: &[Rectangle<i32, Physical>],
     cache: Option<&UserDataMap>,
 ) -> Result<(), GlesError> {
+    let _ = cache;
     let mask = Mask {
         shape: clip.shape(),
         src,
@@ -119,7 +121,7 @@ pub(super) fn draw(
         mask,
         (src, dst),
         (damage, opaque_regions),
-        cache,
+        |frame| clip.draw_banded(frame, src, dst, damage, opaque_regions),
     )
 }
 
@@ -130,21 +132,22 @@ type Regions<'a> = (
 );
 
 /// Draws `surface` from `src` to `dst` (the rectangles of this draw) where `damage` asks,
-/// through the corner mask of `mask`.
+/// through the corner mask of `mask`. A surface the shader cannot mask (no texture, or one that is
+/// turned, flipped or empty) is drawn by `fallback` instead.
 pub(crate) fn draw_masked(
     frame: &mut GlesFrame<'_, '_>,
     surface: &WaylandSurfaceRenderElement<GlesRenderer>,
     mask: Mask,
     (src, dst): (Rectangle<f64, BufferCoords>, Rectangle<i32, Physical>),
     (damage, opaque_regions): Regions<'_>,
-    cache: Option<&UserDataMap>,
+    fallback: impl FnOnce(&mut GlesFrame<'_, '_>) -> Result<(), GlesError>,
 ) -> Result<(), GlesError> {
     let upright = surface.transform() == Transform::Normal;
     let WaylandSurfaceTexture::Texture(texture) = surface.texture() else {
-        return surface.draw(frame, src, dst, damage, opaque_regions, cache);
+        return fallback(frame);
     };
     if !upright || texture.is_y_inverted() || mask.src.size.w <= 0.0 || mask.src.size.h <= 0.0 {
-        return surface.draw(frame, src, dst, damage, opaque_regions, cache);
+        return fallback(frame);
     }
     let program = program(frame)?;
     let uniforms = uniforms(texture, mask);

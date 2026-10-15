@@ -27,7 +27,7 @@ pub use flight::{
     FlightDraw, at_rest, choose, drawn_content, rest_place, scale_ratio, scaled_content,
 };
 pub use frame::{FrameDraw, TitleDraw, frame_elements};
-pub(crate) use frame::{ShadowKey, ShadowSet, Tiles};
+pub(crate) use frame::{Raster, ShadowKey, ShadowSet, Tiles, WholeShadow};
 #[cfg(test)]
 pub(crate) use frame::{shadow_key, shadow_tiles};
 pub use genie::{GenieParts, GenieWindow, genie_elements, genie_window, strip_plans};

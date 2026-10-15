@@ -157,13 +157,14 @@ impl ClipStripElement<GlesRenderer> {
         opaque_regions: &[Rectangle<i32, Physical>],
         cache: Option<&UserDataMap>,
     ) -> Result<(), GlesError> {
+        let surface = self.surface.get();
         draw_masked(
             frame,
-            self.surface.get(),
+            surface,
             self.mask(),
             (src, dst),
             (damage, opaque_regions),
-            cache,
+            |frame| surface.draw(frame, src, dst, damage, opaque_regions, cache),
         )
     }
 }

@@ -106,6 +106,8 @@ pub struct RenderState {
     pub(crate) frame_over: Option<crate::core_loop::FrameOver>,
     /// The frame of each framed window as it last was, to draw once the window has closed.
     pub(crate) closing: BTreeMap<WindowId, crate::core_loop::Kept>,
+    /// The pointer and a Split View divider: over its strip, or dragging it.
+    pub(crate) divider: crate::core_loop::DividerPointer,
     /// The last titlebar press, for the double click.
     pub clicks: casement_core::window::ClickTracker,
     /// The traffic light held down, if any (a light acts on release).
@@ -323,6 +325,7 @@ impl State {
             frame_faults: RepeatGate::new(FAULT_LOG_EVERY),
             frame_over: None,
             closing: BTreeMap::new(),
+            divider: crate::core_loop::DividerPointer::default(),
             clicks: casement_core::window::ClickTracker::default(),
             light_arm: casement_core::window::LightArm::default(),
             light_dwell: casement_core::window::Dwell::default(),

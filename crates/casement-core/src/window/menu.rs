@@ -68,8 +68,9 @@ pub enum MenuAction {
     SplitTile(SplitSide),
 }
 
-/// A side of a Split View.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// A side of a Split View. Spelled `left` / `right` in the bindings document.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SplitSide {
     /// The left of the screen.
     Left,

@@ -17,6 +17,7 @@ use casement_backend::tty::{
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::input::{DeviceClass, Edge, InputEvent, Keysym, Origin};
 use casement_core::output::OutputConfig;
+use casement_core::settings::PointerSettings;
 use casement_core::time::Mono;
 use casement_core::{Effect, Event, OutputKey, OutputName};
 use casement_wayland::image_capture::CaptureBook;
@@ -118,6 +119,27 @@ fn configure(state: &mut State, device: &FedDevice) {
             );
         }
         _ => tracing::debug!(device = device.name.0, "a device did not take the settings"),
+    }
+}
+
+/// Applies `pointer` to the pointing devices already present that it no longer matches, so a
+/// changed setting takes effect at once, not after a replug. Nothing on a seat with no input.
+pub(crate) fn reconfigure_pointers(state: &mut State, pointer: &PointerSettings) {
+    let BackendKind::Tty(tty) = &mut state.backend else {
+        return;
+    };
+    for (device, applied) in tty.reconfigure_pointers(pointer) {
+        match applied {
+            Applied::All => {}
+            Applied::Partly(skipped) => {
+                tracing::debug!(
+                    device = device.0,
+                    ?skipped,
+                    "a device took the new settings in part"
+                );
+            }
+            _ => tracing::debug!(device = device.0, "a device did not take the new settings"),
+        }
     }
 }
 

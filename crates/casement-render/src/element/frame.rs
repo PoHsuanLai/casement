@@ -1,7 +1,8 @@
 //! A server-side frame as elements: the titlebar with its lights in front of the window's
 //! surfaces, the shadow behind them. Both are casement's own rasters. The titlebar (`frame/raster.rs`)
 //! is cached in the [`TextureBook`] per window, size, scale and look; the shadow is eight tiles
-//! (`frame/shadow.rs`) cached per scale, radius and layers, with no window size in the key.
+//! (`frame/shadow.rs`) cached per scale, radius and layers, with no window size in the key; a window
+//! too small for the tiles has one raster of its own size, cached by size.
 
 mod raster;
 mod shadow;
@@ -9,8 +10,9 @@ mod shadow_set;
 mod slices;
 mod title;
 
+pub(crate) use raster::Raster;
 pub(crate) use shadow::Tiles;
-pub(crate) use shadow_set::{ShadowKey, ShadowSet, key as shadow_key};
+pub(crate) use shadow_set::{ShadowKey, ShadowSet, WholeShadow, key as shadow_key};
 pub(crate) use slices::MARGIN as SHADOW_MARGIN;
 pub use title::TitleDraw;
 
@@ -207,11 +209,31 @@ fn shadow_elements<R: Compositor>(
     if view.area.intersection(&reach).is_none() {
         return Vec::new();
     }
+    let look = &style.look;
+    let key = shadow_key(look, view.scale);
+    if shadow::wanted(outline.size, shadow::inner_reach(&look.shadow, look.radius)) {
+        let set = book
+            .cache()
+            .whole_shadow(window, key, (outline.size.w, outline.size.h), || {
+                shadow::full(&look.shadow, look.radius, outline.size, view.scale)
+            });
+        let raster = set.raster();
+        return element(
+            renderer,
+            view,
+            reach.origin,
+            reach.size,
+            whole(raster.w, raster.h),
+            faded,
+            set.buffer(),
+        )
+        .map(CasementElement::Memory)
+        .into_iter()
+        .collect();
+    }
     let set = book
         .cache()
-        .shadow(window, shadow_key(&style.look, view.scale), || {
-            shadow_tiles(&style.look, view.scale)
-        });
+        .shadow(window, key, || shadow_tiles(look, view.scale));
     slices::slices(outline.size, set.inner())
         .into_iter()
         .filter_map(|slice| {

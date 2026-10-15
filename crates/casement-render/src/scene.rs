@@ -64,6 +64,9 @@ pub struct LayerDraw {
     /// The frames of windows that have closed and are still fading out: the snapshot taken
     /// while they lived. Drawn for a window the surface book no longer holds.
     pub closing: BTreeMap<WindowId, ClosingFrame>,
+    /// A plain backdrop over the whole output, behind the full-screen windows and above the top
+    /// layers: what shows between and beside the halves of a Split View.
+    pub backdrop: Option<Rgba8>,
 }
 
 /// What the compositor draws over everything: the cursor and lock covers.
@@ -141,7 +144,7 @@ pub fn output_elements<R: Compositor>(
         if let Some(entry) = lock {
             elements.extend(tree(&entry.root, sub_of(view.area.origin), view, renderer));
         }
-        elements.push(CasementElement::Cover(cover(view, book)));
+        elements.push(CasementElement::Cover(cover(view, book, COVER)));
         return elements;
     }
     let draw_level =
@@ -261,6 +264,9 @@ pub fn output_elements<R: Compositor>(
         };
     draw_level(&layers.overlay, &mut elements, renderer);
     draw_windows(&covering, &mut elements, renderer);
+    if let Some(colour) = layers.backdrop {
+        elements.push(CasementElement::Cover(cover(view, book, colour)));
+    }
     draw_level(&layers.top, &mut elements, renderer);
     draw_windows(&others, &mut elements, renderer);
     draw_level(&layers.bottom, &mut elements, renderer);
@@ -276,15 +282,16 @@ const COVER: Rgba8 = Rgba8 {
     a: 255,
 };
 
-/// The lock cover over all of `view`; its id is `book`'s, so a standing cover damages nothing.
-fn cover(view: &OutputView, book: &TextureBook) -> LockCoverElement {
+/// An opaque cover over all of `view`; its id is `book`'s, so a standing cover damages nothing
+/// (the lock cover and the backdrop never share a frame).
+fn cover(view: &OutputView, book: &TextureBook, colour: Rgba8) -> LockCoverElement {
     let area = PhysicalRect {
         x: 0,
         y: 0,
         w: view.mode.w,
         h: view.mode.h,
     };
-    LockCoverElement::new(book.cache().cover_id(), area, COVER)
+    LockCoverElement::new(book.cache().cover_id(), area, colour)
 }
 
 /// A surface tree with its top-left at `origin` (global sub-pixels), opaque, front first.
