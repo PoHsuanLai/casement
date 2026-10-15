@@ -4,6 +4,11 @@ use casement_core::DeviceId;
 use casement_core::input::{
     Argv, Binding, BindingAction, Bindings, Chord, DbusCall, DeviceClass, Edge, KeyCode,
 };
+use casement_core::policy::ConnectionRole;
+use casement_testclient::seat::keyboard::Keyboard;
+use casement_testclient::surface::layer::{
+    Anchor, KeyboardInteractivity, Layer, LayerAsk, LayerSurface,
+};
 use casement_testkit::{Fixture, FixtureSpec, TestOrigin};
 
 const KEY_LEFTMETA: KeyCode = KeyCode(125);
@@ -80,4 +85,54 @@ fn only_a_person_fires_a_binding() {
         .plug(DeviceClass::Keyboard, TestOrigin::Remote);
     press_cmd_space(&mut fixture, remote);
     assert!(fixture.shell_calls().calls().is_empty());
+}
+
+/// A bound chord fires over everything, as the Mac's does: while a layer surface (sill's
+/// switcher) holds the keyboard exclusively the binding is still carried out and its key is not
+/// delivered, but the chord's modifier is, and so is its release, because the switcher reads the
+/// release of the modifier to know the person let go.
+#[test]
+fn a_chord_fires_while_an_exclusive_layer_holds_the_keyboard_and_it_hears_the_modifier_release() {
+    let mut fixture = bound_to(BindingAction::Call(toggle_launcher()));
+    let keyboard = fixture.input().plug(
+        DeviceClass::Keyboard,
+        TestOrigin::Physical(DeviceClass::Keyboard),
+    );
+    let id = fixture.connect(ConnectionRole::Public);
+    fixture.pump();
+    let _keys = Keyboard::bind(fixture.client(id)).expect("a keyboard");
+    let _switcher = LayerSurface::create(
+        fixture.client(id),
+        &LayerAsk {
+            level: Layer::Overlay,
+            namespace: "switcher",
+            anchor: Anchor::empty(),
+            exclusive_zone: 0,
+            keyboard: KeyboardInteractivity::Exclusive,
+            size: (400, 300),
+        },
+    )
+    .expect("layer");
+    fixture.pump();
+    press_cmd_space(&mut fixture, keyboard);
+    fixture.pump();
+    assert_eq!(
+        fixture.shell_calls().calls(),
+        vec![toggle_launcher()],
+        "the chord fired over the exclusive layer"
+    );
+    let delivered: Vec<(String, String)> = fixture
+        .client(id)
+        .transcript()
+        .0
+        .iter()
+        .filter(|line| line.object.starts_with("wl_keyboard#") && line.event == "key")
+        .map(|line| (line.args[2].clone(), line.args[3].clone()))
+        .collect();
+    // Only the modifier reaches the layer, pressed and then released (the two differ in the
+    // state argument); the space the binding took, and its release, are not delivered.
+    assert_eq!(delivered.len(), 2, "{delivered:?}");
+    assert_eq!(delivered[0].0, "125");
+    assert_eq!(delivered[1].0, "125");
+    assert_ne!(delivered[0].1, delivered[1].1);
 }

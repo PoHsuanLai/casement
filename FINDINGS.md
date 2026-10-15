@@ -1817,3 +1817,31 @@ Lane `session` (not compiled; the orchestrator gates). Three findings from the f
   (`every_pointing_class_gets_natural_scroll_from_the_defaults`, a fixture test for both devices). Gaps noted, not
   changed: settings are applied only when a device appears (a changed setting reaches a device after a replug or
   restart); a `settings.toml` written before 8b10803 holds `pointer.natural_scroll = "off"` and wins over the new default.
+## wave-2026-10-15/layers
+
+- **On-demand layers take the keyboard on mapping.** Departure from the 2026-09 rule (only when no key
+  window held it): a `Top` or `Overlay` layer that asks `on_demand` takes the keyboard when it maps, over a
+  key window, unless the session is locked or an exclusive layer holds it. Unmapping gives it back to the
+  key window (`Model::demand` is cleared with the layer). A `Bottom`/`Background` on-demand layer still
+  takes it only when pressed. A click still takes it (`press_layer`); a window pressed or keyed takes it
+  back. Tests: `an_on_demand_panel_takes_the_keyboard_on_mapping_and_gives_it_back` (model_layers.rs),
+  `layer_keyboard.rs` (the old "a mapped layer does not take it from a window" assertion now says the
+  opposite).
+- **Layer placement was already per-bar; the hit box was not clipped to it.** `Arranged` stacks two bars on
+  one edge (tests exist, plus `bars_stacked_on_one_edge_each_own_their_box`). The hit test, though, used only
+  the surface's own input region, so a surface whose buffer outran its placed box (a drawn shadow margin)
+  took input there. `Candidate` now carries `clip: Option<LogicalRect>`; a layer's root is clipped to its
+  placed box, popups and windows are not. Needs a real run: a sill panel with a shadow margin must not
+  swallow a click on the window beside it, and its shadow must still draw.
+- **Shadows are not clipped by casement.** `layer_elements` renders the whole surface tree
+  (`render_elements_from_surface_tree`) from the placed origin with no crop to the configured size, and
+  `committed` is the bbox of the tree. A transparent margin therefore renders. If sill's shadows look cut
+  off, check the buffer sill commits (size vs the layer size it was configured to) before suspecting us.
+  Note placement follows the configured size, so a client that draws a margin must ask for a layer size
+  that includes it.
+- **A bound chord fires over an exclusive layer (intended).** `deliver_key` resolves bindings for every
+  keyboard target except under a lock or a shortcuts inhibitor, as macOS's Cmd+Tab works over everything.
+  The binding takes only the chord's final key (and its release); the modifier's press and release are
+  forwarded, so the switcher hears the Cmd release. Test:
+  `a_chord_fires_while_an_exclusive_layer_holds_the_keyboard_and_it_hears_the_modifier_release`
+  (casement-testkit tests/it/bindings.rs).

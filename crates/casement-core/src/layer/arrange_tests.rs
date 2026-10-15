@@ -330,3 +330,33 @@ fn anchors_and_margins_place_a_surface() {
         );
     }
 }
+
+/// Each bar's hit box is its own placed box, not the output: a point in one bar is in no other.
+#[test]
+fn bars_stacked_on_one_edge_each_own_their_box() {
+    let reserve = ExclusiveZone::Reserve;
+    let boxes = placed(&[
+        ask("tlr", reserve(24), (1920, 24)),
+        ask("tlr", reserve(30), (1920, 30)),
+        ask("blr", reserve(80), (1920, 80)),
+    ]);
+    let full = rect(100, 50, 1920, 1080);
+    assert!(boxes.iter().all(|placed| placed.size.h < full.size.h));
+    // (x, y, the one box that owns the point)
+    let probes = [
+        (500, 60, Some(0)),
+        (500, 90, Some(1)),
+        (500, 600, None),
+        (500, 1100, Some(2)),
+    ];
+    for (x, y, owner) in probes {
+        let at = LogicalPoint { x, y };
+        let owners: Vec<usize> = boxes
+            .iter()
+            .enumerate()
+            .filter(|(_, placed)| placed.contains(at))
+            .map(|(n, _)| n)
+            .collect();
+        assert_eq!(owners, owner.into_iter().collect::<Vec<_>>(), "({x}, {y})");
+    }
+}
