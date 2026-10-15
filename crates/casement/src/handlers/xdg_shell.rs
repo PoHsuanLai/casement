@@ -220,6 +220,7 @@ impl XdgShellHandler for State {
         if let Some(window) = self.wl.xdg_shell.window_of_surface(surface.wl_surface()) {
             xdg_toplevel_tag::on_forgotten(&mut self.wl.xdg_toplevel_tag, window);
             self.wl.quire_window.windows.remove(&window);
+            self.wl.xdg_decoration.forget(window);
         }
         let events = on_toplevel_destroyed(&mut self.wl.xdg_shell, &surface);
         core_loop::feed(self, events);
