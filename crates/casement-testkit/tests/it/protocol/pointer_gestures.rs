@@ -98,3 +98,51 @@ fn a_swipe_the_system_does_not_take_reaches_the_client() {
         );
     }
 }
+
+/// A four-finger swipe is the desktop's (the Spaces, Mission Control): no client sees any step
+/// of it, and the same device's two-finger swipe still reaches the client.
+#[test]
+fn a_swipe_the_desktop_takes_never_reaches_the_client() {
+    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let mouse = fixture.input().plug(
+        DeviceClass::Pointer,
+        TestOrigin::Physical(DeviceClass::Pointer),
+    );
+    let pad = fixture.input().plug(
+        DeviceClass::Touchpad,
+        TestOrigin::Physical(DeviceClass::Touchpad),
+    );
+    fixture
+        .input()
+        .pointer_to(mouse, LogicalPoint { x: 400, y: 300 });
+    let id = fixture.connect(ConnectionRole::Public);
+    fixture.pump();
+    let pointer = Pointer::bind(fixture.client(id)).expect("a pointer");
+    let _gestures = Gestures::bind(fixture.client(id), &pointer).expect("gestures");
+    let _layer = map(
+        &mut fixture,
+        id,
+        &cover(Layer::Top, "swipe", KeyboardInteractivity::None),
+    );
+    fixture
+        .input()
+        .swipe(pad, GestureStep::Begin { fingers: 4 });
+    fixture.input().swipe(
+        pad,
+        GestureStep::Update(SubPoint {
+            x: SubPx(-24 * 120),
+            y: SubPx(0),
+        }),
+    );
+    fixture
+        .input()
+        .swipe(pad, GestureStep::End(GestureEnd::Lifted));
+    let client = fixture.client(id);
+    for event in ["begin", "update", "end"] {
+        assert_eq!(
+            count(client, "zwp_pointer_gesture_swipe_v1#", event),
+            0,
+            "the desktop's swipe has no {event} for a client"
+        );
+    }
+}

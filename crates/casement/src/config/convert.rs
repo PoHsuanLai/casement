@@ -5,16 +5,16 @@
 use super::action::ActionWords;
 use super::doc::CasementDoc;
 use super::sections::{
-    BindingsSection, FirstSight, GpuSection, KeyboardSection, OutputsSection, PointerSection,
-    SpacesSection, TouchpadSection, WindowsSection,
+    BindingsSection, FirstSight, GesturesSection, GpuSection, KeyboardSection, OutputsSection,
+    PointerSection, SpacesSection, TouchpadSection, WindowsSection,
 };
 use casement_core::CoreError;
 use casement_core::gpu::{ByPathId, GpuChoice};
 use casement_core::input::{Binding, Bindings, Chord};
 use casement_core::output::ScalePolicy;
 use casement_core::settings::{
-    CasementSettings, GpuSettings, KeyboardSettings, OutputSettings, PointerProfile,
-    PointerSettings, RepeatRate, SpaceSettings, WindowSettings, XkbNames,
+    CasementSettings, GestureSettings, GpuSettings, KeyboardSettings, OutputSettings,
+    PointerProfile, PointerSettings, RepeatRate, SpaceSettings, WindowSettings, XkbNames,
 };
 use ds_core::geometry::scale::Scale;
 use ds_settings::{Count, Ms};
@@ -32,6 +32,7 @@ pub fn to_core(doc: &CasementDoc) -> CasementSettings {
         bindings: bindings(&doc.bindings),
         outputs: outputs(&doc.outputs),
         pointer: pointer(&doc.pointer, &doc.touchpad),
+        gestures: gestures(&doc.gestures),
         gpu: gpu(&doc.gpu),
     }
 }
@@ -77,6 +78,18 @@ pub(super) fn spaces_doc(core: &SpaceSettings) -> SpacesSection {
         per_display: core.per_display,
         auto_rearrange: core.auto_rearrange,
         switch_on_activate: core.switch_on_activate,
+    }
+}
+
+fn gestures(doc: &GesturesSection) -> GestureSettings {
+    GestureSettings::new(doc.spaces, doc.mission_control, doc.natural)
+}
+
+pub(super) fn gestures_doc(core: &GestureSettings) -> GesturesSection {
+    GesturesSection {
+        spaces: core.spaces,
+        mission_control: core.mission_control,
+        natural: core.natural,
     }
 }
 

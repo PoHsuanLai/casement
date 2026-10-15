@@ -4,6 +4,7 @@
 //! `convert`, so no default is written twice.
 
 mod bindings;
+mod gestures;
 mod gpu;
 mod keyboard;
 mod outputs;
@@ -13,6 +14,7 @@ mod touchpad;
 mod windows;
 
 pub use bindings::BindingsSection;
+pub use gestures::GesturesSection;
 pub use gpu::GpuSection;
 pub use keyboard::KeyboardSection;
 pub use outputs::{FirstSight, OutputsSection};

@@ -33,6 +33,7 @@ pub fn followed(current: &CasementSettings, doc: &CasementDoc) -> CasementSettin
     let read = config::to_core(doc);
     CasementSettings {
         pointer: read.pointer,
+        gestures: read.gestures,
         keyboard: KeyboardSettings {
             repeat_delay: read.keyboard.repeat_delay,
             repeat_rate: read.keyboard.repeat_rate,

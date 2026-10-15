@@ -8,6 +8,7 @@ use crate::effect::{CoreNote, Effect};
 use crate::ids::ClientKey;
 use crate::settings::CasementSettings;
 use crate::time::TimerKey;
+use ds_behaviour::space_swipe::SwipeIn;
 
 impl Model {
     /// A timer fired. It leaves the book; a ping unanswered marks its client's app as not
@@ -23,6 +24,7 @@ impl Model {
             (Gone::No, TimerKey::Ping(client)) => model.not_responding(*client),
             (Gone::No, TimerKey::LockWait) => model.lock_wait_over(),
             (Gone::No, TimerKey::OverviewSettle) => model.overview_settled(),
+            (Gone::No, TimerKey::SpaceFinish(_)) => model.space_swipe(SwipeIn::Elapsed),
             (Gone::No, _) => Moved::of(model),
         }
     }

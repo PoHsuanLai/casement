@@ -2,6 +2,7 @@
 //! composition root (`casement/src/config/`, ds-settings); this is what it converts into.
 
 mod bindings;
+mod gestures;
 mod gpu;
 mod keyboard;
 mod outputs;
@@ -9,6 +10,7 @@ mod pointer;
 mod spaces;
 mod windows;
 
+pub use gestures::{GestureSettings, SwipeFingers};
 pub use gpu::GpuSettings;
 pub use keyboard::{KeyboardSettings, RepeatRate, XkbNames};
 pub use outputs::OutputSettings;
@@ -33,6 +35,8 @@ pub struct CasementSettings {
     pub outputs: OutputSettings,
     /// Mice and touchpads.
     pub pointer: PointerSettings,
+    /// Trackpad swipes.
+    pub gestures: GestureSettings,
     /// Which GPU renders.
     pub gpu: GpuSettings,
 }
@@ -48,6 +52,7 @@ impl CasementSettings {
             bindings: bindings::defaults(),
             outputs: OutputSettings::defaults(),
             pointer: PointerSettings::defaults(),
+            gestures: GestureSettings::defaults(),
             gpu: GpuSettings::defaults(),
         }
     }

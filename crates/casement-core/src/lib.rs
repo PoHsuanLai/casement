@@ -48,6 +48,7 @@ pub mod time;
 pub mod window;
 
 pub use cause::{Cause, MinimiseTarget, SwipeRelease};
+pub use ds_behaviour::space_swipe::PageMilli;
 pub use effect::{
     Activation, ConfigureSize, ConfigureSpec, CoreNote, Deferred, Effect, GrabSpec, Held,
     KeyboardTarget, ProtocolFault, TiledEdges, ToplevelStates,
@@ -61,4 +62,6 @@ pub use ids::{
     PopupKey, WindowId,
 };
 pub use invariants::InvariantBreak;
-pub use model::{Model, OpeningRoom, OutputBook, OutputState, OverviewPick};
+pub use model::{
+    Model, OpeningRoom, OutputBook, OutputState, OverviewPick, SpaceStrip, SwipeOwner,
+};

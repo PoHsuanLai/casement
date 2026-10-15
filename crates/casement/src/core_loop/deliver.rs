@@ -23,7 +23,7 @@ use casement_core::input::{
 use casement_core::lock::LockState;
 use casement_core::shell::ShellNote;
 use casement_core::time::{Due, Mono, TimerKey};
-use casement_core::{Effect, InputSerial, KeyboardTarget, Model};
+use casement_core::{Effect, InputSerial, KeyboardTarget, Model, SwipeOwner};
 use casement_protocols::vocab::MacMods;
 use casement_wayland::seat::{
     self, GestureDelivery, KeyDelivery, PointerDelivery, PressFate, SurfaceAt,
@@ -71,7 +71,11 @@ pub(super) fn deliver(state: &mut State, event: &InputEvent) {
         }
         InputKind::Button { button, edge } => pressed(state, &seat, event, *button, *edge),
         InputKind::Axis(frame) => scroll(state, &seat, event, *frame),
-        InputKind::Swipe(step) => gesture(state, &seat, event, GestureDelivery::Swipe(*step)),
+        // A swipe the desktop took (the Spaces, Mission Control) is not the clients'.
+        InputKind::Swipe(step) => match state.core.model.swipe_owner() {
+            SwipeOwner::Client => gesture(state, &seat, event, GestureDelivery::Swipe(*step)),
+            SwipeOwner::Desktop => {}
+        },
         InputKind::Pinch(step) => gesture(state, &seat, event, GestureDelivery::Pinch(*step)),
         InputKind::Hold(step) => gesture(state, &seat, event, GestureDelivery::Hold(*step)),
         InputKind::Touch(step) => touch(state, &seat, event, *step),

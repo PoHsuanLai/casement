@@ -31,6 +31,7 @@ mod space_persist;
 mod spaces;
 mod split;
 mod states;
+mod swipe;
 mod timers;
 mod window_menu;
 mod windows;
@@ -58,6 +59,7 @@ use moved::Moved;
 pub use overview::OverviewPick;
 pub use query::OpeningRoom;
 use std::collections::{BTreeMap, BTreeSet};
+pub use swipe::{SpaceStrip, SwipeOwner};
 
 /// Everything casement knows, as one value.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -86,6 +88,8 @@ pub struct Model {
     /// Mission Control's life (`model/overview.rs`).
     overview: Overview,
     focus: Focus,
+    /// The multi-finger swipes in flight (`model/swipe.rs`).
+    swipe: swipe::SwipeState,
     timers: TimerBook,
     settings: CasementSettings,
     seed: SpaceSeed,
@@ -123,6 +127,7 @@ impl Model {
             lock: LockState::Unlocked,
             overview: Overview::Closed,
             focus: Focus::none(),
+            swipe: swipe::SwipeState::default(),
             timers: TimerBook::empty(),
             settings,
             seed,
@@ -133,7 +138,8 @@ impl Model {
     /// The model after `event` at `now`, and the effects it asks for. Routes the event to the
     /// machines (focus, lock, output policy, Spaces, layers) and keeps every invariant.
     ///
-    /// Input events change nothing: what a key or a press means is decided where the target
+    /// Input events change nothing, except the multi-finger swipes: those move the Spaces and
+    /// Mission Control (`model/swipe.rs`). What a key or a press means is decided where the target
     /// is known ([`Model::reach`], [`Model::press`], [`Model::command`]).
     pub fn step(self, event: Event, now: Mono) -> (Model, Vec<Effect>) {
         self.run(now, |model| model.route(event))
@@ -186,7 +192,7 @@ impl Model {
             Event::LayerPlaced { layer, at } => self.place_layer(layer, at),
             Event::LayerUnmapped { layer } => self.unmap_layer(layer),
             Event::Lock(event) => self.lock_event(event),
-            Event::Input(_) => Moved::of(self),
+            Event::Input(event) => self.swipe_input(event),
             Event::OutputPlugged(facts) => self.plug(facts),
             Event::OutputUnplugged(output) => self.unplug(&output),
             Event::OutputConfigured { output, config } => self.configure_output(&output, config),

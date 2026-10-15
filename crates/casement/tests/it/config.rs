@@ -147,6 +147,25 @@ disable_while_typing = "off"
 }
 
 #[test]
+fn the_gesture_keys_reach_the_model() {
+    use casement_core::settings::SwipeFingers;
+    let settings = settings_of(
+        r#"
+[gestures]
+spaces = "three"
+natural = "off"
+"#,
+    );
+    let defaults = CasementSettings::defaults();
+    assert_eq!(settings.gestures.spaces, SwipeFingers::Three);
+    assert_eq!(settings.gestures.natural, Enabled::Off);
+    assert_eq!(
+        settings.gestures.mission_control,
+        defaults.gestures.mission_control
+    );
+}
+
+#[test]
 fn the_rendering_gpu_is_auto_or_a_pci_address() {
     use casement_core::gpu::{ByPathId, GpuChoice};
     let render = |text: &str| settings_of(text).gpu.render;

@@ -2,8 +2,8 @@
 
 use super::ConfigError;
 use super::sections::{
-    GpuSection, KeyboardSection, OutputsSection, PointerSection, SpacesSection, TouchpadSection,
-    WindowsSection,
+    GesturesSection, GpuSection, KeyboardSection, OutputsSection, PointerSection, SpacesSection,
+    TouchpadSection, WindowsSection,
 };
 use ds_settings::schema::{AppId, FilePath, Schema, SettingsSchema};
 use std::path::Path;
@@ -26,6 +26,7 @@ pub fn schema() -> Schema {
             OutputsSection::schema(),
             PointerSection::schema(),
             TouchpadSection::schema(),
+            GesturesSection::schema(),
             GpuSection::schema(),
         ]
         .into_iter()

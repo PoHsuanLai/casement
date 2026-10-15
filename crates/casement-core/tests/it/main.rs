@@ -7,6 +7,7 @@ mod focus_beyond;
 mod focus_props;
 mod focus_spaces;
 mod frame;
+mod gestures;
 mod gpu;
 mod ids;
 mod input;

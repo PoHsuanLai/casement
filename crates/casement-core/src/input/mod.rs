@@ -4,8 +4,10 @@
 mod binding;
 mod chord;
 mod event;
+pub mod gesture_route;
 mod key;
 mod keysym_names;
+pub mod lift;
 mod origin;
 mod reach;
 

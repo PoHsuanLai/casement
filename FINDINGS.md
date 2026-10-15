@@ -130,7 +130,7 @@ module); `Rgba8`; `TextureBook`; `Transcript`, `Pattern`; `FixtureSpec`, `TestOr
 | `taffy` (git rev `4863877b`, A14/A24) is declared here outside the block copied from quire's `docs/workspace-deps.toml` | quire's pinned block carries the line and this workspace copies it verbatim |
 | ds-core's `Scale` has no serde, so stored types write it through `geometry::scale_serde` | ds-core derives `Serialize, Deserialize` (transparent) on `Scale` (interface ask to quire); the helper module is deleted |
 | ds-style without dioxus still pulls `image` (png, jpeg, moxcms) into casement-core's graph (A22, SP8) | quire makes `image` an optional ds-style feature |
-| ds-behaviour is a dependency of casement-core with no caller yet | the switcher, hot-corner and Space-swipe machines run in casement (C41, P3-Z), fed through `Mono::stamp`, with their `*Params` in `CasementSettings` |
+| ds-behaviour: the switcher and hot-corner machines have no caller yet (the Space-swipe machine runs since lane cas21-gesture, `model/swipe.rs`, fed through `Mono::stamp`) | the switcher and hot-corner machines run in casement (C41, P3-Z), with their `*Params` in `CasementSettings` |
 | `CasementSettings::defaults` carries no bindings (C30 says the settings document holds the defaults) | the shell's chords are not defaults of the settings document: c17 reads them from the desktop keymap (`casement::keymap`, see the c17 rows below); `settings/bindings.rs` stays empty and a `[bindings]` entry is only an addition or a win over the keymap for one chord |
 | The smithay fork `PoHsuanLai/smithay` (branch `casement`, C2) exists (P0-fork) and the pin names its commit; it carries two patches, listed below | a further patch is one more commit on the fork and a new rev in the root Cargo.toml and `wlcs-casement/Cargo.toml` |
 | Workspace pins outside quire's pinned block: smithay, wayland-protocols-wlr, wayland-protocols-misc, xkbcommon 0.9 (quire's block says 0.8 through sctk 0.20, A14), libseat, tracing, tracing-subscriber | quire's `docs/workspace-deps.toml` carries them (with the xkbcommon note) and this workspace copies the block verbatim |
@@ -3414,3 +3414,22 @@ on hardware**: nothing was timed; whether the 4K read-back stall is gone is for 
   `TextureRenderElement::from_static_texture` argument order with `renderer.context_id()`; the `&dyn Any` downcast of `GlesTexture` to
   `R::TextureId`; a `GlesTexture` made by `Offscreen::create_buffer` drawn upright through `render_texture_from_to` after being rendered
   into with a `Transform::Normal` tracker (mirrors `blit_texture`).
+
+## Lane cas21-gesture (P3-GS, multi-finger swipes)
+
+Built, uncompiled (wave 6 lanes do not build): `input/gesture_route.rs` (finger-count gate, axis lock at
+10 px, whole-pixel steps with a sub-pixel carry), `input/lift.rs` (the vertical machine), `model/swipe.rs`
+(the model glue; the Space swipe is ds-behaviour's `space_swipe::Swipe`), `settings/gestures.rs` and the
+`[gestures]` section (`spaces`, `mission_control`: off/three/four, default four as on the Mac; `natural`).
+
+| Item | Decision / open |
+| --- | --- |
+| Natural direction | `gestures.natural = off` reverses the Spaces swipe only. Mission Control's up/down is not reversed. Unverified against macOS (assumed: the Spaces follow the scroll-direction setting, Mission Control does not). |
+| Mission Control progress | The swipe drives `Model::overview_progress()` (0..1000 open) but the model's overview is still the time-based flight: a committed swipe starts the normal 350 ms entering/leaving flight from rest, a snap-back never opens it. Following the fingers needs the renderer/layout to draw the spread at the progress. Same numbers as the Space swipe: 400 px for a full travel, commit past half unless a reverse 1.5 flick, or under half on a forward flick. |
+| App Exposé | Not built: the model has no App Exposé (`shell_request` ignores every mode but Mission Control), so a swipe down on a closed Mission Control does nothing. |
+| Space strip drawing | `Model::space_strip(now)` gives the row position (rubber band applied, ease-out-cubic finish sampled); nothing draws it yet. The commit calls `show` at the lift (focus and windows follow at once), which also relayouts with `Cause::SpaceSwitch`; the motion/render lane must suppress its own Space slide while a strip is present, or the slide doubles. |
+| Reduced motion | casement has no reduced-motion setting, so the machine always runs `Reduced::No`. |
+| Finish timer | The finish reuses `TimerKey::SpaceFinish(output)` (its doc: a Space change animation finishes), which nothing armed before. |
+| Client delivery | The model steps an input event before the loop delivers it; `Model::swipe_owner()` right after says whether the desktop took that swipe step. It holds for one input event per `feed` (what every caller does). A taken swipe is not delivered to clients (`core_loop/deliver.rs`); other finger counts still are. |
+| Origins | Physical, test and trusted-feed swipes count; virtual, agent and remote ones never do (I2: system gestures are physical only). |
+| Not done | palmrest's Magic Mouse part (`Fixture::palmrest`); a horizontal swipe while Mission Control is up (the Mac switches Spaces there); the 2-finger Magic Mouse source. |
