@@ -4,22 +4,26 @@
 
 use super::BlurV0Element;
 use crate::pass::{Finished, capture_blur, finish_blur};
+use casement_core::settings::Transparency;
 use smithay::backend::renderer::gles::{GlesError, GlesFrame};
 use smithay::utils::user_data::UserDataMap;
 use smithay::utils::{Physical, Rectangle};
 
-/// Blurs what lies under `dst` into `cache`.
+/// Blurs what lies under `dst` into `cache`; a reduced blur captures nothing.
 pub(super) fn capture(
     frame: &mut GlesFrame<'_, '_>,
     blur: &BlurV0Element,
     dst: Rectangle<i32, Physical>,
     cache: &UserDataMap,
 ) -> Result<(), GlesError> {
-    capture_blur(frame, dst, blur.plan(), cache)
+    match blur.transparency() {
+        Transparency::Full => capture_blur(frame, dst, blur.plan(), cache),
+        Transparency::Reduced => Ok(()),
+    }
 }
 
 /// Draws the blurred copy over `blur`'s region where `damage` (relative to `dst`) asks; the
-/// stand-in when nothing was captured yet.
+/// stand-in when nothing was captured yet, and always when the blur is reduced.
 pub(super) fn draw(
     frame: &mut GlesFrame<'_, '_>,
     blur: &BlurV0Element,
@@ -27,6 +31,9 @@ pub(super) fn draw(
     damage: &[Rectangle<i32, Physical>],
     cache: Option<&UserDataMap>,
 ) -> Result<(), GlesError> {
+    if blur.transparency() == Transparency::Reduced {
+        return blur.draw_stand_in(frame, dst, damage);
+    }
     let clipped = blur.clip(damage);
     if clipped.is_empty() {
         return Ok(());

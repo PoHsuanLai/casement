@@ -2,6 +2,8 @@
 //! the goldens in `scenes.rs`.
 
 use casement_core::geometry::PhysicalRect;
+use casement_core::layer::BlurStrength;
+use casement_core::settings::Transparency;
 use casement_render::pass::{BlurLook, KawasePlan, level_size};
 use casement_render::{BlurV0Element, Rgba8};
 use smithay::backend::renderer::element::{Element, Id};
@@ -183,4 +185,59 @@ fn the_finish_shader_has_no_sin_of_the_pixel_position() {
     let up = include_str!("../../src/shaders/kawase_up.frag");
     assert!(!up.contains("sin("), "no sin() in the finish shader");
     assert!(up.contains("if (grain > 0.0)"), "grain only when asked");
+}
+
+/// Each strength's look: the lighter the strength, the smaller the sigma; `Regular` is the one
+/// look every blur had before, and the plan it makes is monotone in the strength.
+#[test]
+fn a_strength_picks_its_look_and_a_stronger_one_blurs_wider() {
+    let table = [
+        (BlurStrength::Light, 12.0, 1.6),
+        (BlurStrength::Regular, 22.0, 1.8),
+        (BlurStrength::Strong, 32.0, 1.8),
+    ];
+    for (strength, sigma, saturation) in table {
+        let picked = BlurLook::of(strength);
+        assert_eq!(
+            (picked.sigma, picked.saturation),
+            (sigma, saturation),
+            "{strength:?}"
+        );
+        assert_eq!((picked.tint, picked.noise), (BlurLook::MATERIAL.tint, 0.0));
+    }
+    assert_eq!(BlurLook::of(BlurStrength::default()), BlurLook::MATERIAL);
+    let reach = |strength| BlurLook::of(strength).plan(1.0).reach();
+    assert!(reach(BlurStrength::Light) < reach(BlurStrength::Regular));
+    assert!(reach(BlurStrength::Regular) < reach(BlurStrength::Strong));
+}
+
+/// Reduce transparency: the blur stops being a framebuffer effect, draws its mostly opaque
+/// stand-in whatever it was made with, and is a new commit (so the frame repaints at once).
+#[test]
+fn a_reduced_blur_is_its_stand_in_and_a_new_commit() {
+    let region = vec![PhysicalRect {
+        x: 0,
+        y: 0,
+        w: 10,
+        h: 10,
+    }];
+    let full = BlurV0Element::new(Id::new(), region, STAND_IN);
+    let reduced = full.clone().with_transparency(Transparency::Reduced);
+    assert_eq!(full.transparency(), Transparency::Full);
+    assert_eq!(reduced.transparency(), Transparency::Reduced);
+    assert!(full.is_framebuffer_effect() && !reduced.is_framebuffer_effect());
+    assert_eq!(full.stand_in(), STAND_IN);
+    assert!(reduced.stand_in().a >= 245, "alpha at least 0.96");
+    assert!(full.current_commit() != reduced.current_commit());
+    let kept = reduced.remapped(|rect| [rect]);
+    assert_eq!(
+        kept.transparency(),
+        Transparency::Reduced,
+        "kept through a remap"
+    );
+    assert_eq!(
+        kept.with_transparency(Transparency::Full).current_commit(),
+        full.current_commit(),
+        "switching back is the blur again"
+    );
 }

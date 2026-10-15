@@ -10,6 +10,7 @@ use crate::pass::{BlurLook, KawasePlan};
 use crate::scene::OutputView;
 use crate::scene::convert::{on_output, ours, physical};
 use casement_core::geometry::{PhysicalRect, SubPoint, SubPx};
+use casement_core::settings::Transparency;
 use smithay::backend::renderer::element::{Element, Id, RenderElement};
 use smithay::backend::renderer::gles::{GlesError, GlesFrame};
 use smithay::backend::renderer::utils::{CommitCounter, DamageSet, OpaqueRegions};
@@ -31,27 +32,39 @@ pub(crate) const STAND_IN: Rgba8 = Rgba8 {
     a: 217,
 };
 
+/// What a blur draws in place of itself under Reduce transparency: a neutral mid grey at 0.96
+/// (premultiplied), so a translucent tint over it reads as mostly solid in a light theme and a
+/// dark one alike (the compositor does not know the theme). UNMEASURED: a visual judgement.
+pub(crate) const REDUCED_STAND_IN: Rgba8 = Rgba8 {
+    r: 122,
+    g: 122,
+    b: 122,
+    a: 245,
+};
+
 /// The namespace that tells a surface's blur from the surface's own element (same resource).
 const NAMESPACE: usize = 1;
 
 /// The blur v0 a surface asked for through ext-background-effect (its committed blur region,
-/// surface-local), behind `root` whose top-left is at `origin` (global sub-pixels) on `view`;
-/// none without a region or with an empty one.
+/// surface-local), behind `root` whose top-left is at `origin` (global sub-pixels) on `view`,
+/// looking as `look` says; none without a region or with an empty one.
 pub(crate) fn behind(
     root: &WlSurface,
     origin: SubPoint,
+    look: BlurLook,
     view: &OutputView,
 ) -> Option<BlurV0Element> {
-    behind_scaled(root, origin, (1.0, 1.0), 1.0, view)
+    behind_scaled(root, origin, (1.0, 1.0), (1.0, look), view)
 }
 
-/// [`behind`] stretched by `ratio` about its top-left (a window in a Scale flight) and drawn at `alpha`
-/// (the window's, so the blur fades with it); none without a region or with an empty one.
+/// [`behind`] stretched by `ratio` about its top-left (a window in a Scale flight) and drawn at
+/// the first of `(alpha, look)` (the window's, so the blur fades with it); none without a region
+/// or with an empty one.
 pub(crate) fn behind_scaled(
     root: &WlSurface,
     origin: SubPoint,
     ratio: (f64, f64),
-    alpha: f32,
+    (alpha, look): (f32, BlurLook),
     view: &OutputView,
 ) -> Option<BlurV0Element> {
     let region = with_states(root, |states| {
@@ -68,7 +81,6 @@ pub(crate) fn behind_scaled(
         .filter(|rect| rect.w > 0 && rect.h > 0)
         .collect();
     let id = Id::from_wayland_resource(root).namespaced(NAMESPACE);
-    let look = BlurLook::MATERIAL;
     (!rects.is_empty()).then(|| {
         BlurV0Element::new(id, rects, STAND_IN)
             .with_alpha(alpha)
@@ -132,6 +144,7 @@ pub struct BlurV0Element {
     stand_in: Rgba8,
     alpha: f32,
     plan: KawasePlan,
+    transparency: Transparency,
 }
 
 impl BlurV0Element {
@@ -144,6 +157,40 @@ impl BlurV0Element {
             stand_in,
             alpha: 1.0,
             plan: BlurLook::MATERIAL.plan(1.0),
+            transparency: Transparency::Full,
+        }
+    }
+
+    /// The same blur under `transparency`: reduced, it is not a blur at all but its mostly
+    /// opaque stand-in, on every renderer (nothing is captured from the framebuffer).
+    ///
+    /// ```
+    /// use casement_core::settings::Transparency;
+    /// use casement_render::{BlurV0Element, Rgba8};
+    /// use smithay::backend::renderer::element::{Element, Id};
+    ///
+    /// let black = Rgba8 { r: 0, g: 0, b: 0, a: 255 };
+    /// let blur = BlurV0Element::new(Id::new(), Vec::new(), black);
+    /// assert!(blur.is_framebuffer_effect());
+    /// assert!(!blur.with_transparency(Transparency::Reduced).is_framebuffer_effect());
+    /// ```
+    pub fn with_transparency(self, transparency: Transparency) -> BlurV0Element {
+        BlurV0Element {
+            transparency,
+            ..self
+        }
+    }
+
+    /// Whether the blur is drawn or replaced by its stand-in.
+    pub fn transparency(&self) -> Transparency {
+        self.transparency
+    }
+
+    /// The colour the stand-in is drawn in: the one it was made with, or the reduced one.
+    pub fn stand_in(&self) -> Rgba8 {
+        match self.transparency {
+            Transparency::Full => self.stand_in,
+            Transparency::Reduced => REDUCED_STAND_IN,
         }
     }
 
@@ -205,6 +252,7 @@ impl BlurV0Element {
             stand_in: self.stand_in,
             alpha: self.alpha,
             plan: self.plan,
+            transparency: self.transparency,
         }
     }
 
@@ -287,7 +335,7 @@ impl BlurV0Element {
         let clipped = self.clip(damage);
         match clipped.is_empty() {
             true => Ok(()),
-            false => frame.draw_solid(dst, &clipped, self.stand_in.faded(self.alpha)),
+            false => frame.draw_solid(dst, &clipped, self.stand_in().faded(self.alpha)),
         }
     }
 }
@@ -301,12 +349,8 @@ impl Element for BlurV0Element {
     /// the region's shape and the colour (a new framebuffer under it is smithay's to notice:
     /// a framebuffer effect is captured again whenever what lies behind it changes).
     fn current_commit(&self) -> CommitCounter {
-        let colour = [
-            self.stand_in.r,
-            self.stand_in.g,
-            self.stand_in.b,
-            self.stand_in.a,
-        ];
+        let stand_in = self.stand_in();
+        let colour = [stand_in.r, stand_in.g, stand_in.b, stand_in.a];
         let plan = &self.plan;
         let look = [
             plan.offset.to_bits(),
@@ -323,7 +367,15 @@ impl Element for BlurV0Element {
                 .flat_map(i32::to_le_bytes)
         });
         let alpha = self.alpha.to_bits().to_le_bytes();
-        fingerprint(colour.into_iter().chain(alpha).chain(look).chain(shape))
+        let finish = u8::from(self.transparency == Transparency::Reduced);
+        fingerprint(
+            colour
+                .into_iter()
+                .chain(alpha)
+                .chain(look)
+                .chain(shape)
+                .chain([finish]),
+        )
     }
 
     fn src(&self) -> Rectangle<f64, BufferCoords> {
@@ -352,7 +404,7 @@ impl Element for BlurV0Element {
     /// opaque too.
     fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
         let _ = scale;
-        match self.stand_in.is_opaque() && self.alpha >= 1.0 {
+        match self.stand_in().is_opaque() && self.alpha >= 1.0 {
             true => OpaqueRegions::from_slice(&self.local_region()),
             false => OpaqueRegions::default(),
         }
@@ -362,8 +414,9 @@ impl Element for BlurV0Element {
         self.alpha
     }
 
+    /// Only a blur that is drawn reads the framebuffer; reduced, its stand-in reads nothing.
     fn is_framebuffer_effect(&self) -> bool {
-        true
+        self.transparency == Transparency::Full
     }
 }
 

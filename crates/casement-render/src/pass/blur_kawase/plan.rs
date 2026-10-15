@@ -2,6 +2,7 @@
 //! Pure; nothing here touches a renderer.
 
 use crate::element::Rgba8;
+use casement_core::layer::BlurStrength;
 use smithay::utils::{Physical, Rectangle};
 
 /// The most halving levels (a 4K output is 60 pixels across at level six).
@@ -48,6 +49,37 @@ impl BlurLook {
         },
         noise: 0.0,
     };
+
+    /// The look of a small surface that should keep the picture behind it readable: sigma 12,
+    /// saturation 1.6. UNMEASURED: a judgement beside [`BlurLook::MATERIAL`].
+    pub const LIGHT: BlurLook = BlurLook {
+        sigma: 12.0,
+        saturation: 1.6,
+        ..BlurLook::MATERIAL
+    };
+
+    /// The look of a large panel that should stand clear of a busy picture: sigma 32, saturation
+    /// 1.8. UNMEASURED: a judgement beside [`BlurLook::MATERIAL`].
+    pub const STRONG: BlurLook = BlurLook {
+        sigma: 32.0,
+        ..BlurLook::MATERIAL
+    };
+
+    /// The look a surface of this `strength` asks for; `Regular` is [`BlurLook::MATERIAL`].
+    ///
+    /// ```
+    /// use casement_core::layer::BlurStrength;
+    /// use casement_render::pass::BlurLook;
+    ///
+    /// assert_eq!(BlurLook::of(BlurStrength::Regular), BlurLook::MATERIAL);
+    /// ```
+    pub fn of(strength: BlurStrength) -> BlurLook {
+        match strength {
+            BlurStrength::Light => BlurLook::LIGHT,
+            BlurStrength::Regular => BlurLook::MATERIAL,
+            BlurStrength::Strong => BlurLook::STRONG,
+        }
+    }
 
     /// The passes this look needs on an output at `scale` (physical pixels per logical pixel).
     ///

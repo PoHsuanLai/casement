@@ -166,6 +166,27 @@ natural = "off"
 }
 
 #[test]
+fn reduce_transparency_reaches_the_model_and_follows_the_file() {
+    use casement::settings_live::followed;
+    use casement_core::settings::Transparency;
+    let on = settings_of("[accessibility]\nreduce_transparency = \"on\"\n");
+    assert_eq!(on.accessibility.reduce_transparency, Enabled::On);
+    assert_eq!(on.accessibility.transparency(), Transparency::Reduced);
+    assert_eq!(
+        CasementSettings::defaults().accessibility.transparency(),
+        Transparency::Full,
+        "off unless the file says so"
+    );
+    let (_dir, home) = home_with("[accessibility]\nreduce_transparency = \"on\"\n");
+    let doc = load(&home).expect("load");
+    let live = followed(&CasementSettings::defaults(), &doc);
+    assert_eq!(
+        live.accessibility, on.accessibility,
+        "followed while running"
+    );
+}
+
+#[test]
 fn the_rendering_gpu_is_auto_or_a_pci_address() {
     use casement_core::gpu::{ByPathId, GpuChoice};
     let render = |text: &str| settings_of(text).gpu.render;

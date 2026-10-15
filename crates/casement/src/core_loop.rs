@@ -167,6 +167,7 @@ pub fn frame(state: &mut State, output: &OutputKey) {
         titles,
         closing: leaving,
         minimise_effect: state.core.model.settings().windows.minimise_effect,
+        transparency: state.core.model.settings().accessibility.transparency(),
         overview,
         backdrop: divider::backdrop(state, output),
         tile_preview: tile::preview(state, output),

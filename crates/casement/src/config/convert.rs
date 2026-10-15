@@ -5,17 +5,18 @@
 use super::action::ActionWords;
 use super::doc::CasementDoc;
 use super::sections::{
-    BindingsSection, FirstSight, GesturesSection, GpuSection, KeyboardSection, NightLightSection,
-    OutputsSection, PointerSection, SpacesSection, TouchpadSection, WindowsSection,
+    AccessibilitySection, BindingsSection, FirstSight, GesturesSection, GpuSection,
+    KeyboardSection, NightLightSection, OutputsSection, PointerSection, SpacesSection,
+    TouchpadSection, WindowsSection,
 };
 use casement_core::CoreError;
 use casement_core::gpu::{ByPathId, GpuChoice};
 use casement_core::input::{Binding, Bindings, Chord};
 use casement_core::output::{Kelvin, MinuteOfDay, ScalePolicy};
 use casement_core::settings::{
-    CasementSettings, GestureSettings, GpuSettings, KeyboardSettings, NightLightSettings,
-    OutputSettings, PointerProfile, PointerSettings, RepeatRate, SpaceSettings, WindowSettings,
-    XkbNames,
+    AccessibilitySettings, CasementSettings, GestureSettings, GpuSettings, KeyboardSettings,
+    NightLightSettings, OutputSettings, PointerProfile, PointerSettings, RepeatRate, SpaceSettings,
+    WindowSettings, XkbNames,
 };
 use ds_core::geometry::scale::Scale;
 use ds_settings::{Count, Ms};
@@ -36,6 +37,7 @@ pub fn to_core(doc: &CasementDoc) -> CasementSettings {
         gestures: gestures(&doc.gestures),
         gpu: gpu(&doc.gpu),
         night_light: night_light(&doc.night_light),
+        accessibility: accessibility(&doc.accessibility),
     }
 }
 
@@ -272,6 +274,16 @@ pub(super) fn night_light_doc(core: &NightLightSettings) -> NightLightSection {
         kelvin: Count(core.warmth.0),
         fade_minutes: Count(core.fade_minutes),
         skip_outputs: core.skip_outputs.clone(),
+    }
+}
+
+fn accessibility(doc: &AccessibilitySection) -> AccessibilitySettings {
+    AccessibilitySettings::new(doc.reduce_transparency)
+}
+
+pub(super) fn accessibility_doc(core: &AccessibilitySettings) -> AccessibilitySection {
+    AccessibilitySection {
+        reduce_transparency: core.reduce_transparency,
     }
 }
 

@@ -8,6 +8,7 @@ use super::flight::{drawn_content, scale_ratio};
 use super::geometry::{geometry_origin, geometry_size, surface_origin};
 use super::rounded_clip::ClipShape;
 use crate::compositor::Compositor;
+use crate::pass::BlurLook;
 use crate::scene::OutputView;
 use crate::scene::convert::on_output;
 use crate::texture_book::TextureBook;
@@ -87,7 +88,7 @@ pub(crate) fn window_blur(
         root,
         scaled_origin(root, placed.at, ratio),
         ratio,
-        faded,
+        (faded, BlurLook::MATERIAL),
         view,
     )
 }

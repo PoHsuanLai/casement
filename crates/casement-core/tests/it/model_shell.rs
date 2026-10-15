@@ -7,8 +7,8 @@ use crate::support::{headless, proven, rect};
 use casement_core::focus::TokenCheck;
 use casement_core::geometry::{LogicalPoint, LogicalSize};
 use casement_core::layer::{
-    Anchor, Anchors, ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerSpec, Margins,
-    ShellRoleTag,
+    Anchor, Anchors, BlurStrength, ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerSpec,
+    Margins, ShellRoleTag,
 };
 use casement_core::shell::{ShellNote, ShellRequest};
 use casement_core::window::WlrToplevelRequest;
@@ -207,4 +207,34 @@ fn a_window_minimises_toward_its_tile_else_the_bottom_centre_of_its_output() {
         Some(rect(960, 1080, 0, 0)),
         "a cleared tile falls back to the bottom centre"
     );
+}
+
+/// Each shell role's blur strength; every role has a row, and a layer surface with no role (a
+/// client's own) keeps today's one look.
+#[test]
+fn a_shell_role_picks_the_strength_of_the_blur_behind_it() {
+    use casement_core::layer::BlurStrength::{Light, Regular, Strong};
+    use casement_protocols::vocab::WireCode;
+    let table = [
+        (ShellRole::Bar, Regular),
+        (ShellRole::Dock, Regular),
+        (ShellRole::Launcher, Strong),
+        (ShellRole::Switcher, Regular),
+        (ShellRole::Overview, Regular),
+        (ShellRole::Notifications, Regular),
+        (ShellRole::Osd, Light),
+        (ShellRole::ControlCentre, Strong),
+        (ShellRole::Wallpaper, Regular),
+        (ShellRole::Widget, Regular),
+    ];
+    assert_eq!(table.len(), ShellRole::ALL.len(), "a row for every role");
+    for (role, strength) in table {
+        assert_eq!(
+            BlurStrength::of(ShellRoleTag::Assigned(role)),
+            strength,
+            "{role:?}"
+        );
+    }
+    assert_eq!(BlurStrength::of(ShellRoleTag::Unassigned), Regular);
+    assert!(Light < Regular && Regular < Strong, "lightest first");
 }
