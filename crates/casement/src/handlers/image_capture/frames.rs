@@ -1,17 +1,15 @@
 //! Answering one frame request.
 
-use super::constraints_of;
+use super::{buffer_size, constraints_of, deliver};
 use crate::state::State;
 use casement_backend::{BackendKind, FramePixels, PresentedFrame};
 use casement_core::OutputKey;
-use casement_core::geometry::{PhysicalRect, PhysicalSize};
+use casement_core::geometry::PhysicalRect;
 use casement_core::time::Mono;
-use casement_render::pass::{CapturedFrame, write_frame};
+use casement_render::pass::CapturedFrame;
 use casement_wayland::image_capture::{self, CaptureFailure, CaptureSessionId, CursorPaint};
-use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::utils::{Buffer, Rectangle, Size, Transform};
 use smithay::wayland::image_copy_capture::{Frame, SessionRef};
-use smithay::wayland::shm::with_buffer_contents;
 
 /// Fills the client's buffer from the output's last frame and tells it `ready`, or `failed`
 /// with the reason.
@@ -85,7 +83,7 @@ fn capture(
     if last.is_some() && changed.is_empty() {
         return Ok(None);
     }
-    write_frame(&buffer, &captured).map_err(|error| {
+    deliver(state, &buffer, &captured).map_err(|error| {
         tracing::warn!(%error, "a capture frame was not written");
         CaptureFailure::BufferMismatch
     })?;
@@ -176,13 +174,4 @@ pub(in crate::handlers) fn release_waiting(state: &mut State) {
         };
         serve(state, &session, frame);
     }
-}
-
-/// The size of a shared-memory buffer, in pixels.
-fn buffer_size(buffer: &WlBuffer) -> Option<PhysicalSize> {
-    let (w, h) = with_buffer_contents(buffer, |_, _, data| (data.width, data.height)).ok()?;
-    Some(PhysicalSize {
-        w: u32::try_from(w).ok()?,
-        h: u32::try_from(h).ok()?,
-    })
 }

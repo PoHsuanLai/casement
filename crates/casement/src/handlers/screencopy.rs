@@ -39,6 +39,7 @@ impl ScreencopyHandler for State {
             mode: config.mode.size,
             scale: config.scale,
             transform: config.transform,
+            dmabuf: image_capture::fourccs(self),
         })
     }
 
@@ -101,7 +102,7 @@ fn answer(state: &mut State, copy: &PendingCopy) -> Outcome {
     if copy.damage == Damage::Fresh && damage.is_empty() {
         return Outcome::Wait;
     }
-    match write(copy, &captured) {
+    match write(state, copy, &captured) {
         Ok(()) => {
             screencopy::apply_ready(&mut state.wl.screencopy, copy, at, &damage);
             Outcome::Done
@@ -111,11 +112,15 @@ fn answer(state: &mut State, copy: &PendingCopy) -> Outcome {
 }
 
 /// The part of `captured` that `copy` names, written into its buffer.
-fn write(copy: &PendingCopy, captured: &CapturedFrame) -> Result<(), CaptureFailure> {
+fn write(
+    state: &mut State,
+    copy: &PendingCopy,
+    captured: &CapturedFrame,
+) -> Result<(), CaptureFailure> {
     let part = captured
         .cropped(copy.target.area)
         .ok_or(CaptureFailure::BufferMismatch)?;
-    casement_render::pass::write_frame(&copy.buffer, &part).map_err(|error| {
+    image_capture::deliver(state, &copy.buffer, &part).map_err(|error| {
         tracing::warn!(%error, "a screencopy frame was not written");
         CaptureFailure::BufferMismatch
     })
