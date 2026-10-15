@@ -45,7 +45,7 @@ impl Model {
                 ..
             } => self.leave_full_screen(&window),
             ToplevelRequest::Activate(token) => self.activate_window(&window, token),
-            ToplevelRequest::WindowMenu { .. } => Moved::of(self),
+            ToplevelRequest::WindowMenu { at } => self.window_menu(&window, at),
             ToplevelRequest::Place { target, .. } => self.place(&window, target),
         }
     }

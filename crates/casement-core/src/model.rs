@@ -29,6 +29,7 @@ mod space_persist;
 mod spaces;
 mod states;
 mod timers;
+mod window_menu;
 mod windows;
 mod wlr_requests;
 mod workspace_requests;

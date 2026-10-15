@@ -184,6 +184,7 @@ pub fn output_elements<R: Compositor>(
                                 style,
                                 layers.titles.get(&placed.window),
                                 content,
+                                placed.opacity,
                                 view,
                                 book,
                                 renderer,

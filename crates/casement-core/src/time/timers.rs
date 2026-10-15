@@ -34,6 +34,8 @@ pub enum TimerKey {
     SwitcherDelay,
     /// The pointer has rested in a hot corner long enough.
     HotCorner(Corner),
+    /// The pointer has rested on a window's green light long enough for its menu.
+    LightDwell,
     /// A Space change animation on this output finishes.
     SpaceFinish(OutputKey),
     /// A trusted surface becomes able to take an answer.

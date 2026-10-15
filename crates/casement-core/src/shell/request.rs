@@ -3,6 +3,7 @@
 
 use crate::geometry::LogicalRect;
 use crate::ids::{LayerKey, WindowId};
+use crate::window::MenuEntry;
 use casement_protocols::vocab::ShellRole;
 
 /// One request from the shell.
@@ -32,5 +33,14 @@ pub enum ShellRequest {
     ClearMinimiseTarget {
         /// The window.
         window: WindowId,
+    },
+    /// The person picked `entry` in the window menu the shell drew for `window`
+    /// ([`ShellNote::WindowMenu`](super::ShellNote::WindowMenu)). The model carries it out only
+    /// when the entry is enabled for the window's state now.
+    WindowMenuPick {
+        /// The window.
+        window: WindowId,
+        /// The entry.
+        entry: MenuEntry,
     },
 }

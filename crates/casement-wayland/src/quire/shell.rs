@@ -327,6 +327,11 @@ pub fn apply_note(part: &mut QuireShellPart, note: &ShellNote) -> Result<(), Way
                 }
             }
         }
+        // The wire step waits for the protocol's `window_menu` event and `window_menu_pick`
+        // request (the interface ask in FINDINGS, `wave-2026-10-15/winmenu`): until they exist
+        // the menu is asked for and nothing is shown. `WindowMenuShow::enabled` is the bit set
+        // the event will carry, and `MenuEntry::from_code` reads the pick.
+        ShellNote::WindowMenu(_) => {}
         _ => {}
     }
     Ok(())

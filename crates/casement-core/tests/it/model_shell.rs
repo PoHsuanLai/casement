@@ -162,3 +162,49 @@ fn the_docks_target_wins_over_a_window_list_clients_while_a_dock_holds_a_role() 
         "the dock's tile stays the target when the window-list client asks later"
     );
 }
+
+#[test]
+fn a_window_minimises_toward_its_tile_else_the_bottom_centre_of_its_output() {
+    let mail = proven("org.quire.Mail");
+    let destination = |model: &casement_core::Model| {
+        let window = model.windows()[&WindowId(1)].clone();
+        model.minimise_destination(&window).map(|t| t.rect)
+    };
+    let bare = run(vec![plug("HEADLESS-1"), map(1, &mail, TokenCheck::Missing)]);
+    assert_eq!(
+        destination(&bare.model),
+        Some(rect(960, 1080, 0, 0)),
+        "no tile: a point at the bottom centre"
+    );
+    let docked = run_from(
+        bare.model,
+        vec![
+            layer(1, ShellRoleTag::Unassigned),
+            Op::Event(Event::LayerPlaced {
+                layer: LayerKey(1),
+                at: LogicalPoint { x: 100, y: 900 },
+            }),
+            shell(ShellRequest::MinimiseTarget {
+                dock: LayerKey(1),
+                window: WindowId(1),
+                local: rect(10, 5, 64, 64),
+            }),
+        ],
+    );
+    assert_eq!(
+        destination(&docked.model),
+        Some(rect(110, 905, 64, 64)),
+        "the dock's tile"
+    );
+    let cleared = run_from(
+        docked.model,
+        vec![shell(ShellRequest::ClearMinimiseTarget {
+            window: WindowId(1),
+        })],
+    );
+    assert_eq!(
+        destination(&cleared.model),
+        Some(rect(960, 1080, 0, 0)),
+        "a cleared tile falls back to the bottom centre"
+    );
+}

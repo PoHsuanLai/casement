@@ -24,6 +24,7 @@ impl Model {
                 let none = LogicalRect::new(LogicalPoint { x: 0, y: 0 }, LogicalSize::ZERO);
                 Moved::of(self.with_minimise_rect(window, none))
             }
+            ShellRequest::WindowMenuPick { window, entry } => self.window_menu_pick(window, entry),
         }
     }
 

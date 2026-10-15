@@ -8,6 +8,7 @@ mod title;
 pub use title::TitleDraw;
 
 use super::CasementElement;
+use super::window::alpha;
 use crate::compositor::Compositor;
 use crate::scene::OutputView;
 use crate::scene::convert::{on_output, sub_of};
@@ -15,6 +16,7 @@ use crate::texture_book::TextureBook;
 use casement_core::WindowId;
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize, buffer_size};
 use casement_core::window::FrameStyle;
+use ds_core::vocab::Fraction;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::element::memory::{
@@ -25,16 +27,19 @@ use smithay::utils::{Logical, Rectangle, Size, Transform};
 /// The frame `style` makes round the window `window` whose content is at `content`, on `view`.
 /// Nothing for the part that is off this output. The first list goes in front of the window's
 /// surfaces (the title, then the titlebar and the lights), the second behind them (the shadow).
-/// `title`, when there is one, is laid over the titlebar.
+/// `title`, when there is one, is laid over the titlebar. Both are drawn at the window's `opacity`,
+/// so a window that fades in, or out into the dock, takes its frame with it.
 pub fn frame_elements<R: Compositor>(
     window: WindowId,
     style: &FrameStyle,
     title: Option<&TitleDraw>,
     content: LogicalRect,
+    opacity: Fraction,
     view: &OutputView,
     book: &TextureBook,
     renderer: &mut R,
 ) -> (Vec<CasementElement<R>>, Vec<CasementElement<R>>) {
+    let faded = alpha(opacity);
     let geometry = style.around(content);
     let bar = geometry.titlebar();
     let outline = geometry.outline();
@@ -65,6 +70,7 @@ pub fn frame_elements<R: Compositor>(
                 bar.origin,
                 bar.size,
                 (pixels.w, pixels.h),
+                faded,
                 &buffer,
             )
         })
@@ -108,6 +114,7 @@ pub fn frame_elements<R: Compositor>(
                 reach.origin,
                 reach.size,
                 (reach.size.w, reach.size.h),
+                faded,
                 &buffer,
             )
         })
@@ -189,6 +196,7 @@ fn element<R: Compositor>(
     origin: LogicalPoint,
     size: LogicalSize,
     pixels: (u32, u32),
+    alpha: f32,
     buffer: &MemoryRenderBuffer,
 ) -> Option<MemoryRenderBufferRenderElement<R>> {
     let side = |n: u32| i32::try_from(n).unwrap_or(i32::MAX);
@@ -196,7 +204,7 @@ fn element<R: Compositor>(
         renderer,
         on_output(sub_of(origin), view).to_f64(),
         buffer,
-        None,
+        Some(alpha),
         Some(Rectangle::<f64, Logical>::from_size(
             (f64::from(pixels.0), f64::from(pixels.1)).into(),
         )),
