@@ -308,6 +308,7 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
     core_loop::announce_outputs(&mut state);
     crate::keymap::attach(&mut state, &config_home)?;
     crate::appearance::attach(&mut state, &config_home)?;
+    crate::settings_live::attach(&mut state, &config_home)?;
     // The Spaces are loaded and the outputs announced: register them (queued, not waited for),
     // then tell the service manager the compositor is ready.
     state.seams.space_sync.sync(state.core.model.spaces());

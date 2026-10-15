@@ -5,8 +5,9 @@ use super::sections::{
     BindingsSection, GpuSection, KeyboardSection, OutputsSection, PointerSection, SpacesSection,
     TouchpadSection, WindowsSection,
 };
+use super::version::Version;
 use crate::cli::ConfigHome;
-use ds_settings::{AppName, ConfigRoot, FileName, Format, SettingsDoc, Store};
+use ds_settings::{AppName, ConfigRoot, FileName, Format, SettingsDoc, Store, Watch};
 use serde::{Deserialize, Serialize};
 
 /// `casement/settings.toml`: one section per `CasementSettings` part. A key it does not read
@@ -14,6 +15,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CasementDoc {
+    /// `version`: which defaults the file was written under (see [`Version`]); none in a file
+    /// written before the file had one. [`load`] brings it to the current version.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<Version>,
     /// `windows.*`.
     pub windows: WindowsSection,
     /// `spaces.*`.
@@ -54,14 +59,23 @@ pub fn load(home: &ConfigHome) -> Result<CasementDoc, ConfigError> {
     for key in &loaded.invalid {
         tracing::warn!("settings.toml: {key}");
     }
-    Ok(loaded.value)
+    Ok(loaded.value.migrated())
 }
 
 /// `home` as the ds-settings store it names.
-fn store(home: &ConfigHome) -> Store {
+pub(crate) fn store(home: &ConfigHome) -> Store {
     let root = match home {
         ConfigHome::Xdg => ConfigRoot::Xdg,
         ConfigHome::At(dir) => ConfigRoot::Scratch(dir.clone()),
     };
     Store::new(root, APP)
+}
+
+/// A watch on `home`'s document: every settled change of the file arrives whole (ds-settings,
+/// debounced). It runs as a task on `spawn`.
+pub(crate) fn watch(
+    home: &ConfigHome,
+    spawn: &dyn ds_core::spawner::Spawner,
+) -> Watch<CasementDoc> {
+    store(home).watch::<CasementDoc>(spawn)
 }

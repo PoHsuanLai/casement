@@ -2538,3 +2538,47 @@ The window shadow stops re-rastering per frame. Written without a compiler (wave
   frame time (no per-frame raster, only the elements' rectangles change); the shadow is sharp at 2x, follows the rounded
   bottom corners, and has no seam where a strip meets a corner (look at light and dark); the dim shadow under a fade (`opacity`)
   fades with the window; a very small window (a 100x60 dialog) has a plausible shadow.
+
+## wave-2026-10-15/input2
+
+Lane `input2` (not compiled; the orchestrator gates). Closes the two "Gaps noted, not changed" of `session`.
+
+- **Live apply.** casement watched no `settings.toml` before (only quire's `appearance.toml`). New
+  `casement::settings_live` watches the document through ds-settings (the appearance watch's thread
+  spawner, now `pub(crate)`), and `settings_live::apply` tells the model `followed(current, doc)`:
+  the file's pointer and touchpad profiles and the key repeat; everything else (bindings from the
+  keymap, the layout, windows, outputs) stays as running. `core_loop::note_settings` now also calls
+  `tty::reconfigure_pointers` on every `SettingsChanged`, whatever its source. The seam side:
+  `casement_backend::input::PresentDevices` (pure; remembers each device's class and what it was last
+  configured with; `changes(&PointerSettings)` is the diff), held by `TtyBackend`, which records
+  appearances, departures and every successful `configure_device`; `TtyBackend::reconfigure_pointers`
+  applies the diff through `InputDevices::apply`. The fake (`FakeInputFeed`) needed no change.
+  Tests: table `a_settings_change_reaches_exactly_the_devices_it_changes` and three more in
+  `casement-backend/tests/it/input_config.rs`; fixture test `a_settings_change_reaches_a_device_already_present`
+  (`Fixture::settings_file_changed`); table `the_file_changes_the_pointer_and_the_repeat_and_nothing_else`.
+- **Departures.** (1) The keymap layout (`keyboard.xkb_*`) does not follow the file: the seat's keymap is
+  compiled at start, and putting the new names in the model without recompiling would make them disagree;
+  still a restart. Key repeat does follow (`repeat_info` already ran on `SettingsChanged`). (2) A scroll
+  factor change alone also re-applies the device settings (libinput ignores it; the scroll scaling reads the
+  stored value per event, so it was already live). (3) Windows, spaces, outputs, GPU settings are still read
+  at start only.
+- **Old files.** `settings.toml` has a top-level `version` (`config::Version`, none in old files, current 2).
+  `config::load` returns `CasementDoc::migrated()`: from no version or an older one, a key that still holds a
+  retired default (only `pointer.natural_scroll = "off"`, the old mouse default) takes today's default;
+  any other value, and all of a file at version 2 or newer, is kept. `touchpad.natural_scroll` is untouched
+  (its default never changed). A migrated read is in memory only; `settings_live::attach` runs
+  `config::stamp_version` at start, which prepends `version = 2` to an existing unversioned file as plain
+  text (comments, unknown keys and order stay), so a person who then sets mouse natural scrolling off keeps
+  it at the next start. Live reloads are not migrated (the stamp is already there, or a tool dropped it and the
+  values are deliberate). Cost, unavoidable: a person who set mouse natural scroll off by hand between 8b10803
+  and this change, in a file with no version, loses it once. Tests: `an_old_file_drops_the_retired_default_and_keeps_what_the_person_set`
+  (table), `migration_touches_only_the_retired_default`, `a_migrated_document_is_written_at_the_current_version`,
+  `stamping_writes_only_the_version_and_only_once`, `stamping_a_missing_file_writes_nothing`. Two existing tests
+  now compare with `.migrated()` (a missing file loads at the current version). The schema (`casement.settings.toml`)
+  does not list `version`, as `[bindings]` is not listed: the schema test skips nothing because a default
+  document serialises without it.
+- **Only a real run proves.** Editing `~/.config/casement/settings.toml` (or a Settings app save) while a mouse
+  and a touchpad are in use: the next scroll/tap follows within the 30 ms debounce and no replug; libinput accepts
+  re-applying `set_scroll_natural_scroll_enabled`/tap/accel on a live device (RealInputFeed::apply is the same call
+  as at appearance); the watcher thread starts under the compositor's real config home; our own stamp write does
+  not loop (it fires one reload that changes nothing).

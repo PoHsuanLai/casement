@@ -104,14 +104,17 @@ pub(super) fn standing_in(now: Mono) -> Model {
     )
 }
 
-/// New keyboard settings reach clients already bound (`repeat_info`).
-fn note_settings(state: &State, events: &[Event]) {
-    let seat = &state.wl.seat.seat;
+/// New settings reach what is already running, at once: the keyboard's repeat to the clients
+/// already bound (`repeat_info`), the pointer's to the devices already present.
+fn note_settings(state: &mut State, events: &[Event]) {
     for event in events {
-        if let Event::SettingsChanged(settings) = event
-            && let Err(fault) = casement_wayland::seat::apply_repeat_info(seat, &settings.keyboard)
-        {
-            tracing::warn!(%fault, "repeat info did not follow the settings");
+        if let Event::SettingsChanged(settings) = event {
+            if let Err(fault) =
+                casement_wayland::seat::apply_repeat_info(&state.wl.seat.seat, &settings.keyboard)
+            {
+                tracing::warn!(%fault, "repeat info did not follow the settings");
+            }
+            tty::reconfigure_pointers(state, &settings.pointer);
         }
     }
 }
