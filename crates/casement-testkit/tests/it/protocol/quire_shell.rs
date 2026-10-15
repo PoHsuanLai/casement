@@ -15,7 +15,9 @@ use casement_layout::{
 };
 use casement_protocols::vocab::ShellRole as ModelRole;
 use casement_testclient::misc::decoration::DecorationManager;
-use casement_testclient::quire::shell::{ShellError, ShellHandle, ShellRole, WindowEntry};
+use casement_testclient::quire::shell::{
+    ShellError, ShellHandle, ShellRole, SplitChoiceSeen, SplitSide, WindowEntry,
+};
 use casement_testclient::surface::layer::{
     Anchor, KeyboardInteractivity, Layer, LayerAsk, LayerSurface,
 };
@@ -384,4 +386,72 @@ fn a_pick_for_nothing_is_ignored() {
     fixture.pump();
     assert!(fixture.client(id).protocol_error().is_none());
     assert_eq!(fixture.model().windows()[&window].state, before);
+}
+
+/// Two ordinary windows are open and the shell picks Left of Screen for the first: the shell
+/// hears the choice (the first window, its half) and the other window as the one candidate; a
+/// pick makes both halves, full screen on one Space, and the offer is taken away.
+#[test]
+fn left_of_screen_offers_the_other_window_and_a_pick_makes_both_halves() {
+    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let app = fixture.connect(ConnectionRole::Public);
+    let base = WmBase::bind(fixture.client(app), 7);
+    let _first = map_toplevel(&mut fixture, app, &base, (400, 300));
+    let _second = map_toplevel(&mut fixture, app, &base, (300, 200));
+    let (id, shell) = shell_client(&mut fixture);
+    let (first, second) = match windows(&fixture)[..] {
+        [first, second] => (first, second),
+        ref other => panic!("two windows, got {other:?}"),
+    };
+
+    shell.window_menu_pick(&identifier_of(first), WindowEntry::TileLeftOfScreen);
+    fixture.pump();
+    assert_eq!(
+        shell.split_choices(),
+        [SplitChoiceSeen {
+            first: identifier_of(first),
+            side: Some(SplitSide::Left),
+            candidates: vec![identifier_of(second)],
+        }]
+    );
+    assert!(shell.split_ends().is_empty(), "the offer is still open");
+
+    shell.split_pick(&identifier_of(second));
+    fixture.pump();
+    let spaces = |window: WindowId| match fixture.model().windows()[&window].state {
+        WindowState::FullScreen { space, .. } => Some(space),
+        _ => None,
+    };
+    assert!(spaces(first).is_some(), "the first half is full screen");
+    assert_eq!(spaces(first), spaces(second), "both halves share a Space");
+    assert_eq!(shell.split_ends(), [identifier_of(first)]);
+    assert!(fixture.client(id).protocol_error().is_none());
+}
+
+/// Escape or a click elsewhere (`split_cancel`) leaves the first window alone, full screen, and
+/// takes the offer away; a pick for a window that is gone or unknown changes nothing.
+#[test]
+fn a_cancelled_choice_leaves_the_first_window_alone() {
+    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let app = fixture.connect(ConnectionRole::Public);
+    let base = WmBase::bind(fixture.client(app), 7);
+    let _first = map_toplevel(&mut fixture, app, &base, (400, 300));
+    let _second = map_toplevel(&mut fixture, app, &base, (300, 200));
+    let (id, shell) = shell_client(&mut fixture);
+    let (first, second) = match windows(&fixture)[..] {
+        [first, second] => (first, second),
+        ref other => panic!("two windows, got {other:?}"),
+    };
+
+    shell.window_menu_pick(&identifier_of(first), WindowEntry::TileRightOfScreen);
+    fixture.pump();
+    assert_eq!(shell.split_choices().len(), 1);
+    shell.split_pick("w999");
+    shell.split_cancel();
+    fixture.pump();
+    assert_eq!(shell.split_ends(), [identifier_of(first)]);
+    let state = |window: WindowId| fixture.model().windows()[&window].state.clone();
+    assert!(matches!(state(first), WindowState::FullScreen { .. }));
+    assert!(!matches!(state(second), WindowState::FullScreen { .. }));
+    assert!(fixture.client(id).protocol_error().is_none());
 }
