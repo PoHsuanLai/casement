@@ -246,6 +246,7 @@ impl Model {
             SpacePlace::AllSpaces => None,
         };
         let follow = self.settings.spaces.switch_on_activate;
+        let cause = self.restore_cause(window, token);
         let moved = match token {
             TokenCheck::Valid => self
                 .unhide_app(&app)
@@ -261,7 +262,19 @@ impl Model {
         };
         moved
             .then(|model| model.feed_token(id, token))
-            .then(|model| model.relaid_out(id, Cause::Configure))
+            .then(|model| model.relaid_out(id, cause))
+    }
+
+    /// Why the scene is laid out again after `window` was asked to activate: a window that comes
+    /// back from the dock flies out of its tile (the cause that minimised it, so motion reverses
+    /// the flight); any other activation is a client's own configure.
+    fn restore_cause(&self, window: &Window, token: TokenCheck) -> Cause {
+        match (&window.state, token) {
+            (WindowState::Minimised { .. }, TokenCheck::Valid) => self
+                .minimise_destination(window)
+                .map_or(Cause::Configure, Cause::Minimise),
+            _ => Cause::Configure,
+        }
     }
 
     /// Focus hears the token: a valid one the person can act on keys the window; any other,

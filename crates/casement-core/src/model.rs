@@ -19,6 +19,7 @@ mod keyboard;
 mod layers;
 mod lock;
 mod moved;
+mod night_light;
 mod output_requests;
 mod outputs;
 mod overview;
@@ -89,6 +90,8 @@ pub struct Model {
     focus: Focus,
     timers: TimerBook,
     settings: CasementSettings,
+    /// The night light's ramps and holds (`model/night_light.rs`).
+    night: night_light::NightDrive,
     seed: SpaceSeed,
     now: Mono,
 }
@@ -126,6 +129,7 @@ impl Model {
             focus: Focus::none(),
             timers: TimerBook::empty(),
             settings,
+            night: night_light::NightDrive::default(),
             seed,
             now: epoch,
         }
@@ -197,6 +201,7 @@ impl Model {
             Event::SettingsChanged(settings) => self.change_settings(*settings),
             Event::OutputRequested { output, change } => self.request_output(output, change),
             Event::GammaSet { output, ramp } => self.set_gamma(output, ramp),
+            Event::NightLightTick(minute) => self.night_tick(minute),
             Event::WlrToplevel { window, request } => self.wlr_request(window, request),
             Event::Workspace(request) => self.workspace_request(request),
             Event::SpacesLoaded(file) => self.restore_spaces(*file),

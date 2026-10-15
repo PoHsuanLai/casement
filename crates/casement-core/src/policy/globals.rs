@@ -45,6 +45,8 @@ pub enum GlobalKind {
     CommitTiming,
     /// `wp_content_type_manager_v1`.
     ContentType,
+    /// `wp_color_manager_v1`.
+    ColorManagement,
     /// `xdg_wm_base`.
     XdgShell,
     /// `zxdg_decoration_manager_v1`.
@@ -198,6 +200,7 @@ fn sandbox_sees(global: GlobalKind) -> Advertise {
         | GlobalKind::Fifo
         | GlobalKind::CommitTiming
         | GlobalKind::ContentType
+        | GlobalKind::ColorManagement
         | GlobalKind::XdgShell
         | GlobalKind::XdgDecoration
         | GlobalKind::XdgActivation

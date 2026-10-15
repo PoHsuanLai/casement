@@ -30,6 +30,7 @@ pub mod alpha_modifier;
 pub mod appmenu;
 pub mod background_effect;
 pub mod capture_source;
+pub mod color_management;
 pub mod commit_timing;
 pub mod compositor;
 pub mod content_type;

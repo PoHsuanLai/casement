@@ -8,6 +8,7 @@ mod background_effect;
 mod capture_cursor;
 mod capture_dma;
 mod capture_source;
+mod color_management;
 mod commit_timing;
 mod compositor;
 mod content_type;

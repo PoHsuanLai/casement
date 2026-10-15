@@ -8,7 +8,7 @@ use crate::ids::{ClientKey, InputSerial, LayerKey, OutputKey, WindowId};
 use crate::input::InputEvent;
 use crate::layer::LayerSpec;
 use crate::lock::LockEvent;
-use crate::output::{GammaRamp, OutputChangeSet, OutputConfig, OutputFacts};
+use crate::output::{GammaRamp, MinuteOfDay, OutputChangeSet, OutputConfig, OutputFacts};
 use crate::policy::ConnectionRole;
 use crate::settings::CasementSettings;
 use crate::shell::ShellRequest;
@@ -174,6 +174,9 @@ pub enum Event {
         /// The ramp.
         ramp: GammaRamp,
     },
+    /// The local time of day is now this minute (night light; read by the loop's clock, a new
+    /// minute at a time).
+    NightLightTick(MinuteOfDay),
     /// A window-list client asked something of a window (`zwlr_foreign_toplevel_handle_v1`;
     /// P1-M2).
     WlrToplevel {

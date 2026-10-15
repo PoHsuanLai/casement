@@ -149,7 +149,9 @@ impl Model {
             return Moved::of(self);
         }
         let outputs = self.outputs.0.keys().cloned().collect();
-        Model { settings, ..self }.redrawn(Cause::Configure, outputs)
+        Model { settings, ..self }
+            .redrawn(Cause::Configure, outputs)
+            .then(Model::night_drive)
     }
 }
 
