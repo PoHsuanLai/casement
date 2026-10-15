@@ -18,7 +18,7 @@ pub enum BackendKind {
     /// Virtual outputs and input: every test, every agent run.
     Headless(HeadlessBackend),
     /// A window on the user's own session: the user's feel checks only (never an agent, §3.2).
-    Winit(WinitBackend),
+    Winit(Box<WinitBackend>),
     /// A real seat: DRM devices, libseat, udev (P1; the seams are injected, so the FakeKms
     /// suite runs it in the jail).
     Tty(Box<TtyBackend>),

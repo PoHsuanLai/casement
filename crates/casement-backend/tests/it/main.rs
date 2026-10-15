@@ -6,6 +6,7 @@ mod capture_direct;
 mod headless;
 mod input_config;
 mod virtual_input;
+mod winit;
 
 /// Test files that run in their own process and stay their own binary (a comment in each says why).
 const STANDALONE: &[&str] = &[];

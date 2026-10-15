@@ -86,7 +86,7 @@ fn input(state: &mut State) -> usize {
 
 /// A scroll of a mouse or a touchpad, scaled by the stored scroll factor of its profile
 /// (libinput has no such setting).
-fn with_scroll_factor(state: &State, event: InputEvent) -> InputEvent {
+pub(super) fn with_scroll_factor(state: &State, event: InputEvent) -> InputEvent {
     let pointer = &state.settings().pointer;
     let profile = match event.origin {
         Origin::Physical(DeviceClass::Touchpad) => pointer.touchpad,

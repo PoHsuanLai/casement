@@ -288,7 +288,7 @@ impl State {
                     .first()
                     .cloned()
                     .ok_or(StartError::NotYet("winit needs an output spec"))?;
-                BackendKind::Winit(WinitBackend::start(first)?)
+                BackendKind::Winit(Box::new(WinitBackend::start(first)?))
             }
             BackendChoice::Tty => {
                 let seams = tty_seams(

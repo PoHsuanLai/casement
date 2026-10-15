@@ -37,6 +37,7 @@ mod idle;
 mod ime;
 mod input;
 mod menu;
+pub(crate) mod nested;
 mod overview;
 mod overview_drag;
 mod presence;
@@ -474,7 +475,14 @@ fn connector(state: &mut State, event: ConnectorEvent) {
             }
             deliver::start_pointer(state);
         }
-        ConnectorEvent::Changed(facts) => feed(state, vec![Event::OutputPlugged(facts)]),
+        ConnectorEvent::Changed(facts) => {
+            let name = facts.name.clone();
+            feed(state, vec![Event::OutputPlugged(facts)]);
+            // A window's new size or scale is its output's new configuration.
+            if let (Some(key), Some(config)) = (key_of(state, &name), window_config(state, &name)) {
+                configure_output(state, &key, config);
+            }
+        }
         ConnectorEvent::Unplugged(key) => {
             feed(state, vec![Event::OutputUnplugged(key.clone())]);
             state.clock.unplug_output(&key);
@@ -484,8 +492,29 @@ fn connector(state: &mut State, event: ConnectorEvent) {
     }
 }
 
-/// The configuration `name`'s spec describes (headless only).
+/// The configuration the winit window has, for its output `name`.
+fn window_config(state: &State, name: &OutputName) -> Option<OutputConfig> {
+    match &state.backend {
+        BackendKind::Winit(window) if window.output_name() == name => Some(window.config()),
+        _ => None,
+    }
+}
+
+/// The key of the plugged output called `name`.
+fn key_of(state: &State, name: &OutputName) -> Option<OutputKey> {
+    let outputs = state.core.model.outputs();
+    outputs
+        .0
+        .iter()
+        .find(|(_, plugged)| plugged.facts.name == *name)
+        .map(|(key, _)| key.clone())
+}
+
+/// The configuration `name`'s spec describes (headless) or the window has (winit).
 fn spec_config(state: &State, name: &OutputName) -> Option<OutputConfig> {
+    if let Some(config) = window_config(state, name) {
+        return Some(config);
+    }
     let BackendKind::Headless(backend) = &state.backend else {
         return None;
     };
