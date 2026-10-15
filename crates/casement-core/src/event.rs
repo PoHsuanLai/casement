@@ -1,6 +1,6 @@
 //! The closed set of inputs to [`crate::Model::step`]. Each delta freeze extends it.
 
-use crate::app::AppKey;
+use crate::app::{AppKey, MenuSource};
 use crate::desktop::DesktopRequest;
 use crate::focus::TokenCheck;
 use crate::geometry::{LogicalPoint, LogicalRect, LogicalSize};
@@ -73,6 +73,12 @@ pub enum Event {
         window: WindowId,
         /// Where it now is, in global logical coordinates.
         rect: LogicalRect,
+    },
+    /// The person let go of the window an interactive move or resize was dragging: a picture in
+    /// picture window snaps to the nearest corner now.
+    WindowDragEnded {
+        /// The window.
+        window: WindowId,
     },
     /// A window was put by hand with its top-left at `rect`'s, wherever that is, even partly
     /// outside the usable area: the wlcs shim's `position_window_absolute`. No protocol sends
@@ -305,4 +311,6 @@ pub enum WindowHintChange {
     A11y(A11yRoot),
     /// Whether its document is edited.
     Edited(Edited),
+    /// Where its global menu lives (the KDE appmenu protocol, `gtk_shell1`).
+    Menu(MenuSource),
 }

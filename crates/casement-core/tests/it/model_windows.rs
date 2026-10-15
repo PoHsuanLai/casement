@@ -272,3 +272,180 @@ fn a_hint_or_meta_change_on_an_unknown_window_is_noted() {
         [Effect::Note(CoreNote::UnknownWindow(WindowId(3)))]
     );
 }
+
+#[test]
+fn a_press_on_a_window_behind_its_sheet_rings_the_bell_and_goes_nowhere() {
+    let mail = proven("org.quire.Mail");
+    let behind = run(vec![
+        plug("HEADLESS-1"),
+        map(1, &mail, TokenCheck::Valid),
+        map_sheet(2, &mail, 1),
+        support::driver::press(1),
+    ]);
+    assert!(last(&behind).contains(&Effect::Bell { app: mail }));
+    assert_eq!(
+        behind.model.focus().key,
+        Some(WindowId(2)),
+        "the sheet keeps the key"
+    );
+}
+
+fn hint(n: u64, hint: casement_core::WindowHintChange) -> Op {
+    Op::Event(Event::WindowHint {
+        window: WindowId(n),
+        hint,
+    })
+}
+
+#[test]
+fn a_window_menu_is_recorded_and_the_shell_is_told_through_its_app() {
+    use casement_core::WindowHintChange::Menu;
+    use casement_core::app::MenuSource;
+    use casement_core::desktop::DesktopNote;
+    let qt = proven("org.example.Qt");
+    let source = MenuSource::DbusMenu {
+        bus: "org.example.Qt".into(),
+        path: "/MenuBar".into(),
+    };
+    let mapped = run(vec![
+        plug("HEADLESS-1"),
+        map(1, &qt, TokenCheck::Valid),
+        map(2, &qt, TokenCheck::Missing),
+    ]);
+    assert_eq!(mapped.model.app_menu(&qt), MenuSource::None);
+    // Which of the two is key is the focus rules' business; the menu follows whichever it is.
+    let key = mapped.model.focus().key.expect("a key window");
+    let other = if key == WindowId(1) { 2 } else { 1 };
+
+    let declared = support::driver::run_from(mapped.model, vec![hint(other, Menu(source.clone()))]);
+    assert_eq!(
+        declared.model.windows()[&WindowId(other)].hints.menu,
+        source
+    );
+    assert_eq!(
+        declared.model.app_menu(&qt),
+        source,
+        "the app's other window answers"
+    );
+    assert!(last(&declared).contains(&Effect::Desktop(DesktopNote::App(qt.clone()))));
+    assert!(last(&declared).contains(&Effect::Desktop(DesktopNote::Window(WindowId(other)))));
+
+    let own = MenuSource::GtkMenus {
+        bus: ":1.9".into(),
+        app_path: "/app".into(),
+        menubar_path: "/menus".into(),
+        window_path: "/win".into(),
+    };
+    let keyed = support::driver::run_from(declared.model, vec![hint(key.0, Menu(own.clone()))]);
+    assert_eq!(keyed.model.app_menu(&qt), own, "the key window's menu wins");
+
+    let cleared = support::driver::run_from(keyed.model, vec![hint(key.0, Menu(MenuSource::None))]);
+    assert_eq!(cleared.model.app_menu(&qt), source);
+}
+
+#[test]
+fn picture_in_picture_joins_every_space_keeps_its_aspect_and_snaps_to_a_corner() {
+    use casement_core::WindowHintChange::Role;
+    use casement_protocols::vocab::WindowRole;
+    let web = proven("org.example.Web");
+    let output = support::headless("HEADLESS-1").key;
+    let drag = |x, y, w, h| {
+        Op::Event(Event::WindowDragged {
+            window: WindowId(1),
+            rect: LogicalRect::new(LogicalPoint { x, y }, size(w, h)),
+        })
+    };
+    let floating = run(vec![
+        plug("HEADLESS-1"),
+        map(1, &web, TokenCheck::Valid),
+        Op::Event(Event::ToplevelCommitted {
+            window: WindowId(1),
+            size: size(320, 180),
+        }),
+        map(2, &web, TokenCheck::Missing),
+        hint(1, Role(WindowRole::Pip)),
+        drag(800, 500, 320, 180),
+    ]);
+    let window = &floating.model.windows()[&WindowId(1)];
+    assert_eq!(window.place, SpacePlace::AllSpaces);
+    assert_eq!(window.home, Some(output));
+    assert_eq!(
+        floating.model.windows()[&WindowId(2)].place,
+        SpacePlace::On(
+            floating
+                .model
+                .spaces()
+                .shown_on(&support::headless("HEADLESS-1").key)
+                .expect("shown")
+                .id
+                .clone()
+        ),
+        "a plain window stays on its Space"
+    );
+
+    // Pulled wider by its right edge, it keeps 16:9; let go, it snaps to the bottom right.
+    let resized = support::driver::run_from(floating.model, vec![drag(800, 500, 480, 180)]);
+    assert_eq!(
+        state_of(&resized, 1),
+        WindowState::Floating(LogicalRect::new(
+            LogicalPoint { x: 800, y: 500 },
+            size(480, 270)
+        ))
+    );
+    let dropped = support::driver::run_from(
+        resized.model,
+        vec![Op::Event(Event::WindowDragEnded {
+            window: WindowId(1),
+        })],
+    );
+    assert_eq!(
+        state_of(&dropped, 1),
+        WindowState::Floating(LogicalRect::new(
+            LogicalPoint { x: 1424, y: 794 },
+            size(480, 270)
+        ))
+    );
+    assert!(last(&dropped).contains(&Effect::Relayout(Cause::Drag)));
+
+    // An ordinary window is neither fitted nor snapped.
+    let plain = support::driver::run_from(
+        dropped.model,
+        vec![
+            Op::Event(Event::WindowDragged {
+                window: WindowId(2),
+                rect: LogicalRect::new(LogicalPoint { x: 10, y: 10 }, size(300, 300)),
+            }),
+            Op::Event(Event::WindowDragEnded {
+                window: WindowId(2),
+            }),
+        ],
+    );
+    assert_eq!(
+        plain.model.windows()[&WindowId(2)].state,
+        WindowState::Floating(LogicalRect::new(
+            LogicalPoint { x: 10, y: 10 },
+            size(300, 300)
+        ))
+    );
+}
+
+#[test]
+fn a_browsers_picture_in_picture_window_is_guessed_from_its_title() {
+    use casement_core::{ToplevelMeta, window::WindowTitle};
+    let firefox = support::driver::mapped(1, &proven("org.mozilla.firefox"), TokenCheck::Valid);
+    let run = run(vec![
+        plug("HEADLESS-1"),
+        Op::Event(Event::ToplevelMapped(casement_core::MappedToplevel {
+            claimed_id: support::claimed("firefox"),
+            ..firefox
+        })),
+        Op::Event(Event::ToplevelMeta {
+            window: WindowId(1),
+            meta: ToplevelMeta::Title(WindowTitle("Picture-in-Picture".into())),
+        }),
+    ]);
+    assert_eq!(
+        run.model.windows()[&WindowId(1)].place,
+        SpacePlace::AllSpaces
+    );
+}

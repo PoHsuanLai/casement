@@ -4,7 +4,7 @@
 //! for every object that went. No transition has to remember to say so.
 
 use super::Model;
-use crate::app::{AppKey, AppVisibility};
+use crate::app::{AppKey, AppVisibility, MenuSource};
 use crate::desktop::{DesktopNote, DesktopRef};
 use crate::effect::Effect;
 use crate::ids::{OutputKey, WindowId};
@@ -24,6 +24,7 @@ struct AppDesk {
     visibility: Visibility,
     attention: Attention,
     rank: usize,
+    menu: MenuSource,
 }
 
 /// What a window shows `quire_desktop_v1` clients. The whole state is kept, not only its kind:
@@ -41,6 +42,7 @@ struct WindowDesk {
     emphasis: Emphasis,
     sensitivity: SensitivityLevel,
     life: AppLifeKind,
+    menu_path: String,
 }
 
 /// The desktop's publishable state at one instant.
@@ -50,6 +52,24 @@ pub(super) struct DeskSnapshot {
     windows: BTreeMap<WindowId, WindowDesk>,
     spaces: BTreeMap<SpaceId, Space>,
     active: (Option<AppKey>, Option<WindowId>),
+}
+
+impl Model {
+    /// Where the global menu of `app` lives: the key window's when it declared one, else the
+    /// first window of the app (in the app's own order) that did, else none. The shell reads
+    /// it when the app becomes active.
+    pub fn app_menu(&self, app: &AppKey) -> MenuSource {
+        let key = self.focus().key;
+        let held = self.apps().get(app).map(|held| held.windows.as_slice());
+        key.into_iter()
+            .chain(held.into_iter().flatten().copied())
+            .filter_map(|id| self.windows().get(&id))
+            .filter(|window| window.app == *app)
+            .map(|window| &window.hints.menu)
+            .find(|menu| menu.is_declared())
+            .cloned()
+            .unwrap_or_default()
+    }
 }
 
 impl DeskSnapshot {
@@ -74,6 +94,7 @@ impl DeskSnapshot {
                     visibility,
                     attention: app.attention,
                     rank,
+                    menu: model.app_menu(key),
                 };
                 (key.clone(), desk)
             })
@@ -98,6 +119,7 @@ impl DeskSnapshot {
                     emphasis: window.emphasis,
                     sensitivity: window.sensitivity,
                     life,
+                    menu_path: window.hints.menu.window_path().to_owned(),
                 };
                 (window.id, desk)
             })

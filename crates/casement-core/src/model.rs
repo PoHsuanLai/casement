@@ -24,6 +24,7 @@ mod output_requests;
 mod outputs;
 mod overview;
 mod picture;
+mod pip;
 mod published;
 mod query;
 mod requests;
@@ -189,6 +190,7 @@ impl Model {
             Event::ToplevelModality { window, modality } => self.modality(window, modality),
             Event::ToplevelMeta { window, meta } => self.meta(window, meta),
             Event::WindowDragged { window, rect } => self.dragged(window, rect),
+            Event::WindowDragEnded { window } => self.drag_ended(window),
             Event::WindowPlaced { window, rect } => self.placed_by_hand(window, rect),
             Event::WindowHint { window, hint } => self.hint(window, hint),
             Event::LayerMapped { layer, spec } => self.map_layer(layer, spec),

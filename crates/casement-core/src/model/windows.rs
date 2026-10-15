@@ -255,7 +255,9 @@ impl Model {
             false => Moved::of(model),
         };
         match announces {
-            true => moved.then(|model| model.listed(id)),
+            true => moved
+                .then(|model| model.listed(id))
+                .then(|model| model.pip_joined(id)),
             false => moved,
         }
     }
@@ -272,8 +274,9 @@ impl Model {
             WindowHintChange::Role(role) => window.role = role,
             WindowHintChange::A11y(root) => window.hints.a11y = root,
             WindowHintChange::Edited(edited) => window.hints.edited = edited,
+            WindowHintChange::Menu(menu) => window.hints.menu = menu,
         });
-        Moved::of(model)
+        Moved::of(model).then(|model| model.pip_joined(id))
     }
 
     /// The window is listed on the foreign toplevel list, or its listing is brought up to date.

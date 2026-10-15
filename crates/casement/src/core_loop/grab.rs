@@ -98,6 +98,12 @@ pub(super) fn end(state: &mut State, released: ButtonCode) {
     if let Some(drag) = state.wl.seat.grab.filter(|drag| drag.ends_with(released)) {
         state.wl.seat.grab = None;
         tile::released(state, drag.serial());
+        feed(
+            state,
+            vec![Event::WindowDragEnded {
+                window: drag.window(),
+            }],
+        );
     }
 }
 

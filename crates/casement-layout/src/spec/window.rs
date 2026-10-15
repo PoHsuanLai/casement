@@ -44,6 +44,15 @@ pub enum WindowPlacement {
     Minimised,
     /// Just mapped at this size: layout places it (centre, then cascade).
     New(LogicalSize),
+    /// A sheet of this window, at this size: it hangs from the top of that window's content,
+    /// centred, and follows it. A sheet whose window is not arranged with it is placed as a
+    /// new window.
+    Sheet {
+        /// The window it hangs from.
+        parent: WindowId,
+        /// The size it asked for.
+        size: LogicalSize,
+    },
 }
 
 /// A window's place in its Space's stack, 0 at the bottom.
