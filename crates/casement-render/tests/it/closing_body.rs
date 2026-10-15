@@ -43,17 +43,25 @@ fn drawn(opacity: u16) -> Vec<u8> {
 #[test]
 fn the_body_is_stretched_over_the_closing_content() {
     let bytes = drawn(1_000);
-    // The 2x2 image fills the 4x4 content at (2, 1); outside it the output is black.
+    // The 2x2 image fills the 4x4 content at (2, 1); outside it the output is black. The
+    // stretch filters the edge pixels against what lies outside the image, so the colour is
+    // checked inside the body.
     assert_eq!(
+        pixel(&bytes, 3, 2),
+        [200, 40, 90, 255],
+        "inside the body, top left"
+    );
+    assert_eq!(
+        pixel(&bytes, 4, 3),
+        [200, 40, 90, 255],
+        "inside the body, bottom right"
+    );
+    assert_ne!(
         pixel(&bytes, 2, 1),
-        [200, 40, 90, 255],
-        "top left of the body"
+        [0, 0, 0, 255],
+        "the body reaches its corner"
     );
-    assert_eq!(
-        pixel(&bytes, 5, 4),
-        [200, 40, 90, 255],
-        "bottom right of the body"
-    );
+    assert_ne!(pixel(&bytes, 5, 4), [0, 0, 0, 255], "and its far corner");
     assert_eq!(pixel(&bytes, 1, 1), [0, 0, 0, 255], "left of it");
     assert_eq!(pixel(&bytes, 6, 4), [0, 0, 0, 255], "right of it");
 }
