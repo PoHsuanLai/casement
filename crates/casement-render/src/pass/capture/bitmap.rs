@@ -204,7 +204,10 @@ fn unpack(pool: &[u8], layout: Layout, alpha: Alpha) -> Result<ArgbImage, ReadEr
         argb.extend_from_slice(line);
     }
     if alpha == Alpha::Opaque {
-        argb.chunks_exact_mut(4).for_each(|pixel| pixel[3] = 255);
+        argb.as_chunks_mut::<4>()
+            .0
+            .iter_mut()
+            .for_each(|pixel| pixel[3] = 255);
     }
     let side = |n: usize| u32::try_from(n).map_err(|_| ReadError::Layout);
     Ok(ArgbImage {
