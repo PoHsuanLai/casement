@@ -1909,3 +1909,54 @@ output".
   `sandbox.rs` row, the globals golden row `zwlr_screencopy_manager_v1 3 screencopy`, the fuzz oracle's interface map;
   unit tests for `physical_region` and `CapturedFrame::cropped`; client `casement_testclient::capture::ScreenCopy`.
   Not covered here (needs a real seat): the tty first-frame hold.
+## wave-2026-10-15/ssd
+
+Server-side decorations (the owner's first-login review: apps that draw no frame showed the client's grey bar). Written
+without a compiler (wave rule); the orchestrator builds.
+
+- **Negotiation.** `xdg_decoration::mode_for`: `server_side` and `unset` (and a decoration object that never wished
+  anything) are answered server-side, `client_side` stays client-side. The part remembers the answer per window
+  (`XdgDecorationPart::mode_of`, dropped in `toplevel_destroyed`); the model is not told (departure from the handler recipe:
+  the answer is a protocol-edge fact only drawing and hit-testing read, so no `Event`). A window whose client never bound
+  the manager draws its own frame. Golden `xdg_decoration-mode.txt` now says `configure(2)`; the protocol test was rewritten.
+- **Where the code is.** Pure and tested: `casement-core/src/window/frame.rs` (titlebar and lights geometry, hit map, edges),
+  `frame_press.rs` (double-click tracker, `chrome_action`), `frame_draw.rs` (resolved colours as data);
+  `casement-layout/src/frame.rs` (chrome lengths from `ChromeToken`, colours from `ColourToken`, `light_state`'s reveal rule);
+  `casement-render/src/element/frame{.rs,/raster.rs}` (titlebar and shadow rasters, analytic coverage, no text);
+  `casement/src/core_loop/frames.rs` (which windows, hover, press glue). No new crate and no Cargo edit: casement-core has no
+  ds-style, so the lengths travel as `FrameMetrics` data, filled in layout; casement reaches ds-style types through
+  `casement_layout::{Scheme, GroupHover}` re-exports.
+- **Geometry choice.** The titlebar is drawn just above the window's content rectangle (the model rect stays the client's
+  size), so a window at the top of the usable area has its bar under the menu bar. The resize zones are 4 px strips outside
+  the outline plus 12 px corner squares from the outer corners (so 8 px reach inside the content at each corner).
+- **Hit and input.** `frames::under` walks the scene's surfaces front to back and tests a decorated window's frame at its
+  root's place, so a window in front hides the frame behind it; popups come first. A press on a frame is never delivered, its
+  release is swallowed (`seat.taken`), the model routes it as a titlebar or edge press (activate, raise), then the part acts:
+  close = `Effect::SendClose`, minimise and zoom = `ToplevelRequest`, drag = `ToplevelRequest::Move` (the existing grab),
+  edge = `Resize`, double click = `windows.double_click_title`. Lights act on press (macOS acts on release inside).
+- **Unreachable from quire's pure crates, so written here (asks below):** the window radius 10 (`--r-window` is a CSS string,
+  and still 26 until quire's batch), `--shadow-window` (CSS string, hand-copied as two `ShadowLayer`s), the three light hues
+  and their mark inks (stylesheet candy colours), and the colour scheme (Light is assumed; casement does not read the
+  appearance setting).
+- **Not done.** (1) Rounded bottom corners: clipping a client buffer needs a clip element or shader in the closed element set
+  (P3 "rounded clip"); the titlebar's top corners are rounded, the bottom ones are square. (2) Title text: casement has no text
+  stack (`casement-chrome`, B15), so the titlebar title is empty. (3) Layout does not reserve the 28 px above decorated
+  windows (fill, tile and the first placement can put the bar under the menu bar or off the top). (4) Lights act on press, not
+  release; the green light has no Move and Resize menu. (5) Option-click zoom and the minimise animation target are untouched.
+  (6) The frame is not drawn in the Mission Control and Space-slide passes (they go through `output_elements` with the same
+  `LayerDraw`, so it follows there only if `frames` is filled, which `core_loop::frame` does for every output frame).
+  (7) The shadow is a square-cornered blur at one raster pixel per logical pixel, scaled up; cost on a window being resized
+  is a new raster per frame (cache limit 64 entries).
+- **Interface asks for quire** (exact):
+  1. `ds-style/src/tokens/shape.rs`: `impl Radius { pub fn px(self) -> u16 }` returning the number `value()` writes (Window
+     10 in the next batch), so casement stops hard-coding `WINDOW_RADIUS`.
+  2. `ds-style/src/tokens/elevation.rs`: numeric `Shadow::layers(self, scheme: Scheme) -> &'static [ShadowLayer { dx, dy, blur,
+     spread, rgba }]` for `Window`.
+  3. `ds-style/src/tokens/chrome/light.rs`: `pub fn light_hue(light: Light, scheme: Scheme) -> (Hex, Hex)` (disc, mark ink)
+     for close, minimise and zoom; the candy colours are stylesheet-only today.
+  4. A title font family and size token reachable as numbers (`--fs-control` 13/600) for the future `casement-chrome`.
+- **Gate and real run.** Gate: everything here is uncompiled; likeliest compile faults are `frames.rs` (let-chain over
+  `(styles.get, contents.get)`, `Over` visibility through `FrameOver`), `frame.rs` raster (`MemoryRenderBuffer::from_slice`
+  and `from_buffer` argument types copied from the cursor), `light_state`/`LightFill`/`Shown` matches (a `non_exhaustive`
+  would need a wildcard). Real run: a foot window shows the bar, lights (grey when inactive, marks on hover), shadow; drag
+  moves; double click zooms; edges resize; click on the red light closes; a Qt app that insists on client-side keeps its bar.

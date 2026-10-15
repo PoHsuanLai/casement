@@ -1,8 +1,9 @@
-//! `zxdg_decoration_manager_v1`: who draws a toplevel's frame. Client-side is preferred at P0
-//! (server-side titles come with `casement-chrome` at P3).
+//! `zxdg_decoration_manager_v1`: who draws a toplevel's frame. casement prefers to draw it (the
+//! Mac titlebar, lights and shadow) and honours a client that insists on drawing its own.
 
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::Event;
+use casement_core::WindowId;
 use casement_core::policy::GlobalKind;
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_decoration_manager_v1::ZxdgDecorationManagerV1;
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode;
@@ -10,12 +11,15 @@ use smithay::reexports::wayland_server::{Dispatch, DisplayHandle, GlobalDispatch
 use smithay::wayland::GlobalData;
 use smithay::wayland::shell::xdg::ToplevelSurface;
 use smithay::wayland::shell::xdg::decoration::{XdgDecorationManagerGlobalData, XdgDecorationState};
+use std::collections::BTreeMap;
 
 /// `zxdg_decoration_manager_v1`.
 #[derive(Debug)]
 pub struct XdgDecorationPart {
     /// smithay's state.
     pub state: XdgDecorationState,
+    /// What each window was last answered. A window absent from it draws its own frame.
+    modes: BTreeMap<WindowId, DecorationMode>,
 }
 
 impl XdgDecorationPart {
@@ -31,7 +35,32 @@ impl XdgDecorationPart {
                 display,
                 role_filter.for_global(GlobalKind::XdgDecoration),
             ),
+            modes: BTreeMap::new(),
         }
+    }
+
+    /// Remembers that `window` was answered `mode`.
+    pub fn record(&mut self, window: WindowId, mode: DecorationMode) {
+        self.modes.insert(window, mode);
+    }
+
+    /// Forgets `window` (it is gone).
+    pub fn forget(&mut self, window: WindowId) {
+        self.modes.remove(&window);
+    }
+
+    /// Who draws `window`'s frame: the client, until it was answered otherwise.
+    ///
+    /// ```
+    /// use casement_wayland::xdg_decoration::{DecorationMode, DecorationWish, mode_for};
+    ///
+    /// assert_eq!(mode_for(DecorationWish::Unset), DecorationMode::ServerSide);
+    /// ```
+    pub fn mode_of(&self, window: WindowId) -> DecorationMode {
+        self.modes
+            .get(&window)
+            .copied()
+            .unwrap_or(DecorationMode::ClientSide)
     }
 }
 
@@ -55,13 +84,12 @@ pub enum DecorationMode {
     ServerSide,
 }
 
-/// What the compositor answers a wish with. P0 draws no frames (server-side titles come with
-/// `casement-chrome` at P3), so every wish, a server-side one included, is answered client-side.
+/// What the compositor answers a wish with: it draws the frame unless the client said it
+/// draws its own. A client that withdrew its wish, or never had one, gets the compositor's.
 pub fn mode_for(wish: DecorationWish) -> DecorationMode {
     match wish {
-        DecorationWish::ClientSide | DecorationWish::ServerSide | DecorationWish::Unset => {
-            DecorationMode::ClientSide
-        }
+        DecorationWish::ClientSide => DecorationMode::ClientSide,
+        DecorationWish::ServerSide | DecorationWish::Unset => DecorationMode::ServerSide,
     }
 }
 
@@ -108,15 +136,28 @@ pub fn apply_mode(
 mod tests {
     use super::*;
 
-    /// P0 answers every wish client-side.
+    /// Server-side unless the client insists on its own frame.
     #[test]
-    fn every_wish_is_answered_client_side_at_p0() {
-        for wish in [
-            DecorationWish::ClientSide,
-            DecorationWish::ServerSide,
-            DecorationWish::Unset,
-        ] {
-            assert_eq!(mode_for(wish), DecorationMode::ClientSide, "{wish:?}");
+    fn the_compositor_draws_unless_the_client_insists() {
+        const CASES: &[(&str, DecorationWish, DecorationMode)] = &[
+            (
+                "asks for ours",
+                DecorationWish::ServerSide,
+                DecorationMode::ServerSide,
+            ),
+            (
+                "insists on its own",
+                DecorationWish::ClientSide,
+                DecorationMode::ClientSide,
+            ),
+            (
+                "withdrew its wish",
+                DecorationWish::Unset,
+                DecorationMode::ServerSide,
+            ),
+        ];
+        for (name, wish, want) in CASES {
+            assert_eq!(mode_for(*wish), *want, "{name}");
         }
     }
 

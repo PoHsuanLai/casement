@@ -19,7 +19,7 @@ use casement_core::time::{Mono, VblankSeq};
 use casement_core::{Cause, Effect, Event, Model, OutputKey, OutputName};
 use casement_layout::{ConfigureNeed, SceneLayout, spec_of};
 use casement_motion::{FrameScene, retarget};
-use casement_render::OutputView;
+use casement_render::{LayerDraw, OutputView};
 use casement_wayland::{commit_timing, fifo, presentation, session_lock, xdg_shell};
 use smithay::desktop::PopupManager;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -28,6 +28,7 @@ use smithay::wayland::compositor::{
 };
 
 mod deliver;
+mod frames;
 mod grab;
 mod idle;
 mod ime;
@@ -38,6 +39,7 @@ mod surfaces;
 pub(crate) mod tty;
 mod windows;
 
+pub(crate) use frames::Over as FrameOver;
 pub(crate) use grab::start as start_grab;
 pub(crate) use idle::sync_inhibitors;
 pub use presence::Presence;
@@ -130,7 +132,10 @@ pub fn frame(state: &mut State, output: &OutputKey) {
         scale: config.scale,
         mode: config.mode.size,
     };
-    let layers = layers_on(&state.core.model, output);
+    let layers = LayerDraw {
+        frames: frames::styles(state),
+        ..layers_on(&state.core.model, output)
+    };
     let capture = tty::capture_watch(&state.wl.image_capture.book, output);
     let source = SceneSource {
         frame: &frame,

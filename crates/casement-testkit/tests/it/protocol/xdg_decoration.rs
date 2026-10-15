@@ -1,14 +1,14 @@
-//! `xdg_decoration` (P0-H2): client-side is preferred at P0 (server-side titles come with
-//! `casement-chrome` at P3). Ignored until the fixture and the core loop are filled.
+//! `xdg_decoration` (P0-H2): server-side is preferred (the Mac titlebar, lights and shadow are
+//! casement's own), and a client that insists on client-side keeps its frame.
 
 use crate::protocol::xdg_shell::{boot, check_golden, golden, lines_of};
 use casement_core::policy::ConnectionRole;
 use casement_testclient::misc::decoration::{DecorationError, DecorationManager, Mode};
 use casement_testclient::surface::toplevel::WmBase;
 
-/// A client asking for server-side decoration is told client_side at P0.
+/// The compositor draws the frame unless the client insists on its own.
 #[test]
-fn client_side_is_preferred() {
+fn server_side_is_preferred_and_client_side_is_honoured() {
     let (mut fixture, id) = boot();
     let base = WmBase::bind(fixture.client(id), 7);
     let manager =
@@ -18,23 +18,29 @@ fn client_side_is_preferred() {
     top.commit_bare();
     fixture.pump();
     // The initial configure already carries the decision, for an object that wished nothing.
-    assert_eq!(decoration.newest(), Some(Mode::ClientSide));
+    assert_eq!(decoration.newest(), Some(Mode::ServerSide));
     let configures = top.configures().len();
-    decoration.set_mode(Mode::ServerSide);
+    decoration.set_mode(Mode::ClientSide);
     fixture.pump();
     assert_eq!(
         decoration.newest(),
         Some(Mode::ClientSide),
-        "the answer to server_side is client_side"
+        "a client that insists on its own frame keeps it"
     );
     assert!(
         top.configures().len() > configures,
         "every set_mode is answered with a configure"
     );
-    decoration.set_mode(Mode::ClientSide);
+    decoration.set_mode(Mode::ServerSide);
+    fixture.pump();
+    assert_eq!(decoration.newest(), Some(Mode::ServerSide));
     decoration.decoration.unset_mode();
     fixture.pump();
-    assert_eq!(decoration.newest(), Some(Mode::ClientSide));
+    assert_eq!(
+        decoration.newest(),
+        Some(Mode::ServerSide),
+        "withdrawing the wish returns to the compositor's frame"
+    );
     assert!(fixture.client(id).protocol_error().is_none());
 }
 

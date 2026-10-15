@@ -4,12 +4,13 @@ pub(crate) mod convert;
 
 use crate::compositor::Compositor;
 use crate::element::{
-    CasementElement, LockCoverElement, Rgba8, cursor_elements, layer_elements, popup_elements,
-    surface_origin_logical, window_elements,
+    CasementElement, LockCoverElement, Rgba8, cursor_elements, frame_elements, layer_elements,
+    popup_elements, surface_origin_logical, window_content, window_elements,
 };
 use crate::texture_book::TextureBook;
 use casement_core::geometry::{LogicalPoint, LogicalRect, PhysicalRect, PhysicalSize, SubPoint};
 use casement_core::layer::Arranged;
+use casement_core::window::FrameStyle;
 use casement_core::{LayerKey, OutputKey, WindowId};
 use casement_motion::{OutputFrame, PlacedWindow};
 use convert::{on_output, sub_of};
@@ -17,6 +18,7 @@ use ds_core::geometry::scale::Scale;
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::element::surface::render_elements_from_surface_tree;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use std::collections::BTreeMap;
 
 /// Where an output sits and how dense it is: what turns the frame's global sub-pixels into this
 /// output's physical pixels. (The plan's sketch had no source for it; FINDINGS.)
@@ -47,6 +49,9 @@ pub struct LayerDraw {
     /// Where each of them is arranged: the one placement the hit test reads too
     /// (`LayerBook::arrange`). `None` when there are no layers.
     pub arranged: Option<Arranged>,
+    /// The windows whose frame casement draws (server-side decoration), and how it looks. A
+    /// window not in it is drawn as its client made it.
+    pub frames: BTreeMap<WindowId, FrameStyle>,
 }
 
 /// What the compositor draws over everything: the cursor and lock covers.
@@ -160,7 +165,17 @@ pub fn output_elements<R: Compositor>(
                         },
                     );
                     elements.extend(popup_elements(&entry.root, origin, view, renderer));
+                    let (front, back) = layers
+                        .frames
+                        .get(&placed.window)
+                        .map(|style| {
+                            let content = window_content(placed, &entry.root);
+                            frame_elements(placed.window, style, content, view, book, renderer)
+                        })
+                        .unwrap_or_default();
+                    elements.extend(front);
                     elements.extend(window_elements(placed, view, book, renderer));
+                    elements.extend(back);
                 }
             }
         };

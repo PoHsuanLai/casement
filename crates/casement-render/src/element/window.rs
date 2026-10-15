@@ -2,15 +2,17 @@
 
 use super::CasementElement;
 use super::blur_v0;
-use super::geometry::surface_origin;
+use super::geometry::{geometry_size, surface_origin};
 use crate::compositor::Compositor;
 use crate::scene::OutputView;
 use crate::scene::convert::on_output;
 use crate::texture_book::TextureBook;
+use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_motion::PlacedWindow;
 use ds_core::vocab::Fraction;
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::element::surface::render_elements_from_surface_tree;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 
 /// `placed`'s surface tree (subsurfaces, then the root) drawn at its sampled place and opacity
 /// on `view`, front first, with its blur v0 behind it when it asked for one. Empty when the
@@ -40,6 +42,23 @@ pub fn window_elements<R: Compositor>(
     );
     elements.extend(blur_v0::behind(&entry.root, origin, view).map(CasementElement::Blur));
     elements
+}
+
+/// Where `placed`'s content is, in global logical pixels: its place, at the size of its window
+/// geometry (its committed size when it declared none). The frame is drawn round it and the
+/// hit test reads it, so the two agree.
+pub fn window_content(placed: &PlacedWindow, root: &WlSurface) -> LogicalRect {
+    let size = geometry_size(root).map_or(placed.committed, |size| LogicalSize {
+        w: u32::try_from(size.w).unwrap_or(0),
+        h: u32::try_from(size.h).unwrap_or(0),
+    });
+    LogicalRect::new(
+        LogicalPoint {
+            x: placed.at.x.round_logical(),
+            y: placed.at.y.round_logical(),
+        },
+        size,
+    )
 }
 
 /// An opacity as smithay's alpha: thousandths, at most one.

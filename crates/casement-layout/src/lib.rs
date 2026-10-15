@@ -16,6 +16,7 @@
 //! ```
 
 mod arrangement;
+mod frame;
 mod knobs;
 mod of_model;
 mod rust_scene;
@@ -35,6 +36,9 @@ pub use arrangement::{
     Arrangement, ConfigureNeed, LayoutReport, OverviewSlot, SlotKind, SpaceTarget, SpaceThumb,
     WindowTarget,
 };
+pub use ds_style::appearance::theme::Scheme;
+pub use ds_style::tokens::chrome::GroupHover;
+pub use frame::{WINDOW_RADIUS, frame_style, metrics as frame_metrics};
 pub use knobs::LayoutKnobs;
 pub use of_model::spec_of;
 pub use rust_scene::RustScene;

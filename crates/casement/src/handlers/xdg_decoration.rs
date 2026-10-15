@@ -1,5 +1,5 @@
-//! `zxdg_decoration_manager_v1` (P0-H2): client-side preferred; every wish is answered with
-//! `xdg_decoration::mode_for`.
+//! `zxdg_decoration_manager_v1` (P0-H2): the compositor draws the frame unless the client
+//! insists on its own; every wish is answered with `xdg_decoration::mode_for`.
 
 use crate::core_loop;
 use crate::state::State;
@@ -11,12 +11,16 @@ use smithay::wayland::shell::xdg::ToplevelSurface;
 use smithay::wayland::shell::xdg::decoration::XdgDecorationHandler;
 
 impl State {
-    /// `toplevel` expressed `wish`: the model hears of it (nothing, at P0) and the client is
+    /// `toplevel` expressed `wish`: the model hears of it (nothing) and the client is
     /// told who draws its frame.
     fn decorate(&mut self, toplevel: &ToplevelSurface, wish: DecorationWish) {
         let events = on_decoration_mode(&mut self.wl.xdg_decoration, toplevel, wish);
         core_loop::feed(self, events);
-        if let Err(error) = apply_mode(&mut self.wl.xdg_decoration, toplevel, mode_for(wish)) {
+        let mode = mode_for(wish);
+        if let Some(window) = self.wl.xdg_shell.window_of_surface(toplevel.wl_surface()) {
+            self.wl.xdg_decoration.record(window, mode);
+        }
+        if let Err(error) = apply_mode(&mut self.wl.xdg_decoration, toplevel, mode) {
             tracing::debug!(%error, "a decoration answer reached a toplevel that is gone");
         }
         // A37: the decoration's configure is its first word and rides on an xdg_surface

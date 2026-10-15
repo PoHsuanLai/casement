@@ -102,6 +102,10 @@ pub struct RenderState {
     pub presence: crate::core_loop::Presence,
     /// Frame failures, so one that repeats every vblank is logged once per window.
     pub frame_faults: RepeatGate<OutputName>,
+    /// The server-side frame part the pointer is on, if any.
+    pub(crate) frame_over: Option<crate::core_loop::FrameOver>,
+    /// The last titlebar press, for the double click.
+    pub clicks: casement_core::window::ClickTracker,
 }
 
 /// Whether the pointer has been put where it starts: the centre of the primary output, once an
@@ -306,6 +310,8 @@ impl State {
             pointer: PointerStart::Unplaced,
             presence: crate::core_loop::Presence::default(),
             frame_faults: RepeatGate::new(FAULT_LOG_EVERY),
+            frame_over: None,
+            clicks: casement_core::window::ClickTracker::default(),
         };
         Ok(State {
             core,
