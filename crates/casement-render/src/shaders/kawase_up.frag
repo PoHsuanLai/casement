@@ -53,7 +53,7 @@ void main() {
     float luma = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
     color.rgb = clamp(mix(vec3(luma), color.rgb, saturation), 0.0, color.a);
     color = wash + color * (1.0 - wash.a);
-    // Grain only when asked, and from a hash with no sin(): the usual sin(dot(p, k)) hash takes
+    // Grain only when asked, and from a hash with no sine: the usual sine-of-a-dot-product hash takes
     // an argument past 65536 at full-HD coordinates, where llvmpipe's sin returns NaN, and NaN
     // times a grain of 0 is still NaN (the pixel went black wherever 12.9898 x + 78.233 y was
     // over 65536). Interleaved gradient noise (Jimenez 2014) keeps every argument small.
