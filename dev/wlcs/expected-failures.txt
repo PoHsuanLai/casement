@@ -90,11 +90,24 @@
 #         replace the selection or the clipboard. The row stays until smithay offers a policy hook.
 #       - TextInputV3WithInputMethodV2Test: nine of eleven FIXED in the fork by P0-smithay (enter with
 #         keyboard focus whether or not an input method exists; an input method that binds after the
-#         field was enabled is activated for it); the last two (text_input_enters_grabbing_popup and
-#         text_input_enters_parent_surface_after_child_destroyed, gmock InSequence with `enter`
-#         expected BEFORE the toplevel's first configure) FIXED 2026-10-15 in the shim: under the
-#         lenient policy a first commit that carries a buffer maps the window keyed and sends its one
-#         configure after the keyboard enter (xdg_shell::map_keyed_on_first_buffer). Not listed.
+#         field was enabled is activated for it); the last two are W14.
+# W14: wlcs run 2026-10-15 (910 pass, 5 fail) showed the 2026-10-15 shim fix (xdg_shell::
+#     map_keyed_on_first_buffer: enter before the first configure) was right but not enough, and
+#     that text_input_enters_grabbing_popup and text_input_enters_parent_surface_after_child_destroyed
+#     cannot pass on a compositor that follows xdg-shell. Both open with `InSequence`, so every
+#     EXPECT_CALL the xdg helpers make afterwards (XdgSurfaceStable::configure at src/xdg_shell_
+#     stable.cpp:27, then XdgToplevelStable configure/close/configure_bounds/wm_capabilities at
+#     83-86, then the popup's) joins one chain, and gmock RETIRES every earlier link of the chain
+#     as soon as a later one is called (RetireAllPreRequisites). The wire order of a configure is
+#     fixed by the protocol: xdg_toplevel.configure_bounds / configure, THEN xdg_surface.configure,
+#     and for a popup xdg_popup.configure THEN xdg_surface.configure; the chain wants the opposite,
+#     so the second event of every pair is "Unexpected ... it is retired" (the log shows exactly
+#     that for the parent's configure(0,0) and configure(1492), and for the popup's configure
+#     (1498)). Besides, wm_capabilities goes out at get_toplevel (the fork, for
+#     wm_capabilities_are_sent), before the commit that gives the keyboard enter, so it also
+#     precedes `enter(parent)`. The text-input `enter` itself does arrive in the right place. Only
+#     a compositor that sends the parent and the popup no configure at all in that window passes;
+#     that would break the protocol (and every wlcs test that reads the first configure). Kept.
 # W13: FIXED in the shim (casement was right: a toplevel unmapped by a null buffer is configured again
 #     and maps again with fresh state; xdg_toplevel's "Unmapping" says it returns to its initial state).
 #     wlcs puts the surface back where it was and re-attaches at once; the shim now remembers where
@@ -106,6 +119,8 @@ PrimarySelection.sink_can_listen  # W12
 PrimarySelection.sink_can_request  # W12
 PrimarySelection.source_can_supply_request  # W12
 PrimarySelection.source_sees_request  # W12
+TextInputV3WithInputMethodV2Test.text_input_enters_grabbing_popup  # W14
+TextInputV3WithInputMethodV2Test.text_input_enters_parent_surface_after_child_destroyed  # W14
 XdgDecorationV1Test.destroying_toplevel_before_decoration_throws_orphaned  # W4
 XdgShellStableSubsurfaces/SubsurfaceTest.place_above_simple/0  # W7
 XdgShellStableSubsurfaces/SubsurfaceTest.place_below_simple/0  # W7
