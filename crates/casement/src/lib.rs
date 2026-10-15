@@ -55,6 +55,7 @@ pub mod notify;
 pub mod relax;
 mod run;
 pub mod seams;
+pub mod settings_live;
 pub mod space_store;
 pub mod space_sync;
 pub mod spawn;

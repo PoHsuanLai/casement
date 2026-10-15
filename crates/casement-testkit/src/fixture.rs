@@ -483,6 +483,11 @@ impl Fixture {
         }))
     }
 
+    /// The settings file changed to `doc`, as the watch on it tells the loop.
+    pub fn settings_file_changed(&mut self, doc: &casement::config::CasementDoc) {
+        casement::settings_live::apply(&mut self.state, doc);
+    }
+
     /// The model.
     pub fn model(&self) -> &Model {
         &self.state.core.model
