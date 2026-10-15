@@ -27,6 +27,7 @@ mod requests;
 mod shell_requests;
 mod space_persist;
 mod spaces;
+mod split;
 mod states;
 mod timers;
 mod window_menu;
@@ -75,6 +76,8 @@ pub struct Model {
     /// The on-demand layer surface that holds the keyboard: the one that last mapped above the
     /// windows (nothing exclusive or locked holding the keyboard), or the one a press last landed on. A window pressed or keyed takes it back.
     demand: Option<LayerKey>,
+    /// The Split View whose other half is being chosen, if one is (`model/split.rs`).
+    split_choice: Option<split::SplitChoice>,
     lock: LockState,
     focus: Focus,
     timers: TimerBook,
@@ -110,6 +113,7 @@ impl Model {
             outputs: OutputBook::default(),
             layers: LayerBook::empty(),
             demand: None,
+            split_choice: None,
             lock: LockState::Unlocked,
             focus: Focus::none(),
             timers: TimerBook::empty(),

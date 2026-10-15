@@ -359,6 +359,9 @@ pub fn apply_note(part: &mut QuireShellPart, note: &ShellNote) -> Result<(), Way
                 shell.window_menu(identifier.clone(), show.at.x, show.at.y, show.enabled());
             }
         }
+        // The Split View picker has no event or request in the XML yet: the model asks for it
+        // and the shell is told nothing until the protocol lands (FINDINGS, wave-2026-10-15/split).
+        ShellNote::SplitChoose(_) | ShellNote::SplitChoiceEnd(_) => {}
         _ => {}
     }
     Ok(())

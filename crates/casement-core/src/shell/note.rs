@@ -2,7 +2,7 @@
 
 use crate::geometry::{LogicalPoint, LogicalRect};
 use crate::ids::{LayerKey, WindowId};
-use crate::window::{MenuItem, enabled_mask};
+use crate::window::{MenuItem, SplitSide, enabled_mask};
 use casement_protocols::vocab::{Corner, MacMods, ScreenEdge, ShellRole, Shown};
 
 /// Something the shell's protocol layer records or sends.
@@ -25,6 +25,26 @@ pub enum ShellNote {
     /// Show the window menu: the shell draws it and answers with
     /// [`ShellRequest::WindowMenuPick`](super::ShellRequest::WindowMenuPick).
     WindowMenu(WindowMenuShow),
+    /// A window went full screen to share the screen in a Split View: the shell shows the other
+    /// windows of the desktop to pick from and answers with
+    /// [`ShellRequest::SplitPick`](super::ShellRequest::SplitPick) or
+    /// [`ShellRequest::SplitCancel`](super::ShellRequest::SplitCancel).
+    SplitChoose(SplitChoices),
+    /// The choosing for this first window is over (a pick, a cancel, or the window left): the
+    /// shell takes its picker away.
+    SplitChoiceEnd(WindowId),
+}
+
+/// The other half of a Split View is being chosen.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct SplitChoices {
+    /// The window already full screen on its half.
+    pub first: WindowId,
+    /// The half it took.
+    pub side: SplitSide,
+    /// The windows that can fill the other half, most recently used first.
+    pub candidates: Vec<WindowId>,
 }
 
 /// The window menu to show: for which window, where, and which entries can be picked.

@@ -5,6 +5,7 @@ use crate::geometry::LogicalRect;
 use crate::ids::{LayerKey, WindowId};
 use crate::window::MenuEntry;
 use casement_protocols::vocab::ShellRole;
+use ds_core::vocab::Fraction;
 
 /// One request from the shell.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,5 +43,23 @@ pub enum ShellRequest {
         window: WindowId,
         /// The entry.
         entry: MenuEntry,
+    },
+    /// The person picked `window` for the other half of the Split View being chosen
+    /// ([`ShellNote::SplitChoose`](super::ShellNote::SplitChoose)). A window that is not among
+    /// the candidates now, or no choosing, changes nothing.
+    SplitPick {
+        /// The window picked.
+        window: WindowId,
+    },
+    /// The person pressed Escape or clicked elsewhere: the first window stays alone, full screen.
+    SplitCancel,
+    /// The person moved the divider of the Split View `window` is in: the leading window now
+    /// takes `share` of the width (thousandths; the model keeps it between 200 and 800, and
+    /// layout holds each half to its window's minimum width).
+    SplitDivide {
+        /// Either window of the pair.
+        window: WindowId,
+        /// The leading window's share.
+        share: Fraction,
     },
 }

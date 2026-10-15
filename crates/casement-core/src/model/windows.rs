@@ -158,10 +158,12 @@ impl Model {
         let moved = held.into_iter().fold(Moved::of(model), |moved, space| {
             moved.then(|model| match space.content {
                 SpaceContent::FullScreen(_) => model.retire_full_screen(&space.id),
-                _ => model.with_content(&space.id, SpaceContent::Desktop),
+                SpaceContent::SplitView(pair) => model.split_survivor(&space.id, pair, id),
+                SpaceContent::Desktop | SpaceContent::Agent(_) => Moved::of(model),
             })
         });
         moved
+            .then(|model| model.choice_over_for(&[id]))
             .then(|model| model.with_effect(Effect::UnlistWindow(id)))
             .then(|model| model.feed(FocusIn::Unmapped(id)))
             .then(|model| match closed_sheet {

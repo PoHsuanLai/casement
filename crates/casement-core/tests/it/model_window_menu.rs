@@ -94,9 +94,9 @@ fn a_pick_carries_out_the_entries_command() {
             |s| matches!(s, WindowState::New(_)),
         ),
         (
-            "a Full Screen Tile entry waits for Split View",
+            "a Full Screen Tile entry with no other window is just full screen",
             vec![MenuEntry::TileLeftOfScreen],
-            |s| matches!(s, WindowState::New(_)),
+            |s| matches!(s, WindowState::FullScreen { .. }),
         ),
     ];
     for (name, entries, holds) in cases {

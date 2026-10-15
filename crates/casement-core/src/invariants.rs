@@ -139,8 +139,15 @@ fn full_screen_spaces_agree(model: &Model) -> Option<InvariantBreak> {
                 .then(|| InvariantBreak::FullScreenOutOfStep(space.id.clone())),
             SpaceContent::SplitView(pair) => {
                 let mapped = |id| model.windows().contains_key(&id);
-                (!(mapped(pair.leading) && mapped(pair.trailing)))
-                    .then(|| InvariantBreak::SplitViewWindowMissing(space.id.clone()))
+                let holds = |id| holds_full_screen(model, space, id);
+                match (
+                    mapped(pair.leading) && mapped(pair.trailing),
+                    holds(pair.leading) && holds(pair.trailing),
+                ) {
+                    (false, _) => Some(InvariantBreak::SplitViewWindowMissing(space.id.clone())),
+                    (true, false) => Some(InvariantBreak::FullScreenOutOfStep(space.id.clone())),
+                    (true, true) => None,
+                }
             }
             SpaceContent::Desktop | SpaceContent::Agent(_) => None,
         })
