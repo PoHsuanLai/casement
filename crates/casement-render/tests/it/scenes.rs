@@ -15,6 +15,7 @@ use casement_core::geometry::{
 };
 use casement_motion::{OutputFrame, StripOffset};
 use casement_render::golden::GoldenTier;
+use casement_render::pass::BlurLook;
 use casement_render::{
     BlurV0Element, CasementElement, ChromeLayer, CursorDraw, CursorShape, LayerDraw, OutputView,
     Rgba8, TextureBook, cursor_elements, output_elements, solid_rect,
@@ -192,10 +193,17 @@ fn across_outputs<R: Offscreen1>(renderer: &mut R, right_scale: u32) -> image::R
     ])
 }
 
-/// The blur scene: coloured stripes, a blur over a ring-shaped region (two bands and two
-/// posts), a translucent pane above it.
-fn blur_scene<R: Offscreen1>(renderer: &mut R) -> image::RgbaImage {
-    let view = view(0, 0, 320, 200, 120);
+/// What the blur scene asks of its blur: a short sigma, so the stripes still show through, and
+/// the compositor's saturation.
+const SCENE_LOOK: BlurLook = BlurLook {
+    sigma: 6.0,
+    ..BlurLook::MATERIAL
+};
+
+/// The blur scene on a 320 by 200 pixel output at `scale` (120ths): coloured stripes, a blur over
+/// a ring-shaped region (two bands and two posts), a translucent pane above it.
+fn blur_scene<R: Offscreen1>(renderer: &mut R, scale: u32) -> image::RgbaImage {
+    let view = view(0, 0, 320 * 120 / scale, 200 * 120 / scale, scale);
     let mut elements: Vec<CasementElement<R>> = vec![
         CasementElement::Solid(solid_rect(
             Id::new(),
@@ -203,21 +211,24 @@ fn blur_scene<R: Offscreen1>(renderer: &mut R) -> image::RgbaImage {
             PANE,
             CommitCounter::default(),
         )),
-        CasementElement::Blur(BlurV0Element::new(
-            Id::new(),
-            vec![
-                rect(40, 40, 240, 30),
-                rect(40, 130, 240, 30),
-                rect(40, 70, 40, 60),
-                rect(240, 70, 40, 60),
-            ],
-            Rgba8 {
-                r: 208,
-                g: 208,
-                b: 208,
-                a: 217,
-            },
-        )),
+        CasementElement::Blur(
+            BlurV0Element::new(
+                Id::new(),
+                vec![
+                    rect(40, 40, 240, 30),
+                    rect(40, 130, 240, 30),
+                    rect(40, 70, 40, 60),
+                    rect(240, 70, 40, 60),
+                ],
+                Rgba8 {
+                    r: 208,
+                    g: 208,
+                    b: 208,
+                    a: 217,
+                },
+            )
+            .with_look(SCENE_LOOK, view.scale.as_f64()),
+        ),
     ];
     elements.extend((0_i32..16).map(|n| {
         let colour = STRIPES[usize::try_from(n % 4).expect("small")];
@@ -288,7 +299,7 @@ fn the_ten_renderer_scenes_match_their_pixman_goldens() {
     check(
         "blur-v0-stand-in-1x",
         GoldenTier::Exact,
-        &blur_scene(&mut renderer),
+        &blur_scene(&mut renderer, 120),
     );
 
     let blank = view(0, 0, 64, 40, 120);
@@ -310,33 +321,35 @@ fn the_ten_renderer_scenes_match_their_pixman_goldens() {
 }
 
 #[test]
-fn blur_v0_matches_its_llvmpipe_golden() {
-    let shot = blur_scene(&mut gles());
-    // Inside a band, across a stripe edge, the blur mixes the two colours; outside the region
-    // the stripes are untouched.
-    let mixed = shot.get_pixel(100, 55).0;
-    assert!(
-        mixed != STRIPES[0].rgba() && mixed != STRIPES[1].rgba(),
-        "blurred at the edge: {mixed:?}"
-    );
-    assert_eq!(
-        shot.get_pixel(10, 100).0,
-        STRIPES[0].rgba(),
-        "outside the region"
-    );
-    assert_eq!(
-        shot.get_pixel(150, 100).0,
-        STRIPES[3].rgba(),
-        "inside the ring's hole"
-    );
-    check(
-        "blur-v0-1x",
-        GoldenTier::Soft {
-            channel: 2,
-            parts_per_million: 1000,
-        },
-        &shot,
-    );
+fn the_kawase_blur_matches_its_llvmpipe_goldens_at_1x_and_2x() {
+    for (scale, name) in [(120, "blur-kawase-1x"), (240, "blur-kawase-2x")] {
+        let shot = blur_scene(&mut gles(), scale);
+        // Inside a band, across a stripe edge, the blur mixes the two colours; outside the
+        // region the stripes are untouched.
+        let mixed = shot.get_pixel(100, 55).0;
+        assert!(
+            mixed != STRIPES[0].rgba() && mixed != STRIPES[1].rgba(),
+            "{name}: blurred at the edge: {mixed:?}"
+        );
+        assert_eq!(
+            shot.get_pixel(10, 100).0,
+            STRIPES[0].rgba(),
+            "{name}: outside the region"
+        );
+        assert_eq!(
+            shot.get_pixel(150, 100).0,
+            STRIPES[3].rgba(),
+            "{name}: inside the ring's hole"
+        );
+        check(
+            name,
+            GoldenTier::Soft {
+                channel: 2,
+                parts_per_million: 1000,
+            },
+            &shot,
+        );
+    }
 }
 
 #[test]

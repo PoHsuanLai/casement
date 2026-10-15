@@ -2,6 +2,7 @@
 //!
 //! One integration binary: every former `tests/*.rs` is a module here, and `support` is shared.
 
+mod blur;
 mod capture;
 mod closing_body;
 mod render;

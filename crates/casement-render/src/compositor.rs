@@ -24,18 +24,19 @@ pub trait Compositor:
     /// Whether this renderer runs effect shaders or draws their solid stand-ins.
     fn effects(&mut self) -> EffectSupport;
 
-    /// Blur v0, before its draw: copy what lies under `dst` into `cache` (smithay calls it
-    /// whenever that changed). The stand-in needs nothing.
+    /// Blur, before its draw: blur what lies under `dst` into `cache` as `blur` asks (smithay
+    /// calls it whenever that changed). The stand-in needs nothing.
     fn capture_blur_v0(
         frame: &mut Self::Frame<'_, '_>,
+        blur: &BlurV0Element,
         dst: Rectangle<i32, Physical>,
         cache: &UserDataMap,
     ) -> Result<(), Self::Error> {
-        let _ = (frame, dst, cache);
+        let _ = (frame, blur, dst, cache);
         Ok(())
     }
 
-    /// Blur v0: draw `blur` at `dst` where `damage` (relative to `dst`) asks. The default is
+    /// Blur: draw `blur` at `dst` where `damage` (relative to `dst`) asks. The default is
     /// the stand-in colour over the region.
     fn draw_blur_v0(
         frame: &mut Self::Frame<'_, '_>,
@@ -98,10 +99,11 @@ impl Compositor for GlesRenderer {
 
     fn capture_blur_v0(
         frame: &mut Self::Frame<'_, '_>,
+        blur: &BlurV0Element,
         dst: Rectangle<i32, Physical>,
         cache: &UserDataMap,
     ) -> Result<(), Self::Error> {
-        BlurV0Element::capture_gles(frame, dst, cache)
+        blur.capture_gles(frame, dst, cache)
     }
 
     fn draw_blur_v0(
