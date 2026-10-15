@@ -88,6 +88,7 @@ A1: `Instant::now`, `SystemTime::now`, smithay's `Clock::now` and calloop's `Tim
 | where the pointer is on an output's frame, and the cursor's image for capture | `casement_wayland::image_capture::place`; `casement_render::{cursor_face, cursor_pixels}` |
 | turning a point or a size with an output's transform (a cursor's position, hotspot and size in a capture) | `casement_core::geometry::{turn_point, turn_size}` |
 | a capture into or out of a client's dma-buf; a client-drawn cursor's pixels | `casement_render::pass::{write_dmabuf, read_dmabuf, ArgbImage}`, called through `{HeadlessBackend, TtyBackend}::{write_dmabuf, read_dmabuf}`; the offer is `casement_wayland::image_capture::dma_offer` |
+| which way a capture frame reaches a client's buffer (GPU draw into a dma-buf, or read back) | `casement_backend::capture_path::{capture_path, placement}` (pure, table-tested); the GPU draws are `casement_render::pass::{blit_texture, render_window_dmabuf}`, the output frames kept on the GPU are `casement_backend::tty::{CaptureGpu::draw_scene, TtyBackend::blit_output_dmabuf}` on a seat and the headless GL canvas in the jail; the composition root's call is `handlers/image_capture/{direct,frames}.rs` |
 | a window's capture size and when it is captured | `casement_wayland::capture_source::{capture_size, ToplevelCaptureBook}` (damage gate) |
 | where windows go | `casement-layout` (`SceneLayout`, `RustScene`) |
 | how they travel there; the drawn frame | `casement-motion` (`retarget`, `sample`, `FrameScene`) |

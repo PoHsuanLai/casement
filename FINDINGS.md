@@ -3192,3 +3192,69 @@ first build. Built on casement 78b3152.
   appears at the end with the window, Mission Control stays; drag across to the other display: the window follows the pointer,
   is on top of the other slots while it is dragged, and lands on the target or the Space shown there, at the same place about
   that display's corner; a drop on a tile of the Space it is on flies back.
+
+## wave-2026-10-15/dmabuf
+
+Nothing here compiled or ran (the lane does not build). Closes the departure of `capgpu`: a capture into a client's dma-buf is drawn
+by the GPU with no CPU read-back, for an output, a window and `zwlr_screencopy` (so `grim` and OBS). No Cargo edit, no new `unsafe`.
+
+- **The choice.** `casement_backend::capture_path::capture_path(BufferKind, RendererClass) -> CapturePath` (`Direct` or `ReadBack`), pure
+  and table-tested, is the one place that decides; `handlers/image_capture/direct.rs::path_of` feeds it (the buffer from
+  `get_dmabuf` and `placement(main device, drawing device)`, the renderer from `HeadlessBackend::capture_class` /
+  `TtyBackend::{capture_class, output_class}`). `Direct` only for a dma-buf on the renderer's own device that a GL renderer binds
+  (format and modifier listed). Shared memory, a software renderer (pixman, dummy, winit), a refused import and a buffer on another
+  GPU are `ReadBack`. A direct draw that fails logs one `info` line and falls back to `ReadBack` for that frame; every caller has it.
+- **Output capture (ext output, `zwlr_screencopy`).** The frame stays a GPU image and is blitted: `casement_render::pass::blit_texture`
+  (a part of a texture into the bound dma-buf over a cleared buffer, then a wait on the GPU: ext-image-copy-capture has no fence on the
+  wire, so "ready" follows a GPU finish). Headless GL: the output's own canvas (or the cursor-less layer's) is the texture
+  (`HeadlessBackend::blit_output_dmabuf`); the headless backend still reads each damaged frame back when it presents (goldens, `shot`),
+  so only the *capture* is copy-free there. Real seat: the capture shadow is no longer pixman when the display GPU lends scenes
+  (`CaptureGpu::scenes`): while an output is watched, `TtyBackend::capture_draw` draws each frame shown once more into two GLES textures
+  (with and without the cursor; `tty/capture_scene_real.rs`, owned by the device with the renderer) and keeps a `PresentedFrame` whose
+  pixels are the new `FramePixels::Resident(size)` (time and damage from the GPU draw's tracker). Pixman no longer draws the scene
+  for that output (the 4K CPU cost of the old shadow), and a shared-memory client is served by `CaptureGpu::read_scene` (a read-back
+  of the GPU image, only for the frames it asks for). `Readback::last_frame` prefers the resident frame; a draw the GPU refuses or a
+  busy renderer logs an `info` line and the pixman shadow draws that frame instead.
+- **Window capture.** `casement_render::pass::render_window_dmabuf` renders the window's surface tree straight into the bound dma-buf
+  (fresh tracker at age 0, transparent where nothing draws, wait). `handlers/capture_source/render.rs::draw_window` tries it first
+  (`HeadlessBackend` GL renderer, or `CaptureGpu::render_window` on the display GPU, which also draws windows whose buffers are dma-bufs
+  the pixman shadow could not import), then falls back to `window_rgba` + `deliver`.
+- **Departure: Space pictures stay a read-back.** `space_shot.rs` composes the windows' pixels on the CPU (`compose_thumb`, a few
+  hundred pixels wide) and `deliver` uploads the result. A GPU composition would need a scale per window element (rescale and relocate
+  elements) and a filter that matches `compose_thumb`'s; the pictures are small and rare. Not done.
+- **Departure: cursor sessions stay a read-back.** The cursor image is a client surface (or a theme image) of at most a few tens of
+  pixels, already on the CPU after `ArgbImage::drawn`; `deliver` uploads it. A client's dma-buf cursor is still read back through the
+  renderer (`read_dmabuf`).
+- **Departure: no multi-GPU renderer.** casement has none for captures (`RenderPlan` routes outputs, the lender is the first device's
+  renderer). `placement(main device, drawing device)` is `Foreign` when both numbers are known and differ, and a foreign buffer is
+  `ReadBack` (uploaded by the lender or the shadow, as in `capgpu`). The drawing device is `RealKms::node` (the render node of the open
+  device, `DrmNode::from_file` then `node_with_type(Render)`); the fakes and headless report none, so `Local`.
+- **Damage.** The damage the client is told is unchanged (the logs). The whole frame is drawn every time, direct or not: the client's
+  buffer is not known to hold the previous frame (ext-image-copy-capture says the compositor fills the buffer), so a partial draw
+  would leave stale pixels. The damage-aware saving is the *skipped* frame (nothing changed: no draw at all), which was already there.
+- **Tests.** Table: `capture_path` (six buffer/renderer rows) and `placement` (five rows) in `capture_path.rs`. Backend (`tests/it/
+  capture_direct.rs`, needs `/dev/udmabuf`, skips without it): a GL renderer that binds linear ARGB blits the frame and the buffer reads
+  back equal to the shm read-back (skips on llvmpipe if it binds no dma-buf); pixman refuses the blit and the window render, and the
+  read-back + `write_dmabuf` fallback fills the same pixels; an output that presented nothing has no frame. Tty over fakes
+  (`tests/it/tty/capture_gpu.rs`, `FakeCaptureGpu` now has `SceneBehaviour`): a lender that keeps scenes holds the watched frame as
+  `Resident` and `output_class` is `Gpu(Accepted)` (and `Refused` for a modifier it does not list); one that refuses the draw leaves
+  the shadow's `Rgba` frame and `Software`; one without scenes is never asked; unwatching frees the scene. Redundant tests: none (the
+  capgpu route tests still cover the upload path, which stays the fallback).
+- **Not covered.** A protocol-level test that a client's own dma-buf `wl_buffer` receives the capture (the test clients still cannot
+  import one onto the capture queue), a real GPU blit, the display GPU's scenes in `RealCaptureGpu` (needs a device), `render_window`
+  on the display GPU.
+- **Gate.** Likeliest compile faults: `blit_texture`'s `<R as RendererSuper>::TextureId` bound and `texture.size()`; `Bind<GlesTexture>`
+  and `Offscreen` inference in `capture_scene_real.rs` (`create_buffer` with the annotated `GlesTexture`); `DrmNode::from_file(&OwnedFd)`
+  and `node_with_type(...).and_then(Result::ok)` in `kms_real.rs`; `Cursorless` made `pub(crate)` (its `cfg(feature = "tty")` re-export);
+  the `matches!(presented(..)?.map(|f| &f.pixels), Some(FramePixels::Resident(_)))` in `frames.rs`; exhaustive matches on `FramePixels`
+  (only `casement-testkit/src/output.rs` was one); `MainDevice(pub u64)` against `dev_id()`'s type; `RealCaptureGpu::{store, renderer}`
+  `RefMut` lifetimes. Test tweaks: the first `present`s of `watched()` in `tty/capture_gpu.rs` assume the fake scanout answers `Flipped`
+  (if it waits for a vblank, step a `presented` between frames); the llvmpipe case of the backend test may skip on every host.
+- **Real run.** Per the user's rule the manual-checks queue is `sill/docs/manual-checks.md` (casement has no `docs/manual-checks`):
+  on the tty session start OBS through the pipewire portal and `grim` / `wf-recorder`, with `RUST_LOG=info`: no
+  `reading it back` / `using the software shadow` line in steady state, and on a 4K output the frame time of the capture is a blit
+  (compare `casementctl` frame times with capture open before and after: the pixman shadow's per-frame render is gone, GPU time
+  rises by two extra scene draws); the picture is right way up, not green or black (if upside down, the lever is `flipped` on the
+  bind in `blit_texture` and `write_dmabuf`); `grim -c` and a cursor-less OBS source show/hide the pointer; a window capture
+  (OBS window source) of a dma-buf client (a browser, a game) is not blank; with two GPUs a buffer on the second GPU logs the
+  fallback and still shows the picture; a shared-memory client (`grim` without dma-buf) still works through `read_scene`.
