@@ -19,6 +19,10 @@ pub struct WindowSpec {
     pub limits: SizeLimits,
     /// Its place in its Space's stack.
     pub stack: StackIndex,
+    /// How many logical pixels of frame sit above its content (a server-side titlebar), so
+    /// that the outer frame, not the content, is what fill, first placement and the keep-inside
+    /// clamp hold in the usable area. 0 for a window that draws its own frame.
+    pub reserve_top: u32,
 }
 
 /// Where the model says a window goes.

@@ -8,10 +8,10 @@
 //! the three light hues (stylesheet-only candy colours).
 
 use casement_core::window::{
-    FrameColour, FrameLook, FrameMetrics, FrameStyle, LightDraw, ShadowLayer,
+    FrameColour, FrameLook, FrameMetrics, FrameStyle, Light, LightDraw, ShadowLayer,
 };
 use ds_core::vocab::{Activity, Shown};
-use ds_style::appearance::theme::Scheme;
+use ds_style::appearance::theme::{Scheme, Theme};
 use ds_style::tokens::chrome::{ChromeToken, GroupHover, LightFill, LightState, light_state};
 use ds_style::tokens::colour::ColourToken;
 use ds_style::tokens::hex::Colour;
@@ -59,6 +59,52 @@ pub fn frame_style(scheme: Scheme, activity: Activity, hover: GroupHover) -> Fra
             shadow: shadow(scheme),
         },
     }
+}
+
+/// The scheme a person's `appearance.theme` paints. `System` would follow the desktop's
+/// preference, which casement does not read (the settings portal is not built in), so it paints
+/// Light, the scheme the desktop starts in.
+///
+/// ```
+/// use casement_layout::{Scheme, Theme, scheme_of};
+///
+/// assert_eq!(scheme_of(Theme::Dark), Scheme::Dark);
+/// assert_eq!(scheme_of(Theme::System), Scheme::Light);
+/// ```
+pub fn scheme_of(theme: Theme) -> Scheme {
+    match theme {
+        Theme::Dark => Scheme::Dark,
+        _ => Scheme::Light,
+    }
+}
+
+/// `style` with `light` drawn pressed: its hue a shade darker, its mark showing, as the Mac
+/// draws a light under the button.
+///
+/// ```
+/// use casement_core::window::Light;
+/// use casement_layout::{GroupHover, Scheme, frame_style, pressed};
+/// use ds_core::vocab::Activity;
+///
+/// let rest = frame_style(Scheme::Light, Activity::Active, GroupHover::Away);
+/// let down = pressed(rest, Light::Close);
+/// assert!(down.look.light(Light::Close).mark.is_some());
+/// assert_eq!(down.look.light(Light::Zoom), rest.look.light(Light::Zoom));
+/// ```
+pub fn pressed(style: FrameStyle, light: Light) -> FrameStyle {
+    let slot = match light {
+        Light::Close => 0,
+        Light::Minimise => 1,
+        Light::Zoom => 2,
+    };
+    let (hue, ink) = HUES[slot];
+    let mut look = style.look;
+    look.lights[slot] = LightDraw {
+        fill: darker(rgb(hue)),
+        ring: darker(darker(rgb(hue))),
+        mark: Some(rgb(ink)),
+    };
+    FrameStyle { look, ..style }
 }
 
 /// One light: its hue or the grey pill, and its mark while the group shows marks.
@@ -200,6 +246,39 @@ mod tests {
             let red = draw.look.light(Light::Close).fill;
             assert_eq!(red == rgb(0xFF5F57), *coloured, "{name} fill");
         }
+    }
+
+    #[test]
+    fn a_pressed_light_is_darker_with_its_mark_and_the_others_stay() {
+        let rest = frame_style(Scheme::Light, Activity::Inactive, GroupHover::Away);
+        for light in Light::ALL {
+            let down = pressed(rest, light);
+            let (was, now) = (rest.look.light(light), down.look.light(light));
+            assert!(now.mark.is_some(), "{light:?} mark");
+            assert_ne!(now.fill, was.fill, "{light:?} fill");
+            for other in Light::ALL.into_iter().filter(|other| *other != light) {
+                assert_eq!(down.look.light(other), rest.look.light(other), "{other:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_theme_picks_the_scheme() {
+        const CASES: &[(&str, Theme, Scheme)] = &[
+            ("dark", Theme::Dark, Scheme::Dark),
+            ("light", Theme::Light, Scheme::Light),
+            ("system is light", Theme::System, Scheme::Light),
+        ];
+        for (name, theme, want) in CASES {
+            assert_eq!(scheme_of(*theme), *want, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_dark_frame_has_a_dark_titlebar() {
+        let light = frame_style(Scheme::Light, Activity::Active, GroupHover::Away);
+        let dark = frame_style(Scheme::Dark, Activity::Active, GroupHover::Away);
+        assert!(dark.look.titlebar.r < light.look.titlebar.r);
     }
 
     #[test]
