@@ -45,6 +45,35 @@ pub(super) struct Capturing {
     buffer: Option<Pending>,
     stopped: bool,
     cursor_events: Vec<CursorEvent>,
+    announced: Announced,
+}
+
+/// The session's last complete constraints. The reducer folds one frame per capture and
+/// forgets the session once its frame is taken; a later frame on the same session starts
+/// from these.
+#[derive(Debug, Default)]
+struct Announced {
+    size: Option<Size>,
+    formats: Vec<ShmFormat>,
+    done: Done,
+}
+
+/// Whether the constraints round is complete.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+enum Done {
+    #[default]
+    Open,
+    Complete,
+}
+
+impl Announced {
+    /// A constraint arrived: one after a `done` starts a new round.
+    fn round(&mut self) {
+        if self.done == Done::Complete {
+            self.formats.clear();
+            self.done = Done::Open;
+        }
+    }
 }
 
 /// The buffer a frame was asked into.
@@ -61,6 +90,21 @@ impl Capturing {
     fn fold(&mut self, event: CaptureEvent) {
         let state = std::mem::take(&mut self.desktop);
         self.desktop = reduce(state, DesktopEvent::Capture { id: ID, event });
+    }
+
+    /// Starts the next frame's capture from the remembered constraints, if the last one was
+    /// taken and the session announced complete constraints.
+    fn reopen(&mut self) {
+        if self.desktop.captures.get(ID).is_some() || self.announced.done == Done::Open {
+            return;
+        }
+        if let Some(size) = self.announced.size {
+            self.fold(CaptureEvent::BufferSize(size));
+        }
+        for format in self.announced.formats.clone() {
+            self.fold(CaptureEvent::Format(format));
+        }
+        self.fold(CaptureEvent::ConstraintsDone);
     }
 }
 
@@ -191,6 +235,7 @@ impl OutputCapture {
 
     /// Asks for a frame into a buffer of `ask`. The session's constraints must have arrived.
     pub fn request(&mut self, ask: BufferAsk) -> Result<(), ClientError> {
+        self.state.reopen();
         let session = self
             .session()
             .ok_or_else(|| ClientError::Dispatch("no session is open".to_owned()))?;
@@ -320,12 +365,23 @@ impl Dispatch<ExtImageCopyCaptureSessionV1, ()> for Capturing {
         use ext_image_copy_capture_session_v1::Event;
         match event {
             Event::BufferSize { width, height } => {
-                state.fold(CaptureEvent::BufferSize(Size::new(width, height)));
+                let size = Size::new(width, height);
+                state.announced.round();
+                state.announced.size = Some(size);
+                state.fold(CaptureEvent::BufferSize(size));
             }
             Event::ShmFormat { format } => {
-                state.fold(CaptureEvent::Format(ShmFormat::from_code(raw(format))));
+                let format = ShmFormat::from_code(raw(format));
+                state.announced.round();
+                if !state.announced.formats.contains(&format) {
+                    state.announced.formats.push(format);
+                }
+                state.fold(CaptureEvent::Format(format));
             }
-            Event::Done => state.fold(CaptureEvent::ConstraintsDone),
+            Event::Done => {
+                state.announced.done = Done::Complete;
+                state.fold(CaptureEvent::ConstraintsDone);
+            }
             Event::Stopped => {
                 state.stopped = true;
                 state.fold(CaptureEvent::Failed(CaptureFailure::Stopped));

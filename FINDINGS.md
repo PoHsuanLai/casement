@@ -2052,3 +2052,15 @@ Departures and edges:
 - A fresh get_xdg_surface on a wl_surface whose earlier xdg_surface was destroyed (role already xdg_toplevel/popup) is now `xdg_wm_base.role`, as the XML says; a client that reuses a wl_surface this way would be disconnected.
 
 To check in a real run: wlcs counts (expect 8 more passes, 9 listed); the casement-testkit protocol tests (`xdg_shell` goldens filter `wm_capabilities`; `subcompositor-tree.txt` has no positions); the fuzz box (`get_xdg_surface` on a surface with a role or buffer now disconnects the client; the fuzz oracle should treat it as a clean protocol error); a real client with subsurfaces (a video player, a browser) still moves its subsurfaces after the parent's commit.
+
+### capture2 gate fixes (orchestrator)
+
+- **The test client's second frame.** `desktop-client`'s capture reducer folds one frame per capture and forgets
+  the session when its frame is taken, so a second `request` on the same session found "no session is open".
+  `OutputCapture` now keeps the session's last complete constraints and starts the next frame from them.
+- **`not_permitted` on the manager.** An agent connection's refused request on a desktop app, window or Space object
+  posted the manager's error code on the child object, where it is undocumented (fuzz seed 3, reached once the
+  catalogue gained the capture roots). The children's data now carries their manager and the error goes there, as the
+  XML says.
+- **Negative `wl_surface.damage`.** smithay built a negative `Size` and panicked inside dispatch (fuzz seed 4). Fork
+  commit `65518b3a` ignores it, as `damage_buffer` already did.
