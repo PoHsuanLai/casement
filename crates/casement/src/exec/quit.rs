@@ -22,9 +22,15 @@ pub(super) fn terminate(state: &mut State, stop: Termination) {
 }
 
 /// The processes behind these connections: those that came through the public socket, as
-/// recorded when they connected.
+/// recorded when they connected, except xwayland-satellite's: its one connection carries every
+/// X11 program's windows, so signalling it would end all of them (and X11 for the session).
 fn pids_of(state: &State, clients: &[ClientKey]) -> BTreeSet<RawPid> {
-    state.processes.of(clients).collect()
+    let satellite = state.xwayland.satellite_pid();
+    state
+        .processes
+        .of(clients)
+        .filter(|pid| Some(*pid) != satellite)
+        .collect()
 }
 
 /// Sends `signal` to each of `pids`, except init and `own` (this process). How many were sent.
