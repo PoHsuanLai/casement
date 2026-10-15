@@ -12,7 +12,7 @@ use crate::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use crate::ids::{OutputKey, WindowId};
 use crate::settings::Enabled;
 use crate::space::SpaceContent;
-use crate::window::{SpacePlace, Window, WindowState};
+use crate::window::{Restore, SpacePlace, Window, WindowState};
 use casement_protocols::vocab::{PlaceTarget, TileZone, Toggle};
 
 impl Model {
@@ -108,7 +108,8 @@ impl Model {
         }
     }
 
-    /// The window goes where `target` says. Full-screen and minimised windows stay put.
+    /// The window goes where `target` says. Full-screen and minimised windows stay put, except that
+    /// a full-screen window asked to fill will fill when it leaves full screen.
     pub(super) fn place(self, window: &Window, target: PlaceTarget) -> Moved {
         let Some(usable) = self
             .output_of(window)
@@ -118,6 +119,13 @@ impl Model {
         };
         let floor = floor_rect(&window.state, usable);
         let state = match (&window.state, target) {
+            (WindowState::FullScreen { space, restore }, PlaceTarget::Fill) => {
+                let behind = restore_rect(restore, usable);
+                WindowState::FullScreen {
+                    space: space.clone(),
+                    restore: Restore::Filled { restore: behind },
+                }
+            }
             (WindowState::FullScreen { .. } | WindowState::Minimised { .. }, _) => {
                 return Moved::of(self);
             }
@@ -289,6 +297,16 @@ fn floor_rect(state: &WindowState, usable: LogicalRect) -> LogicalRect {
         WindowState::Tiled { restore, .. } | WindowState::Filled { restore } => *restore,
         WindowState::New(size) => centred(*size, usable),
         WindowState::FullScreen { .. } | WindowState::Minimised { .. } => usable,
+    }
+}
+
+/// The floating rectangle behind a state a window returns to: its own, else the one it would
+/// get centred at its size.
+fn restore_rect(restore: &Restore, usable: LogicalRect) -> LogicalRect {
+    match restore {
+        Restore::Floating(rect) => *rect,
+        Restore::Tiled { restore, .. } | Restore::Filled { restore } => *restore,
+        Restore::New(size) => centred(*size, usable),
     }
 }
 

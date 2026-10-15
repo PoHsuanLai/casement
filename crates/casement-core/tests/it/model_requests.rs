@@ -120,7 +120,7 @@ fn requests_move_a_window_between_its_states() {
 }
 
 #[test]
-fn a_full_screen_window_is_not_placed() {
+fn a_full_screen_window_is_not_tiled_and_a_fill_waits_for_full_screen_to_end() {
     let mail = proven("org.quire.Mail");
     let run = run(vec![
         plug("HEADLESS-1"),
@@ -145,7 +145,7 @@ fn a_full_screen_window_is_not_placed() {
     assert!(matches!(
         state_of(&run, 1),
         WindowState::FullScreen {
-            restore: casement_core::window::Restore::New(_),
+            restore: casement_core::window::Restore::Filled { .. },
             ..
         }
     ));
