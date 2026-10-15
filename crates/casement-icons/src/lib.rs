@@ -28,5 +28,5 @@ pub use error::IconError;
 pub use finder::Finder;
 pub use pixels::Pixels;
 pub use plate::plate;
-pub use theme::{SystemTheme, ThemeLookup};
+pub use theme::{SystemTheme, ThemeLookup, theme_file, theme_named};
 pub use want::{RgbaBuffer, Want};

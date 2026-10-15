@@ -16,10 +16,26 @@ const LEAST: i64 = 32;
 /// How far the icon's middle is below the slot's bottom edge, in logical pixels.
 const DROP: i64 = 6;
 
+/// The room the hovered window's title takes under the icon (its gap and its height, as the
+/// renderer lays it out), in logical pixels.
+const TITLE: i64 = 30;
+
+/// The icon's edge at `scale` (millionths), in logical pixels.
+fn edge_at(scale: i64) -> i64 {
+    (REST * scale / WHOLE).clamp(LEAST, REST)
+}
+
+/// How far below a slot's bottom edge its icon and the title under it reach at `scale`
+/// (millionths): the spread keeps this much of every cell free so they never cover the window
+/// below.
+pub(super) fn below(scale: i64) -> i64 {
+    DROP + edge_at(scale) / 2 + TITLE
+}
+
 /// The icon for `slot`, a window drawn at `scale` (millionths) of its size, held inside `usable`
 /// (an icon that would hang below the area is lifted until it fits).
 pub(super) fn icon_rect(slot: LogicalRect, scale: i64, usable: LogicalRect) -> LogicalRect {
-    let edge = (REST * scale / WHOLE).clamp(LEAST, REST);
+    let edge = edge_at(scale);
     let left = i64::from(slot.origin.x) + (i64::from(slot.size.w) - edge) / 2;
     let bottom = i64::from(slot.origin.y) + i64::from(slot.size.h);
     let area_bottom = i64::from(usable.origin.y) + i64::from(usable.size.h);
@@ -65,6 +81,19 @@ mod tests {
                 (x, y, edge, edge),
                 "{name}"
             );
+        }
+    }
+
+    #[test]
+    fn the_room_below_a_slot_holds_the_icon_and_the_title() {
+        // name, scale (millionths), want: the drop, half the icon, the title
+        let cases = [
+            ("whole", 1_000_000, 6 + 32 + 30),
+            ("half", 500_000, 6 + 16 + 30),
+            ("a small slot keeps the least", 100_000, 6 + 16 + 30),
+        ];
+        for (name, scale, want) in cases {
+            assert_eq!(below(scale), want, "{name}");
         }
     }
 
