@@ -5,16 +5,16 @@
 use super::action::ActionWords;
 use super::doc::CasementDoc;
 use super::sections::{
-    BindingsSection, FirstSight, GpuSection, KeyboardSection, OutputsSection, PointerSection,
-    SpacesSection, TouchpadSection, WindowsSection,
+    BindingsSection, FirstSight, GpuSection, KeyboardSection, NightLightSection, OutputsSection,
+    PointerSection, SpacesSection, TouchpadSection, WindowsSection,
 };
 use casement_core::CoreError;
 use casement_core::gpu::{ByPathId, GpuChoice};
 use casement_core::input::{Binding, Bindings, Chord};
-use casement_core::output::ScalePolicy;
+use casement_core::output::{Kelvin, MinuteOfDay, ScalePolicy};
 use casement_core::settings::{
-    CasementSettings, GpuSettings, KeyboardSettings, OutputSettings, PointerProfile,
-    PointerSettings, RepeatRate, SpaceSettings, WindowSettings, XkbNames,
+    CasementSettings, GpuSettings, KeyboardSettings, NightLightSettings, OutputSettings,
+    PointerProfile, PointerSettings, RepeatRate, SpaceSettings, WindowSettings, XkbNames,
 };
 use ds_core::geometry::scale::Scale;
 use ds_settings::{Count, Ms};
@@ -33,6 +33,7 @@ pub fn to_core(doc: &CasementDoc) -> CasementSettings {
         outputs: outputs(&doc.outputs),
         pointer: pointer(&doc.pointer, &doc.touchpad),
         gpu: gpu(&doc.gpu),
+        night_light: night_light(&doc.night_light),
     }
 }
 
@@ -231,6 +232,32 @@ pub(super) fn gpu_doc(core: &GpuSettings) -> GpuSection {
             GpuChoice::ByPath(id) => id.as_str().to_owned(),
             _ => AUTO.to_owned(),
         },
+    }
+}
+
+/// `night_light.*`; a time past the day wraps into it and a warmth outside the table stops at its
+/// ends.
+fn night_light(doc: &NightLightSection) -> NightLightSettings {
+    NightLightSettings::new(
+        doc.mode,
+        (
+            MinuteOfDay::wrapping(doc.from.0),
+            MinuteOfDay::wrapping(doc.to.0),
+        ),
+        Kelvin(doc.kelvin.0.clamp(Kelvin::WARMEST.0, Kelvin::NEUTRAL.0)),
+        doc.fade_minutes.0,
+    )
+    .skipping(doc.skip_outputs.clone())
+}
+
+pub(super) fn night_light_doc(core: &NightLightSettings) -> NightLightSection {
+    NightLightSection {
+        mode: core.mode,
+        from: Count(core.from.get()),
+        to: Count(core.to.get()),
+        kelvin: Count(core.warmth.0),
+        fade_minutes: Count(core.fade_minutes),
+        skip_outputs: core.skip_outputs.clone(),
     }
 }
 

@@ -1,7 +1,7 @@
 //! Drawing one output's elements through smithay's damage tracker.
 
 use crate::compositor::{Compositor, EffectSupport};
-use crate::element::{CasementElement, Rgba8};
+use crate::element::{CasementElement, Rgba8, pixman_can_draw};
 use crate::scene::convert::ours;
 use casement_core::geometry::PhysicalRect;
 use smithay::backend::renderer::damage::{Error as DamageError, OutputDamageTracker};
@@ -153,6 +153,13 @@ impl<R: Compositor> RenderElement<R> for Routed<'_, R> {
         cache: Option<&UserDataMap>,
     ) -> Result<(), R::Error> {
         match self.element {
+            CasementElement::MemoryStrip(_)
+            | CasementElement::SurfaceStrip(_)
+            | CasementElement::ClipStrip(_)
+                if self.effects == EffectSupport::Plain && !pixman_can_draw(src, dst) =>
+            {
+                Ok(())
+            }
             CasementElement::Blur(blur) => R::draw_blur_v0(frame, blur, dst, damage, cache),
             CasementElement::Clip(clip) => {
                 R::draw_rounded_clip(frame, clip, src, dst, damage, opaque_regions, cache)

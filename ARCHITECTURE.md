@@ -76,6 +76,7 @@ A1: `Instant::now`, `SystemTime::now`, smithay's `Clock::now` and calloop's `Tim
 | where input came from, and what it may reach | `casement-core::input::{Origin, reach}` (C19, I3, I8) |
 | key bindings and their resolution | `casement-core::input::{Bindings, resolve}`; the shell's own chords come from the desktop keymap, `casement::keymap` (chordkit layers through keycap-client's `KeycapSource`), behind casement's `[bindings]` entries |
 | first-sight scale, mode choice, output placement | `casement-core::output` |
+| the ramp an output is driven with by night light, and which outputs it leaves alone (`night_light.skip_outputs`: a connector name or an output key) | `casement-core::settings::NightLightSettings::{warming_of, ramp_for}` (pure); driven by `Model` (`model/night_light.rs`) from `Event::NightLightTick(MinuteOfDay)` as `Effect::SetGamma`; a gamma-control client that holds an output with a table of its own wins until it lets go |
 | which connection sees which global (I7) | `casement-core::policy::advertised` |
 | typed settings | `casement-core::settings::CasementSettings` (the stored document: `casement::config`) |
 | the closed sets of inputs and outputs of the model | `casement-core::{Event, Effect}` |

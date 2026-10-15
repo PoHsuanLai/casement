@@ -62,16 +62,17 @@ fn is_smooth(along: &[[u8; 4]]) -> bool {
 const SMOOTH_STEP: i32 = 6;
 
 /// cas-wave "Real-run checks: Shadow" (sharp at 2x, no seam where a strip meets a corner): a
-/// 1600 x 1000 window on a 2x output. The pixels just outside its bottom edge and its right
-/// edge, from beside one corner past the other, change smoothly; the whole frame is a golden
+/// 1600 x 1000 window on a 2x output, over a light wallpaper (the bare desktop is black, and a
+/// black shadow shows on nothing). The pixels just outside its bottom edge and its right edge,
+/// from beside one corner past the other, change smoothly; the whole frame is a golden
 /// (`shadow-1600x1000-2x`, new: bless and look at the corners).
 #[test]
-#[ignore = "wave-6 follow-up: the edge-darker check fails; the scan line misses the shadow"]
 fn a_large_windows_shadow_at_2x_is_seamless() {
     let output = "HEADLESS-1:3840x2160@60000:240:0,0";
     let mut fixture =
         Fixture::start(FixtureSpec::desktop().with_outputs(&[output])).expect("fixture");
     let mut desk = Desk::at(&mut fixture);
+    desk.wallpaper(WALLPAPER, Dpi::Two);
     let top = desk.framed_window(
         APP,
         "A large window",
@@ -112,13 +113,20 @@ fn a_large_windows_shadow_at_2x_is_seamless() {
     let beside: Vec<[u8; 4]> = span_y.map(|y| at(2 * (right + 4), y)).collect();
     assert!(is_smooth(&below), "a seam along the bottom edge's shadow");
     assert!(is_smooth(&beside), "a seam along the right edge's shadow");
+    // The wide layer is the outline moved 24 down and drawn 16 smaller, blurred with sigma 32:
+    // beside the middle of the right edge it is 20 logical pixels from its own edge 4 pixels
+    // out (about a quarter of the layer's 40% black) and 56 pixels from it 40 pixels out (about
+    // a twentieth of it). Below the window there is no such room: it is centred in 1080 rows.
+    let middle = top_edge + i32::try_from(frame.size.h / 2).expect("a small height");
     assert!(
-        luma(at(2 * (left + 100), 2 * (bottom + 4)))
-            < luma(at(2 * (left + 100), 2 * (bottom + 40))),
+        luma(at(2 * (right + 4), 2 * middle)) < luma(at(2 * (right + 40), 2 * middle)),
         "the shadow is darker at the edge than away from it"
     );
     golden_matches("shadow-1600x1000-2x", &shot);
 }
+
+/// The wallpaper the shadows fall on: light, so that a black shadow darkens it. ARGB.
+const WALLPAPER: u32 = 0xffe0_e0e0;
 
 /// The brightness of the pixel at logical `at` of the output's next frame.
 fn sample(fixture: &mut Fixture, at: LogicalPoint) -> i32 {
@@ -130,13 +138,15 @@ fn sample(fixture: &mut Fixture, at: LogicalPoint) -> i32 {
 }
 
 /// cas-wave "Real-run checks: Shadow" (fades with the window): the pixel just outside a closing
-/// window's frame, sampled every few frames as it goes, only gets lighter, ends as the bare
-/// desktop is, and starts darker than it (the shadow was there).
+/// window's frame (4 pixels left of its middle, over a light wallpaper: the wide shadow layer
+/// is 20 pixels from its own edge there, about a quarter of 40% black, 24 steps of 224),
+/// sampled every few frames as it goes, only gets lighter, ends as the bare wallpaper is, and
+/// starts darker than it (the shadow was there).
 #[test]
-#[ignore = "wave-6 follow-up: the probe pixel reads 0 both times; the probe is not on the shadow"]
 fn the_shadow_fades_with_the_window() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     let mut desk = Desk::at(&mut fixture);
+    desk.wallpaper(WALLPAPER, Dpi::One);
     let bare = desk.shoot();
     let top = desk.framed_window(APP, "Closing", (600, 400), Pattern::Gradient, Dpi::One);
     let window = only_window(desk.fixture);
@@ -160,7 +170,7 @@ fn the_shadow_fades_with_the_window() {
         "the shadow darkens the probe: {before} against {wanted}"
     );
 
-    top.destroy();
+    desk.close(&top);
     desk.fixture.pump();
     let mut seen = vec![before];
     for _ in 0..12 {
@@ -179,14 +189,19 @@ fn the_shadow_fades_with_the_window() {
     );
 }
 
-/// How different a light's middle is from a point inside its rim: the mark drawn on it.
-fn marked(shot: &image::RgbaImage, light: LogicalRect) -> i32 {
+/// A point on a light's disc that its mark does not reach: inside the rim, 4 pixels left of the
+/// middle (the mark's strokes run out to 3 pixels on the diagonals and cross at the middle).
+fn disc(light: LogicalRect) -> LogicalPoint {
     let centre = light.centre();
-    let rim = LogicalPoint {
+    LogicalPoint {
         x: centre.x - 4,
         y: centre.y,
-    };
-    (luma(pixel(shot, centre)) - luma(pixel(shot, rim))).abs()
+    }
+}
+
+/// How different a light's middle is from a point inside its rim: the mark drawn on it.
+fn marked(shot: &image::RgbaImage, light: LogicalRect) -> i32 {
+    (luma(pixel(shot, light.centre())) - luma(pixel(shot, disc(light)))).abs()
 }
 
 /// The smallest and largest column, from `after` on, of the pixels in `bar` that differ from the
@@ -223,7 +238,6 @@ fn ink_columns(shot: &image::RgbaImage, bar: LogicalRect, after: i32) -> Option<
 /// `theme = system` resolving to the scheme is `casement::appearance`'s unit-tested table; here
 /// the fixture sets the scheme the resolution gives.
 #[test]
-#[ignore = "wave-6 follow-up: hovered lights do not colour; the hover point misses the light group"]
 fn the_frame_follows_the_scheme_with_a_centred_title_lit_lights_and_round_corners() {
     for (scheme, word) in [(Scheme::Light, "light"), (Scheme::Dark, "dark")] {
         let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
@@ -296,8 +310,9 @@ fn the_frame_follows_the_scheme_with_a_centred_title_lit_lights_and_round_corner
         );
         desk.pointer_at(group.centre());
         let hovered = desk.shoot();
+        // Not at the middle: the mark's ink (a dark red) is there, and it is less coloured.
         assert!(
-            chroma(pixel(&hovered, over_close.centre())) >= 80,
+            chroma(pixel(&hovered, disc(over_close))) >= 80,
             "{word}: under the pointer the lights colour"
         );
         assert!(

@@ -46,6 +46,7 @@ pub(crate) use rounded_clip::bake_corners;
 pub use rounded_clip::{ClipShape, RoundedClipElement};
 pub use shared::SharedElement;
 pub use solid::{Rgba8, solid_rect};
+pub(crate) use strip::pixman_can_draw;
 pub use strip::{Margins, StripElement, StripPlan};
 pub use tile_preview::{TilePreview, tile_preview_elements};
 pub(crate) use window::{alpha, flight_ratio};
@@ -55,6 +56,7 @@ use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::texture::TextureRenderElement;
+use smithay::backend::renderer::element::utils::RescaleRenderElement;
 use smithay::backend::renderer::{ImportAll, ImportMem, RendererSuper};
 
 smithay::backend::renderer::element::render_elements! {
@@ -80,4 +82,7 @@ smithay::backend::renderer::element::render_elements! {
     MemoryStrip = StripElement<SharedElement<MemoryRenderBufferRenderElement<R>>>,
     /// One strip of a genie's client surface that the window's rounded clip reaches.
     ClipStrip = ClipStripElement<R>,
+    /// A client surface stretched about the window's corner: a window (or a menu of it) in a
+    /// Scale flight.
+    Stretched = RescaleRenderElement<WaylandSurfaceRenderElement<R>>,
 }

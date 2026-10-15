@@ -1,5 +1,6 @@
 //! A gamma ramp (`zwlr_gamma_control_v1`): the colour curve an output is driven with.
 
+use super::night_light::Tint;
 use crate::error::CoreError;
 
 /// A ramp's three channels, each a table of 16-bit steps, all the same length.
@@ -21,6 +22,27 @@ impl GammaTable {
                 text: format!("{}/{}/{} steps", red.len(), green.len(), blue.len()),
             }),
         }
+    }
+
+    /// A linear ramp of `size` steps with each channel scaled by `tint` (thousandths): the
+    /// identity curve, warmed. A size under two cannot hold a ramp.
+    pub fn tinted(size: u32, tint: Tint) -> Result<GammaTable, CoreError> {
+        let last = size
+            .checked_sub(1)
+            .filter(|last| *last > 0)
+            .ok_or_else(|| CoreError::Malformed {
+                what: "gamma table",
+                text: format!("{size} steps"),
+            })?;
+        let channel = |share: u16| -> Vec<u16> {
+            (0..size)
+                .map(|step| {
+                    let level = u64::from(step) * 65535 / u64::from(last);
+                    u16::try_from(level * u64::from(share) / 1000).unwrap_or(u16::MAX)
+                })
+                .collect()
+        };
+        GammaTable::new(channel(tint.0[0]), channel(tint.0[1]), channel(tint.0[2]))
     }
 
     /// How many steps each channel has.

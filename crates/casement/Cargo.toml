@@ -50,6 +50,8 @@ smithay = { workspace = true, features = [
   "use_system_lib",
 ] }
 calloop = { workspace = true }
+jiff = { workspace = true }
+x11rb = { workspace = true }
 rustix = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }

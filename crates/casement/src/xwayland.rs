@@ -17,6 +17,8 @@
 
 mod guard;
 mod listen;
+pub mod owners;
+pub mod xres;
 
 pub use guard::{MAX_STARTS, Permit, Restarts, WINDOW};
 pub use listen::{Listening, X11Dir};
