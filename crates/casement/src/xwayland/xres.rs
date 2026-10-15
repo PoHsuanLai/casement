@@ -10,7 +10,7 @@ use super::owners::{WmClass, XWindow, XWindows};
 use rustix::process::RawPid;
 use std::sync::mpsc;
 use std::time::Duration;
-use x11rb::connection::RequestConnection;
+use x11rb::connection::Connection as _;
 use x11rb::errors::{ConnectError, ConnectionError, ReplyError};
 use x11rb::protocol::res::{ClientIdMask, ClientIdSpec, ConnectionExt as _};
 use x11rb::protocol::xproto::{AtomEnum, ConnectionExt as _};
