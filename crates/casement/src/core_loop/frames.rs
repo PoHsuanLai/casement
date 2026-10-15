@@ -11,10 +11,13 @@ use crate::state::State;
 use casement_core::focus::{HitPart, Press};
 use casement_core::geometry::{LogicalPoint, LogicalRect};
 use casement_core::input::{ButtonCode, InputEvent};
-use casement_core::window::{ChromeAction, FrameHit, FrameStyle, WindowState, chrome_action};
+use casement_core::window::{
+    ArmInput, ArmOutcome, ChromeAction, Clicks, FrameHit, FrameStyle, LightArm, LightAt,
+    WindowState, chrome_action,
+};
 use casement_core::{Effect, Event, ResizeEdges, ToplevelRequest, WindowId};
-use casement_layout::{GroupHover, Scheme, frame_style};
-use casement_protocols::vocab::Emphasis;
+use casement_layout::{GroupHover, frame_metrics, frame_style, pressed};
+use casement_protocols::vocab::{Emphasis, MacMods};
 use casement_render::{CursorDraw, CursorShape, window_content};
 use casement_wayland::seat::{Candidate, SurfaceAt, surface_under};
 use casement_wayland::serial::{PressKind, PressRecord};
@@ -36,18 +39,8 @@ pub(crate) struct Over {
 /// answered server-side, and that are neither full screen nor in the dock.
 pub(super) fn styles(state: &State) -> BTreeMap<WindowId, FrameStyle> {
     let over = state.render.frame_over;
-    state
-        .core
-        .model
-        .windows()
-        .iter()
-        .filter(|(id, _)| state.wl.xdg_decoration.mode_of(**id) == DecorationMode::ServerSide)
-        .filter(|(_, window)| {
-            !matches!(
-                window.state,
-                WindowState::FullScreen { .. } | WindowState::Minimised { .. }
-            )
-        })
+    let down = state.render.light_arm.pressed();
+    decorated(state)
         .map(|(id, window)| {
             let activity = match window.emphasis {
                 Emphasis::Key | Emphasis::Main => Activity::Active,
@@ -60,9 +53,38 @@ pub(super) fn styles(state: &State) -> BTreeMap<WindowId, FrameStyle> {
                 }) if hovered == *id => GroupHover::Over,
                 _ => GroupHover::Away,
             };
-            (*id, frame_style(Scheme::Light, activity, hover))
+            let style = frame_style(state.render.scheme, activity, hover);
+            let style = match down {
+                Some(LightAt { window, light }) if window == *id => pressed(style, light),
+                _ => style,
+            };
+            (*id, style)
         })
         .collect()
+}
+
+/// The windows that have a server-side frame now: the ones whose client was answered
+/// server-side, and that are neither full screen nor in the dock.
+fn decorated(state: &State) -> impl Iterator<Item = (&WindowId, &casement_core::window::Window)> {
+    state
+        .core
+        .model
+        .windows()
+        .iter()
+        .filter(|(id, _)| state.wl.xdg_decoration.mode_of(**id) == DecorationMode::ServerSide)
+        .filter(|(_, window)| {
+            !matches!(
+                window.state,
+                WindowState::FullScreen { .. } | WindowState::Minimised { .. }
+            )
+        })
+}
+
+/// How far each framed window's frame reaches above its content (the titlebar's height), for
+/// layout: fill, first placement and the keep-inside clamp hold the frame in the usable area.
+pub(super) fn reserves(state: &State) -> BTreeMap<WindowId, u32> {
+    let bar = frame_metrics().titlebar;
+    decorated(state).map(|(id, _)| (*id, bar)).collect()
 }
 
 /// What is under `at`: a frame part, or else the surface there.
@@ -129,11 +151,27 @@ fn contents(state: &State) -> BTreeMap<WindowId, LogicalRect> {
 /// while it is over them) and the cursor follows the part. Leaving a frame puts the arrow back
 /// until the client under the pointer asks for its own.
 pub(super) fn hover(state: &mut State, now_over: Option<Over>) {
+    let (arm, _) = state
+        .render
+        .light_arm
+        .step(ArmInput::Move(light_of(now_over)));
+    state.render.light_arm = arm;
     let before = std::mem::replace(&mut state.render.frame_over, now_over);
     match (before, now_over) {
         (_, Some(Over { hit, .. })) => state.render.chrome.cursor = CursorDraw::Named(shape(hit)),
         (Some(_), None) => state.render.chrome.cursor = CursorDraw::Named(CursorShape::Default),
         (None, None) => {}
+    }
+}
+
+/// The light `over` is, when it is one.
+fn light_of(over: Option<Over>) -> Option<LightAt> {
+    match over {
+        Some(Over {
+            window,
+            hit: FrameHit::Light(light),
+        }) => Some(LightAt { window, light }),
+        _ => None,
     }
 }
 
@@ -159,11 +197,7 @@ pub(super) fn press(
     over: Over,
 ) {
     let window = over.window;
-    let mods = seat
-        .get_keyboard()
-        .map_or(casement_protocols::vocab::MacMods::NONE, |keyboard| {
-            mac_mods(&keyboard.modifier_state())
-        });
+    let mods = mods_of(seat);
     let part = match over.hit {
         FrameHit::Edge(_) => HitPart::Edge,
         _ => HitPart::Titlebar,
@@ -176,6 +210,13 @@ pub(super) fn press(
     };
     let effects = run_model(state, |model, now| model.press(press, now));
     exec::exec(state, effects);
+    if let FrameHit::Light(light) = over.hit {
+        // A light acts when the button comes up on it (`released`); now it only shows pressed.
+        let on = LightAt { window, light };
+        let (arm, _) = state.render.light_arm.step(ArmInput::Press { on, button });
+        state.render.light_arm = arm;
+        return;
+    }
     let at = pointer_point(seat);
     let (tracker, clicks) = state.render.clicks.press(window, event.at, at);
     state.render.clicks = match over.hit {
@@ -187,7 +228,7 @@ pub(super) fn press(
     };
     let double = state.core.model.settings().windows.double_click_title;
     let client = held.client;
-    let Some(action) = chrome_action(over.hit, clicks, double, &held.state) else {
+    let Some(action) = chrome_action(over.hit, clicks, double, mods, &held.state) else {
         return;
     };
     let serial = next_serial();
@@ -202,6 +243,48 @@ pub(super) fn press(
         },
     );
     carry_out(state, window, action, serial);
+}
+
+/// `button` came up: a light held down fires when the pointer is still on it, and is let go
+/// otherwise. The release itself was swallowed with its press.
+pub(super) fn released(state: &mut State, seat: &Seat<State>, button: ButtonCode) {
+    if state.render.light_arm == LightArm::Idle {
+        return;
+    }
+    let (over, _) = pick(state, pointer_point(seat));
+    let (arm, outcome) = state.render.light_arm.step(ArmInput::Release {
+        button,
+        over: light_of(over),
+    });
+    state.render.light_arm = arm;
+    if let ArmOutcome::Fire(on) = outcome {
+        fire(state, seat, on);
+    }
+}
+
+/// The light `on` was clicked: the window does what it does under the modifiers held now.
+fn fire(state: &mut State, seat: &Seat<State>, on: LightAt) {
+    let Some(held) = state.core.model.windows().get(&on.window) else {
+        return;
+    };
+    let double = state.core.model.settings().windows.double_click_title;
+    let Some(action) = chrome_action(
+        FrameHit::Light(on.light),
+        Clicks::Single,
+        double,
+        mods_of(seat),
+        &held.state,
+    ) else {
+        return;
+    };
+    carry_out(state, on.window, action, next_serial());
+}
+
+/// The Mac modifiers held now.
+fn mods_of(seat: &Seat<State>) -> MacMods {
+    seat.get_keyboard().map_or(MacMods::NONE, |keyboard| {
+        mac_mods(&keyboard.modifier_state())
+    })
 }
 
 /// Where the pointer is, in whole logical pixels.
@@ -230,6 +313,10 @@ fn carry_out(
         }
         ChromeAction::Minimise => ToplevelRequest::Minimise,
         ChromeAction::Maximise(toggle) => ToplevelRequest::Maximise(toggle),
+        ChromeAction::FullScreen(toggle) => ToplevelRequest::FullScreen {
+            toggle,
+            output: None,
+        },
         ChromeAction::Move => ToplevelRequest::Move { serial },
         ChromeAction::Resize(edges) => ToplevelRequest::Resize { serial, edges },
         _ => return,

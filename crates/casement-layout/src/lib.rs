@@ -36,11 +36,11 @@ pub use arrangement::{
     Arrangement, ConfigureNeed, LayoutReport, OverviewSlot, SlotKind, SpaceTarget, SpaceThumb,
     WindowTarget,
 };
-pub use ds_style::appearance::theme::Scheme;
+pub use ds_style::appearance::theme::{Scheme, Theme};
 pub use ds_style::tokens::chrome::GroupHover;
-pub use frame::{WINDOW_RADIUS, frame_style, metrics as frame_metrics};
+pub use frame::{WINDOW_RADIUS, frame_style, metrics as frame_metrics, pressed, scheme_of};
 pub use knobs::LayoutKnobs;
-pub use of_model::spec_of;
+pub use of_model::{spec_of, spec_of_framed};
 pub use rust_scene::RustScene;
 pub use scene_layout::SceneLayout;
 pub use spec::{

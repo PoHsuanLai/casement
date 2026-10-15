@@ -8,7 +8,7 @@ use crate::geometry::LogicalPoint;
 use crate::ids::WindowId;
 use crate::settings::TitleDoubleClick;
 use crate::time::Mono;
-use casement_protocols::vocab::Toggle;
+use casement_protocols::vocab::{MacMods, Toggle};
 use std::time::Duration;
 
 /// How long after a press a second one still makes a double click.
@@ -75,20 +75,25 @@ pub enum ChromeAction {
     Close,
     /// Minimise.
     Minimise,
-    /// Fill the usable area, or go back from it.
+    /// Fill the usable area, or go back from it (zoom).
     Maximise(Toggle),
+    /// Full screen on or off.
+    FullScreen(Toggle),
     /// Start an interactive move.
     Move,
     /// Start an interactive resize.
     Resize(ResizeEdges),
 }
 
-/// What pressing `hit` asks of a window in `state`, as the `clicks` count and the person's
-/// `double_click` setting say. None for a press that is not on the frame.
+/// What clicking `hit` asks of a window in `state`, as the `clicks` count, the person's
+/// `double_click` setting and the `mods` held say. The green light goes full screen, and zooms
+/// (fills, or goes back) with Option held, as on the Mac; a double click on the title follows
+/// the setting. None for a press that is not on the frame.
 pub fn chrome_action(
     hit: FrameHit,
     clicks: Clicks,
     double_click: TitleDoubleClick,
+    mods: MacMods,
     state: &WindowState,
 ) -> Option<ChromeAction> {
     let zoom = || {
@@ -100,7 +105,11 @@ pub fn chrome_action(
     match (hit, clicks) {
         (FrameHit::Light(Light::Close), _) => Some(ChromeAction::Close),
         (FrameHit::Light(Light::Minimise), _) => Some(ChromeAction::Minimise),
-        (FrameHit::Light(Light::Zoom), _) => Some(zoom()),
+        (FrameHit::Light(Light::Zoom), _) if mods.holds(MacMods::OPTION) => Some(zoom()),
+        (FrameHit::Light(Light::Zoom), _) => Some(ChromeAction::FullScreen(match state {
+            WindowState::FullScreen { .. } => Toggle::Off,
+            _ => Toggle::On,
+        })),
         (FrameHit::Edge(edges), _) => Some(ChromeAction::Resize(edges)),
         (FrameHit::Titlebar, Clicks::Single) => Some(ChromeAction::Move),
         (FrameHit::Titlebar, Clicks::Double) => Some(match double_click {
@@ -176,20 +185,12 @@ mod tests {
                 Some(A::Minimise),
             ),
             (
-                "zoom in",
+                "green light",
                 FrameHit::Light(Light::Zoom),
                 Clicks::Single,
                 D::Zoom,
                 &floating,
-                Some(A::Maximise(Toggle::On)),
-            ),
-            (
-                "zoom back",
-                FrameHit::Light(Light::Zoom),
-                Clicks::Single,
-                D::Zoom,
-                &filled,
-                Some(A::Maximise(Toggle::Off)),
+                Some(A::FullScreen(Toggle::On)),
             ),
             (
                 "drag",
@@ -258,10 +259,86 @@ mod tests {
         ];
         for (name, hit, clicks, double, state, want) in cases {
             assert_eq!(
-                chrome_action(*hit, *clicks, *double, state),
+                chrome_action(*hit, *clicks, *double, MacMods::NONE, state),
                 *want,
                 "{name}"
             );
+        }
+    }
+
+    #[test]
+    fn the_green_light_goes_full_screen_and_option_zooms() {
+        let rect = LogicalRect::new(at(0, 0), LogicalSize { w: 1, h: 1 });
+        let floating = WindowState::Floating(rect);
+        let filled = WindowState::Filled { restore: rect };
+        use ChromeAction as A;
+        type Case<'a> = (&'a str, MacMods, &'a WindowState, Option<A>);
+        let cases: &[Case] = &[
+            (
+                "plain click",
+                MacMods::NONE,
+                &floating,
+                Some(A::FullScreen(Toggle::On)),
+            ),
+            (
+                "plain click on a filled window",
+                MacMods::NONE,
+                &filled,
+                Some(A::FullScreen(Toggle::On)),
+            ),
+            (
+                "option zooms",
+                MacMods::OPTION,
+                &floating,
+                Some(A::Maximise(Toggle::On)),
+            ),
+            (
+                "option restores a filled window",
+                MacMods::OPTION,
+                &filled,
+                Some(A::Maximise(Toggle::Off)),
+            ),
+            (
+                "option with shift still zooms",
+                MacMods::OPTION.with(MacMods::SHIFT),
+                &floating,
+                Some(A::Maximise(Toggle::On)),
+            ),
+            (
+                "shift alone is a plain click",
+                MacMods::SHIFT,
+                &floating,
+                Some(A::FullScreen(Toggle::On)),
+            ),
+        ];
+        for (name, mods, state, want) in cases {
+            let got = chrome_action(
+                FrameHit::Light(Light::Zoom),
+                Clicks::Single,
+                TitleDoubleClick::Zoom,
+                *mods,
+                state,
+            );
+            assert_eq!(got, *want, "{name}");
+        }
+    }
+
+    #[test]
+    fn the_other_lights_ignore_option() {
+        let rect = LogicalRect::new(at(0, 0), LogicalSize { w: 1, h: 1 });
+        let floating = WindowState::Floating(rect);
+        for (light, want) in [
+            (Light::Close, ChromeAction::Close),
+            (Light::Minimise, ChromeAction::Minimise),
+        ] {
+            let got = chrome_action(
+                FrameHit::Light(light),
+                Clicks::Single,
+                TitleDoubleClick::Zoom,
+                MacMods::OPTION,
+                &floating,
+            );
+            assert_eq!(got, Some(want));
         }
     }
 }

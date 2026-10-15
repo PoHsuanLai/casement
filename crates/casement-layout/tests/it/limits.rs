@@ -59,6 +59,7 @@ fn scene(usable: LogicalRect, draws: &[Draw], spaces: usize, shown: usize) -> Sc
             placement: d.placement.clone(),
             limits: d.limits,
             stack: casement_layout::StackIndex(n as u32),
+            reserve_top: 0,
         });
     }
     SceneSpec {

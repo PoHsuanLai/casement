@@ -2,9 +2,11 @@
 //! insists on its own; every wish is answered with `xdg_decoration::mode_for`.
 
 use crate::core_loop;
+use crate::exec;
 use crate::state::State;
+use casement_core::{Cause, Effect};
 use casement_wayland::xdg_decoration::{
-    DecorationWish, apply_mode, mode_for, on_decoration_mode,
+    DecorationMode, DecorationWish, apply_mode, mode_for, on_decoration_mode,
 };
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode;
 use smithay::wayland::shell::xdg::ToplevelSurface;
@@ -19,6 +21,12 @@ impl State {
         let mode = mode_for(wish);
         if let Some(window) = self.wl.xdg_shell.window_of_surface(toplevel.wl_surface()) {
             self.wl.xdg_decoration.record(window, mode);
+            // A server-side frame reserves its titlebar in layout: a window the model already
+            // placed is laid out again with it.
+            if mode == DecorationMode::ServerSide && self.core.model.windows().contains_key(&window)
+            {
+                exec::exec(self, vec![Effect::Relayout(Cause::Configure)]);
+            }
         }
         if let Err(error) = apply_mode(&mut self.wl.xdg_decoration, toplevel, mode) {
             tracing::debug!(%error, "a decoration answer reached a toplevel that is gone");

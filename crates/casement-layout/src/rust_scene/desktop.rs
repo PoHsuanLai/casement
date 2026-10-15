@@ -9,7 +9,7 @@ use crate::{
     Arrangement, LayoutKnobs, OutputSpec, SceneMode, SpaceArrangement, SpaceSpec, SpaceTarget,
     WindowPlacement,
 };
-use casement_core::geometry::{LogicalPoint, LogicalRect};
+use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use porter_core::SpaceId;
 
 /// Adds `output`'s Space origins and window targets to `into`.
@@ -51,6 +51,24 @@ fn strip_origin(usable: LogicalRect, index: usize, shown: usize) -> LogicalPoint
     }
 }
 
+/// `usable` with its top `reserve` rows taken away: where a window's content may sit so that
+/// its frame, which reaches `reserve` above the content, stays inside `usable`. A reserve
+/// larger than the area leaves a zero-height area at its bottom.
+pub(super) fn below_chrome(usable: LogicalRect, reserve: u32) -> LogicalRect {
+    let taken = reserve.min(usable.size.h);
+    let y = i64::from(usable.origin.y) + i64::from(taken);
+    LogicalRect::new(
+        LogicalPoint {
+            x: usable.origin.x,
+            y: i32::try_from(y).unwrap_or(i32::MAX),
+        },
+        LogicalSize {
+            w: usable.size.w,
+            h: usable.size.h - taken,
+        },
+    )
+}
+
 /// Adds the targets of `space`'s windows: in the output's usable coordinates, as if the Space
 /// were shown (motion applies the strip origin).
 fn arrange_space(
@@ -62,9 +80,9 @@ fn arrange_space(
     if matches!(space.kind, SpaceArrangement::Split(_)) {
         return;
     }
-    let usable = output.usable;
     let mut new_so_far = 0;
     for window in &space.windows {
+        let usable = below_chrome(output.usable, window.reserve_top);
         let (target, report) = match window.placement {
             WindowPlacement::Floating(rect) => {
                 floating_target(window.window, &output.output, rect, window.limits, usable)
@@ -89,5 +107,28 @@ fn arrange_space(
         };
         into.windows.push(target);
         into.reports.extend(report);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rect(x: i32, y: i32, w: u32, h: u32) -> LogicalRect {
+        LogicalRect::new(LogicalPoint { x, y }, LogicalSize { w, h })
+    }
+
+    #[test]
+    fn the_reserve_comes_off_the_top() {
+        let usable = rect(0, 24, 1920, 1056);
+        let cases = [
+            ("no reserve", 0, rect(0, 24, 1920, 1056)),
+            ("a titlebar", 28, rect(0, 52, 1920, 1028)),
+            ("all of it", 1056, rect(0, 1080, 1920, 0)),
+            ("more than all of it", 5000, rect(0, 1080, 1920, 0)),
+        ];
+        for (name, reserve, want) in cases {
+            assert_eq!(below_chrome(usable, reserve), want, "{name}");
+        }
     }
 }

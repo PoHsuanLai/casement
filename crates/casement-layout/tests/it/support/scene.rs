@@ -52,6 +52,7 @@ pub fn window(n: u64, placement: WindowPlacement, limits: SizeLimits) -> WindowS
         placement,
         limits,
         stack: StackIndex(u32::try_from(n).expect("small")),
+        reserve_top: 0,
     }
 }
 

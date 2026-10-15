@@ -7,7 +7,8 @@ use crate::{
 use casement_core::app::AppVisibility;
 use casement_core::space::{Space, SpaceContent};
 use casement_core::window::{SpacePlace, Window, WindowState};
-use casement_core::{Model, OutputKey, OutputState};
+use casement_core::{Model, OutputKey, OutputState, WindowId};
+use std::collections::BTreeMap;
 
 /// What `model` asks layout to arrange: every plugged output with its usable area (after
 /// layer exclusive zones, A26), scale, mode and Spaces, each Space with its windows in
@@ -15,18 +16,47 @@ use casement_core::{Model, OutputKey, OutputState};
 /// shown Space of its home output. An output with no Space has nothing to arrange and is left
 /// out.
 pub fn spec_of(model: &Model) -> SceneSpec {
+    spec_of_framed(model, &BTreeMap::new())
+}
+
+/// [`spec_of`] for a model some of whose windows carry a frame above their content: `frames`
+/// holds each such window's reserve (the titlebar's height). The model does not know who draws
+/// a window's frame (the wire answer is an edge fact), so the caller says.
+///
+/// ```
+/// use casement_core::Model;
+/// use casement_core::settings::CasementSettings;
+/// use casement_core::space::SpaceSeed;
+/// use casement_core::time::Mono;
+/// use casement_layout::spec_of_framed;
+/// use std::collections::BTreeMap;
+/// use std::time::Duration;
+///
+/// let model = Model::new(
+///     CasementSettings::defaults(),
+///     Mono(Duration::ZERO),
+///     SpaceSeed::from_entropy([7; 16]),
+/// );
+/// assert!(spec_of_framed(&model, &BTreeMap::new()).outputs.is_empty());
+/// ```
+pub fn spec_of_framed(model: &Model, frames: &BTreeMap<WindowId, u32>) -> SceneSpec {
     SceneSpec {
         outputs: model
             .outputs()
             .0
             .iter()
-            .filter_map(|(key, state)| output_spec(model, key, state))
+            .filter_map(|(key, state)| output_spec(model, key, state, frames))
             .collect(),
     }
 }
 
 /// `key`'s part of the scene.
-fn output_spec(model: &Model, key: &OutputKey, state: &OutputState) -> Option<OutputSpec> {
+fn output_spec(
+    model: &Model,
+    key: &OutputKey,
+    state: &OutputState,
+    frames: &BTreeMap<WindowId, u32>,
+) -> Option<OutputSpec> {
     let row = model.spaces().row(key);
     let shown = model
         .spaces()
@@ -43,7 +73,7 @@ fn output_spec(model: &Model, key: &OutputKey, state: &OutputState) -> Option<Ou
                 true => Visibility::Shown,
                 false => Visibility::Hidden,
             };
-            space_spec(model, space, key, visibility)
+            space_spec(model, space, key, visibility, frames)
         })
         .collect();
     Some(OutputSpec {
@@ -67,7 +97,13 @@ enum Visibility {
 
 /// One Space's part: its arrangement and its windows, bottom of the stack first. When
 /// `Shown`, the windows that sit on every Space of `output` are among them.
-fn space_spec(model: &Model, space: &Space, output: &OutputKey, shown: Visibility) -> SpaceSpec {
+fn space_spec(
+    model: &Model,
+    space: &Space,
+    output: &OutputKey,
+    shown: Visibility,
+    frames: &BTreeMap<WindowId, u32>,
+) -> SpaceSpec {
     let mut held = model
         .windows()
         .values()
@@ -84,7 +120,7 @@ fn space_spec(model: &Model, space: &Space, output: &OutputKey, shown: Visibilit
         .enumerate()
         .map(|(index, window)| {
             let stack = StackIndex(u32::try_from(index).unwrap_or(u32::MAX));
-            window_spec(model, window, stack)
+            window_spec(model, window, stack, frames)
         })
         .collect();
     SpaceSpec {
@@ -95,7 +131,12 @@ fn space_spec(model: &Model, space: &Space, output: &OutputKey, shown: Visibilit
 }
 
 /// One window's part. A window of a hidden app is out of sight like one in the dock.
-fn window_spec(model: &Model, window: &Window, stack: StackIndex) -> WindowSpec {
+fn window_spec(
+    model: &Model,
+    window: &Window,
+    stack: StackIndex,
+    frames: &BTreeMap<WindowId, u32>,
+) -> WindowSpec {
     let hidden = model
         .apps()
         .get(&window.app)
@@ -112,6 +153,7 @@ fn window_spec(model: &Model, window: &Window, stack: StackIndex) -> WindowSpec 
         },
         limits: window.limits,
         stack,
+        reserve_top: frames.get(&window.id).copied().unwrap_or(0),
     }
 }
 
