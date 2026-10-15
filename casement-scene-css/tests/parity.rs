@@ -415,7 +415,7 @@ fn the_specs_reach_every_laid_out_kind() {
     }
     assert_eq!(
         EXCLUSIONS.len(),
-        6,
+        5,
         "the exclusions are listed in FINDINGS.md"
     );
 }
