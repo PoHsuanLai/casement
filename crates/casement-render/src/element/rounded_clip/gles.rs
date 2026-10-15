@@ -123,6 +123,12 @@ pub(super) fn draw(
     )
 }
 
+/// The damage of a draw and the opaque regions, in physical pixels.
+type Regions<'a> = (
+    &'a [Rectangle<i32, Physical>],
+    &'a [Rectangle<i32, Physical>],
+);
+
 /// Draws `surface` from `src` to `dst` (the rectangles of this draw) where `damage` asks,
 /// through the corner mask of `mask`.
 pub(crate) fn draw_masked(
@@ -130,7 +136,7 @@ pub(crate) fn draw_masked(
     surface: &WaylandSurfaceRenderElement<GlesRenderer>,
     mask: Mask,
     (src, dst): (Rectangle<f64, BufferCoords>, Rectangle<i32, Physical>),
-    (damage, opaque_regions): (&[Rectangle<i32, Physical>], &[Rectangle<i32, Physical>]),
+    (damage, opaque_regions): Regions<'_>,
     cache: Option<&UserDataMap>,
 ) -> Result<(), GlesError> {
     let upright = surface.transform() == Transform::Normal;

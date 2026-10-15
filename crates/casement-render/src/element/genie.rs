@@ -97,6 +97,7 @@ pub fn strip_plans(
 }
 
 /// What a genie cuts: the pieces of one window as it stands at rest.
+#[derive(Debug)]
 pub struct GenieParts<R: Compositor> {
     /// The flight (its tile and how far along it is).
     pub flight: Flight,
@@ -193,6 +194,7 @@ fn halo(position: usize, last: usize, reach: i32) -> Margins {
 }
 
 /// What a window in a Genie flight is drawn from.
+#[derive(Debug)]
 pub struct GenieWindow<'a> {
     /// The window as the frame places it (the genie cuts it as it stands at rest).
     pub placed: &'a PlacedWindow,

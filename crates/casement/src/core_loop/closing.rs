@@ -48,8 +48,26 @@ pub(super) fn forget(state: &mut State, in_scene: &[WindowId]) {
         .retain(|id, _| model.windows().contains_key(id) || in_scene.contains(id));
 }
 
+/// Whether a closing window's frame is drawn while it leaves.
+#[derive(Debug, Clone, Copy)]
+enum ClosingFrames {
+    /// Drawn, fading and shrinking with the window.
+    #[allow(dead_code)]
+    On,
+    /// Not drawn: the window and its frame go at once.
+    Off,
+}
+
+/// Off until the window's last image is kept with it: the client's surfaces leave the surface book
+/// on unmap, so today the frame would fade round an empty body, which reads worse than the window
+/// going at once (FINDINGS wave-2026-10-15/flight2).
+const CLOSING_FRAMES: ClosingFrames = ClosingFrames::Off;
+
 /// The frames to draw on `frame`: the windows motion still places that the model no longer has.
 pub(super) fn on(state: &State, frame: &OutputFrame) -> BTreeMap<WindowId, ClosingFrame> {
+    if matches!(CLOSING_FRAMES, ClosingFrames::Off) {
+        return BTreeMap::new();
+    }
     let placed: Vec<WindowId> = frame.windows.iter().map(|placed| placed.window).collect();
     let model = &state.core.model;
     leaving(&state.render.closing, &placed, |id| {

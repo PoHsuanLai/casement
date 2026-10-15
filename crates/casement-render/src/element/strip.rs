@@ -258,7 +258,8 @@ mod tests {
         let plan = plan(0, band);
         // (x, y, w, h) at rest -> drawn; the strip shows rows 100..150, is halved across about
         // x 100 and moved by (10, 20)
-        let cases: &[(&str, (i32, i32, u32, u32), Option<(i32, i32, u32, u32)>)] = &[
+        type Rect = (i32, i32, u32, u32);
+        let cases: &[(&str, Rect, Option<Rect>)] = &[
             ("whole", (100, 100, 200, 50), Some((110, 120, 100, 50))),
             ("a part", (120, 120, 40, 10), Some((120, 140, 20, 10))),
             (
