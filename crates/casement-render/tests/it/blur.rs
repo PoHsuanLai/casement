@@ -2,7 +2,7 @@
 //! the goldens in `scenes.rs`.
 
 use casement_core::geometry::PhysicalRect;
-use casement_render::pass::{BlurLook, level_size};
+use casement_render::pass::{BlurLook, KawasePlan, level_size};
 use casement_render::{BlurV0Element, Rgba8};
 use smithay::backend::renderer::element::{Element, Id};
 use smithay::utils::Scale;
@@ -21,24 +21,44 @@ fn look(sigma: f32) -> BlurLook {
     }
 }
 
+/// What `plan` must hold for `sigma` (physical pixels, at scale 1): the sigma delivered, and no
+/// more levels at half the scale.
+fn assert_delivers(sigma: f32) -> KawasePlan {
+    let plan = look(sigma).plan(1.0);
+    assert!(
+        (plan.sigma() - sigma).abs() < sigma * 1e-3,
+        "sigma {sigma}: got {}",
+        plan.sigma()
+    );
+    let one_fewer = look(sigma).plan(0.5);
+    assert!(
+        one_fewer.passes <= plan.passes,
+        "a smaller output needs no more levels"
+    );
+    plan
+}
+
 #[test]
 fn the_fewest_levels_that_keep_the_taps_close_deliver_the_sigma() {
-    for sigma in [4.0_f32, 10.0, 22.0, 44.0, 90.0, 180.0] {
-        let plan = look(sigma).plan(1.0);
+    for sigma in [4.0_f32, 10.0, 22.0, 44.0, 90.0] {
+        let plan = assert_delivers(sigma);
         assert!(plan.offset <= 2.5, "sigma {sigma}: offset {}", plan.offset);
-        assert!(
-            (plan.sigma() - sigma).abs() < sigma * 1e-3,
-            "sigma {sigma}: got {}",
-            plan.sigma()
-        );
-        let one_fewer = look(sigma).plan(0.5);
-        assert!(
-            one_fewer.passes <= plan.passes,
-            "a smaller output needs no more levels"
-        );
     }
     assert_eq!(look(5.0).plan(1.0).passes, 2);
     assert_eq!(look(22.0).plan(2.0).passes, 5);
+}
+
+/// The deepest level may open the taps past 2.5 (to 4) before the sigma is capped: sigma 180 is
+/// beyond what six levels deliver at 2.5, and is still delivered.
+#[test]
+fn the_deepest_level_opens_its_taps_for_a_sigma_it_would_otherwise_fall_short_of() {
+    let plan = assert_delivers(180.0);
+    assert_eq!(plan.passes, 6);
+    assert!(
+        plan.offset > 2.5 && plan.offset <= 4.0,
+        "offset {}",
+        plan.offset
+    );
 }
 
 #[test]
