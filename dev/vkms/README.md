@@ -71,7 +71,7 @@ dev/bootstrap.sh          # outside the jail: builds casement and writeback-comp
 dev/vkms/accept.sh        # a terminal; type "vkms only"; takes a little over 10 minutes
 ```
 
-Needs `jq` and `wlopm` (`sudo dnf install jq wlopm`). `CASEMENT_VKMS_IDLE_SECONDS=30` shortens
+Needs `jq` and `wlopm` (Fedora `sudo dnf install jq wlopm`; Debian or Ubuntu `sudo apt install jq wlopm`; Arch `sudo pacman -S jq wlopm`). `CASEMENT_VKMS_IDLE_SECONDS=30` shortens
 the idle step for a try-out; such a run ends with exit 5 (`VKMS PARTIAL`) even if every step
 passed. `CASEMENT_VKMS_DEVICE` names the configfs device if you did not call it `casement`.
 
