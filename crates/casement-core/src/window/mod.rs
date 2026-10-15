@@ -12,6 +12,7 @@ mod pip;
 mod request;
 mod sheet;
 mod state;
+mod tile_drag;
 mod title;
 #[allow(
     clippy::module_inception,
@@ -36,5 +37,8 @@ pub use pip::{PIP_MARGIN, PipSource, fit_aspect, floats_above, pip_source_of, sn
 pub use request::WlrToplevelRequest;
 pub use sheet::{attach_rect, sheet_parent, slide_clip, slide_start};
 pub use state::{Restore, WindowState};
+pub use tile_drag::{
+    CORNER_REACH, EDGE_BAND, TileDrag, TileDrop, TileKnobs, TileScene, TileTarget, target_at,
+};
 pub use title::WindowTitle;
 pub use window::{Parent, SpacePlace, StackRank, Window};

@@ -3,11 +3,16 @@
 
 use super::Model;
 use super::moved::Moved;
-use crate::app::{App, AppKey, AppLife, AppVisibility, PidSet};
+use crate::app::{
+    App, AppKey, AppLife, AppVisibility, KILL_GRACE, PidSet, QUIT_GRACE, QuitPhase, StopSignal,
+    Termination, force_quit_rows,
+};
 use crate::cause::Cause;
 use crate::effect::Effect;
 use crate::focus::FocusIn;
-use crate::ids::{OutputKey, WindowId};
+use crate::ids::{ClientKey, OutputKey, WindowId};
+use crate::shell::ShellNote;
+use crate::time::{Due, Mono, TimerKey};
 use casement_protocols::vocab::Attention;
 use std::collections::BTreeSet;
 
@@ -89,8 +94,117 @@ impl Model {
             .then(|model| model.redrawn(Cause::Configure, outputs))
     }
 
+    /// The app is asked to quit (Cmd+Q, or the shell): every window is asked to close, and the
+    /// app shows as quitting until it goes or [`QUIT_GRACE`] passes with it still here.
+    pub(super) fn quit_app(self, app: Option<AppKey>) -> Moved {
+        let Some(key) = app.filter(|key| self.apps.contains_key(key)) else {
+            return Moved::of(self);
+        };
+        let since = self.now;
+        let mut model = self;
+        if let Some(record) = model.apps.get_mut(&key) {
+            record.life = asked_to_quit(&record.life, since);
+        }
+        let grace = Due {
+            at: since.after(QUIT_GRACE),
+            key: TimerKey::QuitGrace(key.clone()),
+        };
+        model.timers = model.timers.arm(grace.clone());
+        model.close_all_of(Some(key)).with(Effect::ArmTimer(grace))
+    }
+
+    /// The app is force quit: its processes get `SIGTERM` now and `SIGKILL` after
+    /// [`KILL_GRACE`] if it is still here. Only connections that serve this app and no other
+    /// are named (a connection that carries several apps' windows is left alone).
+    pub(super) fn force_quit_app(self, app: &AppKey) -> Moved {
+        let clients = self.sole_clients_of(app);
+        if clients.is_empty() {
+            return Moved::of(self);
+        }
+        let since = self.now;
+        let mut model = self;
+        if let Some(record) = model.apps.get_mut(app) {
+            record.life = AppLife::Quitting(QuitPhase::Stopping);
+        }
+        let grace = Due {
+            at: since.after(KILL_GRACE),
+            key: TimerKey::QuitGrace(app.clone()),
+        };
+        model.timers = model.timers.arm(grace.clone());
+        Moved::of(model)
+            .with(Effect::Terminate(Termination {
+                app: app.clone(),
+                clients,
+                signal: StopSignal::Term,
+            }))
+            .with(Effect::ArmTimer(grace))
+    }
+
+    /// The grace after a quit request or a `SIGTERM` is over. A quit that left the app here
+    /// (a sheet asks to save, or it declined) is over: the app is running again. A stop that
+    /// did not end it is made with `SIGKILL`.
+    pub(super) fn quit_grace_over(self, app: &AppKey) -> Moved {
+        let Some(record) = self.apps.get(app) else {
+            return Moved::of(self);
+        };
+        match record.life.clone() {
+            AppLife::Quitting(QuitPhase::Asked { .. }) => {
+                let windows = record.windows.len();
+                let mut model = self;
+                if let Some(record) = model.apps.get_mut(app) {
+                    record.life = life_with(&AppLife::Running, windows);
+                }
+                Moved::of(model)
+            }
+            AppLife::Quitting(QuitPhase::Stopping) => {
+                let clients = self.sole_clients_of(app);
+                Moved::of(self).with(Effect::Terminate(Termination {
+                    app: app.clone(),
+                    clients,
+                    signal: StopSignal::Kill,
+                }))
+            }
+            _ => Moved::of(self),
+        }
+    }
+
+    /// The Force Quit Applications window is asked for: the shell is told which apps run and
+    /// which of them answer.
+    pub(super) fn force_quit_panel(self) -> Moved {
+        let rows = force_quit_rows(&self.apps);
+        Moved::of(self).with(Effect::Shell(ShellNote::ForceQuitPanel(rows)))
+    }
+
+    /// The connections whose windows all belong to `app`, and that serve it.
+    fn sole_clients_of(&self, app: &AppKey) -> Vec<ClientKey> {
+        self.clients
+            .iter()
+            .filter(|(_, served)| served.as_ref() == Some(app))
+            .filter(|(client, _)| {
+                self.windows
+                    .values()
+                    .filter(|window| window.client == **client)
+                    .all(|window| window.app == *app)
+            })
+            .map(|(client, _)| *client)
+            .collect()
+    }
+
     /// The app is gone: its record leaves the table and focus moves off it.
     pub(super) fn drop_app(self, key: &AppKey) -> Moved {
+        let grace = TimerKey::QuitGrace(key.clone());
+        let timer = self.timers.is_armed(&grace);
+        let moved = self.dropped_app(key);
+        match timer {
+            true => moved.then(|mut model| {
+                model.timers = model.timers.cancel(&grace);
+                Moved::of(model).with(Effect::CancelTimer(grace))
+            }),
+            false => moved,
+        }
+    }
+
+    fn dropped_app(self, key: &AppKey) -> Moved {
         let active = self.focus.active.as_ref() == Some(key);
         let moved = match active {
             true => self.feed(FocusIn::HideApp(key.clone())),
@@ -127,12 +241,22 @@ impl Model {
 
 /// An app's life once it has (or has not) windows: a running or windowless app follows its
 /// windows; one that is quitting or not answering stays so.
-fn life_with(life: &AppLife, windows: usize) -> AppLife {
+pub(super) fn life_with(life: &AppLife, windows: usize) -> AppLife {
     match (life, windows) {
         (AppLife::Launching { .. } | AppLife::Running | AppLife::Windowless, 0) => {
             AppLife::Windowless
         }
         (AppLife::Launching { .. } | AppLife::Running | AppLife::Windowless, _) => AppLife::Running,
         (AppLife::Quitting(_) | AppLife::NotResponding { .. }, _) => life.clone(),
+    }
+}
+
+/// The life of an app just asked to quit: a quit already under way, or a hung app, stays so.
+fn asked_to_quit(life: &AppLife, since: Mono) -> AppLife {
+    match life {
+        AppLife::Launching { .. } | AppLife::Running | AppLife::Windowless => {
+            AppLife::Quitting(QuitPhase::Asked { since })
+        }
+        AppLife::Quitting(_) | AppLife::NotResponding { .. } => life.clone(),
     }
 }

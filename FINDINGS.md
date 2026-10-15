@@ -2041,8 +2041,8 @@ orchestrator builds.
   decoration answer is an edge fact), so `casement_layout::spec_of_framed(model, &BTreeMap<WindowId, u32>)` takes the
   reserves and `spec_of` is `spec_of_framed` with none; `core_loop::relayout` passes `frames::reserves(state)`. The xdg
   decoration handler now runs a relayout when a window already in the model is answered server-side (the answer can arrive
-  after the first placement). Tiled windows have no desktop target in layout today (`WindowPlacement::Tiled` is skipped in
-  `rust_scene/desktop.rs`), so the tile reserve has nothing to hold; when tiling is arranged it must use `below_chrome` too.
+  after the first placement). Tiled windows now have a desktop target (P3-TL, `rust_scene/tile_zone.rs`): the zone is cut from the usable area and the
+  content sits in `below_chrome(zone, reserve)`, so the frame is inside the zone.
   A drag in flight is not held by the reserve (the grab follows the pointer); layout clamps it when the drag ends.
 - **Lights act on release.** `casement_core::window::LightArm` (`frame_arm.rs`) is the pure machine: `Press` arms and shows
   pressed, `Release` over the same light fires (`ArmOutcome::Fire`), `Move` off it cancels, back on re-arms, a release of
@@ -3354,7 +3354,7 @@ seeded specs and names each exclusion as a constant; none is hidden by loosening
 | --- | --- | --- |
 | Mission Control slots, icon rects and `LayoutReport::SpreadOverflow` (`SPREAD`) | the spread is an iterative push-apart (24 passes per trial, 0.85 scale steps, shelf-pack fallback); CSS has no loop or search | both sides drop `overview` and `SpreadOverflow`; the RustScene slots must be exactly the shown desktop Space's windows that have a target. `CssScene` returns no slots, so S-L6 does not cover the spread or `icon_rect`; its proptests in `casement-layout` do |
 | a cascade step that is not one positive length on both axes (`CASCADE_STEP`) | the walk is `mod(nth * step, M + step)`, where `M` is the tighter axis's whole steps; with two different steps the period is not one length. Zero and negative steps walk the other way. Production uses one titlebar height on both | specs use equal steps in 1..=80; `document/desktop.rs` clamps to at least 1 |
-| `WindowPlacement::Tiled` (`TILED`) | not CSS: RustScene gives a tiled window no target (tile zones arrive with P3-Z) | not generated: a `TileZone` is a `casement-protocols` type this crate does not depend on |
+| `WindowPlacement::Tiled` (`TILED`) | not CSS: RustScene tiles a window to its zone's half or quarter of the usable area inside the tile margin (`rust_scene/tile_zone.rs`, P3-TL), which CSS does not generate | not generated: a `TileZone` is a `casement-protocols` type this crate does not depend on |
 | App Exposé and Show Desktop (`APP_EXPOSE`, `SHOW_DESKTOP`) | RustScene arranges them as plain desktops today (P3-Z adds them) | generated and compared as desktops; when P3-Z lands them the CSS and the constants change together |
 | `Keep`/`Resize` and `MinUnmet` | they compare a size with the one asked for and with the minimum: not geometry | derived in `read.rs` from the laid-out boxes and the spec, with RustScene's own definitions (a full-screen or Split View window always `Resize`; a full-screen one never `MinUnmet`) |
 | `u32`/`i32` saturation and coordinates beyond f32's 2^24 | CSS lengths are f32 | specs stay within about +-6000 logical pixels |
@@ -3446,6 +3446,71 @@ on hardware**: nothing was timed; whether the 4K read-back stall is gone is for 
   with firefox, chromium, google-chrome, brave, microsoft-edge, vivaldi or org.chromium. 16 px is a guess at macOS's margin. Departures:
   the ratio is the one of the current rectangle, so a long resize can drift by a pixel of rounding; a resize also snaps on release;
   the corner is by the window's centre, with no flick velocity.
+## P3-TL: window tiling by drag (cas22-tile)
+
+- **What landed.** `casement_layout::zone_rect(zone, usable, margin)` (`rust_scene/tile_zone.rs`) cuts a half or quarter out of the
+  usable area, `margin` from the area's edges and between halves (an odd length gives the extra pixel to the second half; a margin
+  over a quarter of the span is held to it); `RustScene` now gives `WindowPlacement::Tiled` a target (content below the frame's
+  reserve, size held to the limits, a `MinUnmet` report, always a `Resize`). Before this lane "Tiled has no target in layout" was true (the reserve note and
+  the scene-css `TILED` row said so; both are updated; the Open-items table has no row for it). Split View still
+  arranges its own pair (`split.rs`, untouched). `casement_core::window::TileDrag` (`window/tile_drag.rs`) is the pure machine
+  (Idle, Moving, Previewing); `target_at` is the zone table. `casement::core_loop::tile` is the glue: `grab::start` begins it for
+  a Move grab (never a Resize), `grab::follow` steps it after each `WindowDragged`, `grab::end` places the window
+  (`ToplevelRequest::Place`, the same path as the window menu, so menu, drag and the `desktop place` bindings share one set of
+  zones) and the frame draws `LayerDraw::tile_preview` (`element/tile_preview.rs`: three solid bands and four corner rasters).
+- **A tiled window dragged away** returns to its size from before tiling: it already did (`Model::grab` sets `Floating(restore)`
+  when the move starts); the drag test asserts the model state, not a new mechanism.
+- **Departures from macOS and from the plan.** (1) There is no edge dwell: the preview arms the moment the pointer is inside the
+  3 px band (`EDGE_BAND`), so Option only changes where the zones are (thirds of the output, centre none), not how fast they show;
+  Sequoia waits a moment at an edge. (2) The bottom edge alone tiles nothing (only its corners do); the bottom half is reachable
+  with Option, the menu and the keys. (3) A corner is within `CORNER_REACH` = 96 px of it along an edge. (4) The preview does not
+  spring in (no frame pacing exists for a stationary pointer; it appears whole); the plate is the accent at 72/255, not Sequoia's
+  neutral. (5) Tile margins apply to halves and quarters but not to Fill (a fill is the usable area, as the green light's zoom).
+  (6) A window tiles only on its own output: it keeps its Space's output while dragged, so the pointer on another output arms
+  nothing; the shared edge of two displays is never an edge. When a drag can re-home a window, `TileScene.home` follows the
+  pointer's output. (7) Esc during the drag does not cancel (no keyboard route into the grab yet); Option pressed or released with
+  the pointer still does not re-evaluate until the next motion. (8) `rust_scene/fill.rs` was not made: Fill is `filled_target`
+  already, and the plan's file would only repeat it.
+- **Keys (D12) are an interface ask, not built.** chordkit 55a62b2 has no `StandardAction` for tiling (no left/right/top/bottom/
+  quarters/fill/centre/return), so casement's `keymap/shell.rs` has no row to bind: the keymap module holds action names only.
+  Ask to chordkit (and keycap for the layers): add `TileLeft`, `TileRight`, `TileTop`, `TileBottom`, `TileTopLeft`,
+  `TileTopRight`, `TileBottomLeft`, `TileBottomRight`, `TileFill`, `TileCentre`, `TileReturn` with the Sequoia chords (Globe/Fn+Ctrl
+  plus arrows, F, C, R) and, because Fn is often invisible to the OS (D12), the reachable set Ctrl+Option plus the same keys. Then
+  casement adds eleven rows to `ROWS` mapping to `DesktopCommand::Place(..)`, which already exists. Until then a person can bind
+  them in casement's own `[bindings]` (`["desktop", "place", "left"]`).
+- **Goldens to bless.** `tile-preview-1x`, `tile-preview-1.5x`, `tile-preview-2x` (casement-render `tests/it/scenes.rs`,
+  `the_tile_preview_matches_its_pixman_goldens`).
+- **Unverified API guesses.** `super::frame::{element, to_buffer, whole, Raster}` reached from the sibling `tile_preview.rs`
+  (`pub(super)` in `frame.rs` makes them visible in `element`); `Scale::numerator()`/`Scale::DENOMINATOR` as `raster.rs` uses them;
+  `LogicalSize::ZERO`; `model.layers().usable_area(&output, full)` public as `of_model.rs` uses it; `Option<Drag>::filter` (Drag is
+  `Copy`); the new `Model::output_rects` (added to `model/query.rs`).
+## cas23-quit: quit, force quit, not responding (P3-QU, 2026-10-15)
+
+- Not responding: input pings the key window's client (`app/quit.rs` `ping_plan`): none while a
+  ping is out or went within 2 s; unanswered after 4 s marks the app `NotResponding`; a pong clears
+  it. Pings follow input to the key window only; the window under the pointer is not pinged, and a
+  hung app is found only when the person types or clicks into its key window (macOS finds it on
+  any click on its window). The model mirrors the timers it arms (`TimerKey::Ping`, new
+  `TimerKey::PingGap`) in its own book so the next input can see them.
+- The busy cursor over a not-responding app's windows is NOT drawn: casement does not draw
+  cursors per surface yet. The state is in the model (`AppLife::NotResponding`) and published to
+  `quire_desktop_v1` (app life and window responsiveness).
+- Quit (Cmd+Q, `desktop_app.quit`): asks every window to close, shows the app as quitting for
+  3 s, then as running again if it is still here (a "Save changes?" sheet). Departure from macOS:
+  an app with no window cannot be asked to quit (there is no window to close and no quit request in
+  `quire_window_v1`); it only shows as quitting for the grace.
+- Force Quit panel (Option-Command-Escape): `ShellNote::ForceQuitPanel(rows)` goes to the shell
+  edge, which has no event to carry it yet (see the interface ask in the lane report); the shell
+  can already draw the list from `quire_desktop_v1` and call `desktop_app.force_quit`.
+- Force quit (`desktop_app.force_quit`): SIGTERM now, SIGKILL 3 s later if the app is still here.
+  macOS kills at once; the TERM first is the plan's. Processes are those of the connections that
+  serve the app and no other app, from the socket credentials (`Client::get_credentials`), only
+  for connections through the public socket. Left alone on purpose: sandboxed clients (their pid
+  is in another namespace), the shell's and agent connections, and a connection that carries
+  windows of several apps (xwayland-satellite: killing it would end every X11 app). X11 apps are
+  therefore not force-quittable until XWayland windows carry `_NET_WM_PID`.
+- casement does not launch apps in a transient scope (spawn.rs starts a plain child), so there
+  is no app scope to signal; the credential pid is the only handle.
 ## wave-2026-10-15/wlcs5
 
 Written without a build or a wlcs run (rule of the lane); the orchestrator's run settles it.
@@ -3455,3 +3520,35 @@ Written without a build or a wlcs run (rule of the lane); the orchestrator's run
 | `ForeignToplevelHandleTest.gets_unminimized_when_maximized`, `gets_unminimized_when_fullscreened` | `wlr_requests` mapped `set_maximized` / `set_fullscreen` straight to the window's own request, which leaves a minimised window alone. | `Model::wlr_request`: a window-list client's maximise-on / full-screen-on first brings a minimised window back from the dock (the activation path, so the restore animation plays), then applies the request. Test: `wlr_toplevel.rs` `a_state_asked_of_a_minimised_window_...`. |
 | `can_maximize_foreign_while_fullscreen` | `place` returned early for a full-screen window, so the fill was dropped. | `place`: Fill on a full-screen window replaces the state it returns to with Filled (xdg-shell: `set_maximized` while full screen takes effect when full screen ends); the window stays full screen. Same test. This also applies to the window's own `xdg_toplevel.set_maximized`. |
 | `text_input_enters_grabbing_popup`, `..._after_child_destroyed` | gmock `InSequence` chains the xdg helpers' `AnyNumber` expectations; a later call retires every earlier link, and the protocol's wire order (toplevel/popup configure, then xdg_surface.configure; wm_capabilities at creation) is the reverse of the chain. The keyboard `enter` was already in order. | Nothing in casement can fix it without dropping configures; the two rows are back on the expected-failures list as W14 with the reasoning. |
+
+## cas28-daily: force quit and X11 apps (2026-10-16)
+
+- **The hole this closes.** `Model::sole_clients_of` names a connection when every window on it
+  belongs to the app. With one X11 app open, xwayland-satellite (one Wayland client, public
+  socket, so its credential pid was recorded) was that connection, and force quit would have
+  sent SIGTERM and then SIGKILL to the satellite: every X11 program and the X server gone.
+  `Processes::record` now takes the running satellite's pid (`XwaylandState::satellite_pid`) and
+  records nothing for it; `exec::quit::pids_of` removes it again at signal time (the satellite
+  can be started after a record on a restart, so both). Tests: `clients/processes.rs`
+  `the_satellites_connection_is_never_recorded`, `casement-testkit/tests/it/xwayland.rs`
+  `satellite_starts_with_its_listen_sockets` (the pid is spared once running).
+- **Why X11 apps still cannot be force quit.** Nothing on casement's side of the wire carries an
+  X11 window's process: satellite creates an ordinary `xdg_toplevel` per X11 window with the
+  `WM_CLASS` as its app id and forwards no window id, no `_NET_WM_PID`, no pid. The pid lives in
+  the X server: `_NET_WM_PID` on the window (set by the client, self-declared) or the X-Resource
+  extension's `XResQueryClientIds` with `LOCAL_CLIENT_PID` (the server's own peer credential
+  read, which cannot be forged by the client). Reading either needs an X11 connection from
+  casement to the display it serves (`XwaylandState::display`; casement holds the listening
+  sockets, so the connect succeeds even before satellite accepts it). `casement` has no X11
+  client dependency; `x11rb` 0.13 is already a workspace dependency and in `Cargo.lock`
+  (used by `casement-testclient`'s `casement-x11probe`), so the route is one line in
+  `crates/casement/Cargo.toml`: `x11rb = { workspace = true, features = ["res"] }` (`res` for
+  XRes; `_NET_WM_PID` needs no feature). The mapping app to pids would be: list the root's
+  children, match each window's `WM_CLASS` class to the app's claimed id (the same match
+  satellite made for the app id), take `XResQueryClientIds` per matching window (fall back to
+  `_NET_WM_PID`), signal those, minus satellite and Xwayland (`satellite_pid` and its child).
+  Held back because the lane may not touch `Cargo.toml` / `Cargo.lock`.
+- **State after a force quit of an X11 app today.** The model marks the app `Quitting(Stopping)`
+  and arms the kill grace; `pids_of` is empty, so nothing is signalled. Open: what the model
+  should do when an app has no killable process (leave it running and say so in the panel, or
+  close its windows).

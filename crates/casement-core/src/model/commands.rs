@@ -129,8 +129,8 @@ impl Model {
                 None => Moved::of(self),
             },
             DesktopCommand::HideOthers => self.hide_others(active),
-            DesktopCommand::QuitActive => self.close_all_of(active),
-            DesktopCommand::ForceQuitPanel => Moved::of(self),
+            DesktopCommand::QuitActive => self.quit_app(active),
+            DesktopCommand::ForceQuitPanel => self.force_quit_panel(),
             DesktopCommand::SwitchSpace(step) => match self.working_output() {
                 Some(output) => self.switch(&output, step),
                 None => Moved::of(self),

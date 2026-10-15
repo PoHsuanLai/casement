@@ -5,11 +5,11 @@ pub(crate) mod convert;
 use crate::compositor::Compositor;
 use crate::element::{
     CasementElement, ClipShape, ClosingFrame, FlightDraw, FrameDraw, GenieWindow, LockCoverElement,
-    OverviewIcon, OverviewLook, PopupRide, Rgba8, TitleDraw, choose, closing_elements,
+    OverviewIcon, OverviewLook, PopupRide, Rgba8, TilePreview, TitleDraw, choose, closing_elements,
     cursor_elements, dim_elements, drawn_content, frame_elements, genie_window, icon_element,
     icon_place, label_element, layer_elements, lift_last, popup_elements, popup_elements_riding,
-    ring_elements, shown_length, shown_outline, surface_origin_logical, window_content,
-    window_elements,
+    ring_elements, shown_length, shown_outline, surface_origin_logical, tile_preview_elements,
+    window_content, window_elements,
 };
 use crate::element::{alpha, flight_ratio};
 use crate::texture_book::TextureBook;
@@ -74,6 +74,9 @@ pub struct LayerDraw {
     /// A plain backdrop over the whole output, behind the full-screen windows and above the top
     /// layers: what shows between and beside the halves of a Split View.
     pub backdrop: Option<Rgba8>,
+    /// The plate a drag to a screen edge shows where the window would tile: drawn above every
+    /// window but the one being dragged.
+    pub tile_preview: Option<TilePreview>,
 }
 
 /// Mission Control on an output: its windows are drawn scaled to the size they have been sampled
@@ -358,6 +361,16 @@ pub fn output_elements<R: Compositor>(
         elements.push(CasementElement::Cover(cover(view, book, colour)));
     }
     draw_level(&layers.top, &mut elements, renderer);
+    let (held, others): (Vec<&PlacedWindow>, Vec<&PlacedWindow>) =
+        others.into_iter().partition(|placed| {
+            layers
+                .tile_preview
+                .is_some_and(|tile| tile.window == placed.window)
+        });
+    draw_windows(&held, &mut elements, renderer);
+    if let Some(preview) = &layers.tile_preview {
+        elements.extend(tile_preview_elements(preview, view, renderer));
+    }
     draw_windows(&others, &mut elements, renderer);
     if let OverviewDraw::On { look, .. } = &layers.overview {
         elements.extend(dim_elements(view, book, look));

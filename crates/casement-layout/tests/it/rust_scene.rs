@@ -343,3 +343,118 @@ fn a_sheet_hangs_from_its_window_and_follows_it() {
         "with no window it is a new one"
     );
 }
+
+#[test]
+fn zones_take_halves_and_quarters_inside_the_margin() {
+    use casement_layout::zone_rect;
+    use casement_protocols::vocab::TileZone as Z;
+    let usable = rect(0, 24, 1920, 1056);
+    // name, zone, area, margin, want
+    let cases = [
+        ("left", Z::Left, usable, 8, rect(8, 32, 948, 1040)),
+        ("right", Z::Right, usable, 8, rect(964, 32, 948, 1040)),
+        ("top", Z::Top, usable, 8, rect(8, 32, 1904, 516)),
+        ("bottom", Z::Bottom, usable, 8, rect(8, 556, 1904, 516)),
+        ("top left", Z::TopLeft, usable, 8, rect(8, 32, 948, 516)),
+        ("top right", Z::TopRight, usable, 8, rect(964, 32, 948, 516)),
+        (
+            "bottom left",
+            Z::BottomLeft,
+            usable,
+            8,
+            rect(8, 556, 948, 516),
+        ),
+        (
+            "bottom right",
+            Z::BottomRight,
+            usable,
+            8,
+            rect(964, 556, 948, 516),
+        ),
+        (
+            "no margin, left",
+            Z::Left,
+            usable,
+            0,
+            rect(0, 24, 960, 1056),
+        ),
+        (
+            "no margin, bottom right",
+            Z::BottomRight,
+            usable,
+            0,
+            rect(960, 552, 960, 528),
+        ),
+        (
+            "odd width: the extra pixel is the second half's",
+            Z::Right,
+            rect(0, 0, 101, 100),
+            0,
+            rect(50, 0, 51, 100),
+        ),
+        (
+            "odd width with a margin",
+            Z::Right,
+            rect(0, 0, 101, 100),
+            8,
+            rect(54, 8, 39, 84),
+        ),
+        (
+            "a margin too big for the area is held to a quarter",
+            Z::Right,
+            rect(0, 0, 20, 20),
+            8,
+            rect(12, 5, 3, 10),
+        ),
+        (
+            "an area off the origin (a second output)",
+            Z::Left,
+            rect(1920, 0, 1280, 720),
+            8,
+            rect(1928, 8, 628, 704),
+        ),
+    ];
+    for (name, zone, area, margin, want) in cases {
+        assert_eq!(zone_rect(zone, area, margin), want, "{name}");
+    }
+}
+
+#[test]
+fn a_tiled_window_takes_its_zone_below_its_frame_within_its_limits() {
+    use casement_protocols::vocab::TileZone;
+    let usable = rect(0, 24, 1920, 1056);
+    let wide = SizeLimits {
+        min: LogicalSize { w: 1000, h: 0 },
+        max: MaxSize::Unbounded,
+    };
+    // name, limits, reserve, the rectangle, the report
+    let cases = [
+        ("no frame", ANY_SIZE, 0, rect(8, 32, 948, 1040), false),
+        (
+            "a titlebar comes off the top",
+            ANY_SIZE,
+            28,
+            rect(8, 60, 948, 1012),
+            false,
+        ),
+        (
+            "a minimum the half cannot hold",
+            wide,
+            0,
+            rect(8, 32, 948, 1040),
+            true,
+        ),
+    ];
+    for (name, limits, reserve, want, reported) in cases {
+        let mut held = window(1, WindowPlacement::Tiled(TileZone::Left), limits);
+        held.reserve_top = reserve;
+        let got = RustScene.arrange(&one_desktop(usable, vec![held]), &knobs());
+        let t = target(&got, 1);
+        assert_eq!(
+            (t.rect, t.size),
+            (want, ConfigureNeed::Resize(want.size)),
+            "{name}"
+        );
+        assert_eq!(!got.reports.is_empty(), reported, "{name}");
+    }
+}

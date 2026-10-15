@@ -2,7 +2,7 @@
 //! each pointer motion until the button is released puts the window where the grab says
 //! (`Event::WindowDragged`), and the clients under the pointer hear nothing meanwhile.
 
-use super::feed;
+use super::{feed, tile};
 use crate::state::State;
 use casement_core::geometry::LogicalPoint;
 use casement_core::input::ButtonCode;
@@ -40,6 +40,7 @@ pub(crate) fn start(state: &mut State, spec: GrabSpec) {
                 y: at.y.floor() as i32,
             }
         });
+    tile::begin(state, spec);
     let drag = Drag::begin(spec, at, None);
     let button = state.wl.seat.serials.button_of(drag.serial());
     state.wl.seat.grab = Some(Drag::begin(spec, at, button));
@@ -76,6 +77,7 @@ pub(super) fn follow(state: &mut State, at: LogicalPoint) -> Follow {
     let Some(origin) = origin else {
         // The window is gone: the grab ends.
         state.wl.seat.grab = None;
+        tile::cancel(state);
         return Follow::Free;
     };
     state.wl.seat.grab = Some(drag.from_rect(origin));
@@ -87,17 +89,21 @@ pub(super) fn follow(state: &mut State, at: LogicalPoint) -> Follow {
         .map_or(NO_LIMITS, |held| held.limits);
     let rect = drag.rect_at(origin, at, limits);
     feed(state, vec![Event::WindowDragged { window, rect }]);
+    tile::moved(state, at);
     Follow::Taken
 }
 
 /// `released` was let go: the grab ends when it is the button the grab began with.
 pub(super) fn end(state: &mut State, released: ButtonCode) {
-    if ends_with(state, released) {
-        let window = state.wl.seat.grab.map(|drag| drag.window());
+    if let Some(drag) = state.wl.seat.grab.filter(|drag| drag.ends_with(released)) {
         state.wl.seat.grab = None;
-        if let Some(window) = window {
-            feed(state, vec![Event::WindowDragEnded { window }]);
-        }
+        tile::released(state, drag.serial());
+        feed(
+            state,
+            vec![Event::WindowDragEnded {
+                window: drag.window(),
+            }],
+        );
     }
 }
 

@@ -6,6 +6,7 @@ use super::floating::{
     filled_target, fit_size, floating_target, full_screen_target, placed, placed_target,
 };
 use super::split;
+use super::tile_zone::tiled_target;
 use crate::{
     Arrangement, LayoutKnobs, OutputSpec, SceneMode, SpaceArrangement, SpaceSpec, SpaceTarget,
     WindowPlacement,
@@ -111,7 +112,16 @@ fn arrange_space(
                 sheets.push((window, parent, size));
                 continue;
             }
-            WindowPlacement::Minimised | WindowPlacement::Tiled(_) => continue,
+            WindowPlacement::Tiled(zone) => tiled_target(
+                window.window,
+                &output.output,
+                zone,
+                window.limits,
+                window.reserve_top,
+                output.usable,
+                knobs.tile_margin,
+            ),
+            WindowPlacement::Minimised => continue,
         };
         into.windows.push(target);
         into.reports.extend(report);

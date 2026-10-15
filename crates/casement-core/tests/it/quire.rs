@@ -104,22 +104,17 @@ fn the_desktop_manager_reaches_the_windows_and_apps_it_names() {
 }
 
 #[test]
-fn force_quit_and_reopen_wait_for_their_machines() {
+fn reopen_waits_for_its_machine() {
     let mail = proven("org.quire.Mail");
     let base = run(vec![plug("HEADLESS-1"), map(1, &mail, TokenCheck::Missing)]);
-    for (ask, deferred) in [
-        (AppAsk::ForceQuit, Deferred::ForceQuit),
-        (AppAsk::Reopen, Deferred::Reopen),
-    ] {
-        let asked = run_from(
-            base.model.clone(),
-            vec![desktop(DesktopRequest::App {
-                app: mail.clone(),
-                ask,
-            })],
-        );
-        assert!(last(&asked).contains(&Effect::Note(CoreNote::Deferred(deferred))));
-    }
+    let asked = run_from(
+        base.model,
+        vec![desktop(DesktopRequest::App {
+            app: mail.clone(),
+            ask: AppAsk::Reopen,
+        })],
+    );
+    assert!(last(&asked).contains(&Effect::Note(CoreNote::Deferred(Deferred::Reopen))));
 }
 
 #[test]
