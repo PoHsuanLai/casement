@@ -183,7 +183,7 @@ impl<R: Compositor> RenderElement<R> for Routed<'_, R> {
         cache: &UserDataMap,
     ) -> Result<(), R::Error> {
         match self.element {
-            CasementElement::Blur(_) => R::capture_blur_v0(frame, dst, cache),
+            CasementElement::Blur(blur) => R::capture_blur_v0(frame, blur, dst, cache),
             element => element.capture_framebuffer(frame, src, dst, cache),
         }
     }

@@ -3493,6 +3493,48 @@ Built, uncompiled (wave 6 lanes do not build): `input/gesture_route.rs` (finger-
   the ratio is the one of the current rectangle, so a long resize can drift by a pixel of rounding; a resize also snaps on release;
   the corner is by the window's centre, with no flick velocity.
 
+## wave-2026-10-15/cas24-blur (P3-FX: the dual-Kawase blur)
+
+- **What replaced blur v0.** `pass/blur_kawase.rs` (+ `blur_kawase/plan.rs` pure, `blur_kawase/gles.rs`) and the shaders
+  `src/shaders/kawase_{down,up}.frag`, written from Bjorge's 2015 paper. `BlurV0Element` keeps its name (genie, window, tests and
+  other lanes hold it); its GLES half (`element/blur_v0/gles.rs`) is now a thin call into the pass. A rename is a mechanical follow-up
+  once no other lane has the type open.
+- **Passes.** The capture hook blits the framebuffer under the element into level 1 (half size, linear), draws levels 2..n down and
+  n-1..1 back up, each in a frame of its own on that level's texture, nested in the output's frame through the frame guard
+  (`FrameContext::renderer`, whose drop restores the output's target, viewport and scissor). The draw hook is the n-th upsample
+  stretched over the output, with the finish folded in: saturation about Rec. 709 luma (premultiplied, so linear), a premultiplied tint,
+  grain, then the element's alpha. A still scene costs nothing (smithay does not capture); a damaged blur over an unchanged
+  background costs one draw.
+- **Look.** `BlurLook { sigma, saturation, tint, noise }` in logical pixels; `BlurLook::MATERIAL` is sigma 22 and saturation 1.8
+  (design/23 M26, M29), no tint, no grain. ext-background-effect carries no parameters, so every blur region gets MATERIAL; the look
+  is per element (`with_look`) for when the shell can ask (a stronger or lighter material is a data change, not a shader one).
+  `KawasePlan::passes/offset` is the fewest halving levels (1 to 6) whose tap offset is at most 2.5.
+- **UNMEASURED: sigma model.** `SIGMA_PER_STEP = 0.8` (sigma = 0.8 * offset * 2^passes) is set by hand from the filter's variance,
+  not fitted. The goldens pin what it gives; the figure to calibrate against is design/23: a sharp edge spreading 10 to 90 percent over
+  about 56 logical pixels at sigma 22. Also unmeasured: the GPU time at 4K (plan target: GPU under 6 ms p95 with the whole P3 load);
+  no GPU in the jail.
+- **Damage.** The element's geometry is its region's bounds grown by `KawasePlan::reach` (3 sigma + 1), so smithay captures again when
+  anything within reach of the region changes; drawing is still cut to the region's rectangles (the clip), and only the region is
+  opaque. The blur reads the framebuffer beyond the region (as macOS does) and edge-clamps at the output edge.
+- **Region shape.** Clipped to ext-background-effect's rectangles exactly, with hard edges; a rounded region is whatever rectangle set
+  the client sends (no anti-aliased corner mask). A rounded mask is a P4 item if sill sends rounded regions as one rectangle.
+- **Fallback.** Renderers without shaders keep the solid stand-in (`EffectSupport::Plain`, unchanged). The Reduce Transparency setting
+  (solid tint, vibrancy dropped) is not wired here: it needs a switch from the model to `with_look`/the stand-in.
+- **Departures.** Saturation 1.8 applies to every blur (window, panel, menu), not only widgets as sill asked for; macOS vibrancy
+  saturates too. `Compositor::capture_blur_v0` gained a `blur` argument (the plan). Goldens: `blur-v0-1x` (tier L) is replaced by
+  `blur-kawase-1x` and `blur-kawase-2x`; `blur-v0-stand-in-1x` (pixman) is unchanged. The scene's stripes are vertical and the region is
+  symmetric, so the goldens cannot catch a vertical flip; a real-content check on the tty is still owed.
+- **Unverified API guesses.** A nested `Renderer::render` on an offscreen texture inside `capture_framebuffer` through
+  `frame.renderer()` (read from smithay `90efde4`: `finish_internal` disables scissor and blend, the guard drop re-enables them);
+  offscreen textures need no wrap mode because the shaders clamp their own coordinates; `Texture::size` used as a path in `.map`.
+- **Fixed: black wedge in the full-HD compositor scene.** `blur_v0_matches_its_llvmpipe_golden` showed the panel's bottom right black
+  (64 where 160 belongs) below a straight edge of slope -0.166 = -12.9898/78.233. The cause was the grain hash in `kawase_up.frag`:
+  `sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233)))` has an argument past 65536 where 12.9898 x + 78.233 y > 65536 (the edge, to the
+  pixel), llvmpipe's `sin` is taken to return NaN or garbage there (inferred from the edge, not measured), and `vec3(n * grain)` with grain 0 then poisons the colour, which `clamp` turns into black. The
+  render-level scenes are 320x200 (argument under 20000) and the intermediate levels are under 21000, so only the finish at full-HD
+  coordinates hit it. The hash is now interleaved gradient noise (no `sin`) and runs only when `grain > 0`. The damage path was
+  not at fault: smithay's tracker adds the whole element area to the damage whenever it captures, and the capture reads a fully drawn frame.
+
 ## cas23-quit: quit, force quit, not responding (P3-QU, 2026-10-15)
 
 - Not responding: input pings the key window's client (`app/quit.rs` `ping_plan`): none while a

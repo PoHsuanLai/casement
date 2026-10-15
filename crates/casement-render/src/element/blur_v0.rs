@@ -1,9 +1,12 @@
-//! The P0 behind-surface blur (ext-background-effect-v1): a single downsample-and-blur of what
-//! lies under a surface's blur region. On renderers without effect shaders
-//! ([`crate::EffectSupport::Plain`]) it draws its solid stand-in. P3 replaces it with the dual
-//! Kawase pass (`pass/blur_kawase.rs`).
+//! The behind-surface blur (ext-background-effect-v1): a dual-Kawase blur of what lies under a
+//! surface's blur region (`pass/blur_kawase.rs`), saturated and clipped to the region's
+//! rectangles. The element's geometry is the region grown by the blur's reach, so damage that
+//! close to the region blurs again; nothing is drawn outside the region. On renderers without
+//! effect shaders ([`crate::EffectSupport::Plain`]) it draws its solid stand-in. The type keeps
+//! its P0 name so the elements that hold it need not change.
 
 use super::solid::{Rgba8, fingerprint};
+use crate::pass::{BlurLook, KawasePlan};
 use crate::scene::OutputView;
 use crate::scene::convert::{on_output, ours, physical};
 use casement_core::geometry::{PhysicalRect, SubPoint, SubPx};
@@ -65,7 +68,12 @@ pub(crate) fn behind_scaled(
         .filter(|rect| rect.w > 0 && rect.h > 0)
         .collect();
     let id = Id::from_wayland_resource(root).namespaced(NAMESPACE);
-    (!rects.is_empty()).then(|| BlurV0Element::new(id, rects, STAND_IN).with_alpha(alpha))
+    let look = BlurLook::MATERIAL;
+    (!rects.is_empty()).then(|| {
+        BlurV0Element::new(id, rects, STAND_IN)
+            .with_alpha(alpha)
+            .with_look(look, view.scale.as_f64())
+    })
 }
 
 /// A region's rectangles, added and subtracted in order, as rectangles that do not overlap
@@ -123,6 +131,7 @@ pub struct BlurV0Element {
     region: Vec<PhysicalRect>,
     stand_in: Rgba8,
     alpha: f32,
+    plan: KawasePlan,
 }
 
 impl BlurV0Element {
@@ -134,7 +143,32 @@ impl BlurV0Element {
             region,
             stand_in,
             alpha: 1.0,
+            plan: BlurLook::MATERIAL.plan(1.0),
         }
+    }
+
+    /// The same blur as `look` asks on an output at `scale` (physical pixels per logical pixel).
+    ///
+    /// ```
+    /// use casement_render::pass::BlurLook;
+    /// use casement_render::{BlurV0Element, Rgba8};
+    /// use smithay::backend::renderer::element::Id;
+    ///
+    /// let black = Rgba8 { r: 0, g: 0, b: 0, a: 255 };
+    /// let blur = BlurV0Element::new(Id::new(), Vec::new(), black)
+    ///     .with_look(BlurLook::MATERIAL, 2.0);
+    /// assert_eq!(blur.plan().passes, 5);
+    /// ```
+    pub fn with_look(self, look: BlurLook, scale: f64) -> BlurV0Element {
+        BlurV0Element {
+            plan: look.plan(scale),
+            ..self
+        }
+    }
+
+    /// The passes this blur runs.
+    pub fn plan(&self) -> &KawasePlan {
+        &self.plan
     }
 
     /// The same blur drawn at `alpha` (0 to 1): a window that fades takes its blur with it.
@@ -170,6 +204,7 @@ impl BlurV0Element {
             region: self.region.iter().copied().flat_map(map).collect(),
             stand_in: self.stand_in,
             alpha: self.alpha,
+            plan: self.plan,
         }
     }
 
@@ -188,9 +223,19 @@ impl BlurV0Element {
             .unwrap_or_default()
     }
 
+    /// What the element covers: the region's bounds grown by the blur's reach (the blur reads
+    /// that far beyond the region), so damage within reach captures the blur again.
+    fn area(&self) -> Rectangle<i32, Physical> {
+        let bounds = self.bounds();
+        match bounds.is_empty() {
+            true => bounds,
+            false => self.plan.expand(bounds),
+        }
+    }
+
     /// The region relative to the element's top-left.
     fn local_region(&self) -> Vec<Rectangle<i32, Physical>> {
-        let origin = self.bounds().loc;
+        let origin = self.area().loc;
         self.region
             .iter()
             .map(|rect| physical(*rect))
@@ -211,13 +256,14 @@ impl BlurV0Element {
             .collect()
     }
 
-    /// GLES: copies what lies under `dst` into `cache`, downsampled (see `gles`).
+    /// GLES: blurs what lies under `dst` into `cache` (see `pass::blur_kawase`).
     pub(crate) fn capture_gles(
+        &self,
         frame: &mut GlesFrame<'_, '_>,
         dst: Rectangle<i32, Physical>,
         cache: &UserDataMap,
     ) -> Result<(), GlesError> {
-        gles::capture(frame, dst, cache)
+        gles::capture(frame, self, dst, cache)
     }
 
     /// GLES: draws the blurred copy over the region (the stand-in before any capture).
@@ -261,23 +307,33 @@ impl Element for BlurV0Element {
             self.stand_in.b,
             self.stand_in.a,
         ];
+        let plan = &self.plan;
+        let look = [
+            plan.offset.to_bits(),
+            plan.saturation.to_bits(),
+            plan.noise.to_bits(),
+            u32::from(plan.passes),
+            u32::from_le_bytes([plan.tint.r, plan.tint.g, plan.tint.b, plan.tint.a]),
+        ]
+        .into_iter()
+        .flat_map(u32::to_le_bytes);
         let shape = self.local_region().into_iter().flat_map(|rect| {
             [rect.loc.x, rect.loc.y, rect.size.w, rect.size.h]
                 .into_iter()
                 .flat_map(i32::to_le_bytes)
         });
         let alpha = self.alpha.to_bits().to_le_bytes();
-        fingerprint(colour.into_iter().chain(alpha).chain(shape))
+        fingerprint(colour.into_iter().chain(alpha).chain(look).chain(shape))
     }
 
     fn src(&self) -> Rectangle<f64, BufferCoords> {
-        let size = self.bounds().size;
+        let size = self.area().size;
         Rectangle::from_size((f64::from(size.w), f64::from(size.h)).into())
     }
 
     fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
         let _ = scale;
-        self.bounds()
+        self.area()
     }
 
     fn damage_since(
@@ -288,7 +344,7 @@ impl Element for BlurV0Element {
         let _ = scale;
         match commit == Some(self.current_commit()) {
             true => DamageSet::default(),
-            false => DamageSet::from_slice(&[Rectangle::from_size(self.bounds().size)]),
+            false => DamageSet::from_slice(&[Rectangle::from_size(self.area().size)]),
         }
     }
 
