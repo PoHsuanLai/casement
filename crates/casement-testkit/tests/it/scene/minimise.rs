@@ -280,7 +280,6 @@ fn a_scale_flight_mid_way_is_whole_at_fractional_and_double_scale() {
 
 /// The same for the Genie: its strips meet without a visible seam.
 #[test]
-#[ignore = "the Genie draws nothing on pixman at any scale, 1x included (cas-wave follow-up)"]
 fn a_genie_flight_mid_way_is_whole_at_fractional_and_double_scale() {
     whole_mid_flight(MinimiseEffect::Genie);
 }

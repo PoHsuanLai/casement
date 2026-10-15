@@ -46,6 +46,7 @@ pub(crate) use rounded_clip::bake_corners;
 pub use rounded_clip::{ClipShape, RoundedClipElement};
 pub use shared::SharedElement;
 pub use solid::{Rgba8, solid_rect};
+pub(crate) use strip::pixman_can_draw;
 pub use strip::{Margins, StripElement, StripPlan};
 pub use tile_preview::{TilePreview, tile_preview_elements};
 pub(crate) use window::{alpha, flight_ratio};
