@@ -3,10 +3,11 @@
 //! window is alive ([`ClosingFrame`]) and hands it back when the window is gone but motion
 //! still has it fading and shrinking. The frame (titlebar, lights, title, shadow) is then
 //! drawn round the sampled rectangle at the sampled opacity, so it goes with the window as
-//! one thing.
+//! one thing. When the loop also kept the window's last image ([`ClosingBody`]) the body is drawn
+//! inside the frame, shrinking and fading with it; a window kept without one is not drawn.
 
 use super::flight::{FlightDraw, scaled_content};
-use super::{CasementElement, FrameDraw, TitleDraw, frame_elements};
+use super::{CasementElement, ClosingBody, FrameDraw, TitleDraw, frame_elements};
 use crate::compositor::Compositor;
 use crate::scene::OutputView;
 use crate::texture_book::TextureBook;
@@ -15,17 +16,27 @@ use casement_core::window::FrameStyle;
 use casement_motion::PlacedWindow;
 
 /// What the loop remembers of a window's frame, to draw it once the window has closed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct ClosingFrame {
     /// The frame's look and metrics as they were.
     pub style: FrameStyle,
+    /// The window's last image, drawn inside the frame; none draws an empty body.
+    pub body: Option<ClosingBody>,
 }
 
 impl ClosingFrame {
-    /// A snapshot of the frame `style` makes.
+    /// A snapshot of the frame `style` makes, without a body.
     pub fn new(style: FrameStyle) -> ClosingFrame {
-        ClosingFrame { style }
+        ClosingFrame { style, body: None }
+    }
+
+    /// The same frame with the window's last image inside it.
+    pub fn with_body(self, body: ClosingBody) -> ClosingFrame {
+        ClosingFrame {
+            body: Some(body),
+            ..self
+        }
     }
 }
 
@@ -52,7 +63,7 @@ pub fn closing_content(at: SubPoint, size: SubSize) -> LogicalRect {
 }
 
 /// The frame of the closing window `placed`, from its snapshot, drawn at the window's
-/// sampled opacity. Front first, then the shadow behind.
+/// sampled opacity. Front first (titlebar, lights, title), then the body, then the shadow behind.
 pub fn closing_elements<R: Compositor>(
     placed: &PlacedWindow,
     closing: &ClosingFrame,
@@ -61,14 +72,19 @@ pub fn closing_elements<R: Compositor>(
     book: &TextureBook,
     renderer: &mut R,
 ) -> Vec<CasementElement<R>> {
+    let content = closing_content(placed.at, placed.size);
     let draw = FrameDraw {
         style: &closing.style,
         title,
-        content: closing_content(placed.at, placed.size),
+        content,
         opacity: placed.opacity,
     };
     let (front, back) = frame_elements(placed.window, draw, view, book, renderer);
-    front.into_iter().chain(back).collect()
+    let body = closing
+        .body
+        .as_ref()
+        .and_then(|body| body.element(content, placed.opacity, view, renderer));
+    front.into_iter().chain(body).chain(back).collect()
 }
 
 #[cfg(test)]

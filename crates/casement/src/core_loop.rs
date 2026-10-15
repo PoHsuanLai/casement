@@ -27,6 +27,7 @@ use smithay::wayland::compositor::{
     SurfaceAttributes, TraversalAction, with_surface_tree_downward,
 };
 
+mod bodies;
 mod closing;
 mod deliver;
 mod divider;
@@ -43,6 +44,9 @@ mod titles;
 pub(crate) mod tty;
 mod windows;
 
+pub(crate) use bodies::{
+    Bodies, before_commit as keep_body_before_commit, before_destroy as keep_body_before_destroy,
+};
 pub(crate) use closing::Kept;
 pub(crate) use divider::DividerPointer;
 pub(crate) use frames::Over as FrameOver;

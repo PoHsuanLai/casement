@@ -1,7 +1,8 @@
 //! The frame of a window that has closed. A closing window leaves the model at once, so nothing
 //! says how its frame looked; the loop keeps what it needs (the style, the title, who was
 //! active) for every framed window while it lives, and draws it from that once the window is
-//! gone but motion still has it fading out. `casement-render` draws the frame
+//! gone but motion still has it fading out; its body is the image `bodies` took just before it
+//! unmapped. `casement-render` draws the frame
 //! (`closing_elements`); this decides which windows those are.
 
 use super::frames::activity_of;
@@ -46,34 +47,28 @@ pub(super) fn forget(state: &mut State, in_scene: &[WindowId]) {
         .render
         .closing
         .retain(|id, _| model.windows().contains_key(id) || in_scene.contains(id));
+    // An image is only for a window that is gone from the model and still fading; one taken for
+    // a window that stays (a client that hid it and maps it again) is freed here.
+    state
+        .render
+        .bodies
+        .retain(|id| !model.windows().contains_key(id) && in_scene.contains(id));
 }
 
-/// Whether a closing window's frame is drawn while it leaves.
-#[derive(Debug, Clone, Copy)]
-enum ClosingFrames {
-    /// Drawn, fading and shrinking with the window.
-    #[allow(dead_code)]
-    On,
-    /// Not drawn: the window and its frame go at once.
-    Off,
-}
-
-/// Off until the window's last image is kept with it: the client's surfaces leave the surface book
-/// on unmap, so today the frame would fade round an empty body, which reads worse than the window
-/// going at once (FINDINGS wave-2026-10-15/flight2).
-const CLOSING_FRAMES: ClosingFrames = ClosingFrames::Off;
-
-/// The frames to draw on `frame`: the windows motion still places that the model no longer has.
+/// The windows to draw closing on `frame`: the ones motion still places that the model no longer
+/// has and whose last image was kept (`bodies`). A window with no image goes at once, frame
+/// included: a frame would fade round an empty body, which reads worse than vanishing.
 pub(super) fn on(state: &State, frame: &OutputFrame) -> BTreeMap<WindowId, ClosingFrame> {
-    if matches!(CLOSING_FRAMES, ClosingFrames::Off) {
-        return BTreeMap::new();
-    }
     let placed: Vec<WindowId> = frame.windows.iter().map(|placed| placed.window).collect();
     let model = &state.core.model;
     leaving(&state.render.closing, &placed, |id| {
         model.windows().contains_key(id)
     })
-    .map(|(id, kept)| (*id, ClosingFrame::new(kept.style)))
+    .filter_map(|(id, kept)| {
+        let body = state.render.bodies.get(id)?;
+        Some((id, ClosingFrame::new(kept.style).with_body(body.clone())))
+    })
+    .map(|(id, closing)| (*id, closing))
     .collect()
 }
 

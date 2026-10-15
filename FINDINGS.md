@@ -2700,3 +2700,54 @@ Lane `input2` (not compiled; the orchestrator gates). Closes the two "Gaps noted
   re-applying `set_scroll_natural_scroll_enabled`/tap/accel on a live device (RealInputFeed::apply is the same call
   as at appearance); the watcher thread starts under the compositor's real config home; our own stamp write does
   not loop (it fires one reload that changes nothing).
+
+## wave-2026-10-15/closesnap
+
+A closing window fades and shrinks as one: the body now goes with the frame (the follow-up "A closing window loses its frame at once",
+and the "Not solved: the content of a closed window" row of flight2). Written without a compiler (wave rule); the orchestrator builds.
+
+- **What is kept.** The window's last image, drawn alone through the pass window capture uses (`window_rgba` ->
+  `render_offscreen`, content size at its output's scale), read back as RGBA and baked into a `ClosingBody` (casement-render
+  `element/closing_body.rs`): the bottom corners are cut by `ClipShape::coverage` at the kept radius, the channels are put in
+  Argb8888 order, and it is a `MemoryRenderBuffer`. `ClosingFrame` gained `body: Option<ClosingBody>` (and lost `Copy`).
+  `closing_elements` draws front (titlebar, lights, title), then the body as one `MemoryRenderBufferRenderElement` stretched over the
+  sampled content rectangle at the sampled opacity, then the shadow.
+- **Departure: a memory buffer, not an `Offscreen<GlesTexture>` texture.** The task suggested a GPU texture and
+  `TextureRenderElement`. The `Compositor` trait is generic over GLES, pixman and the dummy renderer, and the frame is built for
+  whichever the backend runs, so a texture type cannot ride in `ClosingFrame`. The existing window-capture pass already renders a
+  window offscreen on all three and on the tty seat's pixman shadow, and a memory buffer draws on every renderer (smithay caches the
+  upload per renderer). Cost: one GPU read-back at close (a one-off stall, once per closing window) and one upload on the first
+  frame. If the stall shows on a 4K window, the follow-up is a GLES-only `Offscreen<GlesTexture>` variant behind `Compositor`.
+- **Departure: the rounded clip is baked, not applied per frame.** The corner cut is made once at the window's rest size; the body
+  then shrinks with its corners (the frame's own radius does not shrink either, so they stay matched to within the shrink).
+- **When it is taken.** Two points, both while the window is still in the model and the old buffer still attached:
+  a pre-commit hook added in `new_surface` (`handlers/compositor.rs`) that sees `BufferAssignment::Removed` pending on the root of a
+  window the book draws (a client that unmaps by a null commit), and `toplevel_destroyed` (`handlers/xdg_shell.rs`) before the model
+  hears of it (a client that destroys the toplevel with its buffer attached). A winit backend has no offscreen pass: no image, the
+  window and its frame go at once as before.
+- **Which windows.** Only a window the loop kept a frame for (`RenderState::closing`, i.e. framed), with a size, that fits the cap, with
+  no image yet (`bodies.rs::verdict`, table test). The task said "motion on, not reduced motion": the loop passes
+  `MotionLevel::default()` (Standard) to `retarget` and there is no setting, and `retarget` cross-fades a departing window even under
+  Reduced (only the travel snaps), so every framed window animates its close and the level does not gate the snapshot. If a motion
+  setting lands, `Facts` gets the level.
+- **Freed when.** `closing::forget` (every frame) drops an image whose window is back in the model (a client that hid and re-showed
+  it) or no longer in the motion scene (the fade is over). Cap: 6 images and 192 MiB together, oldest dropped first (`Bodies::admit`,
+  tested); one image over the byte cap alone is not taken (`TooBig`).
+- **The switch is gone.** `ClosingFrames`/`CLOSING_FRAMES` removed. `closing::on` returns a window only when it has an image, so a
+  window without one (winit, too big, the read-back failed) has no frame either, as before flight2.
+- **Per output.** One image at the scale of the output the window was on, stretched to the sampled rectangle on every output the
+  window is drawn on (a window straddling two outputs of different scales is slightly soft on the other).
+- **Tests added.** casement-render: `closing_body.rs` unit (bake: channel order, square top, cut bottom corners, bad length/empty;
+  equality by id), doc test on `ClosingBody::from_rgba`; `tests/it/closing_body.rs` on pixman (stretched over the content, outside
+  stays black; half opacity is half over black). casement: `core_loop/bodies.rs` (verdict table; scale counts in the weight; oldest
+  dropped past the count; re-admit replaces; finished windows freed). No golden and no `expected-failures.txt` change were made by
+  hand; a testkit scene that closes a framed window mid-fade (pixman, the dummy renderer reads back zeros) may now show the frame
+  where it showed nothing: bless with a reason if one exists.
+- **Gate.** Likeliest compile faults: `bodies.rs` (`Kept` pattern with `..` on a `pub(crate)` struct from a sibling module; the guard in
+  `admit`'s match; `content_and_scale` made `pub(crate)`, `window_rgba` re-exported without the `debug-inject` cfg), the pre-commit
+  hook's `with_states` closure type in `before_commit`, `ClosingBody::element`'s `from_buffer` generics, `ClosingFrame` losing `Copy`
+  (`scene.rs`, `titles.rs`), `LayerDraw`'s derives with the new field. Real run: close a framed window of a client that unmaps by a null
+  commit and one that destroys the toplevel (a terminal, a browser): the body shrinks and fades with the frame, no empty-body ghost, the
+  last image is the window as it was (not blank), bottom corners rounded; close two at once; close a 4K window (the read-back stall at
+  the moment of closing); an app quitting with many windows (the cap); `grim` after the fade shows nothing left behind; watch memory
+  after many closes (the images are freed when the fade ends).

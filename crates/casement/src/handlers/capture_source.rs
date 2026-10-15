@@ -24,7 +24,6 @@ use casement_wayland::foreign_toplevel_list::window_of_identifier;
 use casement_wayland::image_capture::CaptureFailure;
 use ds_core::geometry::scale::Scale;
 use render::draw_window;
-#[cfg(feature = "debug-inject")]
 pub(crate) use render::window_rgba;
 use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_shm::Format;
@@ -63,7 +62,7 @@ impl ToplevelCaptureSourceHandler for State {
 
 /// The size of `window`'s content in logical pixels and the scale of the output it is on:
 /// what a capture is sized from. `None` when the window is not drawn or has no output.
-pub(super) fn content_and_scale(state: &State, window: WindowId) -> Option<(LogicalSize, Scale)> {
+pub(crate) fn content_and_scale(state: &State, window: WindowId) -> Option<(LogicalSize, Scale)> {
     let model = &state.core.model;
     let held = model.windows().get(&window)?;
     let content = state.render.textures.window(&window)?.committed;
