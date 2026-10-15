@@ -5,7 +5,7 @@ use super::CasementElement;
 use super::RoundedClipElement;
 use super::blur_v0;
 use super::flight::{drawn_content, scale_ratio};
-use super::geometry::{geometry_origin, geometry_size};
+use super::geometry::{geometry_origin, geometry_size, surface_origin};
 use super::rounded_clip::ClipShape;
 use crate::compositor::Compositor;
 use crate::scene::OutputView;
@@ -19,6 +19,7 @@ use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::element::surface::{
     WaylandSurfaceRenderElement, render_elements_from_surface_tree,
 };
+use smithay::backend::renderer::element::utils::RescaleRenderElement;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::Scale;
 
@@ -28,10 +29,12 @@ use smithay::utils::Scale;
 ///
 /// The tree is drawn so that the root's window geometry origin lands at the sampled place, at
 /// its committed size, except while the window is in a minimise flight: then every surface of
-/// the tree is scaled about that place to the sampled size (smithay's surface-tree helper takes
-/// the scale per axis, so damage, opaque regions and the source rectangle follow from it), and
-/// the blur behind it is stretched the same way and fades with the window. A sampled size that
-/// differs from the committed one in any other case (a resize in flight) shows once the client commits it.
+/// the tree is laid out at its real size and stretched about that place to the sampled size by
+/// smithay's `RescaleRenderElement` (the scale a surface-tree helper takes only places the
+/// subsurfaces, it does not size them), so damage, opaque regions and the source rectangle
+/// follow from it, and the blur behind it is stretched the same way and fades with the window.
+/// A sampled size that differs from the committed one in any other case (a resize in flight)
+/// shows once the client commits it.
 ///
 /// With a `clip` every surface of the tree (the root and its subsurfaces) is drawn inside that
 /// shape, a window's rounded bottom corners; the window's popups are not part of this tree.
@@ -46,12 +49,20 @@ pub fn window_elements<R: Compositor>(
         return Vec::new();
     };
     let ratio = flight_ratio(placed, &entry.root);
-    let surfaces = window_surfaces(placed, ratio, view, book, renderer);
-    let mut elements: Vec<CasementElement<R>> = surfaces
+    let about = on_output(placed.at, view);
+    let mut elements: Vec<CasementElement<R>> = window_surfaces(placed, view, book, renderer)
         .into_iter()
-        .map(|surface| match clip {
-            Some(shape) => CasementElement::Clip(RoundedClipElement::new(surface, shape)),
-            None => CasementElement::Surface(surface),
+        .map(|surface| match (placed.flight, clip) {
+            (None, Some(shape)) => CasementElement::Clip(RoundedClipElement::new(surface, shape)),
+            (None, None) => CasementElement::Surface(surface),
+            (Some(_), Some(shape)) => CasementElement::Clip(
+                RoundedClipElement::new(surface, shape).stretched(about, ratio),
+            ),
+            (Some(_), None) => CasementElement::Stretched(RescaleRenderElement::from_element(
+                surface,
+                about,
+                Scale::from(ratio),
+            )),
         })
         .collect();
     let faded = match placed.flight {
@@ -81,12 +92,11 @@ pub(crate) fn window_blur(
     )
 }
 
-/// `placed`'s surface tree as surface elements, front first, stretched by `ratio` about the
-/// window geometry's place (`(1.0, 1.0)` draws it as committed). Empty when the book has no
-/// surface for it.
+/// `placed`'s surface tree as surface elements, front first, laid out at its real size with the
+/// window geometry's top-left at `placed`'s place (a flight stretches them afterwards, see
+/// [`window_elements`]). Empty when the book has no surface for it.
 pub fn window_surfaces<R: Compositor>(
     placed: &PlacedWindow,
-    ratio: (f64, f64),
     view: &OutputView,
     book: &TextureBook,
     renderer: &mut R,
@@ -94,13 +104,12 @@ pub fn window_surfaces<R: Compositor>(
     let Some(entry) = book.window(&placed.window) else {
         return Vec::new();
     };
-    let origin = scaled_origin(&entry.root, placed.at, ratio);
-    let scale = view.scale.as_f64();
+    let origin = surface_origin(&entry.root, placed.at);
     render_elements_from_surface_tree(
         renderer,
         &entry.root,
         on_output(origin, view),
-        Scale::from((scale * ratio.0, scale * ratio.1)),
+        view.scale.as_f64(),
         alpha(placed.opacity),
         Kind::Unspecified,
     )

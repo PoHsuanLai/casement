@@ -56,7 +56,6 @@ fn flown(fixture: &mut Fixture, window: WindowId, bound: Duration) -> Vec<u32> {
 /// nothing toward all of it) and is off the flight at the end; restored, it flies back out
 /// (progress falling from the tile's end toward nothing) and lands where it was.
 #[test]
-#[ignore = "wave-6 follow-up: the restore flight is not seen in fixture.scene(); find where it is published"]
 fn genie_and_scale_both_play_and_reverse_on_restore() {
     for effect in [MinimiseEffect::Genie, MinimiseEffect::Scale] {
         let mut fixture = Fixture::start(spec(effect)).expect("fixture");
@@ -173,13 +172,64 @@ fn a_flying_window_takes_no_clicks() {
     );
 }
 
+/// The content's colour: an opaque magenta nothing else on the desktop has. A window fading into
+/// the dock shows it washed with black, `(a, 0, a)`, and the grey titlebar `(g, g, g)`, so the
+/// two can be told apart at any opacity.
+const CONTENT: u32 = 0xffff_00ff;
+
+/// How far from the output's corner the cursor (resting at the origin) reaches, in pixels.
+const CURSOR_REACH: u32 = 64;
+
+/// The left, top, right and bottom pixel of the pixels of `shot` that `is` accepts, off the
+/// cursor's corner; none when there are none.
+fn bounds(shot: &image::RgbaImage, is: impl Fn([u8; 4]) -> bool) -> Option<(u32, u32, u32, u32)> {
+    shot.enumerate_pixels()
+        .filter(|(x, y, pixel)| (*x >= CURSOR_REACH || *y >= CURSOR_REACH) && is(pixel.0))
+        .fold(None, |found, (x, y, _)| match found {
+            None => Some((x, y, x, y)),
+            Some((l, t, r, b)) => Some((l.min(x), t.min(y), r.max(x), b.max(y))),
+        })
+}
+
+/// What a frame of a window caught mid-flight must show, whatever the scale: the titlebar and
+/// the content are both drawn, the content lies inside the frame's width and below its top (a
+/// window whose frame shrinks while its content keeps its size would run past it), and under
+/// Scale the content is as wide as the frame and on the screen.
+fn assert_whole(shot: &image::RgbaImage, effect: MinimiseEffect, label: &str) {
+    let bar = bounds(shot, |p| p[0] == p[1] && p[1] == p[2] && p[0] > 0)
+        .unwrap_or_else(|| panic!("{label}: the titlebar is drawn"));
+    let content = bounds(shot, |p| p[1] == 0 && p[0] > 0 && p[0] == p[2])
+        .unwrap_or_else(|| panic!("{label}: the content is drawn"));
+    let (bar_left, bar_top, bar_right, _) = bar;
+    let (left, top, right, bottom) = content;
+    assert!(
+        left + 2 >= bar_left && right <= bar_right + 2,
+        "{label}: the content {content:?} lies inside the frame's width {bar:?}"
+    );
+    assert!(
+        top >= bar_top,
+        "{label}: the content {content:?} is under the titlebar {bar:?}"
+    );
+    if matches!(effect, MinimiseEffect::Scale) {
+        let (bar_width, width) = (bar_right - bar_left, right - left);
+        assert!(
+            bar_width.abs_diff(width) * 25 <= bar_width,
+            "{label}: the content is as wide as the frame: {width} against {bar_width}"
+        );
+        assert!(
+            bottom + 2 < shot.height(),
+            "{label}: the content {content:?} is on the screen, not running off it"
+        );
+    }
+}
+
 /// One window flown part of the way into the dock under `effect` on an output of `output`
 /// pixels at `dpi`, and the frame shot there.
 fn mid_flight(effect: MinimiseEffect, output: &str, dpi: Dpi) -> image::RgbaImage {
     let spec = spec(effect).with_outputs(&[output]);
     let mut fixture = Fixture::start(spec).expect("fixture");
     let mut desk = Desk::at(&mut fixture);
-    let top = desk.framed_window(APP, "Flying", (800, 500), Pattern::Gradient, dpi);
+    let top = desk.framed_window(APP, "Flying", (800, 500), Pattern::Solid(CONTENT), dpi);
     let window = only_window(desk.fixture);
     desk.fixture.advance(Duration::from_secs(1));
     top.set_minimized();
@@ -200,25 +250,36 @@ fn mid_flight(effect: MinimiseEffect, output: &str, dpi: Dpi) -> image::RgbaImag
     desk.fixture.shot(ShotTarget::Output(name))
 }
 
-/// cas-wave "Real-run checks: Minimise" (no seams at 1.5x and 2x): a frame of each effect caught
-/// part of the way in, at both scales, matches its golden. New goldens `minimise-<effect>-<scale>-mid`:
-/// bless and review that the genie's strips meet without a visible seam.
-#[test]
-#[ignore = "wave-6 follow-up: goldens not blessed yet; bless after the flight test passes"]
-fn a_window_mid_flight_has_no_seams_at_fractional_and_double_scale() {
-    let outputs = [
-        (
-            "1.5x",
-            "HEADLESS-1:2880x1620@60000:180:0,0",
-            Dpi::OneAndAHalf,
-        ),
-        ("2x", "HEADLESS-1:3840x2160@60000:240:0,0", Dpi::Two),
-    ];
-    for effect in [MinimiseEffect::Genie, MinimiseEffect::Scale] {
-        for (scale, output, dpi) in outputs {
-            let shot = mid_flight(effect, output, dpi);
-            let word = format!("{effect:?}").to_lowercase();
-            golden_matches(&format!("minimise-{word}-{scale}-mid"), &shot);
-        }
+/// The 1.5x and 2x outputs the mid-flight checks run on.
+const SCALED: [(&str, &str, Dpi); 2] = [
+    (
+        "1.5x",
+        "HEADLESS-1:2880x1620@60000:180:0,0",
+        Dpi::OneAndAHalf,
+    ),
+    ("2x", "HEADLESS-1:3840x2160@60000:240:0,0", Dpi::Two),
+];
+
+/// A frame of `effect` caught part of the way in, at 1.5x and 2x, shows the whole window
+/// (`assert_whole`) and matches its golden `minimise-<effect>-<scale>-mid`.
+fn whole_mid_flight(effect: MinimiseEffect) {
+    for (scale, output, dpi) in SCALED {
+        let shot = mid_flight(effect, output, dpi);
+        let word = format!("{effect:?}").to_lowercase();
+        assert_whole(&shot, effect, &format!("{word} {scale}"));
+        golden_matches(&format!("minimise-{word}-{scale}-mid"), &shot);
     }
+}
+
+/// cas-wave "Real-run checks: Minimise" (no seams at 1.5x and 2x), for Scale: the content shrinks
+/// with the frame.
+#[test]
+fn a_scale_flight_mid_way_is_whole_at_fractional_and_double_scale() {
+    whole_mid_flight(MinimiseEffect::Scale);
+}
+
+/// The same for the Genie: its strips meet without a visible seam.
+#[test]
+fn a_genie_flight_mid_way_is_whole_at_fractional_and_double_scale() {
+    whole_mid_flight(MinimiseEffect::Genie);
 }
