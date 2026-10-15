@@ -38,5 +38,5 @@ manifest="$root/casement-scene-css/Cargo.toml"
 if [ "$run" = no ]; then
   cargo test --manifest-path "$manifest" --locked --no-run
 else
-  cargo test --manifest-path "$manifest" --locked --test parity -- "${filter[@]}"
+  cargo test --manifest-path "$manifest" --locked --test parity -- ${filter[@]+"${filter[@]}"}
 fi
