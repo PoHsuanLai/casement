@@ -1,7 +1,6 @@
 //! casement's settings as typed values. The stored document and its schema live in the
 //! composition root (`casement/src/config/`, ds-settings); this is what it converts into.
 
-mod accessibility;
 mod bindings;
 mod gestures;
 mod gpu;
@@ -12,7 +11,6 @@ mod pointer;
 mod spaces;
 mod windows;
 
-pub use accessibility::{AccessibilitySettings, Transparency};
 pub use gestures::{GestureSettings, SwipeFingers};
 pub use gpu::GpuSettings;
 pub use keyboard::{KeyboardSettings, RepeatRate, XkbNames};
@@ -45,8 +43,6 @@ pub struct CasementSettings {
     pub gpu: GpuSettings,
     /// Night light.
     pub night_light: NightLightSettings,
-    /// Accessibility.
-    pub accessibility: AccessibilitySettings,
 }
 
 impl CasementSettings {
@@ -63,7 +59,6 @@ impl CasementSettings {
             gestures: GestureSettings::defaults(),
             gpu: GpuSettings::defaults(),
             night_light: NightLightSettings::defaults(),
-            accessibility: AccessibilitySettings::defaults(),
         }
     }
 }

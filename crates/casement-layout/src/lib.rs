@@ -30,10 +30,14 @@ pub use arrangement::{
     SlotKind, SpaceTarget, SpaceThumb, WindowTarget,
 };
 pub use ds_style::appearance::theme::{Scheme, Theme};
+pub use ds_style::appearance::transparency::Transparency;
 pub use ds_style::tokens::chrome::GroupHover;
 pub use frame::{frame_style, metrics as frame_metrics, pressed, scheme_of};
 pub use knobs::LayoutKnobs;
-pub use look::{overview_dim, overview_plate, overview_ring, split_backdrop, tile_preview_fill};
+pub use look::{
+    overview_dim, overview_plate, overview_ring, reduced_stand_in, split_backdrop,
+    tile_preview_fill,
+};
 pub use of_model::{spec_of, spec_of_framed};
 pub use rust_scene::{RustScene, zone_rect};
 pub use scene_layout::SceneLayout;

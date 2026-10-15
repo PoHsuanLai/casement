@@ -3547,23 +3547,26 @@ Built, uncompiled (wave 6 lanes do not build): `input/gesture_route.rs` (finger-
   `quire_shell_v1` (a `set_blur_strength` on a shell surface), not a change to ext-background-effect.
 - **Plumbing.** `LayerDraw::blur_strengths` (per layer, filled by `layers_on` from the model) reaches `layer_elements` as an argument;
   `behind`/`behind_scaled` take the `BlurLook`.
-- **Reduce transparency.** `accessibility.reduce_transparency` (`on`/`off`, default off; ds-settings label "Reduce transparency", page
-  Appearance, section Accessibility; there is no Accessibility page in `Page` yet). `AccessibilitySettings::transparency()` gives the
-  typed `Transparency { Full, Reduced }`; `LayerDraw::transparency` carries it and `under_transparency` (applied to the frame's
-  elements at the end of `output_elements`) makes every `BlurV0Element` `Reduced`. A reduced blur is not a framebuffer effect (no
-  capture, no passes), and on GLES its draw is `draw_stand_in` (the same path `EffectSupport::Plain` takes on pixman); its colour is
-  `REDUCED_STAND_IN`, a neutral grey at alpha 0.96, so a translucent tint over it reads as mostly solid in a light or a dark theme
-  (the compositor does not know the theme). The colour is a visual judgement, not measured. Live: `settings_live::followed` takes the
-  key from the file, `SettingsChanged` redraws every output, the element's commit includes the switch.
-- **Not done here.** The shell paints its own translucent tint (`--m-tint`) over the blur; quire's `appearance.transparency`
-  (design/27) is what makes the shell switch to `--m-tint-solid`. Until sill reads casement's key (or quire gains the setting and
-  writes it), the chrome stays its translucent tint over a grey instead of a blur. The vibrancy boost is quire's too.
-- **Goldens.** None changes: `Regular` is the old look and `Full` the old behaviour; no scene sets a role or the switch. Nothing
+- **Reduce transparency.** One desktop-wide setting, quire's `appearance.transparency` (`system` or `reduced`; a file without the key
+  is `system`), read from quire's `appearance.toml` the way `theme` is: `appearance::stored_in` at start, an `Input::Transparency` from
+  the file watch (live), `state.render.transparency` beside `state.render.scheme`. casement has no key of its own (an earlier cut of
+  this lane added `accessibility.reduce_transparency`; it is gone). `appearance::blur_finish(transparency, scheme)` makes the typed
+  `BlurFinish { Frosted, Solid(Rgba8) }`; `LayerDraw::finish` carries it and `under_finish` (applied to the frame's elements at the
+  end of `output_elements`) makes every `BlurV0Element` solid. A solid blur is not a framebuffer effect (no capture, no passes), and on
+  GLES its draw is `draw_stand_in` (the path `EffectSupport::Plain` takes on pixman). The colour is per scheme:
+  `casement_layout::reduced_stand_in(scheme)`, quire's `Paper` token (the Window material has no tint; its solid fallback is the page,
+  `#ECECEC` light, `#1E1E1E` dark) at alpha 245/255 (0.96, above quire's .94 floor, design/03 17.1). The element's commit includes the
+  colour, so a scheme change repaints. DEPENDS ON QUIRE: `ds_style::appearance::transparency::Transparency` (re-exported by
+  `casement-layout`) and `Appearance::transparency` do not exist until the quire lane lands, so casement-layout and casement do not
+  compile before then (the path follows `appearance::theme::Theme`; adjust the one `pub use` in `casement-layout/src/lib.rs` if quire
+  re-exports it elsewhere).
+- **Not done here.** The shell reads the same quire key itself for its own tints (`--m-tint-solid`); nothing for it lives in casement.
+- **Goldens.** None changes: `Regular` is the old look and `Frosted` the old behaviour; no scene sets a role or the finish. Nothing
   compiled or run in this lane (no builds allowed): the tests added are `a_strength_picks_its_look_and_a_stronger_one_blurs_wider` and
-  `a_reduced_blur_is_its_stand_in_and_a_new_commit` (`casement-render/tests/it/blur.rs`),
-  `a_shell_role_picks_the_strength_of_the_blur_behind_it` (`casement-core/tests/it/model_shell.rs`), the settings table in
-  `casement-core/src/settings/tests.rs` and `reduce_transparency_reaches_the_model_and_follows_the_file` (`casement/tests/it/config.rs`).
-  The GLES half (a reduced blur drawing the stand-in on llvmpipe) has no golden; a `blur-kawase-reduced-1x` golden is the follow-up
+  `a_solid_blur_is_its_colour_and_a_new_commit` (`casement-render/tests/it/blur.rs`),
+  `a_shell_role_picks_the_strength_of_the_blur_behind_it` (`casement-core/tests/it/model_shell.rs`), the stand-in colours
+  (`casement-layout/src/look.rs`), and the file and `blur_finish` tests in `casement/src/appearance.rs`.
+  The GLES half (a solid blur drawing the stand-in on llvmpipe) has no golden; a `blur-kawase-reduced-1x` golden is the follow-up
   for the orchestrator to bless.
 
 ## cas23-quit: quit, force quit, not responding (P3-QU, 2026-10-15)

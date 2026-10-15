@@ -107,17 +107,3 @@ fn outputs_in_the_skip_list_keep_their_own_curve_and_the_rest_warm() {
         "nothing is skipped by default"
     );
 }
-
-#[test]
-fn transparency_is_full_by_default_and_reduced_when_the_switch_is_on() {
-    let settings = CasementSettings::defaults().accessibility;
-    assert_eq!(settings.reduce_transparency, Enabled::Off);
-    assert_eq!(settings.transparency(), Transparency::Full);
-    for (switch, wanted) in [
-        (Enabled::Off, Transparency::Full),
-        (Enabled::On, Transparency::Reduced),
-    ] {
-        assert_eq!(AccessibilitySettings::new(switch).transparency(), wanted);
-    }
-    assert_eq!(Transparency::default(), Transparency::Full);
-}

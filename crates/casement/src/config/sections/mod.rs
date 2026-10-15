@@ -3,7 +3,6 @@
 //! the Settings app read; each section's `Default` is the model's own default through
 //! `convert`, so no default is written twice.
 
-mod accessibility;
 mod bindings;
 mod gestures;
 mod gpu;
@@ -16,7 +15,6 @@ mod touchpad;
 mod windows;
 mod xwayland;
 
-pub use accessibility::AccessibilitySection;
 pub use bindings::BindingsSection;
 pub use gestures::GesturesSection;
 pub use gpu::GpuSection;

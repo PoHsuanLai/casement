@@ -122,6 +122,9 @@ pub struct RenderState {
     pub light_dwell: casement_core::window::Dwell,
     /// The person's light or dark scheme, which the server-side frame is drawn in.
     pub scheme: casement_layout::Scheme,
+    /// Whether the person reduced transparency (quire's `appearance.transparency`): every blur is
+    /// drawn as its mostly opaque stand-in.
+    pub transparency: casement_layout::Transparency,
     /// The window titles' rasteriser (`casement-chrome`), made when the first server-side frame
     /// needs a title so a session without one never scans the fonts.
     pub titles: Option<casement_chrome::TitleRaster>,
@@ -347,6 +350,7 @@ impl State {
             light_arm: casement_core::window::LightArm::default(),
             light_dwell: casement_core::window::Dwell::default(),
             scheme: casement_layout::Scheme::default(),
+            transparency: casement_layout::Transparency::default(),
             titles: None,
             overview_hover: None,
             overview_drag: casement_core::overview_drag::Drag::Idle,

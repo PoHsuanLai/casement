@@ -2,9 +2,9 @@
 
 use super::ConfigError;
 use super::sections::{
-    AccessibilitySection, BindingsSection, GesturesSection, GpuSection, KeyboardSection,
-    NightLightSection, OutputsSection, PointerSection, SpacesSection, TouchpadSection,
-    WindowsSection, XwaylandSection,
+    BindingsSection, GesturesSection, GpuSection, KeyboardSection, NightLightSection,
+    OutputsSection, PointerSection, SpacesSection, TouchpadSection, WindowsSection,
+    XwaylandSection,
 };
 use super::version::Version;
 use crate::cli::ConfigHome;
@@ -40,8 +40,6 @@ pub struct CasementDoc {
     pub gpu: GpuSection,
     /// `night_light.*`.
     pub night_light: NightLightSection,
-    /// `accessibility.*`.
-    pub accessibility: AccessibilitySection,
     /// `xwayland.*` (older X11 apps; read at start).
     pub xwayland: XwaylandSection,
 }

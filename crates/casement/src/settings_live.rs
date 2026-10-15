@@ -6,9 +6,6 @@
 //! The night light follows as well (its mode, times, warmth, fade and the displays it leaves
 //! alone, which sill writes when it turns Night Shift on): the model re-drives every output.
 //!
-//! Reduce transparency follows as well (`accessibility.reduce_transparency`): the next frame
-//! draws every blur as its solid stand-in, or as the blur again.
-//!
 //! The keyboard layout follows too: a changed `keyboard.xkb_*` is compiled and put on the seat's
 //! keyboard (every bound client gets the new keymap, as an input-source change does on the Mac).
 //! A layout that does not compile keeps the old keymap, is reported once, and the model keeps
@@ -25,7 +22,7 @@ use ds_core::spawner::Spawner;
 use smithay::reexports::calloop::channel::{self, Event as ChannelEvent};
 
 /// `current` with the parts that follow the file taken from `doc`: the pointer's settings, the
-/// key repeat, the keyboard layout, the night light and Reduce transparency. Everything else, the keymap's bindings
+/// key repeat, the keyboard layout and the night light. Everything else, the keymap's bindings
 /// among it, stays.
 ///
 /// ```
@@ -42,7 +39,6 @@ pub fn followed(current: &CasementSettings, doc: &CasementDoc) -> CasementSettin
         pointer: read.pointer,
         gestures: read.gestures,
         night_light: read.night_light,
-        accessibility: read.accessibility,
         keyboard: KeyboardSettings {
             repeat_delay: read.keyboard.repeat_delay,
             repeat_rate: read.keyboard.repeat_rate,

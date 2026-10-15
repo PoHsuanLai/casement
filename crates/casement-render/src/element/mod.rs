@@ -43,7 +43,7 @@ pub use lock_cover::LockCoverElement;
 pub use overview::{OverviewLook, dim_elements, lift_last, ring_elements};
 pub use overview_icon::{IconPlace, OverviewIcon, icon_element, icon_place};
 pub use popup::{PopupRide, popup_elements, popup_elements_riding, popup_surfaces};
-pub use reduced::under_transparency;
+pub use reduced::{BlurFinish, under_finish};
 pub(crate) use rounded_clip::bake_corners;
 pub use rounded_clip::{ClipShape, RoundedClipElement};
 pub use shared::SharedElement;

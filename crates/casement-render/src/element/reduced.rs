@@ -1,25 +1,32 @@
-//! Reduce transparency (`accessibility.reduce_transparency`): the frame's blurs drawn as their
+//! Reduce transparency (quire's `appearance.transparency`): the frame's blurs drawn as their
 //! solid stand-ins.
 
-use super::CasementElement;
+use super::{CasementElement, Rgba8};
 use crate::compositor::Compositor;
-use casement_core::settings::Transparency;
 
-/// `elements` with every blur under `transparency`: unchanged at [`Transparency::Full`]; at
-/// [`Transparency::Reduced`] each blur becomes its mostly opaque stand-in (on any renderer, and
-/// with no framebuffer capture), so the setting takes effect on the next frame.
-pub fn under_transparency<R: Compositor>(
+/// How the frame's blurs are finished.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum BlurFinish {
+    /// A surface that asked for blur behind it gets the blur.
+    #[default]
+    Frosted,
+    /// No blur: the surface gets this mostly opaque colour (premultiplied) in its place.
+    Solid(Rgba8),
+}
+
+/// `elements` with every blur finished as `finish`: unchanged when [`BlurFinish::Frosted`]; when
+/// [`BlurFinish::Solid`] each blur becomes that colour (on any renderer, and with no framebuffer
+/// capture), so the setting takes effect on the next frame.
+pub fn under_finish<R: Compositor>(
     elements: Vec<CasementElement<R>>,
-    transparency: Transparency,
+    finish: BlurFinish,
 ) -> Vec<CasementElement<R>> {
-    match transparency {
-        Transparency::Full => elements,
-        Transparency::Reduced => elements
+    match finish {
+        BlurFinish::Frosted => elements,
+        BlurFinish::Solid(_) => elements
             .into_iter()
             .map(|element| match element {
-                CasementElement::Blur(blur) => {
-                    CasementElement::Blur(blur.with_transparency(transparency))
-                }
+                CasementElement::Blur(blur) => CasementElement::Blur(blur.with_finish(finish)),
                 other => other,
             })
             .collect(),

@@ -5,12 +5,12 @@
 //! effect shaders ([`crate::EffectSupport::Plain`]) it draws its solid stand-in. The type keeps
 //! its P0 name so the elements that hold it need not change.
 
+use super::reduced::BlurFinish;
 use super::solid::{Rgba8, fingerprint};
 use crate::pass::{BlurLook, KawasePlan};
 use crate::scene::OutputView;
 use crate::scene::convert::{on_output, ours, physical};
 use casement_core::geometry::{PhysicalRect, SubPoint, SubPx};
-use casement_core::settings::Transparency;
 use smithay::backend::renderer::element::{Element, Id, RenderElement};
 use smithay::backend::renderer::gles::{GlesError, GlesFrame};
 use smithay::backend::renderer::utils::{CommitCounter, DamageSet, OpaqueRegions};
@@ -30,16 +30,6 @@ pub(crate) const STAND_IN: Rgba8 = Rgba8 {
     g: 208,
     b: 208,
     a: 217,
-};
-
-/// What a blur draws in place of itself under Reduce transparency: a neutral mid grey at 0.96
-/// (premultiplied), so a translucent tint over it reads as mostly solid in a light theme and a
-/// dark one alike (the compositor does not know the theme). UNMEASURED: a visual judgement.
-pub(crate) const REDUCED_STAND_IN: Rgba8 = Rgba8 {
-    r: 122,
-    g: 122,
-    b: 122,
-    a: 245,
 };
 
 /// The namespace that tells a surface's blur from the surface's own element (same resource).
@@ -144,7 +134,7 @@ pub struct BlurV0Element {
     stand_in: Rgba8,
     alpha: f32,
     plan: KawasePlan,
-    transparency: Transparency,
+    finish: BlurFinish,
 }
 
 impl BlurV0Element {
@@ -157,40 +147,37 @@ impl BlurV0Element {
             stand_in,
             alpha: 1.0,
             plan: BlurLook::MATERIAL.plan(1.0),
-            transparency: Transparency::Full,
+            finish: BlurFinish::Frosted,
         }
     }
 
-    /// The same blur under `transparency`: reduced, it is not a blur at all but its mostly
-    /// opaque stand-in, on every renderer (nothing is captured from the framebuffer).
+    /// The same blur finished as `finish`: solid, it is not a blur at all but that colour, on
+    /// every renderer (nothing is captured from the framebuffer).
     ///
     /// ```
-    /// use casement_core::settings::Transparency;
-    /// use casement_render::{BlurV0Element, Rgba8};
+    /// use casement_render::{BlurFinish, BlurV0Element, Rgba8};
     /// use smithay::backend::renderer::element::{Element, Id};
     ///
     /// let black = Rgba8 { r: 0, g: 0, b: 0, a: 255 };
     /// let blur = BlurV0Element::new(Id::new(), Vec::new(), black);
     /// assert!(blur.is_framebuffer_effect());
-    /// assert!(!blur.with_transparency(Transparency::Reduced).is_framebuffer_effect());
+    /// let grey = Rgba8 { r: 122, g: 122, b: 122, a: 245 };
+    /// assert!(!blur.with_finish(BlurFinish::Solid(grey)).is_framebuffer_effect());
     /// ```
-    pub fn with_transparency(self, transparency: Transparency) -> BlurV0Element {
-        BlurV0Element {
-            transparency,
-            ..self
-        }
+    pub fn with_finish(self, finish: BlurFinish) -> BlurV0Element {
+        BlurV0Element { finish, ..self }
     }
 
-    /// Whether the blur is drawn or replaced by its stand-in.
-    pub fn transparency(&self) -> Transparency {
-        self.transparency
+    /// Whether the blur is drawn or replaced by a solid colour.
+    pub fn finish(&self) -> BlurFinish {
+        self.finish
     }
 
-    /// The colour the stand-in is drawn in: the one it was made with, or the reduced one.
+    /// The colour the stand-in is drawn in: the one it was made with, or the solid one.
     pub fn stand_in(&self) -> Rgba8 {
-        match self.transparency {
-            Transparency::Full => self.stand_in,
-            Transparency::Reduced => REDUCED_STAND_IN,
+        match self.finish {
+            BlurFinish::Frosted => self.stand_in,
+            BlurFinish::Solid(colour) => colour,
         }
     }
 
@@ -252,7 +239,7 @@ impl BlurV0Element {
             stand_in: self.stand_in,
             alpha: self.alpha,
             plan: self.plan,
-            transparency: self.transparency,
+            finish: self.finish,
         }
     }
 
@@ -367,7 +354,7 @@ impl Element for BlurV0Element {
                 .flat_map(i32::to_le_bytes)
         });
         let alpha = self.alpha.to_bits().to_le_bytes();
-        let finish = u8::from(self.transparency == Transparency::Reduced);
+        let finish = u8::from(self.finish != BlurFinish::Frosted);
         fingerprint(
             colour
                 .into_iter()
@@ -416,7 +403,7 @@ impl Element for BlurV0Element {
 
     /// Only a blur that is drawn reads the framebuffer; reduced, its stand-in reads nothing.
     fn is_framebuffer_effect(&self) -> bool {
-        self.transparency == Transparency::Full
+        self.finish == BlurFinish::Frosted
     }
 }
 

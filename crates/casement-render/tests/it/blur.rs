@@ -3,9 +3,8 @@
 
 use casement_core::geometry::PhysicalRect;
 use casement_core::layer::BlurStrength;
-use casement_core::settings::Transparency;
 use casement_render::pass::{BlurLook, KawasePlan, level_size};
-use casement_render::{BlurV0Element, Rgba8};
+use casement_render::{BlurFinish, BlurV0Element, Rgba8};
 use smithay::backend::renderer::element::{Element, Id};
 use smithay::utils::Scale;
 
@@ -211,33 +210,47 @@ fn a_strength_picks_its_look_and_a_stronger_one_blurs_wider() {
     assert!(reach(BlurStrength::Regular) < reach(BlurStrength::Strong));
 }
 
-/// Reduce transparency: the blur stops being a framebuffer effect, draws its mostly opaque
-/// stand-in whatever it was made with, and is a new commit (so the frame repaints at once).
+/// Reduce transparency: the blur stops being a framebuffer effect, draws the solid colour it was
+/// given whatever it was made with, and is a new commit (so the frame repaints at once).
 #[test]
-fn a_reduced_blur_is_its_stand_in_and_a_new_commit() {
+fn a_solid_blur_is_its_colour_and_a_new_commit() {
     let region = vec![PhysicalRect {
         x: 0,
         y: 0,
         w: 10,
         h: 10,
     }];
-    let full = BlurV0Element::new(Id::new(), region, STAND_IN);
-    let reduced = full.clone().with_transparency(Transparency::Reduced);
-    assert_eq!(full.transparency(), Transparency::Full);
-    assert_eq!(reduced.transparency(), Transparency::Reduced);
-    assert!(full.is_framebuffer_effect() && !reduced.is_framebuffer_effect());
-    assert_eq!(full.stand_in(), STAND_IN);
-    assert!(reduced.stand_in().a >= 245, "alpha at least 0.96");
-    assert!(full.current_commit() != reduced.current_commit());
-    let kept = reduced.remapped(|rect| [rect]);
+    let paper = Rgba8 {
+        r: 30,
+        g: 30,
+        b: 30,
+        a: 245,
+    };
+    let frosted = BlurV0Element::new(Id::new(), region, STAND_IN);
+    let solid = frosted.clone().with_finish(BlurFinish::Solid(paper));
+    assert_eq!(frosted.finish(), BlurFinish::Frosted);
+    assert_eq!(solid.finish(), BlurFinish::Solid(paper));
+    assert!(frosted.is_framebuffer_effect() && !solid.is_framebuffer_effect());
+    assert_eq!((frosted.stand_in(), solid.stand_in()), (STAND_IN, paper));
+    assert!(frosted.current_commit() != solid.current_commit());
+    let other = Rgba8 { r: 236, ..paper };
+    assert!(
+        solid.current_commit()
+            != solid
+                .clone()
+                .with_finish(BlurFinish::Solid(other))
+                .current_commit(),
+        "a new colour (the scheme changed) repaints"
+    );
+    let kept = solid.remapped(|rect| [rect]);
     assert_eq!(
-        kept.transparency(),
-        Transparency::Reduced,
+        kept.finish(),
+        BlurFinish::Solid(paper),
         "kept through a remap"
     );
     assert_eq!(
-        kept.with_transparency(Transparency::Full).current_commit(),
-        full.current_commit(),
+        kept.with_finish(BlurFinish::Frosted).current_commit(),
+        frosted.current_commit(),
         "switching back is the blur again"
     );
 }

@@ -4,12 +4,12 @@ pub(crate) mod convert;
 
 use crate::compositor::Compositor;
 use crate::element::{
-    CasementElement, ClipShape, ClosingFrame, FlightDraw, FrameDraw, GenieWindow, LockCoverElement,
-    OverviewIcon, OverviewLook, PopupRide, Rgba8, TilePreview, TitleDraw, choose, closing_elements,
-    cursor_elements, dim_elements, drawn_content, frame_elements, genie_window, icon_element,
-    icon_place, label_element, layer_elements, lift_last, popup_elements, popup_elements_riding,
-    ring_elements, shown_length, shown_outline, surface_origin_logical, tile_preview_elements,
-    under_transparency, window_content, window_elements,
+    BlurFinish, CasementElement, ClipShape, ClosingFrame, FlightDraw, FrameDraw, GenieWindow,
+    LockCoverElement, OverviewIcon, OverviewLook, PopupRide, Rgba8, TilePreview, TitleDraw, choose,
+    closing_elements, cursor_elements, dim_elements, drawn_content, frame_elements, genie_window,
+    icon_element, icon_place, label_element, layer_elements, lift_last, popup_elements,
+    popup_elements_riding, ring_elements, shown_length, shown_outline, surface_origin_logical,
+    tile_preview_elements, under_finish, window_content, window_elements,
 };
 use crate::element::{alpha, flight_ratio};
 use crate::texture_book::TextureBook;
@@ -17,7 +17,7 @@ use casement_core::geometry::{
     LogicalPoint, LogicalRect, LogicalSize, PhysicalRect, PhysicalSize, SubPoint,
 };
 use casement_core::layer::{Arranged, BlurStrength};
-use casement_core::settings::{MinimiseEffect, Transparency};
+use casement_core::settings::MinimiseEffect;
 use casement_core::window::FrameStyle;
 use casement_core::{LayerKey, OutputKey, WindowId};
 use casement_motion::{Flight, OutputFrame, PlacedWindow};
@@ -66,9 +66,9 @@ pub struct LayerDraw {
     pub titles: BTreeMap<WindowId, TitleDraw>,
     /// How a window in a minimise flight is drawn (`windows.minimise_effect`).
     pub minimise_effect: MinimiseEffect,
-    /// Whether blurs are drawn or replaced by their stand-ins
-    /// (`accessibility.reduce_transparency`).
-    pub transparency: Transparency,
+    /// Whether blurs are drawn or replaced by a solid colour (quire's
+    /// `appearance.transparency`, in the scheme in force).
+    pub finish: BlurFinish,
     /// How strongly the blur behind each layer surface frosts; a layer not in it is
     /// [`BlurStrength::Regular`].
     pub blur_strengths: BTreeMap<LayerKey, BlurStrength>,
@@ -384,7 +384,7 @@ pub fn output_elements<R: Compositor>(
     }
     draw_level(&layers.bottom, &mut elements, renderer);
     draw_level(&layers.background, &mut elements, renderer);
-    under_transparency(elements, layers.transparency)
+    under_finish(elements, layers.finish)
 }
 
 /// `placed` as Mission Control draws it, and the effect to draw it under: while the overview is
