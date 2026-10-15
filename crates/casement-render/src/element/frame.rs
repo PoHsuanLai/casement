@@ -383,10 +383,27 @@ fn shadow_elements<R: Compositor>(
                 )
                     .into(),
             );
+            let src = edge_inside(slice.piece, src);
             element(renderer, view, dest.origin, dest.size, src, faded, buffer)
                 .map(CasementElement::Memory)
         })
         .collect()
+}
+
+/// `src` (a piece's part of its tile, in the tile's pixels) with an edge strip's spare pixels
+/// along its length left out: the strip is drawn stretched from its middle pixel, so a filtering
+/// renderer never blends the strip's end with what lies beyond it (`shadow::STRIP_ACROSS`).
+fn edge_inside(piece: slices::Piece, src: Rectangle<f64, Logical>) -> Rectangle<f64, Logical> {
+    let pad = f64::from(shadow::STRIP_PAD);
+    let (along_x, along_y) = match piece {
+        slices::Piece::Edge(slices::Side::Top | slices::Side::Bottom) => (pad, 0.0),
+        slices::Piece::Edge(slices::Side::Left | slices::Side::Right) => (0.0, pad),
+        slices::Piece::Corner(_) => (0.0, 0.0),
+    };
+    Rectangle::new(
+        (src.loc.x + along_x, src.loc.y + along_y).into(),
+        (src.size.w - 2.0 * along_x, src.size.h - 2.0 * along_y).into(),
+    )
 }
 
 /// `buffer` drawn with its top-left at the global logical `origin`, stretched to `size`

@@ -96,6 +96,26 @@ impl StripPlan {
     }
 }
 
+/// The largest translation pixman's 16.16 fixed-point matrix holds, with a margin.
+const PIXMAN_FIXED_REACH: f64 = 32_000.0;
+
+/// Whether pixman can draw `src` of a texture into `dst`: it maps the destination back to the
+/// source through one fixed-point matrix whose translation is the destination's corner times
+/// the squeeze, and refuses the whole frame when that overflows. A genie strip squeezed to a
+/// pixel or two near the dock does (341 source columns into 1 at x 1440); such a strip covers
+/// next to nothing, so the plain renderers skip it and draw the rest of the flight.
+pub(crate) fn pixman_can_draw(
+    src: Rectangle<f64, BufferCoords>,
+    dst: Rectangle<i32, Physical>,
+) -> bool {
+    let fits = |corner: i32, from: f64, to: i32, offset: f64| {
+        to > 0
+            && (f64::from(corner).abs() * from / f64::from(to) + offset.abs()) < PIXMAN_FIXED_REACH
+    };
+    fits(dst.loc.x, src.size.w, dst.size.w, src.loc.x)
+        && fits(dst.loc.y, src.size.h, dst.size.h, src.loc.y)
+}
+
 /// `E` seen through a [`StripPlan`].
 pub struct StripElement<E> {
     id: Id,
@@ -234,6 +254,36 @@ mod tests {
             band,
             shift: (10, 20).into(),
             source: (100.0, 150.0),
+        }
+    }
+
+    #[test]
+    fn pixman_draws_a_strip_only_while_its_matrix_fits() {
+        let src =
+            |w: f64, h: f64| Rectangle::<f64, BufferCoords>::new((0.0, 0.0).into(), (w, h).into());
+        let dst = |x: i32, y: i32, w: i32, h: i32| {
+            Rectangle::<i32, Physical>::new((x, y).into(), (w, h).into())
+        };
+        // name, source, destination, drawable
+        let cases = [
+            ("at rest", src(800.0, 13.0), dst(200, 176, 800, 13), true),
+            ("halved", src(800.0, 13.0), dst(3000, 2000, 400, 13), true),
+            (
+                "squeezed by the dock",
+                src(341.0, 13.1),
+                dst(1438, 1615, 1, 2),
+                false,
+            ),
+            (
+                "seven wide at 1448",
+                src(341.0, 136.4),
+                dst(1448, 1609, 7, 24),
+                false,
+            ),
+            ("nothing wide", src(10.0, 10.0), dst(0, 0, 0, 10), false),
+        ];
+        for (name, src, dst, want) in cases {
+            assert_eq!(pixman_can_draw(src, dst), want, "{name}");
         }
     }
 

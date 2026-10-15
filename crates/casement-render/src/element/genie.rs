@@ -244,7 +244,7 @@ pub fn genie_window<R: Compositor>(
         flight,
         visual,
         front: memory(front),
-        surfaces: window_surfaces(&rest, (1.0, 1.0), view, book, renderer),
+        surfaces: window_surfaces(&rest, view, book, renderer),
         shadow: memory(back),
         blur,
         clip: clip_radius.map(|radius| ClipShape::of_content(content, radius, view)),

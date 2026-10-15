@@ -3564,6 +3564,43 @@ Written without a build or a wlcs run (rule of the lane); the orchestrator's run
 | `can_maximize_foreign_while_fullscreen` | `place` returned early for a full-screen window, so the fill was dropped. | `place`: Fill on a full-screen window replaces the state it returns to with Filled (xdg-shell: `set_maximized` while full screen takes effect when full screen ends); the window stays full screen. Same test. This also applies to the window's own `xdg_toplevel.set_maximized`. |
 | `text_input_enters_grabbing_popup`, `..._after_child_destroyed` | gmock `InSequence` chains the xdg helpers' `AnyNumber` expectations; a later call retires every earlier link, and the protocol's wire order (toplevel/popup configure, then xdg_surface.configure; wm_capabilities at creation) is the reverse of the chain. The keyboard `enter` was already in order. | Nothing in casement can fix it without dropping configures; the two rows are back on the expected-failures list as W14 with the reasoning. |
 
+## wave-2026-10-15/cas27-ignored: five scene tests that were ignored
+
+Written without a build or a run (rule of the lane); the orchestrator's run settles it.
+
+- **Restoring a minimised window now flies out of the dock** (code fix, `model/requests.rs`
+  `activate_window`). A window brought back by an activation (a click on its dock tile, `unset_minimized`,
+  xdg-activation) relaid out with `Cause::Configure`, which motion snaps (no travel, no flight), so the
+  window jumped back. It now relays out with `Cause::Minimise(target)` (the same tile it left for), which
+  motion already reverses (`retarget::Step::toward`, tested in `casement-motion`). macOS plays the genie in
+  reverse on restore; this is the plan's behaviour, not a departure.
+- The shadow and hover tests were wrong, not the code: the bare desktop is black and the shadow is black, so
+  a probe on the shadow read 0 against 0 (the scene tests now put a light wallpaper layer under the
+  window, `Desk::wallpaper`); a hovered light's middle pixel is the mark's ink (`#4d0000` on Close, chroma
+  77), so the colour is read beside the mark.
+
+### cas27-ignored, second pass (2026-10-16): what the blessed run showed
+
+Written without a build or a run (rule of the lane).
+
+- **A Scale flight (and Mission Control) drew the content at its full size inside a shrunk frame.** The flight2 and
+  overview notes say the tree is drawn "at the ratio" through `render_elements_from_surface_tree`'s `scale`; that
+  argument only places the subsurfaces, a surface element's size always comes from the scale the damage tracker
+  asks with (the output's). Fixed in `element/window.rs`: the tree is laid out at its real size and each surface
+  is wrapped in smithay's `RescaleRenderElement` about the window geometry's corner (new variant
+  `CasementElement::Stretched`); a clipped window's `RoundedClipElement` carries the same stretch (`.stretched`).
+  `popup_elements_riding` does the same for menus (its `ridden_corner` arithmetic is gone: the rescale about the
+  corner moves the popup by the ratio). `window_surfaces` lost its `ratio` argument.
+- **Edge strips of the shadow fade at their ends on pixman.** A strip was one pixel across and drawn stretched along
+  the edge; pixman filters a stretch bilinearly with nothing beyond the image, so the first and last half texel
+  blend with transparent: the shadow is half strength where a strip meets a corner tile (a visible step on a
+  light ground). Strips are now `STRIP_ACROSS` = 3 identical pixels across and drawn from the middle one
+  (`frame::edge_inside`), so the filter always finds the same pixel. GLES clamps and was not affected.
+- **Closing a framed toplevel in a test killed the client.** xdg-decoration says the decoration object goes before its
+  toplevel; smithay posts `orphaned` and the compositor drops the connection, so every surface of the client
+  (the wallpaper layer of the shadow test) vanished at once. `Desk::close` destroys the decoration first.
+- **Open: the Genie draws nothing on pixman** (the frame is the bare desktop and the cursor). Not found by reading;
+  see the lane report. `assert_whole` in `scene/minimise.rs` fails on it with a clear message.
 ## cas28-daily: force quit and X11 apps (2026-10-16)
 
 - **The hole this closes.** `Model::sole_clients_of` names a connection when every window on it
