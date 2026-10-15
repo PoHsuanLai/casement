@@ -16,7 +16,6 @@ use casement_core::geometry::{LogicalRect, PhysicalRect, PhysicalSize};
 use ds_core::geometry::scale::Scale;
 use ds_core::vocab::Fraction;
 use smithay::backend::allocator::Fourcc;
-use smithay::backend::renderer::Renderer;
 use smithay::backend::renderer::element::memory::{
     MemoryRenderBuffer, MemoryRenderBufferRenderElement,
 };
