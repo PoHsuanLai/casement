@@ -11,8 +11,6 @@
 //!   slots are checked only for covering exactly the windows that have a desktop target.
 //! - [`TILED`]: no spec holds a `Tiled` window (it needs `casement-protocols`, which this crate
 //!   does not depend on); `RustScene` gives it no target at all.
-//! - [`CASCADE_CYCLE`]: the cascade's cycle length is counted in Rust (`document/cascade.rs`), so
-//!   it is not checked against RustScene's.
 //! - [`CASCADE_STEP`]: every spec's cascade step is one positive length on both axes.
 //! - [`APP_EXPOSE`] and [`SHOW_DESKTOP`]: `RustScene` arranges them as plain desktops today
 //!   (they arrive with P3-Z), so they are generated and compared as such.
@@ -41,9 +39,6 @@ const SPREAD: &str = "mission-control spread";
 /// `WindowPlacement::Tiled` is not generated (a tile zone is a `casement-protocols` type).
 const TILED: &str = "tiled windows";
 
-/// The turn of a new window's cascade walk is computed by `CssScene` in Rust, not by CSS.
-const CASCADE_CYCLE: &str = "cascade cycle";
-
 /// Only equal positive cascade steps are generated (`scene.css` walks one length).
 const CASCADE_STEP: &str = "cascade step";
 
@@ -54,14 +49,7 @@ const APP_EXPOSE: &str = "app expose";
 const SHOW_DESKTOP: &str = "show desktop";
 
 /// The exclusions, by name.
-const EXCLUSIONS: [&str; 6] = [
-    SPREAD,
-    TILED,
-    CASCADE_CYCLE,
-    CASCADE_STEP,
-    APP_EXPOSE,
-    SHOW_DESKTOP,
-];
+const EXCLUSIONS: [&str; 5] = [SPREAD, TILED, CASCADE_STEP, APP_EXPOSE, SHOW_DESKTOP];
 
 /// How many specs.
 const SPECS: u64 = 500;

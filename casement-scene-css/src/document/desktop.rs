@@ -2,7 +2,6 @@
 //! and its spec as custom properties.
 
 use super::WindowNode;
-use super::cascade;
 use super::style::Props;
 use super::tree::Tree;
 use casement_layout::{LayoutKnobs, OutputSpec, SpaceSpec, WindowPlacement, WindowSpec};
@@ -49,10 +48,7 @@ fn describe(
             "win new",
             common
                 .size(asked)
-                .num(
-                    "turn",
-                    cascade::turn(output, window, asked, nth, cascade_step(knobs)),
-                )
+                .num("nth", nth)
                 .px("step", cascade_step(knobs)),
         ),
         WindowPlacement::Filled => ("win filled", common),

@@ -73,15 +73,19 @@ div {
   height: var(--full-h);
 }
 
-/* Just mapped: centred in the usable area, then --turn steps of --step further. --turn is how
-   many steps the walk has taken before it starts over at the centre; document/cascade.rs counts
-   it in Rust because the CSS form (mod() and round() with a variable step) did not lay out in
-   blitz (FINDINGS.md, the exclusions). */
+/* Just mapped: centred in the usable area, then --nth steps of --step further, the walk starting
+   over at the centre when one more step would leave the area (cascade.rs). The two axes share one
+   step, so the walk is one length: the room for whole steps on the tighter axis, plus one step,
+   is the period. */
 .new {
   --cx: calc(var(--ux) + round(down, calc((var(--uw) - var(--fw)) / 2), 1px));
   --cy: calc(var(--ty) + round(down, calc((var(--th) - var(--fh)) / 2), 1px));
-  left: calc(var(--cx) + var(--turn) * var(--step));
-  top: calc(var(--cy) + var(--turn) * var(--step));
+  --rx: calc(var(--ux) + var(--uw) - var(--cx) - var(--fw));
+  --ry: calc(var(--ty) + var(--th) - var(--cy) - var(--fh));
+  --period: calc(min(round(down, var(--rx), var(--step)), round(down, var(--ry), var(--step))) + var(--step));
+  --walk: mod(calc(var(--nth) * var(--step)), var(--period));
+  left: calc(var(--cx) + var(--walk));
+  top: calc(var(--cy) + var(--walk));
 }
 
 /* Split View: a row over the whole output (--ax/--ay/--aw/--ah): the leading half, the divider

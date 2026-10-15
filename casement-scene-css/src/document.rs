@@ -5,7 +5,6 @@
 //! a box's laid-out position is its global one. What each box is, and which node is which, is
 //! kept beside the DOM in [`OutputNodes`] so `read.rs` follows the spec's own order.
 
-mod cascade;
 mod desktop;
 mod split;
 mod style;
