@@ -87,7 +87,7 @@ enum Draw {
     /// One renderer builds the elements and draws them.
     Own(Shared),
     /// The render GPU draws a picture the scanout GPU composes.
-    Copy(Bridge),
+    Copy(Box<Bridge>),
 }
 
 /// One output's scanout surface.
@@ -160,7 +160,7 @@ impl RealScanout {
                 match Bridge::open((render, Rc::clone(&local)), gbm, (size, scale, transform)) {
                     // The picture is already scaled and turned: the compositor shows it as is.
                     Ok(bridge) => (
-                        Draw::Copy(bridge),
+                        Draw::Copy(Box::new(bridge)),
                         OutputModeSource::Static {
                             size,
                             scale: smithay::utils::Scale::from(1.0),
