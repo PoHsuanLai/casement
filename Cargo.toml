@@ -62,7 +62,8 @@ ds-behaviour = { path = "../quire/crates/ds-behaviour" }
 chordkit      = { git = "https://github.com/PoHsuanLai/chordkit.git", rev = "55a62b2366d6ee1994d95f7cb5a195217807099c" }
 keycap-client = { git = "https://github.com/PoHsuanLai/keycap", rev = "e4dd317c8d2ed7270d486197af6083c053298ebb" }
 # The stored settings document (C45, B13): casement and casement-ipc only.
-ds-settings = { path = "../quire/crates/ds-settings", default-features = false }
+# `quire-desktop`: the settings portal, so `theme = "system"` follows the desktop (wave-2026-10-15/chrome2 ask).
+ds-settings = { path = "../quire/crates/ds-settings", default-features = false, features = ["quire-desktop"] }
 
 # ---- From quire's pinned block (`docs/workspace-deps.toml`), copied verbatim: only the lines this
 # workspace names.
@@ -86,6 +87,12 @@ zbus = { version = "5.19", default-features = false, features = ["tokio"] }
 # the same majors.
 reis = "0.7"
 pipewire = "0.10"
+
+# ---- The text stack, for casement-chrome alone (B11, B15): parley lays out the window title with
+# fontique's system fonts, vello_cpu rasterises it. The versions are quire's (parley from its pinned
+# block, vello_cpu at the fork rev quire's Cargo.toml patches in), so one copy of each is built.
+parley    = { version = "0.11.1", default-features = false, features = ["std", "system"] }
+vello_cpu = { git = "https://github.com/PoHsuanLai/vello", rev = "3e43d4af1f1955f2efc2cd52e50350811a1386ca" }
 
 # ---- Not in quire's pinned block (FINDINGS: dependencies added here). taffy is the rev quire's
 # Cargo.lock resolves through Blitz (SP1, A14), named directly because casement-layout takes
