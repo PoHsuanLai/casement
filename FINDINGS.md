@@ -1889,11 +1889,8 @@ output".
   (`PresentOutcome::Unchanged`), `TtyBackend::present` now also draws the shadow's first frame on `Unchanged`
   (`Readback::draw_first`). Real run must prove: `grim` on the tty session returns within a frame or two on a static
   desktop, and the shadow frame is not stale-looking (it is drawn from the same scene source as the flip).
-- **Limits (departures).** `overlay_cursor` is ignored (the cursor is never painted, as with `CursorMode::Hidden`);
-  no `linux_dmabuf` offer (shm only); `copy_with_damage` waits for a frame newer than the same client's last of that
-  output and then reports the whole area as damaged (no per-region damage); a headless output whose scene is unchanged
-  presents no new frame, so a second `copy_with_damage` stays queued until something changes. `flags` is always 0 (rows
-  top first).
+- **Limits (departures).** No `linux_dmabuf` offer (shm only). `flags` is always 0 (rows top first). The cursor
+  and per-region damage limits this lane listed are closed in `wave-2026-10-15/capture2`.
 - **Privacy decision.** The existing policy already allows grim: output capture (`GlobalKind::ImageCapture`) is
   visible to the public socket, the agent tier and the shell, and hidden from sandboxes (I7); window capture is the same
   (P2-Q3). There is no consent step in either path today. I kept that, and gave `zwlr_screencopy_manager_v1` the same
@@ -1905,10 +1902,79 @@ output".
   out.png`, `grim -g "x,y wxh" out.png` (grim crops itself on the ext path and asks the compositor for the region on
   the wlr path; both are served), `grim -` to stdout. `slurp` needs `zwlr_layer_shell_v1` (already served).
 - **Tests.** `tests/it/protocol/screencopy.rs` (whole output equals the scanout frame; region crops at 1x and at 2x
-  logical pixels; region off the output fails; `copy_with_damage` reports the whole area; other output unaffected),
+  logical pixels; region off the output fails; `copy_with_damage` reports the whole area first; other output unaffected),
   `sandbox.rs` row, the globals golden row `zwlr_screencopy_manager_v1 3 screencopy`, the fuzz oracle's interface map;
   unit tests for `physical_region` and `CapturedFrame::cropped`; client `casement_testclient::capture::ScreenCopy`.
   Not covered here (needs a real seat): the tty first-frame hold.
+## wave-2026-10-15/capture2
+
+Nothing here compiled or ran (the lane does not build). Follow-ups to `wave-2026-10-15/capture`.
+
+- **The frame without the cursor.** Until now every capture was the scanout frame, cursor included (the capture
+  section's "the cursor is never painted" was wrong on headless and on the tty shadow: both draw the scene with the
+  cursor). `HeadlessBackend::present` now draws each frame a second time without the elements whose `Kind` is
+  `Cursor` (`headless/bare.rs`: a `BareLayer` of its own canvas and damage tracker per output, made with the first
+  frame, so the second render is incremental too) and keeps it as `PresentedFrame::bare` beside `pixels`. The tty
+  shadow is a `HeadlessBackend`, so it gets the same. Cost: a second render of every frame the headless backend
+  presents (jail, tests) and of every frame the shadow draws while a capture is open; nothing on a real seat with no
+  capture. If that is too dear, make `bare` lazy behind a `Watch`-like switch; the handlers only need `bare`
+  to be present when asked for.
+- **wlr `overlay_cursor`.** 0 reads `bare`, anything else reads `pixels` (`CursorPaint::from_overlay`, carried in
+  `PendingCopy::cursor`). `grim -c` is `overlay_cursor` 1. Region copies crop whichever frame was chosen. If a renderer
+  made no `bare` (the dummy renderer has no pixels at all), the frame with the cursor is served.
+- **ext `paint_cursors`.** `SessionRef::draw_cursor()` picks the same two frames. The existing behaviour changed: a
+  session without `paint_cursors` no longer shows the cursor (the spec says it must not). Tests that compare a
+  capture with the scanout now ask for `Painted` (`a_capture_equals_the_scanout_frame`, the wlr whole/region tests).
+  Window capture (`ext_foreign_toplevel_image_capture_source`) never had a cursor and ignores the option.
+- **ext cursor sessions** (`ext_image_copy_capture_cursor_session_v1`; smithay serves the wire,
+  `handlers/image_capture/cursor.rs` the content). Only output sources have one: a window source is stopped. After
+  every frame the output presents (`serve_captures`) and when the session is made, `sync` tells each session on the
+  output `enter`, `hotspot` and `position`, or `leave`. Position is the hotspot in the frame's pixels and the
+  hotspot event the offset inside the image, both at the output's scale (`casement_wayland::image_capture::place`,
+  pure and table-tested at 1x, 1.5x, 2x, under every transform and across two outputs). The image is the compositor's
+  own cursor raster at the output's scale (`casement_render::{cursor_face, cursor_pixels}`, the same raster the
+  element draws), announced as the session's buffer size and re-announced (the frame fails with
+  `buffer_constraints`) when the scale changes. A request is answered once and held until the pixels differ.
+  Departures: (1) a cursor a client drew itself (`CursorDraw::ClientSurface`) is placed and sized from its surface
+  view, but its frame fails (`unknown`): reading the client's buffer back is not done; (2) under a rotated output the
+  position is turned with the frame but the image is sent upright, the hotspot unturned; (3) the cursor's corner is
+  `round(position) - round(hotspot)` in physical pixels, which can differ by one pixel from where the element lands
+  at a fractional scale; (4) the session reports `enter` when any pixel of the image meets the frame, as the spec
+  says, not when the hotspot does.
+- **Real damage.** The renderer already tracks it: `render_output` returns the tracker's damage and the headless
+  backend now keeps it on each `PresentedFrame` (empty for a frame that re-showed the last). The composition root
+  notes every presented frame once into `ImageCapturePart::damage` (`DamageLogs`, per output: the last 32 frames with
+  damage, merged to one bounding box past 16 rectangles). Both protocols ask `since(output, the instant of the
+  client's last frame)`: `Whole` for a client's first frame or one older than the log, else the rectangles of the
+  newer frames, cut to the copied area and moved to its corner (`Since::within`).
+  - wlr `copy_with_damage` and every ext frame after a session's first now wait until the damage since the last
+    frame is not empty (the spec lets ext wait; wlr always waited). Headless presents a frame each vblank, so the old
+    rule ("a newer frame") answered every vblank; the new one answers on a change.
+  - Limits: the damage is the frame with the cursor's; a session that hides the cursor is still woken by pointer
+    movement (the frame it gets is unchanged). Damage is in the frame's own pixels, so a turned output reports it
+    turned like the frame (the transform event stays `normal`, as before). A tty shadow is dropped when no capture is
+    open, so a client that returns after a gap gets a whole frame (the new shadow's first frame is whole damage).
+- **wlr copies now watch the tty shadow.** `core_loop::tty::capture_watch` only looked at ext sessions, so a one-shot
+  `grim` on a real seat never got a shadow frame: its copy waited for a frame that was never drawn (the capture lane's
+  "likely actual cause" was only half fixed). It now also counts a waiting `zwlr_screencopy` copy
+  (`ScreencopyPart::wants`). Real run must prove: `grim` on the tty returns. A client that copies repeatedly
+  (`wf-recorder`) keeps the shadow only while a copy is queued; between two copies the shadow may be dropped and
+  redrawn (a whole frame each time) until a long-lived watch for screencopy is added.
+- **Tests.** Table tests: `DamageLog`/`Since` (accumulation, repeats, an old client, too many rectangles, the cut to an
+  area), `place` (scales 1, 1.5, 2, the eight transforms, partial overlap, two outputs, off the output),
+  `image_size`. Protocol tests (`image_capture.rs`, `screencopy.rs`): painted equals the scanout and hidden differs
+  only in the cursor's box, for ext and for wlr; a second ext/wlr frame waits and then reports the cursor's old and new
+  place; region damage is in region pixels; a cursor session's `enter`/`hotspot`/`position`/`leave` across two outputs;
+  position and hotspot at 1.5x; the cursor image frame (24 x 24 at 1x, an opaque body, a clear corner, not resent).
+  The test client got `OutputCapture::open_cursor`/`take_cursor_events`, `ScreenCopy::capture` takes a `CursorMode`
+  and `Copied::damage` lists every rectangle. Catalogue: `ext_output_image_capture_source_manager_v1`,
+  `ext_image_copy_capture_manager_v1` (and through it the cursor session) are roots now; the globals golden is
+  unchanged (no new global).
+- **Needs a real run.** `grim -c out.png` shows the arrow; plain `grim out.png` does not. A screencast (OBS through
+  the portal, ext path) shows no cursor unless it asks for one. A cursor session in a client that composites it
+  itself (a remote-desktop viewer) follows the pointer across two outputs and at a fractional scale. `grim` returns on
+  the tty.
+
 ## wave-2026-10-15/ssd
 
 Server-side decorations (the owner's first-login review: apps that draw no frame showed the client's grey bar). Written

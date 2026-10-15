@@ -1,6 +1,10 @@
 //! `ext_image_copy_capture_v1` as a client: a session on a source, one frame into a shared
 //! memory buffer, the events folded into a [`Frame`]. Filled by P1-C1.
 
+mod cursor;
+
+pub use cursor::CursorEvent;
+
 use super::output_source::NamedOutput;
 use crate::misc::idle::{pump_queue, side_queue};
 use crate::{ClientError, GlobalList, Pumped};
@@ -15,6 +19,7 @@ use std::os::fd::AsFd;
 use std::os::unix::fs::FileExt;
 use std::time::Duration;
 use wayland_client::protocol::wl_buffer::{self, WlBuffer};
+use wayland_client::protocol::wl_seat::WlSeat;
 use wayland_client::protocol::wl_shm::{self, Format, WlShm};
 use wayland_client::protocol::wl_shm_pool::{self, WlShmPool};
 use wayland_client::{Connection, Dispatch, EventQueue, QueueHandle, WEnum};
@@ -23,6 +28,7 @@ use wayland_protocols::ext::image_capture_source::v1::client::{
     ext_output_image_capture_source_manager_v1::ExtOutputImageCaptureSourceManagerV1,
 };
 use wayland_protocols::ext::image_copy_capture::v1::client::{
+    ext_image_copy_capture_cursor_session_v1::ExtImageCopyCaptureCursorSessionV1,
     ext_image_copy_capture_frame_v1::{self, ExtImageCopyCaptureFrameV1},
     ext_image_copy_capture_manager_v1::{self, ExtImageCopyCaptureManagerV1, Options},
     ext_image_copy_capture_session_v1::{self, ExtImageCopyCaptureSessionV1},
@@ -38,6 +44,7 @@ pub(super) struct Capturing {
     desktop: DesktopState,
     buffer: Option<Pending>,
     stopped: bool,
+    cursor_events: Vec<CursorEvent>,
 }
 
 /// The buffer a frame was asked into.
@@ -77,6 +84,7 @@ pub struct OutputCapture {
     shm: WlShm,
     copies: ExtImageCopyCaptureManagerV1,
     sources: ExtOutputImageCaptureSourceManagerV1,
+    seat: Option<WlSeat>,
     live: Option<Live>,
 }
 
@@ -84,6 +92,7 @@ pub struct OutputCapture {
 #[derive(Debug)]
 struct Live {
     source: ExtImageCaptureSourceV1,
+    cursor: Option<ExtImageCopyCaptureCursorSessionV1>,
     session: ExtImageCopyCaptureSessionV1,
     frame: Option<ExtImageCopyCaptureFrameV1>,
 }
@@ -104,6 +113,7 @@ impl OutputCapture {
         let shm = globals
             .bind::<WlShm, _, _>(&qh, 1..=1, ())
             .map_err(|_| missing("wl_shm"))?;
+        let seat = globals.bind::<WlSeat, _, _>(&qh, 1..=1, ()).ok();
         let mut state = Capturing::default();
         for global in globals.contents().clone_list() {
             if global.interface == "wl_output" {
@@ -130,6 +140,7 @@ impl OutputCapture {
             shm,
             copies,
             sources,
+            seat,
             live: None,
         })
     }
@@ -166,6 +177,7 @@ impl OutputCapture {
         let session = self.copies.create_session(&source, options, &qh, ());
         self.live = Some(Live {
             source,
+            cursor: None,
             session,
             frame: None,
         });
@@ -261,6 +273,9 @@ impl OutputCapture {
                 frame.destroy();
             }
             live.session.destroy();
+            if let Some(cursor) = live.cursor {
+                cursor.destroy();
+            }
             live.source.destroy();
         }
         flush(&self.connection)

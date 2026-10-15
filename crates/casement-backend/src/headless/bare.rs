@@ -4,7 +4,7 @@
 //! (with the cursor) is the scanout's.
 
 use super::output_set::tracker_of;
-use super::renderer::{Age, Canvas, Drawn, HeadlessRenderer};
+use super::renderer::{Canvas, Drawn, HeadlessRenderer};
 use super::{FrameSource, VirtualOutputSpec};
 use crate::backend::BackendError;
 use casement_render::{CasementElement, Compositor};

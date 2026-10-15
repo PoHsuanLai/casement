@@ -87,6 +87,8 @@ fn roots() -> Vec<&'static Interface> {
         ext::idle_notify::v1::client::ext_idle_notifier_v1::ExtIdleNotifierV1,
         ext::foreign_toplevel_list::v1::client::ext_foreign_toplevel_list_v1::ExtForeignToplevelListV1,
         ext::image_capture_source::v1::client::ext_foreign_toplevel_image_capture_source_manager_v1::ExtForeignToplevelImageCaptureSourceManagerV1,
+        ext::image_capture_source::v1::client::ext_output_image_capture_source_manager_v1::ExtOutputImageCaptureSourceManagerV1,
+        ext::image_copy_capture::v1::client::ext_image_copy_capture_manager_v1::ExtImageCopyCaptureManagerV1,
         ext::background_effect::v1::client::ext_background_effect_manager_v1::ExtBackgroundEffectManagerV1,
         ext::workspace::v1::client::ext_workspace_manager_v1::ExtWorkspaceManagerV1,
         wlr::layer_shell::v1::client::zwlr_layer_shell_v1::ZwlrLayerShellV1,
@@ -139,6 +141,10 @@ mod tests {
             "zwp_input_method_manager_v2",
             "wp_cursor_shape_manager_v1",
             "quire_window_manager_v1",
+            "zwlr_screencopy_manager_v1",
+            "ext_output_image_capture_source_manager_v1",
+            "ext_image_copy_capture_manager_v1",
+            "ext_image_copy_capture_cursor_session_v1",
         ] {
             assert!(lookup(name).is_some(), "{name} is not in the catalogue");
         }

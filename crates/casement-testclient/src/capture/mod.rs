@@ -13,7 +13,7 @@ pub mod output_source;
 pub mod screencopy;
 pub mod toplevel_source;
 
-pub use copy_session::{BufferAsk, OutputCapture};
+pub use copy_session::{BufferAsk, CursorEvent, OutputCapture};
 pub use desktop_client::capture::{CaptureFailure, CursorMode};
 pub use desktop_client::{Frame, Size};
 pub use screencopy::{Copied, CopyArea, CopyFailure, CopyKind, Offer, ScreenCopy};

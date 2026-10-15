@@ -84,6 +84,8 @@ A1: `Instant::now`, `SystemTime::now`, smithay's `Clock::now` and calloop's `Tim
 | who may have a `Shell` or `Agent` connection, and the socket pair | `casement-agent::{role_for, hand_out}` (the only hand-out, B14); inserted by `casement::connect`. Remote EIS socket for the portal's unit (`transom.service`): `casement-agent::open_remote_eis`, `Compositor1.ConnectEis`, fed by `casement::connect::answer_remote` |
 | `org.quire.Compositor1` | `casement-ipc::dbus::Compositor1` (the object), answered by `casement::connect::answer` |
 | the window a foreign-toplevel identifier names | `casement_wayland::foreign_toplevel_list::{identifier_of, window_of_identifier}` |
+| what changed on an output since a capture client's last frame | `casement_wayland::image_capture::{DamageLogs, Since}` (fed by `casement::handlers::serve_captures` from `PresentedFrame::damage`) |
+| where the pointer is on an output's frame, and the cursor's image for capture | `casement_wayland::image_capture::place`; `casement_render::{cursor_face, cursor_pixels}` |
 | a window's capture size and when it is captured | `casement_wayland::capture_source::{capture_size, ToplevelCaptureBook}` (damage gate) |
 | where windows go | `casement-layout` (`SceneLayout`, `RustScene`) |
 | how they travel there; the drawn frame | `casement-motion` (`retarget`, `sample`, `FrameScene`) |
