@@ -201,6 +201,60 @@ fn handle_requests_move_the_window_like_its_own_requests() {
     );
 }
 
+/// A minimised window asked to maximise or go full screen comes back from the dock and takes the
+/// state; a full-screen window asked to maximise stays full screen and is maximised when it leaves.
+#[test]
+fn a_state_asked_of_a_minimised_window_brings_it_back_and_a_fill_waits_out_full_screen() {
+    let (mut fixture, _id, _top, _buffer, mut watch, window) = listed_window();
+    let state = |fixture: &Fixture| fixture.model().windows()[&window].state.clone();
+
+    ask(&mut fixture, &mut watch, |watch| {
+        watch.minimize(0).expect("request")
+    });
+    ask(&mut fixture, &mut watch, |watch| {
+        watch.maximize(0).expect("request")
+    });
+    assert!(
+        matches!(state(&fixture), WindowState::Filled { .. }),
+        "out of the dock and maximised"
+    );
+
+    ask(&mut fixture, &mut watch, |watch| {
+        watch.minimize(0).expect("request")
+    });
+    ask(&mut fixture, &mut watch, |watch| {
+        watch.fullscreen(0).expect("request")
+    });
+    assert!(
+        matches!(state(&fixture), WindowState::FullScreen { .. }),
+        "out of the dock and full screen"
+    );
+
+    ask(&mut fixture, &mut watch, |watch| {
+        watch.unmaximize(0).expect("request")
+    });
+    ask(&mut fixture, &mut watch, |watch| {
+        watch.unfullscreen(0).expect("request")
+    });
+    ask(&mut fixture, &mut watch, |watch| {
+        watch.fullscreen(0).expect("request")
+    });
+    ask(&mut fixture, &mut watch, |watch| {
+        watch.maximize(0).expect("request")
+    });
+    assert!(
+        matches!(state(&fixture), WindowState::FullScreen { .. }),
+        "still full screen"
+    );
+    ask(&mut fixture, &mut watch, |watch| {
+        watch.unfullscreen(0).expect("request")
+    });
+    assert!(
+        matches!(state(&fixture), WindowState::Filled { .. }),
+        "maximised once it leaves full screen"
+    );
+}
+
 /// `set_rectangle` is stored for the minimise animation.
 #[test]
 fn the_minimise_rectangle_is_stored() {
