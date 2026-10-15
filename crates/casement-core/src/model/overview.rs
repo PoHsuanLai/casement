@@ -5,6 +5,10 @@
 //! then *open*; a leave (a pick, Escape, the same key again) makes it *leaving* until the
 //! windows have flown back, then *closed*. A pick raises and keys the window as a press on it
 //! would. While the overview is not closed, the edge keeps input from the windows.
+//!
+//! It also leaves by itself, with no pick and the same flight home, when what it shows is gone:
+//! a Space switch, the session locking, the last window of the shown Space closing. A window
+//! that arrives meanwhile is added to the overview instead (it gets a slot), as on the Mac.
 
 use super::Model;
 use super::moved::Moved;
@@ -17,7 +21,7 @@ use crate::lock::LockState;
 use crate::overview::Overview;
 use crate::shell::ShellNote;
 use crate::time::{Due, Mono, TimerKey};
-use casement_protocols::vocab::{MacMods, OverviewMode, Toggle};
+use casement_protocols::vocab::{MacMods, OverviewMode, Toggle, WindowRole};
 use std::time::Duration;
 
 /// How long the windows take to fly (the Mac's overview takes about this long): the time to
@@ -120,7 +124,28 @@ impl Model {
         }
     }
 
-    fn leave_overview(self, picked: Option<OverviewPick>) -> Moved {
+    /// Mission Control leaves with no pick when a window the person could see has closed and the
+    /// Space it was on, on an output in `outputs`, has no window left (a shell window, which is on
+    /// every Space, is not one). Nothing when the window was not seen, or Mission Control is not
+    /// up.
+    pub(super) fn leave_when_bare(self, outputs: &[OutputKey]) -> Moved {
+        let bare = outputs.iter().any(|output| self.is_bare(output));
+        match bare {
+            true => self.leave_overview(None),
+            false => Moved::of(self),
+        }
+    }
+
+    /// Whether no window is seen on `output`, shell windows apart.
+    fn is_bare(&self, output: &OutputKey) -> bool {
+        !self.windows.values().any(|window| {
+            window.role != WindowRole::Shell
+                && self.is_seen(window)
+                && self.output_of(window).as_ref() == Some(output)
+        })
+    }
+
+    pub(super) fn leave_overview(self, picked: Option<OverviewPick>) -> Moved {
         if !matches!(self.overview, Overview::Entering | Overview::Open) {
             return Moved::of(self);
         }

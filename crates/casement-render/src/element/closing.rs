@@ -77,6 +77,7 @@ pub fn closing_elements<R: Compositor>(
         style: &closing.style,
         title,
         content,
+        full: content.size,
         opacity: placed.opacity,
     };
     let (front, back) = frame_elements(placed.window, draw, view, book, renderer);

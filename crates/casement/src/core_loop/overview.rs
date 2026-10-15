@@ -14,9 +14,10 @@ use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::input::InputEvent;
 use casement_core::overview::Overview;
 use casement_core::{OverviewPick, WindowId};
-use casement_layout::Scheme;
+use casement_layout::{Scheme, overview_dim, overview_ring};
 use casement_render::{
-    CursorDraw, CursorShape, OutputView, OverviewDraw, OverviewHover, TitleDraw,
+    CursorDraw, CursorShape, OutputView, OverviewDraw, OverviewHover, OverviewLook, Rgba8,
+    TitleDraw, shown_length,
 };
 use ds_core::vocab::Activity;
 
@@ -44,18 +45,24 @@ pub(super) fn escape_leaves(state: &State) -> bool {
     )
 }
 
-/// The window whose slot, with its frame above it, holds `at`; the front-most one.
+/// The window whose slot, with its frame above it, holds `at`; the front-most one. The frame is
+/// shrunk with the window, so the part above the slot is the titlebar's height at the slot's
+/// scale (the window's size on the desktop is the target the layout kept for it).
 pub(super) fn window_at(state: &State, at: LogicalPoint) -> Option<WindowId> {
     let reserves = frames::reserves(state);
-    state
-        .core
-        .arrangement
+    let arrangement = &state.core.arrangement;
+    arrangement
         .overview
         .iter()
         .rev()
         .find(|slot| {
+            let full = arrangement
+                .windows
+                .iter()
+                .find(|target| target.window == slot.window)
+                .map_or(slot.rect.size, |target| target.rect.size);
             let bar = reserves.get(&slot.window).copied().unwrap_or(0);
-            reach(slot.rect, bar).contains(at)
+            reach(slot.rect, shown_length(bar, slot.rect.size, full)).contains(at)
         })
         .map(|slot| slot.window)
 }
@@ -135,7 +142,12 @@ pub(super) fn draw(state: &mut State, view: &OutputView) -> OverviewDraw {
             window,
             label: label_of(state, window, view),
         });
-    OverviewDraw::On { hover }
+    let scheme = state.render.scheme;
+    let look = OverviewLook::new(
+        Rgba8::from(overview_dim(scheme)),
+        Rgba8::from(overview_ring(scheme)),
+    );
+    OverviewDraw::On { hover, look }
 }
 
 /// `window`'s title as a label under its slot: as wide as the slot, within bounds.

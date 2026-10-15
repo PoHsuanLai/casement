@@ -17,7 +17,9 @@ impl Model {
     /// The lock moved.
     pub(super) fn lock_event(self, event: LockEvent) -> Moved {
         match (self.lock.clone(), event) {
-            (LockState::Unlocked, LockEvent::Requested { .. }) => self.begin_lock(),
+            (LockState::Unlocked, LockEvent::Requested { .. }) => {
+                self.begin_lock().then(|model| model.leave_overview(None))
+            }
             (LockState::LockedWithoutSurface, LockEvent::Requested { .. }) => self
                 .with_lock(LockState::Locked {
                     surfaces: LockSurfaces::Pending,

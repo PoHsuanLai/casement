@@ -68,6 +68,7 @@ impl Model {
             .with(Effect::RequestFrames(output))
             .then(|model| model.feed(input))
             .then(move |model| model.choice_unless_on(&shown))
+            .then(|model| model.leave_overview(None))
     }
 
     /// `output` shows the Space `step` names, when the row has one there.

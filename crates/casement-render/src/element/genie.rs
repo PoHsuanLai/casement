@@ -232,6 +232,7 @@ pub fn genie_window<R: Compositor>(
                 style,
                 title,
                 content,
+                full: content.size,
                 opacity: placed.opacity,
             };
             frame_elements(placed.window, draw, view, book, renderer)

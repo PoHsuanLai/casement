@@ -160,7 +160,7 @@ fn shadow(scheme: Scheme) -> [ShadowLayer; 2] {
 }
 
 /// A token's value as a straight-alpha colour.
-fn colour(value: Colour) -> FrameColour {
+pub(crate) fn colour(value: Colour) -> FrameColour {
     match value {
         Colour::Solid(hex) => FrameColour {
             r: hex.0[0],

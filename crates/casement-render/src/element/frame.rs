@@ -7,6 +7,7 @@
 mod raster;
 mod shadow;
 mod shadow_set;
+mod shrink;
 mod slices;
 mod title;
 
@@ -15,6 +16,8 @@ pub(crate) use shadow::Tiles;
 pub(crate) use shadow_set::{ShadowKey, ShadowSet, WholeShadow, key as shadow_key};
 pub(crate) use slices::MARGIN as SHADOW_MARGIN;
 pub use title::TitleDraw;
+
+use shrink::Shrink;
 
 /// The tiles of `look`'s shadow at `scale`.
 pub(crate) fn shadow_tiles(look: &FrameLook, scale: Scale) -> Tiles {
@@ -29,7 +32,7 @@ use crate::scene::convert::{on_output, sub_of};
 use crate::texture_book::TextureBook;
 use casement_core::WindowId;
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize, buffer_size};
-use casement_core::window::{FrameLook, FrameStyle};
+use casement_core::window::{FrameGeometry, FrameLook, FrameMetrics, FrameStyle};
 use ds_core::geometry::scale::Scale;
 use ds_core::vocab::Fraction;
 use smithay::backend::allocator::Fourcc;
@@ -46,8 +49,12 @@ pub struct FrameDraw<'a> {
     pub style: &'a FrameStyle,
     /// The window's title raster, when there is one.
     pub title: Option<&'a TitleDraw>,
-    /// Where the window's content is, global logical pixels.
+    /// Where the window's content is drawn, global logical pixels.
     pub content: LogicalRect,
+    /// The size the content really has. When `content` is smaller (Mission Control shows the
+    /// window shrunk), the frame is drawn at this size and shrunk with it: titlebar, lights,
+    /// title and shadow, as one picture. The same as `content.size` for a frame at its own size.
+    pub full: LogicalSize,
     /// The window's opacity, which the frame takes.
     pub opacity: Fraction,
 }
@@ -56,7 +63,8 @@ pub struct FrameDraw<'a> {
 /// Nothing for the part that is off this output. The first list goes in front of the window's
 /// surfaces (the title, then the titlebar and the lights), the second behind them (the shadow).
 /// `title`, when there is one, is laid over the titlebar. Both are drawn at the window's `opacity`,
-/// so a window that fades in, or out into the dock, takes its frame with it.
+/// so a window that fades in, or out into the dock, takes its frame with it. A `content` smaller
+/// than `full` shrinks the whole frame by the same factor.
 pub fn frame_elements<R: Compositor>(
     window: WindowId,
     draw: FrameDraw<'_>,
@@ -68,15 +76,21 @@ pub fn frame_elements<R: Compositor>(
         style,
         title,
         content,
+        full,
         opacity,
     } = draw;
     let faded = alpha(opacity);
-    let geometry = style.around(content);
-    let bar = geometry.titlebar();
-    let outline = geometry.outline();
+    let shrink = Shrink::of(full, content.size);
+    let geometry = style.around(LogicalRect::new(content.origin, full));
+    // The frame as it is rastered (`bar`, `outline`, at its own size) and where it is drawn.
+    let (bar, outline) = (geometry.titlebar(), geometry.outline());
+    let seen = Seen {
+        bar: placed_about(shrink, content.origin, bar),
+        outline: placed_about(shrink, content.origin, outline),
+    };
     let front: Vec<CasementElement<R>> = view
         .area
-        .intersection(&bar)
+        .intersection(&seen.bar)
         .and_then(|_| {
             let buffer = book.cache().frame(
                 (
@@ -98,8 +112,8 @@ pub fn frame_elements<R: Compositor>(
             element(
                 renderer,
                 view,
-                bar.origin,
-                bar.size,
+                seen.bar.origin,
+                seen.bar.size,
                 whole(pixels.w, pixels.h),
                 faded,
                 &buffer,
@@ -108,28 +122,107 @@ pub fn frame_elements<R: Compositor>(
         .map(CasementElement::Memory)
         .into_iter()
         .collect();
-    let front = title_element(window, (style, title), &bar, faded, view, book, renderer)
-        .into_iter()
-        .chain(front)
-        .collect();
-    let back = shadow_elements(window, (style, outline), faded, (view, book), renderer);
+    let front = title_element(
+        window,
+        (style, title),
+        (&bar, &seen.bar),
+        faded,
+        view,
+        book,
+        renderer,
+    )
+    .into_iter()
+    .chain(front)
+    .collect();
+    let drawn_outline = LogicalRect::new(seen.outline.origin, outline.size);
+    let back = shadow_elements(
+        window,
+        (style, drawn_outline, shrink),
+        faded,
+        (view, book),
+        renderer,
+    );
     (front, back)
 }
 
-/// The title laid over the titlebar `bar`: the same size and place as the titlebar's raster, so
-/// the pixels line up one to one. Nothing for no title, a title that is not that size, or a bar
-/// off this output.
+/// The outline (titlebar and content) of a frame with `metrics` round `content`, a window whose
+/// own size is `full`, as [`frame_elements`] draws it: the frame shrunk with the window, about
+/// the content's top-left corner. The same as the frame's own outline when `content` is `full`.
+///
+/// ```
+/// use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
+/// use casement_core::window::FrameMetrics;
+/// use casement_render::shown_outline;
+///
+/// let metrics = FrameMetrics::new(28, 12, 8, 13, 4, 12);
+/// let at = LogicalPoint { x: 100, y: 200 };
+/// let full = LogicalSize { w: 800, h: 600 };
+/// let half = LogicalSize { w: 400, h: 300 };
+/// let outline = shown_outline(metrics, LogicalRect::new(at, half), full);
+/// // The titlebar is 14 px at half size: the outline starts 14 px above the content.
+/// assert_eq!(outline, LogicalRect::new(LogicalPoint { x: 100, y: 186 }, LogicalSize { w: 400, h: 314 }));
+/// ```
+pub fn shown_outline(
+    metrics: FrameMetrics,
+    content: LogicalRect,
+    full: LogicalSize,
+) -> LogicalRect {
+    let shrink = Shrink::of(full, content.size);
+    let outline = FrameGeometry::new(metrics, LogicalRect::new(content.origin, full)).outline();
+    placed_about(shrink, content.origin, outline)
+}
+
+/// `length` (a radius, a titlebar's height) of a frame whose window of `full` size is drawn at
+/// `drawn`: shrunk with it, to the nearest pixel.
+///
+/// ```
+/// use casement_core::geometry::LogicalSize;
+/// use casement_render::shown_length;
+///
+/// let full = LogicalSize { w: 800, h: 600 };
+/// assert_eq!(shown_length(10, LogicalSize { w: 400, h: 300 }, full), 5);
+/// assert_eq!(shown_length(10, full, full), 10);
+/// ```
+pub fn shown_length(length: u32, drawn: LogicalSize, full: LogicalSize) -> u32 {
+    u32::try_from(Shrink::of(full, drawn).length(i64::from(length))).unwrap_or(0)
+}
+
+/// Where the frame's parts are drawn: the titlebar and the outline, shrunk about the content's
+/// corner.
+struct Seen {
+    bar: LogicalRect,
+    outline: LogicalRect,
+}
+
+/// `rect` (a part of the frame at its own size) drawn shrunk about `corner`, the content's
+/// top-left: a part is placed by its offset from the corner.
+fn placed_about(shrink: Shrink, corner: LogicalPoint, rect: LogicalRect) -> LogicalRect {
+    let offset = |at: i32, from: i32| at.saturating_sub(from);
+    let relative = LogicalRect::new(
+        LogicalPoint {
+            x: offset(rect.origin.x, corner.x),
+            y: offset(rect.origin.y, corner.y),
+        },
+        rect.size,
+    );
+    shrink.about(corner, relative)
+}
+
+/// The title laid over the titlebar: made for `bars.0`, the titlebar at its own size, and drawn
+/// into `bars.1`, where the titlebar is drawn (smaller in Mission Control), so the pixels line up
+/// with the titlebar's raster. Nothing for no title, a title that is not that size, or a bar off
+/// this output.
 fn title_element<R: Compositor>(
     window: WindowId,
     (style, title): (&FrameStyle, Option<&TitleDraw>),
-    bar: &LogicalRect,
+    (bar, drawn): (&LogicalRect, &LogicalRect),
     faded: f32,
     view: &OutputView,
     book: &TextureBook,
     renderer: &mut R,
 ) -> Option<CasementElement<R>> {
     let title = title?;
-    view.area.intersection(bar)?;
+    view.area.intersection(drawn)?;
     let pixels = buffer_size(bar.size, view.scale);
     if (title.width, title.height) != (pixels.w, pixels.h) {
         return None;
@@ -156,8 +249,8 @@ fn title_element<R: Compositor>(
     element(
         renderer,
         view,
-        bar.origin,
-        bar.size,
+        drawn.origin,
+        drawn.size,
         whole(pixels.w, pixels.h),
         faded,
         &buffer,
@@ -218,24 +311,28 @@ fn whole(w: u32, h: u32) -> Rectangle<f64, Logical> {
 
 /// The window's shadow: its tiles drawn round `outline` (relative to the outline's corner, as
 /// `slices` places them). The same eight tiles serve every size of window, so a window being
-/// resized changes only the elements' places and sizes.
+/// resized changes only the elements' places and sizes. `outline` has the frame's own size and
+/// the corner it is drawn at; `shrink` draws every piece shrunk about that corner.
 fn shadow_elements<R: Compositor>(
     window: WindowId,
-    (style, outline): (&FrameStyle, LogicalRect),
+    (style, outline, shrink): (&FrameStyle, LogicalRect, Shrink),
     faded: f32,
     (view, book): (&OutputView, &TextureBook),
     renderer: &mut R,
 ) -> Vec<CasementElement<R>> {
     let margin = i32::try_from(slices::MARGIN).unwrap_or(0);
-    let reach = LogicalRect::new(
-        LogicalPoint {
-            x: outline.origin.x.saturating_sub(margin),
-            y: outline.origin.y.saturating_sub(margin),
-        },
-        LogicalSize {
-            w: outline.size.w + 2 * slices::MARGIN,
-            h: outline.size.h + 2 * slices::MARGIN,
-        },
+    let reach = shrink.about(
+        outline.origin,
+        LogicalRect::new(
+            LogicalPoint {
+                x: -margin,
+                y: -margin,
+            },
+            LogicalSize {
+                w: outline.size.w + 2 * slices::MARGIN,
+                h: outline.size.h + 2 * slices::MARGIN,
+            },
+        ),
     );
     if view.area.intersection(&reach).is_none() {
         return Vec::new();
@@ -268,13 +365,7 @@ fn shadow_elements<R: Compositor>(
     slices::slices(outline.size, set.inner())
         .into_iter()
         .filter_map(|slice| {
-            let dest = LogicalRect::new(
-                LogicalPoint {
-                    x: outline.origin.x.saturating_add(slice.dest.origin.x),
-                    y: outline.origin.y.saturating_add(slice.dest.origin.y),
-                },
-                slice.dest.size,
-            );
+            let dest = shrink.about(outline.origin, slice.dest);
             view.area.intersection(&dest)?;
             let (buffer, raster) = set.of(slice.piece);
             let tile = slices::tile_size(slice.piece, set.inner());
@@ -320,4 +411,88 @@ fn element<R: Compositor>(
         Kind::Unspecified,
     )
     .ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use casement_core::geometry::PhysicalSize;
+
+    fn view(scale: u32) -> OutputView {
+        OutputView {
+            area: LogicalRect::new(LogicalPoint { x: 0, y: 0 }, LogicalSize { w: 1280, h: 720 }),
+            scale: Scale(scale),
+            mode: PhysicalSize { w: 1280, h: 720 },
+        }
+    }
+
+    const METRICS: fn() -> FrameMetrics = || FrameMetrics::new(28, 12, 8, 13, 4, 12);
+
+    /// `rect` as the element for it lands: its corner on the output's pixels and its size in them.
+    fn physical(rect: LogicalRect, view: &OutputView) -> (i32, i32, u32, u32) {
+        let corner = on_output(sub_of(rect.origin), view);
+        let size = buffer_size(rect.size, view.scale);
+        (corner.x, corner.y, size.w, size.h)
+    }
+
+    #[test]
+    fn a_shrunk_frame_is_drawn_into_the_scaled_rectangles_at_1x_and_2x() {
+        let at = LogicalPoint { x: 100, y: 200 };
+        let full = LogicalSize { w: 800, h: 600 };
+        let content = LogicalRect::new(at, LogicalSize { w: 400, h: 300 });
+        let shrink = Shrink::of(full, content.size);
+        let geometry = FrameGeometry::new(METRICS(), LogicalRect::new(at, full));
+        let bar = placed_about(shrink, at, geometry.titlebar());
+        let outline = shown_outline(METRICS(), content, full);
+        // name, scale (120ths), the bar and the outline on the output's pixels
+        let cases = [
+            ("1x", 120, (100, 186, 400, 14), (100, 186, 400, 314)),
+            ("2x", 240, (200, 372, 800, 28), (200, 372, 800, 628)),
+        ];
+        for (name, scale, want_bar, want_outline) in cases {
+            let view = view(scale);
+            assert_eq!(physical(bar, &view), want_bar, "{name} bar");
+            assert_eq!(physical(outline, &view), want_outline, "{name} outline");
+        }
+    }
+
+    #[test]
+    fn a_frame_at_its_own_size_is_where_it_always_was() {
+        let at = LogicalPoint { x: 100, y: 200 };
+        let size = LogicalSize { w: 800, h: 600 };
+        let content = LogicalRect::new(at, size);
+        let want = FrameGeometry::new(METRICS(), content);
+        assert_eq!(shown_outline(METRICS(), content, size), want.outline());
+        assert_eq!(
+            placed_about(Shrink::of(size, size), at, want.titlebar()),
+            want.titlebar()
+        );
+    }
+
+    #[test]
+    fn the_shrunk_shadow_reaches_a_shrunk_margin_round_the_shrunk_outline() {
+        let full = LogicalSize { w: 800, h: 600 };
+        let outline = LogicalRect::new(
+            LogicalPoint { x: 100, y: 186 },
+            LogicalSize { w: 800, h: 628 },
+        );
+        let shrink = Shrink::of(full, LogicalSize { w: 400, h: 300 });
+        let margin = i32::try_from(slices::MARGIN).unwrap_or(0);
+        let reach = shrink.about(
+            outline.origin,
+            LogicalRect::new(
+                LogicalPoint {
+                    x: -margin,
+                    y: -margin,
+                },
+                LogicalSize {
+                    w: outline.size.w + 2 * slices::MARGIN,
+                    h: outline.size.h + 2 * slices::MARGIN,
+                },
+            ),
+        );
+        // 80 px of margin is 40 shrunk, on every side of the (400 x 314) drawn outline.
+        assert_eq!(reach.origin, LogicalPoint { x: 60, y: 146 });
+        assert_eq!(reach.size, LogicalSize { w: 480, h: 394 });
+    }
 }

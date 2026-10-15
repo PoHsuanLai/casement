@@ -2,9 +2,9 @@
 //! window of the shown Space shrunk by one common factor and laid out without overlap, in whole
 //! numbers, below a strip the shell fills with the Spaces bar.
 //!
-//! A window's slot holds its content; a server-side frame reaches `reserve` logical pixels
-//! above it at its own size (the frame is not scaled), so the box laid out is the scaled
-//! content plus that reserve.
+//! A window's slot holds its content; a server-side frame reaches `reserve` logical pixels above
+//! it at the window's own size, and the renderer draws the frame scaled with the window, so the
+//! box laid out is the scaled content plus the scaled reserve.
 
 use super::spread_fit::{Cell, held, push_apart, shelf, start};
 use crate::{LayoutKnobs, OverviewSlot, SlotKind};
@@ -119,6 +119,12 @@ impl<'a> Ruler<'a> {
         (i64::from(side) * scale / WHOLE).max(1)
     }
 
+    /// The frame's reserve at `scale`, rounded up so the scaled frame (which the renderer rounds
+    /// to nearest) always fits the box.
+    fn reserved(reserve: u32, scale: i64) -> i64 {
+        (i64::from(reserve) * scale + WHOLE - 1) / WHOLE
+    }
+
     /// Each cell's size at `scale`: the scaled content, the frame's reserve and the gap.
     fn sizes(&self, scale: i64) -> Vec<(i64, i64)> {
         self.entries
@@ -126,7 +132,9 @@ impl<'a> Ruler<'a> {
             .map(|e| {
                 (
                     Self::scaled(e.rect.size.w, scale) + self.gap,
-                    Self::scaled(e.rect.size.h, scale) + i64::from(e.reserve) + self.gap,
+                    Self::scaled(e.rect.size.h, scale)
+                        + Self::reserved(e.reserve, scale)
+                        + self.gap,
                 )
             })
             .collect()
@@ -186,7 +194,7 @@ impl<'a> Ruler<'a> {
                 };
                 let at = LogicalPoint {
                     x: whole(cell.x + half),
-                    y: whole(cell.y + half + i64::from(e.reserve)),
+                    y: whole(cell.y + half + Self::reserved(e.reserve, scale)),
                 };
                 let rect = LogicalRect::new(at, size);
                 OverviewSlot {
@@ -272,6 +280,46 @@ mod tests {
         let (slots, _) = spread(&[framed], USABLE, &knobs());
         assert!(
             slots[0].rect.origin.y >= 24 + 112 + 28,
+            "{:?}",
+            slots[0].rect
+        );
+    }
+
+    #[test]
+    fn the_frame_reserve_shrinks_with_the_window() {
+        let framed = Entry {
+            reserve: 28,
+            ..entry(1, rect(0, 0, 1000, 600))
+        };
+        let entries = [framed];
+        let ruler = Ruler::of(&entries, &knobs());
+        // name, scale (millionths), the box's height: content + reserve + the gap of 24
+        let cases = [
+            ("whole", 1_000_000, 600 + 28 + 24),
+            ("half", 500_000, 300 + 14 + 24),
+            ("a third rounds up", 333_333, 199 + 10 + 24),
+            ("a tenth", 100_000, 60 + 3 + 24),
+        ];
+        for (name, scale, want) in cases {
+            assert_eq!(ruler.sizes(scale)[0].1, want, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_shrunk_window_keeps_only_its_scaled_frame_above_the_slot() {
+        // Too big for the area at its own size, so it shrinks; the frame above the slot is then
+        // less than the full 28 px.
+        let framed = Entry {
+            reserve: 28,
+            ..entry(1, rect(0, 0, 1800, 1400))
+        };
+        let (slots, _) = spread(&[framed], USABLE, &knobs());
+        let scale_ppm = i64::from(slots[0].rect.size.w) * 1_000_000 / 1800;
+        assert!(scale_ppm < 700_000, "{scale_ppm}");
+        let bar = Ruler::reserved(28, scale_ppm);
+        assert!((1..28).contains(&bar), "{bar}");
+        assert!(
+            i64::from(slots[0].rect.origin.y) >= 24 + 112 + bar,
             "{:?}",
             slots[0].rect
         );
