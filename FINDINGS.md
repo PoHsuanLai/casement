@@ -2026,3 +2026,29 @@ without a compiler (wave rule); the orchestrator builds.
   and `from_buffer` argument types copied from the cursor), `light_state`/`LightFill`/`Shown` matches (a `non_exhaustive`
   would need a wildcard). Real run: a foot window shows the bar, lights (grey when inactive, marks on hover), shadow; drag
   moves; double click zooms; edges resize; click on the red light closes; a Qt app that insists on client-side keeps its bar.
+
+## wave-2026-10-15/fork
+
+Written without a build or a run (wave rules); the orchestrator pushes the fork, moves the rev and runs wlcs. Fork branch
+`lane/wlcs-w3-w4-w7` from 9c8f762a, one commit per group.
+
+| Group | Fork change | wlcs tests that should now pass |
+|---|---|---|
+| W3 | `handlers/wm_base.rs`, `GetXdgSurface`: `xdg_wm_base.role` when `compositor::get_role` is some; `invalid_surface_state` when the surface has a buffer in its pending or current `SurfaceAttributes` or in the renderer's `RendererSurfaceStateUserData` (the renderer takes the committed buffer out of the attributes). | `creating_xdg_surface_from_wl_surface_with_{existing_role,attached_buffer,committed_buffer}_is_an_error` |
+| W4 | `handlers/surface/toplevel.rs` `send_creation_capabilities`, called from `get_toplevel`: the capabilities event only, version >= 5. `XdgToplevelSurfaceRoleAttributes::capabilities_sent` makes the first configure repeat it only if `new_toplevel` changed the set. | `XdgToplevelStableTest.wm_capabilities_are_sent` |
+| W7 | `compositor/placement.rs` (`Placements`, `SubsurfacePlacements`): `set_position` goes to the parent's pending state; `commit` takes it; `merge_into` writes the child's current `SubsurfaceCachedState::location`. `SubsurfaceCachedState` no longer carries a position through the child's own commit. `PrivateSurfaceData::commit` takes only the transaction a sync child holds; `commit_sync_surface_tree` is removed. Unit tests in `placement.rs`. | `subsurface_does_not_move_when_parent_not_committed`, `desync_subsurface_moves_when_only_parent_committed`, `subsurface_with_sync_parent_does_not_move_when_only_grandparent_committed`, `subsurface_does_not_move_when_grandparent_commit_is_before_sync_parent_commit` |
+
+Kept in `dev/wlcs/expected-failures.txt`, with reasons there (9 rows left):
+
+- `attaching_buffer_to_unconfigured_xdg_surface_is_an_error`: wlcs attaches and roundtrips with no commit and expects `unconfigured_buffer` at the attach. The XML puts it at the first configure/commit and smithay checks it in the commit; `wl_surface.attach` is smithay's compositor module and has no xdg knowledge. No patch.
+- `destroying_toplevel_before_decoration_throws_orphaned`: the decoration XML defines `orphaned` in `zxdg_toplevel_decoration_v1`'s enum; wlcs expects it on the manager. Smithay already raises it on the decoration. No patch.
+- `place_above_simple`, `place_below_simple`: wlcs-side (a focus no compositor can give).
+
+Departures and edges:
+
+- The text-input order: no configure is sent at creation. The capabilities event precedes the first configure, as the XML requires ("once before the first xdg_surface.configure").
+- A `set_position` of a subsurface whose role object was destroyed (parent unset) is dropped; one that was already queued in the old parent may still write that surface's location when the old parent commits (harmless, the next parent resets the position at its own commit).
+- Locking: `Placed::place` takes the child's surface lock while the parent's is held (inside `Transaction::apply`); that is the parent-then-child order the rest of the tree code uses.
+- A fresh get_xdg_surface on a wl_surface whose earlier xdg_surface was destroyed (role already xdg_toplevel/popup) is now `xdg_wm_base.role`, as the XML says; a client that reuses a wl_surface this way would be disconnected.
+
+To check in a real run: wlcs counts (expect 8 more passes, 9 listed); the casement-testkit protocol tests (`xdg_shell` goldens filter `wm_capabilities`; `subcompositor-tree.txt` has no positions); the fuzz box (`get_xdg_surface` on a surface with a role or buffer now disconnects the client; the fuzz oracle should treat it as a clean protocol error); a real client with subsurfaces (a video player, a browser) still moves its subsurfaces after the parent's commit.

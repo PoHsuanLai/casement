@@ -9,7 +9,9 @@
 # 37 fail; before that (P0-layer-geom): 829 pass, 65 fail; before that: 596 pass, 298 fail. The list
 # may only shrink. Lane wlcs of wave 2026-10-15 removed six rows (17 left): the two text-input
 # ordering tests, the three decoration configure tests and the W9 touch test; unrun until the
-# orchestrator's wlcs run confirms them.
+# orchestrator's wlcs run confirms them. Lane fork of wave 2 (smithay fork patches, written without a
+# build or a run) removed eight more (9 left): the three xdg_wm_base `get_xdg_surface` error tests (W3),
+# `wm_capabilities_are_sent` (W4) and the four subsurface position tests (W7).
 # `CopyCutPaste.given_source_has_offered_when_sink_gets_focus_it_sees_offer` failed now and then in a
 # 12-way shard run: the shim activated a mapped window a pass after the commit that mapped it, and a
 # client that set the selection right after its roundtrip could be ahead of that (11 failures in 300
@@ -33,24 +35,21 @@
 # W1 (layer-shell) and W2 (xdg window geometry) were fixed by P0-layer-geom, W5 (wl_surface.enter and
 #     leave) by P0-output-enter, W6 by P0-dead-focus; they have no entries left. W8, W10 and W13 were
 #     fixed by P0-popups (FINDINGS.md "P0-popups"). The ids stay unused so the other rows keep names.
-# W3: smithay answers differently from the protocol or from wlcs, and only a smithay fork patch
-#     changes it; not a casement bug.
-#       - xdg_wm_base error tests: smithay raises no error for get_xdg_surface on a surface that has a
-#         role or a buffer, and attaching_buffer_to_unconfigured is the very rule the A37 relaxation
-#         switches off for wlcs.
-#     Not reachable from casement: smithay answers get_xdg_surface itself and offers no hook for it
-#     (the request creates the xdg_surface and nothing calls the handler), so the error has to be
-#     raised in the fork (wayland/shell/xdg/handlers/wm_base.rs, Request::GetXdgSurface: `role` when
-#     compositor::get_role(&surface) is some, `invalid_surface_state` when the surface has a
-#     buffer attached or committed). attaching_buffer_to_unconfigured also expects the error at the
-#     attach, before any commit, where the protocol raises it at the commit.
+# W3: the three get_xdg_surface error tests (role, attached buffer, committed buffer) are FIXED in the
+#     smithay fork (wm_base.rs, GetXdgSurface: `role` and `invalid_surface_state` on the xdg_wm_base).
+#     Kept:
+#       - attaching_buffer_to_unconfigured_xdg_surface_is_an_error: the test attaches the buffer and
+#         roundtrips with no commit, and expects `unconfigured_buffer` on the attach. The XML says
+#         the error is for a surface that "has a buffer attached before the first configure" and
+#         smithay checks it where a buffer takes effect, in the commit (wl_surface.attach itself
+#         is smithay's compositor module and knows nothing of xdg). It is also the very rule the
+#         A37 relaxation switches off for wlcs. Casement and the fork both raise it at the commit.
 #     The zero-size anchor (set_anchor_rect), the fractional-scale and viewporter error objects, the
 #     viewporter bad_size hook and out_of_buffer are FIXED in the fork (P0-smithay, branch
-#     casement-textinput; FINDINGS.md "P0-smithay"); only the xdg_wm_base rows above remain.
+#     casement-textinput; FINDINGS.md "P0-smithay").
 # W4: wlcs-side expectations that contradict the protocol XML; not a casement bug.
-#       - xdg_toplevel.wm_capabilities is expected after a roundtrip with no commit. The protocol sends
-#         it with the first configure, which follows the first commit (xdg-shell.xml: once before the
-#         first xdg_surface.configure).
+#       - xdg_toplevel.wm_capabilities_are_sent: FIXED in the fork (the event goes out at get_toplevel,
+#         version 5 and up, capabilities only; no configure, which would break the text-input order).
 #       - XdgDecorationV1Test.set_mode_client/server and unset_mode "results in a configure event"
 #         were W4 too: the toplevel never commits, so no xdg_surface.configure is due yet. FIXED in
 #         the shim's policy (casement::relax, `testing` only): under the lenient policy the initial
@@ -58,27 +57,16 @@
 #         configure event can be sent at any time"). Not listed.
 #       - XdgDecorationV1Test.destroying_toplevel_before_decoration_throws_orphaned: wlcs expects the
 #         error on zxdg_decoration_manager_v1; xdg-decoration-unstable-v1.xml defines `orphaned` in
-#         zxdg_toplevel_decoration_v1's own enum, and smithay raises it there.
+#         zxdg_toplevel_decoration_v1's own enum, and smithay raises it there. Kept: moving it to the
+#         manager would break the XML to satisfy the test.
 # W7: subsurface tests on an xdg parent. Diagnosed 2026-10-15 from subsurfaces.cpp and smithay's
-#     wayland/compositor (tree.rs, handlers.rs); all six are in smithay, none in casement:
-#       - wl_subsurface.set_position is kept in the SUBSURFACE's own double-buffered state and applies
-#         when that surface commits (cached while it is sync). The protocol applies it with the
-#         PARENT's next commit ("takes effect whenever the state of the parent surface is applied").
-#         desync_subsurface_moves_when_only_parent_committed (parent commits, the position must apply)
-#         and subsurface_does_not_move_when_parent_not_committed (the desync child commits, the
-#         position must not apply) fail on that.
-#       - PrivateSurfaceData::commit calls commit_sync_surface_tree for a sync child of a non-sync
-#         parent, which commits the whole sync subtree's PENDING state, a position nobody committed
-#         included. So a grandchild's set_position applies at the toplevel's commit
-#         (sync_parent_does_not_move_when_only_grandparent_committed, and
-#         does_not_move_when_grandparent_commit_is_before_sync_parent_commit, whose order is the
-#         same bug seen from the other side).
-#       Fix in the fork: take location out of SubsurfaceCachedState into a cacheable of the PARENT
-#       (child id -> position), applied when the parent's state is, and have commit_sync_surface_tree
-#       move only what a surface committed. place_below_simple and place_above_simple are a
-#       different matter: both assert the focused surface is neither of the two subsurfaces that
-#       cover the pointer (Ne(a), Ne(b)), which no compositor that gives a subsurface the pointer can
-#       satisfy; wlcs-side, kept as such.
+#     wayland/compositor. FIXED in the fork (compositor/placement.rs, tree.rs): wl_subsurface.set_position
+#     is state of the PARENT (cached with the parent's commit, applied with the parent's state, so a
+#     grandchild needs its parent's and then its grandparent's commit), and a sync child of a non-sync
+#     parent takes only what the child committed, not its pending state. The four position tests are no
+#     longer listed. Kept: place_below_simple and place_above_simple both assert the focused surface is
+#     neither of the two subsurfaces that cover the pointer (Ne(a), Ne(b)), which no compositor that
+#     gives a subsurface the pointer can satisfy; wlcs-side.
 # W8: FIXED by P0-popups: popup grabs (a release, a press, a key or a touch is the proof, if it is the
 #     client's latest input), the grab of a nested popup with its parent's serial, popup_done when
 #     another toplevel is activated, the pointer's leave when a popup is destroyed under it, reactive
@@ -119,14 +107,6 @@ PrimarySelection.sink_can_request  # W12
 PrimarySelection.source_can_supply_request  # W12
 PrimarySelection.source_sees_request  # W12
 XdgDecorationV1Test.destroying_toplevel_before_decoration_throws_orphaned  # W4
-XdgShellStableSubsurfaces/SubsurfaceMultilevelTest.subsurface_does_not_move_when_grandparent_commit_is_before_sync_parent_commit/0  # W7
-XdgShellStableSubsurfaces/SubsurfaceMultilevelTest.subsurface_with_sync_parent_does_not_move_when_only_grandparent_committed/0  # W7
-XdgShellStableSubsurfaces/SubsurfaceTest.desync_subsurface_moves_when_only_parent_committed/0  # W7
 XdgShellStableSubsurfaces/SubsurfaceTest.place_above_simple/0  # W7
 XdgShellStableSubsurfaces/SubsurfaceTest.place_below_simple/0  # W7
-XdgShellStableSubsurfaces/SubsurfaceTest.subsurface_does_not_move_when_parent_not_committed/0  # W7
 XdgSurfaceStableTest.attaching_buffer_to_unconfigured_xdg_surface_is_an_error  # W3
-XdgSurfaceStableTest.creating_xdg_surface_from_wl_surface_with_attached_buffer_is_an_error  # W3
-XdgSurfaceStableTest.creating_xdg_surface_from_wl_surface_with_committed_buffer_is_an_error  # W3
-XdgSurfaceStableTest.creating_xdg_surface_from_wl_surface_with_existing_role_is_an_error  # W3
-XdgToplevelStableTest.wm_capabilities_are_sent  # W4
