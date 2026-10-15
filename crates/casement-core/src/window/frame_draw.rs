@@ -2,10 +2,11 @@
 //! `casement-layout` makes it from quire's tokens; `casement-render` draws it. Nothing here
 //! knows a token or a renderer.
 
-use super::frame::{FrameGeometry, Light};
+use super::frame::{FrameGeometry, FrameMetrics, Light};
+use crate::geometry::LogicalRect;
 
 /// A colour with straight (not premultiplied) alpha.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct FrameColour {
     /// Red.
     pub r: u8,
@@ -18,7 +19,7 @@ pub struct FrameColour {
 }
 
 /// What one light looks like.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct LightDraw {
     /// The disc.
     pub fill: FrameColour,
@@ -29,7 +30,7 @@ pub struct LightDraw {
 }
 
 /// One layer of the window's shadow: a blurred copy of the outline.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ShadowLayer {
     /// How far down it falls, in logical pixels.
     pub dy: i32,
@@ -41,11 +42,9 @@ pub struct ShadowLayer {
     pub colour: FrameColour,
 }
 
-/// A frame ready to draw.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FrameDraw {
-    /// Where its parts are.
-    pub geometry: FrameGeometry,
+/// How a frame looks, apart from where it is: the key a raster is cached under.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct FrameLook {
     /// The window's corner radius, in logical pixels.
     pub radius: u32,
     /// The titlebar's ground.
@@ -58,7 +57,7 @@ pub struct FrameDraw {
     pub shadow: [ShadowLayer; 2],
 }
 
-impl FrameDraw {
+impl FrameLook {
     /// `light`'s look.
     pub fn light(&self, light: Light) -> LightDraw {
         match light {
@@ -66,5 +65,22 @@ impl FrameDraw {
             Light::Minimise => self.lights[1],
             Light::Zoom => self.lights[2],
         }
+    }
+}
+
+/// A frame ready to place: its lengths and its look. The window's place comes at draw time,
+/// from the motion sample.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameStyle {
+    /// Its lengths.
+    pub metrics: FrameMetrics,
+    /// Its look.
+    pub look: FrameLook,
+}
+
+impl FrameStyle {
+    /// The frame round `content`.
+    pub fn around(&self, content: LogicalRect) -> FrameGeometry {
+        FrameGeometry::new(self.metrics, content)
     }
 }

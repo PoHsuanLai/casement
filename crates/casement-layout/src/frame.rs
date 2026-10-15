@@ -1,15 +1,14 @@
 //! The window frame casement draws for a client that asked for a server-side one, read from
 //! quire's tokens: the chrome lengths, the colour table, `light_state`'s reveal rule. Pure; the
-//! renderer draws the [`FrameDraw`] this makes.
+//! renderer draws the [`FrameStyle`] this makes.
 //!
 //! Three values are not reachable from quire's pure crates as numbers yet, so they are written
 //! here with the token they mirror and an ask for quire (FINDINGS "wave-2026-10-15/ssd"): the
 //! window radius (`--r-window`, a CSS string), the shadow (`--shadow-window`, a CSS string) and
 //! the three light hues (stylesheet-only candy colours).
 
-use casement_core::geometry::LogicalRect;
 use casement_core::window::{
-    FrameColour, FrameDraw, FrameGeometry, FrameMetrics, LightDraw, ShadowLayer,
+    FrameColour, FrameLook, FrameMetrics, FrameStyle, LightDraw, ShadowLayer,
 };
 use ds_core::vocab::{Activity, Shown};
 use ds_style::appearance::theme::Scheme;
@@ -41,27 +40,24 @@ pub fn metrics() -> FrameMetrics {
     )
 }
 
-/// The frame round `content`, as it looks in `scheme` for a window in `activity` with the
-/// pointer as `hover` says.
-pub fn frame_draw(
-    content: LogicalRect,
-    scheme: Scheme,
-    activity: Activity,
-    hover: GroupHover,
-) -> FrameDraw {
+/// The frame as it looks in `scheme` for a window in `activity` with the pointer as `hover`
+/// says.
+pub fn frame_style(scheme: Scheme, activity: Activity, hover: GroupHover) -> FrameStyle {
     let state = light_state(activity, hover);
     let token = |token: ColourToken| colour(token.value(scheme));
     let ground = match activity {
         Activity::Active => ColourToken::Paper,
         Activity::Inactive => ColourToken::Surface2,
     };
-    FrameDraw {
-        geometry: FrameGeometry::new(metrics(), content),
-        radius: WINDOW_RADIUS,
-        titlebar: token(ground),
-        rule: token(ColourToken::Line),
-        lights: HUES.map(|(hue, ink)| light(state, hue, ink, scheme)),
-        shadow: shadow(scheme),
+    FrameStyle {
+        metrics: metrics(),
+        look: FrameLook {
+            radius: WINDOW_RADIUS,
+            titlebar: token(ground),
+            rule: token(ColourToken::Line),
+            lights: HUES.map(|(hue, ink)| light(state, hue, ink, scheme)),
+            shadow: shadow(scheme),
+        },
     }
 }
 
@@ -152,12 +148,7 @@ fn darker(of: FrameColour) -> FrameColour {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use casement_core::geometry::{LogicalPoint, LogicalSize};
     use casement_core::window::Light;
-
-    fn content() -> LogicalRect {
-        LogicalRect::new(LogicalPoint { x: 0, y: 40 }, LogicalSize { w: 300, h: 200 })
-    }
 
     #[test]
     fn the_metrics_are_the_chrome_tokens() {
@@ -201,25 +192,20 @@ mod tests {
             ),
         ];
         for (name, activity, hover, coloured, marked) in CASES {
-            let draw = frame_draw(content(), Scheme::Light, *activity, *hover);
+            let draw = frame_style(Scheme::Light, *activity, *hover);
             for light in Light::ALL {
-                let look = draw.light(light);
+                let look = draw.look.light(light);
                 assert_eq!(look.mark.is_some(), *marked, "{name} mark");
             }
-            let red = draw.light(Light::Close).fill;
+            let red = draw.look.light(Light::Close).fill;
             assert_eq!(red == rgb(0xFF5F57), *coloured, "{name} fill");
         }
     }
 
     #[test]
     fn an_inactive_titlebar_is_lighter() {
-        let key = frame_draw(content(), Scheme::Light, Activity::Active, GroupHover::Away);
-        let idle = frame_draw(
-            content(),
-            Scheme::Light,
-            Activity::Inactive,
-            GroupHover::Away,
-        );
-        assert!(idle.titlebar.r > key.titlebar.r);
+        let key = frame_style(Scheme::Light, Activity::Active, GroupHover::Away);
+        let idle = frame_style(Scheme::Light, Activity::Inactive, GroupHover::Away);
+        assert!(idle.look.titlebar.r > key.look.titlebar.r);
     }
 }

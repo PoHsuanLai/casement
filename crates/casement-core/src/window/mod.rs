@@ -14,7 +14,7 @@ mod title;
 mod window;
 
 pub use frame::{FrameGeometry, FrameHit, FrameMetrics, Light};
-pub use frame_draw::{FrameColour, FrameDraw, LightDraw, ShadowLayer};
+pub use frame_draw::{FrameColour, FrameLook, FrameStyle, LightDraw, ShadowLayer};
 pub use hints::{A11yRoot, FirstMouse, FrameHint, WindowHints};
 pub use limits::{MaxSize, SizeLimits};
 pub use request::WlrToplevelRequest;

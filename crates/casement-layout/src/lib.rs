@@ -36,7 +36,7 @@ pub use arrangement::{
     Arrangement, ConfigureNeed, LayoutReport, OverviewSlot, SlotKind, SpaceTarget, SpaceThumb,
     WindowTarget,
 };
-pub use frame::{WINDOW_RADIUS, frame_draw, metrics as frame_metrics};
+pub use frame::{WINDOW_RADIUS, frame_style, metrics as frame_metrics};
 pub use knobs::LayoutKnobs;
 pub use of_model::spec_of;
 pub use rust_scene::RustScene;
