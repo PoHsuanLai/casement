@@ -27,6 +27,9 @@ const SHADOW_LIMIT: usize = 8;
 /// are few).
 const WHOLE_LIMIT: usize = 16;
 
+/// A small window's shadow buffers: the window, the shadow, and its width and height in pixels.
+type WholeAt = (WindowId, ShadowKey, u32, u32);
+
 /// The renderer's per-instance memory. A buffer that lives across frames keeps its element id
 /// and commit, so a cursor or a cover that does not change damages nothing.
 #[derive(Debug, Clone)]
@@ -43,7 +46,7 @@ pub(crate) struct DrawCache {
     /// Small windows' shadows, made once per size, scale, radius and layers.
     wholes: RefCell<BTreeMap<(ShadowKey, u32, u32), Rc<Raster>>>,
     /// Each small window's shadow as a buffer, uploaded once from its raster.
-    whole_sets: RefCell<BTreeMap<(WindowId, ShadowKey, u32, u32), Rc<WholeShadow>>>,
+    whole_sets: RefCell<BTreeMap<WholeAt, Rc<WholeShadow>>>,
     /// The cover's id: one for every output (each output has its own damage tracker).
     cover: Id,
 }
