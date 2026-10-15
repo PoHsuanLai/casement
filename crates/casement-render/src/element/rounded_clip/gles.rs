@@ -9,7 +9,7 @@
 //! the EGL context's user data, one per renderer.
 
 use super::RoundedClipElement;
-use smithay::backend::renderer::Texture;
+use smithay::backend::renderer::{FrameContext, Texture};
 use smithay::backend::renderer::element::surface::WaylandSurfaceTexture;
 use smithay::backend::renderer::element::{Element, RenderElement};
 use smithay::backend::renderer::gles::{
