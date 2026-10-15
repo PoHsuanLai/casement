@@ -19,7 +19,8 @@ mod window;
 pub use blur_v0::BlurV0Element;
 pub use cursor::{CursorFace, cursor_elements, cursor_face, cursor_pixels};
 pub use flight::{
-    FlightDraw, at_rest, choose, drawn_content, genie_elements, scale_ratio, strip_plans,
+    FlightDraw, at_rest, choose, drawn_content, genie_elements, rest_place, scale_ratio,
+    scaled_content, strip_plans,
 };
 pub use frame::{FrameDraw, TitleDraw, frame_elements};
 pub use geometry::{geometry_size, surface_origin, surface_origin_logical};

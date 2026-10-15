@@ -36,9 +36,9 @@ pub use element::{
     BlurV0Element, CasementElement, ClipShape, CursorFace, FlightDraw, FrameDraw, LockCoverElement,
     Rgba8, RoundedClipElement, SharedElement, StripElement, StripPlan, TitleDraw, at_rest, choose,
     cursor_elements, cursor_face, cursor_pixels, drawn_content, frame_elements, genie_elements,
-    geometry_size, layer_elements, popup_elements, popup_surfaces, scale_ratio, solid_rect,
-    strip_plans, surface_origin, surface_origin_logical, window_content, window_drawn,
-    window_elements, window_surfaces,
+    geometry_size, layer_elements, popup_elements, popup_surfaces, rest_place, scale_ratio,
+    scaled_content, solid_rect, strip_plans, surface_origin, surface_origin_logical,
+    window_content, window_drawn, window_elements, window_surfaces,
 };
 pub use gl_raw::{gles_on, surfaceless_gles};
 pub use scene::{ChromeLayer, CursorDraw, CursorShape, LayerDraw, OutputView, output_elements};

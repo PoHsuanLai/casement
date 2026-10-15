@@ -164,7 +164,7 @@ pub fn output_elements<R: Compositor>(
         |placed: &[&PlacedWindow], elements: &mut Vec<CasementElement<R>>, renderer: &mut R| {
             for placed in placed.iter().rev() {
                 if let Some(entry) = book.window(&placed.window) {
-                    let flight = choose(layers.minimise_effect, placed);
+                    let flight = choose(layers.minimise_effect, placed.flight);
                     let style = layers.frames.get(&placed.window);
                     let title = layers.titles.get(&placed.window);
                     if let FlightDraw::Genie(flight) = flight {

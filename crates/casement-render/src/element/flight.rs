@@ -14,7 +14,7 @@ use casement_motion::genie::{RectF, STRIPS, strips};
 use casement_motion::{Flight, PlacedWindow};
 use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
-use smithay::utils::Point;
+use smithay::utils::{Physical, Point, Rectangle};
 
 /// How a window is drawn this frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,9 +28,10 @@ pub enum FlightDraw {
     Genie(Flight),
 }
 
-/// How `placed` is drawn under `effect`: a window not in flight is [`FlightDraw::Still`].
-pub fn choose(effect: MinimiseEffect, placed: &PlacedWindow) -> FlightDraw {
-    match (placed.flight, effect) {
+/// How a window with `flight` is drawn under `effect`: a window not in flight is
+/// [`FlightDraw::Still`].
+pub fn choose(effect: MinimiseEffect, flight: Option<Flight>) -> FlightDraw {
+    match (flight, effect) {
         (None, _) => FlightDraw::Still,
         (Some(_), MinimiseEffect::Scale) => FlightDraw::Scaled,
         (Some(flight), MinimiseEffect::Genie) => FlightDraw::Genie(flight),
@@ -64,12 +65,18 @@ pub fn drawn_content(
     content: LogicalRect,
     effect: MinimiseEffect,
 ) -> LogicalRect {
-    match choose(effect, placed) {
+    scaled_content(choose(effect, placed.flight), content, placed.size)
+}
+
+/// `content` for a window drawn as `draw`: at the sampled `size` when it is scaled.
+pub fn scaled_content(draw: FlightDraw, content: LogicalRect, size: SubSize) -> LogicalRect {
+    let side = |px: SubPx| u32::try_from(SubPx(px.0.max(0)).round_logical()).unwrap_or(0);
+    match draw {
         FlightDraw::Scaled => LogicalRect::new(
             content.origin,
             LogicalSize {
-                w: u32::try_from(SubPx(placed.size.w.0.max(0)).round_logical()).unwrap_or(0),
-                h: u32::try_from(SubPx(placed.size.h.0.max(0)).round_logical()).unwrap_or(0),
+                w: side(size.w),
+                h: side(size.h),
             },
         ),
         FlightDraw::Still | FlightDraw::Genie(_) => content,
@@ -79,18 +86,27 @@ pub fn drawn_content(
 /// `placed` standing where its flight began (or ends): the genie cuts the window as it is at
 /// rest, so its surfaces and frame are placed there, at their own size.
 pub fn at_rest(placed: &PlacedWindow, flight: &Flight) -> PlacedWindow {
+    let (at, size) = rest_place(flight);
     PlacedWindow {
-        at: SubPoint {
-            x: SubPx::of_logical(flight.window.origin.x),
-            y: SubPx::of_logical(flight.window.origin.y),
-        },
-        size: SubSize {
-            w: SubPx::of_logical(i32::try_from(flight.window.size.w).unwrap_or(i32::MAX)),
-            h: SubPx::of_logical(i32::try_from(flight.window.size.h).unwrap_or(i32::MAX)),
-        },
+        at,
+        size,
         flight: None,
         ..*placed
     }
+}
+
+/// Where the window of `flight` stands at rest, and its size, in sub-pixels.
+pub fn rest_place(flight: &Flight) -> (SubPoint, SubSize) {
+    let side = |n: u32| SubPx::of_logical(i32::try_from(n).unwrap_or(i32::MAX));
+    let at = SubPoint {
+        x: SubPx::of_logical(flight.window.origin.x),
+        y: SubPx::of_logical(flight.window.origin.y),
+    };
+    let size = SubSize {
+        w: side(flight.window.size.w),
+        h: side(flight.window.size.h),
+    };
+    (at, size)
 }
 
 /// The strips of the window whose visible rectangle (frame included) is `visual` at `progress`
@@ -116,7 +132,7 @@ pub fn strip_plans(
     }
     let all = strips(rect_f(visual), rect_f(tile), progress, STRIPS);
     let last = all.len().saturating_sub(1);
-    let origin = Point::from((src.x.round() as i32, src.y.round() as i32));
+    let origin: Point<i32, Physical> = (src.x.round() as i32, src.y.round() as i32).into();
     all.iter()
         .enumerate()
         .filter_map(|(index, strip)| {
@@ -138,7 +154,7 @@ pub fn strip_plans(
                 index,
                 origin,
                 scale: ratio,
-                band: smithay::utils::Rectangle::new(
+                band: Rectangle::new(
                     (origin.x, band_top).into(),
                     (x1 - x0, y1 - y0 + overlap).into(),
                 ),
@@ -192,10 +208,7 @@ fn rect_f(rect: LogicalRect) -> RectF {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use casement_core::WindowId;
     use casement_core::geometry::{LogicalPoint, PhysicalSize};
-    use casement_motion::{CornerRadius, ShadowLevel};
-    use casement_protocols::vocab::Emphasis;
     use ds_core::geometry::scale::Scale;
     use ds_core::vocab::Fraction;
 
@@ -211,26 +224,6 @@ mod tests {
         }
     }
 
-    fn placed(size: (i32, i32), flight: Option<Flight>) -> PlacedWindow {
-        PlacedWindow {
-            window: WindowId(1),
-            committed: LogicalSize { w: 800, h: 600 },
-            at: SubPoint {
-                x: SubPx(24_000),
-                y: SubPx(24_000),
-            },
-            size: SubSize {
-                w: SubPx(size.0),
-                h: SubPx(size.1),
-            },
-            opacity: Fraction(1000),
-            corner: CornerRadius(SubPx(0)),
-            shadow: ShadowLevel::None,
-            emphasis: Emphasis::Main,
-            flight,
-        }
-    }
-
     fn flight(progress: u16) -> Flight {
         Flight::new(
             rect(200, 200, 800, 600),
@@ -241,32 +234,31 @@ mod tests {
 
     #[test]
     fn the_effect_decides_how_a_flight_is_drawn() {
-        let flying = placed((96_000, 72_000), Some(flight(400)));
-        let resting = placed((96_000, 72_000), None);
-        // name, effect, window, drawn
+        let flying = Some(flight(400));
+        // name, effect, flight, drawn
         let cases = [
             (
                 "genie",
                 MinimiseEffect::Genie,
-                &flying,
+                flying,
                 FlightDraw::Genie(flight(400)),
             ),
-            ("scale", MinimiseEffect::Scale, &flying, FlightDraw::Scaled),
+            ("scale", MinimiseEffect::Scale, flying, FlightDraw::Scaled),
             (
                 "genie, not flying",
                 MinimiseEffect::Genie,
-                &resting,
+                None,
                 FlightDraw::Still,
             ),
             (
                 "scale, not flying",
                 MinimiseEffect::Scale,
-                &resting,
+                None,
                 FlightDraw::Still,
             ),
         ];
-        for (name, effect, window, want) in cases {
-            assert_eq!(choose(effect, window), want, "{name}");
+        for (name, effect, flight, want) in cases {
+            assert_eq!(choose(effect, flight), want, "{name}");
         }
         assert_eq!(MinimiseEffect::default(), MinimiseEffect::Genie);
     }
@@ -303,21 +295,15 @@ mod tests {
     #[test]
     fn only_a_scaled_window_is_drawn_at_its_sampled_size() {
         let content = rect(200, 200, 800, 600);
-        let flying = placed((48_000, 36_000), Some(flight(500)));
-        let resting = placed((48_000, 36_000), None);
+        let half = SubSize {
+            w: SubPx(48_000),
+            h: SubPx(36_000),
+        };
         let small = rect(200, 200, 400, 300);
-        assert_eq!(
-            drawn_content(&flying, content, MinimiseEffect::Scale),
-            small
-        );
-        assert_eq!(
-            drawn_content(&flying, content, MinimiseEffect::Genie),
-            content
-        );
-        assert_eq!(
-            drawn_content(&resting, content, MinimiseEffect::Scale),
-            content
-        );
+        assert_eq!(scaled_content(FlightDraw::Scaled, content, half), small);
+        assert_eq!(scaled_content(FlightDraw::Still, content, half), content);
+        let genie = FlightDraw::Genie(flight(500));
+        assert_eq!(scaled_content(genie, content, half), content);
     }
 
     #[test]
@@ -371,11 +357,8 @@ mod tests {
 
     #[test]
     fn a_window_at_rest_is_placed_where_its_flight_began() {
-        let flying = placed((48_000, 36_000), Some(flight(500)));
-        let rest = at_rest(&flying, &flight(500));
-        assert_eq!((rest.at.x, rest.at.y), (SubPx(24_000), SubPx(24_000)));
-        assert_eq!((rest.size.w, rest.size.h), (SubPx(96_000), SubPx(72_000)));
-        assert_eq!(rest.flight, None);
-        assert_eq!(rest.window, flying.window);
+        let (at, size) = rest_place(&flight(500));
+        assert_eq!((at.x, at.y), (SubPx(24_000), SubPx(24_000)));
+        assert_eq!((size.w, size.h), (SubPx(96_000), SubPx(72_000)));
     }
 }
