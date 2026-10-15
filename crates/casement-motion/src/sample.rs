@@ -1,10 +1,11 @@
 //! Sampling: the frame at an instant.
 
 use crate::book::{Motion, MotionKey};
+use crate::pose::Pose;
 use crate::quantise::quantise;
 use crate::window_motion::WindowLegs;
 use crate::{
-    CornerRadius, FrameScene, MotionBook, OutputFrame, PlacedWindow, Settled, ShadowLevel,
+    CornerRadius, Flight, FrameScene, MotionBook, OutputFrame, PlacedWindow, Settled, ShadowLevel,
     StripOffset,
 };
 use casement_core::geometry::{LogicalSize, SubPoint, SubPx, SubSize};
@@ -117,7 +118,18 @@ fn placed(
         corner: CornerRadius(quantise(f64::from(frame.map_or(0, |f| f.corner_radius)))),
         shadow: shadow(frame.map(|f| f.mode), emphasis),
         emphasis,
+        flight: flight_of(legs, pose, now),
     }
+}
+
+/// The flight a window is on at `now`: only while it moves, and how far along its pose is.
+fn flight_of(legs: &WindowLegs, pose: Pose, now: Mono) -> Option<Flight> {
+    let ends = legs.flight.filter(|_| legs.is_moving(now))?;
+    Some(Flight::new(
+        ends.window,
+        ends.tile,
+        permille(ends.progress(pose)),
+    ))
 }
 
 /// The shadow a window casts: none when its client draws its own frame, the deeper one for the

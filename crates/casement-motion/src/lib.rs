@@ -15,7 +15,9 @@
 
 mod book;
 mod cause_travel;
+mod flight;
 mod frame_scene;
+pub mod genie;
 mod goals;
 mod pose;
 mod quantise;
@@ -27,7 +29,7 @@ mod window_motion;
 
 pub use book::{MotionBook, MotionKey};
 pub use frame_scene::{
-    CornerRadius, FrameScene, OutputFrame, PlacedWindow, ShadowLevel, StripOffset,
+    CornerRadius, Flight, FrameScene, OutputFrame, PlacedWindow, ShadowLevel, StripOffset,
 };
 pub use quantise::quantise;
 pub use retarget::retarget;

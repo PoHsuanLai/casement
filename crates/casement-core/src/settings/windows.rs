@@ -39,11 +39,12 @@ pub enum Enabled {
 }
 
 /// How a window minimises.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Word)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, Word)]
 #[serde(rename_all = "snake_case")]
 #[word(case = snake)]
 pub enum MinimiseEffect {
-    /// The genie.
+    /// The genie (the default, as on a Mac).
+    #[default]
     Genie,
     /// A scale toward the tile.
     Scale,

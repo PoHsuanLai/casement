@@ -2304,6 +2304,66 @@ Title text, quire's numbers, `theme = "system"`. Written without a compiler (wav
   with `theme = "dark"` it does not. Open: right-to-left titles (parley shapes them; the margins are not mirrored), and
   the title is not in a window capture of a window without its frame (as the frame is not).
 
+## wave-2026-10-15/mini
+
+Minimising looks like macOS: the Scale effect, the Genie effect, chosen by `windows.minimise_effect` (Genie is the default, as
+on a Mac). Written without a compiler (wave rule); the orchestrator builds.
+
+- **Motion knows the flight.** `casement_motion::Flight { window, tile, progress }` is a new field on `PlacedWindow`
+  (`flight: Option<Flight>`). `retarget` stores the two ends on the window's legs for a `Cause::Minimise` that travels (the
+  window's rectangle when it left, or the goal rectangle when it comes back, and the dock tile); `sample` reports a flight
+  only while the window still moves and `progress` (thousandths, 1000 = in the tile) is read off the pose against the two
+  ends, on the channel (x, y, w, h) where they differ most. That one number serves both directions (minimise 0 to 1000,
+  restore 1000 to 0) and a reversal mid-flight, with no second state. Same Move spring and 380 ms response as before: the
+  duration and curve are unchanged and the genie follows the same progress. Reduced motion has no flight (it snaps).
+  `FrameScene::text` adds ` flight <permille>` to a window's line only while it flies, so no existing golden changes (the
+  two motion goldens are Mission Control entries).
+- **Genie geometry, pure.** `casement_motion::genie::strips(window, tile, progress, count) -> Vec<Strip>` (`STRIPS = 48`).
+  Row `v` (0 top, 1 bottom) has gone `ease(clamp(1.6 p - 0.6 (1 - v)))` of the way to the tile, so the bottom leads by `LAG =
+  0.6` of the flight; centre, width and top edge are linear in that. Strips share their edges by construction, a running
+  maximum keeps rows from folding when the tile is above the window. Table tests: ends at 0 and 1, shared edges at 21
+  progress values, the bottleneck narrowing, a hand-computed halfway row, a tile above the window.
+- **Scale effect: no wrapper needed.** Smithay's `render_elements_from_surface_tree` takes its scale per axis, so
+  `window_surfaces` draws the whole tree at `view.scale * (placed.size / real content size)` with the origin stretched
+  too (the geometry offset scales). Damage, opaque regions, the source rectangle and the rounded clip all follow from that
+  with no new element, which is less code and less risk than wrapping each surface in `RescaleRenderElement`. Departure from
+  the brief's "a render element wrapper": the strips below do use smithay's `RescaleRenderElement` + `CropRenderElement`
+  (+ `RelocateRenderElement`). `drawn_content` (`element/flight.rs`) gives the frame's content rectangle at the sampled size
+  and `scene.rs` and `core_loop/titles.rs` use it, so the titlebar, its title raster, the shadow and the clip are made for the
+  shrunk window.
+- **Scaling only during a flight.** The brief says draw at `placed.size` instead of `placed.committed`. I scale only while
+  `placed.flight` is set. A resize in flight (`size != committed`) still shows the old buffer until the client commits, as
+  before: stretching there would stretch a client that cannot reach the layout size (a minimum size, a stuck client) for
+  good. The ratio is against the real content size (window geometry, else committed), not `committed`, so a client with a
+  shadow margin is not mis-scaled. If the owner wants the stretch everywhere, `flight_ratio` is the one place.
+- **Genie: strips of smithay's wrappers, no shader.** `genie_elements` draws the window as it stands at rest (`at_rest`:
+  the flight's window end), shares each surface element and the frame's memory elements (`SharedElement`, an `Rc`, because
+  smithay's elements are not `Clone`), and for each strip makes `StripElement` = `Relocate(Crop(Rescale(element)))` with
+  its own id (`Id::namespaced(64 + strip)`). `strip_plans` turns `genie::strips` into the physical numbers (origin, per-axis
+  scale, crop band, shift) and is pure with table tests. Two new `CasementElement` variants: `SurfaceStrip`, `MemoryStrip`.
+  Departures: during a genie the rounded clip is not applied (the strips draw plain surfaces), the shadow is not drawn
+  (the strips are cut to the frame's outline), popups are not drawn, blur v0 is not drawn. Each of these is also dropped
+  for a Scale flight except the clip and the shadow, which scale with the window (popups and blur are left out there too).
+- **Seams.** Every strip but the last runs one physical pixel into the next so rounding leaves no gap; where the window is
+  translucent that row blends twice. The strip's width is the mean of its two rows (a trapezoid drawn as a rectangle), so
+  the silhouette is stepped by up to `(window width - tile width) / 48 * slope` pixels per strip.
+- **Pointer.** A window with `flight` set is left out of `core_loop::scene::stack` and `frames::contents`: it takes no
+  pointer input while it flies, and the hit test elsewhere keeps the real geometry.
+- **Settings.** `MinimiseEffect` derives `Default` (Genie) so `LayerDraw` stays `Default`; `LayerDraw.minimise_effect` is set
+  in `core_loop::frame` from `model.settings().windows.minimise_effect`.
+- **Tests added.** `casement-motion`: `genie.rs` (6 table/property tests + a doc test), `flight.rs` (2),
+  `tests/it/behaviour.rs::a_minimise_flies_as_a_flight_out_and_back_and_other_causes_do_not`, `Flight::new` doc test.
+  `casement-render`: `element/flight.rs` (6: the effect choice, the size ratio, scaled content, strip plans at rest, no
+  gap at 21 progress values at three scales, an empty window, rest place; plus a `scale_ratio` doc test) and `element/strip.rs`
+  (3, with a solid element: where a strip lands, an unreached band, distinct ids). No golden changed.
+- **Gate and real run.** Likeliest compile faults: `element/strip.rs` and `shared.rs` (the generic `Element` and
+  `RenderElement` impls over smithay's wrappers, and the two new `CasementElement` variants through `render_elements!`),
+  `flight.rs`'s `Point`/`Rectangle` conversions with `.into()`, `window.rs` (`Scale::from((f64, f64))`,
+  `scaled_origin`), `retarget.rs` (`toward` borrows `known` then consumes it), `scene.rs` (the genie branch with
+  `continue` in the closure). Only a real run proves: frame time on a large window with 48 strips x (titlebar, title, surface
+  tree) elements through the damage tracker (a 4K window is the case to measure; lower `STRIPS` if it drops frames), seams
+  between strips at fractional scales, the genie's look (lag 0.6 and the smooth step are first guesses), a Scale flight of
+  a window with subsurfaces and a client-drawn frame, and that restore plays the reverse.
 ## wave-2026-10-15/split
 
 Split View end to end in the model and layout (the window menu's Full Screen Tile entries are on). Written without a

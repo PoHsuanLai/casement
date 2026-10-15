@@ -204,6 +204,9 @@ pub(super) fn stack(state: &State) -> Vec<(Hit, Candidate)> {
         .outputs
         .into_iter()
         .flat_map(|frame| frame.windows.into_iter().rev())
+        // A window in a minimise flight is drawn shrunk or bent, so its real rectangle is not
+        // where it is: it takes no pointer input until it has landed.
+        .filter(|placed| placed.flight.is_none())
         .filter_map(|placed| {
             let entry = book.window(&placed.window)?;
             Some((

@@ -254,6 +254,73 @@ fn minimising_travels_to_the_dock_tile_and_unminimising_comes_back_from_it() {
 }
 
 #[test]
+fn a_minimise_flies_as_a_flight_out_and_back_and_other_causes_do_not() {
+    let tile = rect(900, 1040, 48, 30);
+    let cause = Cause::Minimise(MinimiseTarget {
+        output: output("HEADLESS-1"),
+        rect: tile,
+    });
+    let shown = arranged(&[(1, "HEADLESS-1", rect(200, 200, 800, 600))]);
+    let hidden = arranged(&[]);
+    let flight_at = |book: &MotionBook, t| {
+        let (frame, _) = sample(book, &CommittedSizes::default(), &WindowLooks::default(), t);
+        placed(&frame, 1).and_then(|window| window.flight)
+    };
+    let down = retarget(
+        known(&shown, STANDARD),
+        &shown,
+        &hidden,
+        &cause,
+        STANDARD,
+        at(0),
+    );
+    let start = flight_at(&down, at(0)).expect("in flight at once");
+    assert_eq!((start.window, start.tile), (rect(200, 200, 800, 600), tile));
+    assert_eq!(start.progress.0, 0);
+    let mid = flight_at(&down, at(150)).expect("still in flight");
+    assert!(
+        mid.progress.0 > 0 && mid.progress.0 < 1000,
+        "between the ends: {mid:?}"
+    );
+    let late = flight_at(&down, at(300)).expect("late in flight");
+    assert!(late.progress.0 > mid.progress.0, "it only gets closer");
+    assert_eq!(
+        flight_at(&down, at(9_000)),
+        None,
+        "arrived: nothing to draw"
+    );
+    let up = retarget(down, &hidden, &shown, &cause, STANDARD, at(10_000));
+    let back = flight_at(&up, at(10_000)).expect("leaves the tile");
+    assert_eq!(back.window, rect(200, 200, 800, 600));
+    assert_eq!(back.progress.0, 1000);
+    let later = flight_at(&up, at(10_150)).expect("on its way out");
+    assert!(later.progress.0 < 1000, "it only gets farther: {later:?}");
+    assert_eq!(flight_at(&up, at(19_000)), None, "back at rest");
+    let keyed = retarget(
+        known(&shown, STANDARD),
+        &shown,
+        &hidden,
+        &Cause::Keyboard,
+        STANDARD,
+        at(0),
+    );
+    assert_eq!(flight_at(&keyed, at(100)), None, "only a minimise flies");
+    let reduced = retarget(
+        known(&shown, REDUCED),
+        &shown,
+        &hidden,
+        &cause,
+        REDUCED,
+        at(0),
+    );
+    assert_eq!(
+        flight_at(&reduced, at(100)),
+        None,
+        "reduced motion does not fly"
+    );
+}
+
+#[test]
 fn a_frame_lists_windows_bottom_first_on_each_output_in_key_order() {
     let a = arranged(&[
         (9, "HEADLESS-2", rect(1920, 0, 100, 100)),
