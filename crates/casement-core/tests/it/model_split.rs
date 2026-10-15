@@ -80,11 +80,11 @@ fn full(run: &Run, n: u64) -> bool {
 }
 
 fn choose(first: u64, side: SplitSide, candidates: &[u64]) -> ShellNote {
-    ShellNote::SplitChoose(SplitChoices {
-        first: WindowId(first),
+    ShellNote::SplitChoose(SplitChoices::new(
+        WindowId(first),
         side,
-        candidates: candidates.iter().map(|n| WindowId(*n)).collect(),
-    })
+        candidates.iter().map(|n| WindowId(*n)).collect(),
+    ))
 }
 
 #[test]

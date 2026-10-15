@@ -47,6 +47,26 @@ pub struct SplitChoices {
     pub candidates: Vec<WindowId>,
 }
 
+impl SplitChoices {
+    /// The choice for the half beside `first`, offering `candidates` in order.
+    ///
+    /// ```
+    /// use casement_core::WindowId;
+    /// use casement_core::shell::SplitChoices;
+    /// use casement_core::window::SplitSide;
+    ///
+    /// let choices = SplitChoices::new(WindowId(1), SplitSide::Left, vec![WindowId(2)]);
+    /// assert_eq!(choices.candidates, [WindowId(2)]);
+    /// ```
+    pub fn new(first: WindowId, side: SplitSide, candidates: Vec<WindowId>) -> Self {
+        Self {
+            first,
+            side,
+            candidates,
+        }
+    }
+}
+
 /// The window menu to show: for which window, where, and which entries can be picked.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WindowMenuShow {
