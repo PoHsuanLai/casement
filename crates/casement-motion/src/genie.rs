@@ -141,7 +141,8 @@ mod tests {
     #[test]
     fn progress_zero_is_the_window_and_one_is_the_tile() {
         // name, progress, (x, y, w, h) of the whole stack of strips
-        const CASES: &[(&str, f64, (f64, f64, f64, f64))] = &[
+        type Rect = (f64, f64, f64, f64);
+        const CASES: &[(&str, f64, Rect)] = &[
             ("rest", 0.0, (100.0, 100.0, 400.0, 300.0)),
             ("below zero", -1.0, (100.0, 100.0, 400.0, 300.0)),
             ("arrived", 1.0, (900.0, 1040.0, 48.0, 30.0)),
