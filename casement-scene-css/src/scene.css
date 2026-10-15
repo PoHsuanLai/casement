@@ -32,7 +32,7 @@ div {
 }
 
 /* A desktop window. --ux/--uy/--uw/--uh is the output's usable area, --reserve the frame above
-   the content (the area loses that much off its top: --ty/--th), --min-*/--max-* its limits (no
+   the content (the area loses that much off its top: --ty/--th), --min-w/h and --max-w/h its limits (no
    --max-* = unbounded), --w/--h the size asked for. --fw/--fh is the size held to the limits and
    then to the area (floating.rs fit_size). */
 .win {

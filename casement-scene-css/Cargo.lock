@@ -234,6 +234,8 @@ dependencies = [
  "blitz-dom",
  "casement-core",
  "casement-layout",
+ "ds-core",
+ "porter-core",
 ]
 
 [[package]]

@@ -18,6 +18,10 @@ casement-layout = { path = "../crates/casement-layout" }
 # From quire's pinned block (docs/workspace-deps.toml), verbatim:
 blitz-dom = { git = "https://github.com/PoHsuanLai/blitz", rev = "063ff2b6495cbdc4a410a84e52079914e9637042", default-features = false, features = ["svg", "system-fonts", "custom-widget", "accessibility"] }
 
+[dev-dependencies]
+porter-core = { path = "../../porter/crates/porter-core" }
+ds-core = { path = "../../quire/crates/ds-core", default-features = false }
+
 [lints.rust]
 unsafe_code = "deny"
 missing_docs = "warn"
