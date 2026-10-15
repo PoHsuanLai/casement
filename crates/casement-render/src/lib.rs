@@ -43,8 +43,8 @@ pub use element::{
     window_content, window_drawn, window_elements, window_surfaces,
 };
 pub use element::{
-    IconPlace, OverviewIcon, OverviewLook, icon_element, icon_place, lift_last, shown_length,
-    shown_outline,
+    IconPlace, OverviewIcon, OverviewLook, TilePreview, icon_element, icon_place, lift_last,
+    shown_length, shown_outline, tile_preview_elements,
 };
 pub use gl_raw::{gles_on, surfaceless_gles};
 pub use scene::{

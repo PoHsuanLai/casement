@@ -2041,8 +2041,8 @@ orchestrator builds.
   decoration answer is an edge fact), so `casement_layout::spec_of_framed(model, &BTreeMap<WindowId, u32>)` takes the
   reserves and `spec_of` is `spec_of_framed` with none; `core_loop::relayout` passes `frames::reserves(state)`. The xdg
   decoration handler now runs a relayout when a window already in the model is answered server-side (the answer can arrive
-  after the first placement). Tiled windows have no desktop target in layout today (`WindowPlacement::Tiled` is skipped in
-  `rust_scene/desktop.rs`), so the tile reserve has nothing to hold; when tiling is arranged it must use `below_chrome` too.
+  after the first placement). Tiled windows now have a desktop target (P3-TL, `rust_scene/tile_zone.rs`): the zone is cut from the usable area and the
+  content sits in `below_chrome(zone, reserve)`, so the frame is inside the zone.
   A drag in flight is not held by the reserve (the grab follows the pointer); layout clamps it when the drag ends.
 - **Lights act on release.** `casement_core::window::LightArm` (`frame_arm.rs`) is the pure machine: `Press` arms and shows
   pressed, `Release` over the same light fires (`ArmOutcome::Fire`), `Move` off it cancels, back on re-arms, a release of
@@ -3354,7 +3354,7 @@ seeded specs and names each exclusion as a constant; none is hidden by loosening
 | --- | --- | --- |
 | Mission Control slots, icon rects and `LayoutReport::SpreadOverflow` (`SPREAD`) | the spread is an iterative push-apart (24 passes per trial, 0.85 scale steps, shelf-pack fallback); CSS has no loop or search | both sides drop `overview` and `SpreadOverflow`; the RustScene slots must be exactly the shown desktop Space's windows that have a target. `CssScene` returns no slots, so S-L6 does not cover the spread or `icon_rect`; its proptests in `casement-layout` do |
 | a cascade step that is not one positive length on both axes (`CASCADE_STEP`) | the walk is `mod(nth * step, M + step)`, where `M` is the tighter axis's whole steps; with two different steps the period is not one length. Zero and negative steps walk the other way. Production uses one titlebar height on both | specs use equal steps in 1..=80; `document/desktop.rs` clamps to at least 1 |
-| `WindowPlacement::Tiled` (`TILED`) | not CSS: RustScene gives a tiled window no target (tile zones arrive with P3-Z) | not generated: a `TileZone` is a `casement-protocols` type this crate does not depend on |
+| `WindowPlacement::Tiled` (`TILED`) | not CSS: RustScene tiles a window to its zone's half or quarter of the usable area inside the tile margin (`rust_scene/tile_zone.rs`, P3-TL), which CSS does not generate | not generated: a `TileZone` is a `casement-protocols` type this crate does not depend on |
 | App Exposé and Show Desktop (`APP_EXPOSE`, `SHOW_DESKTOP`) | RustScene arranges them as plain desktops today (P3-Z adds them) | generated and compared as desktops; when P3-Z lands them the CSS and the constants change together |
 | `Keep`/`Resize` and `MinUnmet` | they compare a size with the one asked for and with the minimum: not geometry | derived in `read.rs` from the laid-out boxes and the spec, with RustScene's own definitions (a full-screen or Split View window always `Resize`; a full-screen one never `MinUnmet`) |
 | `u32`/`i32` saturation and coordinates beyond f32's 2^24 | CSS lengths are f32 | specs stay within about +-6000 logical pixels |
@@ -3414,3 +3414,42 @@ on hardware**: nothing was timed; whether the 4K read-back stall is gone is for 
   `TextureRenderElement::from_static_texture` argument order with `renderer.context_id()`; the `&dyn Any` downcast of `GlesTexture` to
   `R::TextureId`; a `GlesTexture` made by `Offscreen::create_buffer` drawn upright through `render_texture_from_to` after being rendered
   into with a `Transform::Normal` tracker (mirrors `blit_texture`).
+
+## P3-TL: window tiling by drag (cas22-tile)
+
+- **What landed.** `casement_layout::zone_rect(zone, usable, margin)` (`rust_scene/tile_zone.rs`) cuts a half or quarter out of the
+  usable area, `margin` from the area's edges and between halves (an odd length gives the extra pixel to the second half; a margin
+  over a quarter of the span is held to it); `RustScene` now gives `WindowPlacement::Tiled` a target (content below the frame's
+  reserve, size held to the limits, a `MinUnmet` report, always a `Resize`). Before this lane "Tiled has no target in layout" was true (the reserve note and
+  the scene-css `TILED` row said so; both are updated; the Open-items table has no row for it). Split View still
+  arranges its own pair (`split.rs`, untouched). `casement_core::window::TileDrag` (`window/tile_drag.rs`) is the pure machine
+  (Idle, Moving, Previewing); `target_at` is the zone table. `casement::core_loop::tile` is the glue: `grab::start` begins it for
+  a Move grab (never a Resize), `grab::follow` steps it after each `WindowDragged`, `grab::end` places the window
+  (`ToplevelRequest::Place`, the same path as the window menu, so menu, drag and the `desktop place` bindings share one set of
+  zones) and the frame draws `LayerDraw::tile_preview` (`element/tile_preview.rs`: three solid bands and four corner rasters).
+- **A tiled window dragged away** returns to its size from before tiling: it already did (`Model::grab` sets `Floating(restore)`
+  when the move starts); the drag test asserts the model state, not a new mechanism.
+- **Departures from macOS and from the plan.** (1) There is no edge dwell: the preview arms the moment the pointer is inside the
+  3 px band (`EDGE_BAND`), so Option only changes where the zones are (thirds of the output, centre none), not how fast they show;
+  Sequoia waits a moment at an edge. (2) The bottom edge alone tiles nothing (only its corners do); the bottom half is reachable
+  with Option, the menu and the keys. (3) A corner is within `CORNER_REACH` = 96 px of it along an edge. (4) The preview does not
+  spring in (no frame pacing exists for a stationary pointer; it appears whole); the plate is the accent at 72/255, not Sequoia's
+  neutral. (5) Tile margins apply to halves and quarters but not to Fill (a fill is the usable area, as the green light's zoom).
+  (6) A window tiles only on its own output: it keeps its Space's output while dragged, so the pointer on another output arms
+  nothing; the shared edge of two displays is never an edge. When a drag can re-home a window, `TileScene.home` follows the
+  pointer's output. (7) Esc during the drag does not cancel (no keyboard route into the grab yet); Option pressed or released with
+  the pointer still does not re-evaluate until the next motion. (8) `rust_scene/fill.rs` was not made: Fill is `filled_target`
+  already, and the plan's file would only repeat it.
+- **Keys (D12) are an interface ask, not built.** chordkit 55a62b2 has no `StandardAction` for tiling (no left/right/top/bottom/
+  quarters/fill/centre/return), so casement's `keymap/shell.rs` has no row to bind: the keymap module holds action names only.
+  Ask to chordkit (and keycap for the layers): add `TileLeft`, `TileRight`, `TileTop`, `TileBottom`, `TileTopLeft`,
+  `TileTopRight`, `TileBottomLeft`, `TileBottomRight`, `TileFill`, `TileCentre`, `TileReturn` with the Sequoia chords (Globe/Fn+Ctrl
+  plus arrows, F, C, R) and, because Fn is often invisible to the OS (D12), the reachable set Ctrl+Option plus the same keys. Then
+  casement adds eleven rows to `ROWS` mapping to `DesktopCommand::Place(..)`, which already exists. Until then a person can bind
+  them in casement's own `[bindings]` (`["desktop", "place", "left"]`).
+- **Goldens to bless.** `tile-preview-1x`, `tile-preview-1.5x`, `tile-preview-2x` (casement-render `tests/it/scenes.rs`,
+  `the_tile_preview_matches_its_pixman_goldens`).
+- **Unverified API guesses.** `super::frame::{element, to_buffer, whole, Raster}` reached from the sibling `tile_preview.rs`
+  (`pub(super)` in `frame.rs` makes them visible in `element`); `Scale::numerator()`/`Scale::DENOMINATOR` as `raster.rs` uses them;
+  `LogicalSize::ZERO`; `model.layers().usable_area(&output, full)` public as `of_model.rs` uses it; `Option<Drag>::filter` (Drag is
+  `Copy`); the new `Model::output_rects` (added to `model/query.rs`).
