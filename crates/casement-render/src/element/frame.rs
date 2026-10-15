@@ -11,6 +11,7 @@ mod title;
 
 pub(crate) use shadow::Tiles;
 pub(crate) use shadow_set::{ShadowKey, ShadowSet, key as shadow_key};
+pub(crate) use slices::MARGIN as SHADOW_MARGIN;
 pub use title::TitleDraw;
 
 /// The tiles of `look`'s shadow at `scale`.

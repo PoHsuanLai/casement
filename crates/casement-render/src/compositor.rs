@@ -1,6 +1,6 @@
 //! The renderer trait casement composites with.
 
-use crate::element::{BlurV0Element, RoundedClipElement};
+use crate::element::{BlurV0Element, ClipStripElement, RoundedClipElement};
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::pixman::PixmanRenderer;
@@ -64,6 +64,22 @@ pub trait Compositor:
         clip.surface()
             .draw(frame, src, dst, damage, opaque_regions, cache)
     }
+
+    /// A strip of a genie's surface that reaches the window's bottom corners: draw `clip` at
+    /// `dst` where `damage` (relative to `dst`) asks. The default draws the strip unclipped; a
+    /// renderer with shaders masks the corners as they are in the window at rest.
+    fn draw_clip_strip(
+        frame: &mut Self::Frame<'_, '_>,
+        clip: &ClipStripElement<Self>,
+        src: Rectangle<f64, Buffer>,
+        dst: Rectangle<i32, Physical>,
+        damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
+        cache: Option<&UserDataMap>,
+    ) -> Result<(), Self::Error> {
+        clip.strip()
+            .draw(frame, src, dst, damage, opaque_regions, cache)
+    }
 }
 
 /// Whether effect passes (blur, shadow, rounded clip, dim, genie, glow) run their shaders.
@@ -101,6 +117,18 @@ impl Compositor for GlesRenderer {
     fn draw_rounded_clip(
         frame: &mut Self::Frame<'_, '_>,
         clip: &RoundedClipElement<Self>,
+        src: Rectangle<f64, Buffer>,
+        dst: Rectangle<i32, Physical>,
+        damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
+        cache: Option<&UserDataMap>,
+    ) -> Result<(), Self::Error> {
+        clip.draw_gles(frame, src, dst, damage, opaque_regions, cache)
+    }
+
+    fn draw_clip_strip(
+        frame: &mut Self::Frame<'_, '_>,
+        clip: &ClipStripElement<Self>,
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],

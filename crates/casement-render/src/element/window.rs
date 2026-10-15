@@ -1,5 +1,6 @@
 //! A window's surface tree as elements.
 
+use super::BlurV0Element;
 use super::CasementElement;
 use super::RoundedClipElement;
 use super::blur_v0;
@@ -29,8 +30,8 @@ use smithay::utils::Scale;
 /// its committed size, except while the window is in a minimise flight: then every surface of
 /// the tree is scaled about that place to the sampled size (smithay's surface-tree helper takes
 /// the scale per axis, so damage, opaque regions and the source rectangle follow from it), and
-/// the blur behind it is left out. A sampled size that differs from the committed one in any
-/// other case (a resize in flight) shows once the client commits it.
+/// the blur behind it is stretched the same way and fades with the window. A sampled size that
+/// differs from the committed one in any other case (a resize in flight) shows once the client commits it.
 ///
 /// With a `clip` every surface of the tree (the root and its subsurfaces) is drawn inside that
 /// shape, a window's rounded bottom corners; the window's popups are not part of this tree.
@@ -53,11 +54,31 @@ pub fn window_elements<R: Compositor>(
             None => CasementElement::Surface(surface),
         })
         .collect();
-    if ratio == (1.0, 1.0) {
-        let origin = scaled_origin(&entry.root, placed.at, ratio);
-        elements.extend(blur_v0::behind(&entry.root, origin, view).map(CasementElement::Blur));
-    }
+    let faded = match placed.flight {
+        Some(_) => alpha(placed.opacity),
+        None => 1.0,
+    };
     elements
+        .extend(window_blur(placed, &entry.root, (ratio, faded), view).map(CasementElement::Blur));
+    elements
+}
+
+/// The blur behind `placed`'s surface `root` when it asked for one, stretched by the first of
+/// `(ratio, faded)` like the window and drawn at the second, the window's opacity while it is in
+/// a flight (so the blur fades with it; a window not in one keeps its blur at full strength).
+pub(crate) fn window_blur(
+    placed: &PlacedWindow,
+    root: &WlSurface,
+    (ratio, faded): ((f64, f64), f32),
+    view: &OutputView,
+) -> Option<BlurV0Element> {
+    blur_v0::behind_scaled(
+        root,
+        scaled_origin(root, placed.at, ratio),
+        ratio,
+        faded,
+        view,
+    )
 }
 
 /// `placed`'s surface tree as surface elements, front first, stretched by `ratio` about the

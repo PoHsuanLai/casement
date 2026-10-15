@@ -29,6 +29,21 @@ impl Rgba8 {
     }
 }
 
+impl Rgba8 {
+    /// The colour at `alpha` of its own strength (premultiplied, so every channel scales).
+    ///
+    /// ```
+    /// use casement_render::Rgba8;
+    ///
+    /// let white = Rgba8 { r: 255, g: 255, b: 255, a: 255 };
+    /// assert_eq!(white.faded(0.5), Rgba8 { r: 255, g: 255, b: 255, a: 255 }.color32f() * 0.5);
+    /// ```
+    pub fn faded(self, alpha: f32) -> Color32F {
+        let unit = |n: u8| f32::from(n) / 255.0 * alpha;
+        Color32F::new(unit(self.r), unit(self.g), unit(self.b), unit(self.a))
+    }
+}
+
 /// A solid element covering `rect` (output-local physical pixels) in `colour`; `id` and
 /// `commit` keep its damage stable across frames.
 pub fn solid_rect(

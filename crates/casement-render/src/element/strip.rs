@@ -3,6 +3,7 @@
 //! band and moved to where the band is drawn, all by smithay's own wrappers, so damage, opaque
 //! regions and the source rectangle follow from them.
 
+use casement_core::geometry::PhysicalRect;
 use smithay::backend::renderer::Renderer;
 use smithay::backend::renderer::element::utils::{
     CropRenderElement, Relocate, RelocateRenderElement, RescaleRenderElement,
@@ -18,6 +19,7 @@ const NAMESPACE_BASE: usize = 64;
 
 /// What turns an element into strip `index`, all in the output's physical pixels.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub struct StripPlan {
     /// Which strip of the window this is (it keeps the strip's id steady from frame to frame).
     pub index: usize,
@@ -29,6 +31,69 @@ pub struct StripPlan {
     pub band: Rectangle<i32, Physical>,
     /// How far the band moves to land where it is drawn.
     pub shift: Point<i32, Physical>,
+    /// The rows of the window at rest this strip shows (top, bottom), in physical pixels from
+    /// the output's top: what the clip and the blur ask to know which strips they touch.
+    pub source: (f64, f64),
+}
+
+/// How far to reach past a strip's band, in physical pixels of the window at rest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub struct Margins {
+    /// Past the left and right edges.
+    pub side: i32,
+    /// Above the band.
+    pub top: i32,
+    /// Below the band.
+    pub bottom: i32,
+}
+
+impl StripPlan {
+    /// The same strip with its band reaching `by` farther (at rest; scaled here by the strip's
+    /// own scale): a shadow's halo is outside the window's rectangle, so the strips that carry
+    /// it are wider than the rows they cut, and the top and bottom strips reach past the
+    /// window. The band moves with the shift, so the halo lands round the strip.
+    pub fn widened(self, by: Margins) -> StripPlan {
+        let grow = |n: i32, scale: f64| (f64::from(n) * scale).round() as i32;
+        let side = grow(by.side, self.scale.0);
+        let top = grow(by.top, self.scale.1);
+        let bottom = grow(by.bottom, self.scale.1);
+        StripPlan {
+            band: Rectangle::new(
+                (self.band.loc.x - side, self.band.loc.y - top).into(),
+                (self.band.size.w + 2 * side, self.band.size.h + top + bottom).into(),
+            ),
+            ..self
+        }
+    }
+
+    /// Where the rows of `rect` (a rectangle of the window at rest, output pixels) that this
+    /// strip shows are drawn; `None` when it shows none of them. The rows are held to the
+    /// strip's own drawn band, so two strips never claim the same pixel.
+    pub fn mapped(&self, rect: PhysicalRect) -> Option<PhysicalRect> {
+        let top = f64::from(rect.y).max(self.source.0);
+        let bottom = (f64::from(rect.y) + f64::from(rect.h)).min(self.source.1);
+        if bottom <= top {
+            return None;
+        }
+        let across = |at: f64, by: f64, around: i32, shift: i32| {
+            let around = f64::from(around);
+            (around + (at - around) * by + f64::from(shift)).round() as i32
+        };
+        let (left, right) = (f64::from(rect.x), f64::from(rect.x) + f64::from(rect.w));
+        let x0 = across(left, self.scale.0, self.origin.x, self.shift.x);
+        let x1 = across(right, self.scale.0, self.origin.x, self.shift.x);
+        let drawn = (self.band.loc.y + self.shift.y, self.band.size.h);
+        let y0 = across(top, self.scale.1, self.origin.y, self.shift.y).max(drawn.0);
+        let y1 = across(bottom, self.scale.1, self.origin.y, self.shift.y).min(drawn.0 + drawn.1);
+        let side = |n: i32| u32::try_from(n).ok().filter(|n| *n > 0);
+        Some(PhysicalRect {
+            x: x0,
+            y: y0,
+            w: side(x1 - x0)?,
+            h: side(y1 - y0)?,
+        })
+    }
 }
 
 /// `E` seen through a [`StripPlan`].
@@ -168,6 +233,51 @@ mod tests {
             scale: (0.5, 1.0),
             band,
             shift: (10, 20).into(),
+            source: (100.0, 150.0),
+        }
+    }
+
+    #[test]
+    fn a_widened_band_reaches_out_by_the_strips_own_scale() {
+        let band = Rectangle::new((100, 100).into(), (100, 50).into());
+        let by = Margins {
+            side: 8,
+            top: 10,
+            bottom: 0,
+        };
+        let wide = plan(0, band).widened(by);
+        // scale (0.5, 1.0): 4 px each side, 10 px above; the shift is untouched
+        assert_eq!(wide.band, Rectangle::new((96, 90).into(), (108, 60).into()));
+        assert_eq!(wide.shift, plan(0, band).shift);
+        assert_eq!(plan(0, band).widened(Margins::default()), plan(0, band));
+    }
+
+    #[test]
+    fn a_rows_rectangle_lands_in_the_strips_band_and_nowhere_else() {
+        let band = Rectangle::new((100, 100).into(), (100, 50).into());
+        let plan = plan(0, band);
+        // (x, y, w, h) at rest -> drawn; the strip shows rows 100..150, is halved across about
+        // x 100 and moved by (10, 20)
+        let cases: &[(&str, (i32, i32, u32, u32), Option<(i32, i32, u32, u32)>)] = &[
+            ("whole", (100, 100, 200, 50), Some((110, 120, 100, 50))),
+            ("a part", (120, 120, 40, 10), Some((120, 140, 20, 10))),
+            (
+                "cut at the bottom",
+                (100, 140, 200, 40),
+                Some((110, 160, 100, 10)),
+            ),
+            ("above", (100, 0, 200, 100), None),
+            ("below", (100, 150, 200, 10), None),
+        ];
+        for (name, (x, y, w, h), want) in cases {
+            let got = plan.mapped(PhysicalRect {
+                x: *x,
+                y: *y,
+                w: *w,
+                h: *h,
+            });
+            let want = want.map(|(x, y, w, h)| PhysicalRect { x, y, w, h });
+            assert_eq!(got, want, "{name}");
         }
     }
 
