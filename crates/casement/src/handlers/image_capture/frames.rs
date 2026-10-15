@@ -43,13 +43,16 @@ pub(super) fn serve(state: &mut State, session: &SessionRef, frame: Frame) {
     }
 }
 
+/// A frame written into a client's buffer: when it was presented and its size.
+type Written = (Mono, Size<i32, Buffer>);
+
 /// The frame written into `frame`'s buffer: when it was presented and its size.
 fn capture(
     state: &mut State,
     session: &SessionRef,
     id: CaptureSessionId,
     frame: &Frame,
-) -> Result<Option<(Mono, Size<i32, Buffer>)>, CaptureFailure> {
+) -> Result<Option<Written>, CaptureFailure> {
     let buffer = frame.buffer();
     let size = buffer_size(&buffer).ok_or(CaptureFailure::BufferMismatch)?;
     let request = image_capture::on_frame_request(&mut state.wl.image_capture.book, id, size)
