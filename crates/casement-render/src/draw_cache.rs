@@ -174,7 +174,7 @@ mod tests {
         let cache = DrawCache::default();
         let look = look();
         let made = std::cell::Cell::new(0);
-        let mut make = || {
+        let make = || {
             made.set(made.get() + 1);
             crate::element::shadow_tiles(&look, Scale::ONE)
         };
