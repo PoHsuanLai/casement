@@ -56,6 +56,7 @@ pub fn with_slots(mut arrangement: Arrangement, slots: &[(u64, LogicalRect)]) ->
             window: WindowId(*n),
             kind: SlotKind::Live,
             rect: *rect,
+            icon: *rect,
         })
         .collect();
     arrangement

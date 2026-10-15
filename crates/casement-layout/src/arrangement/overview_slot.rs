@@ -12,6 +12,10 @@ pub struct OverviewSlot {
     pub kind: SlotKind,
     /// Its slot, in global logical coordinates.
     pub rect: LogicalRect,
+    /// Where the app's icon sits at rest: centred under the slot, overlapping its bottom edge,
+    /// in global logical coordinates. The renderer draws it with the slot as the slot arrives
+    /// (the layout holds no pixels; the icon is the window's app's).
+    pub icon: LogicalRect,
 }
 
 /// What an overview slot shows.

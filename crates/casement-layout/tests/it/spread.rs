@@ -69,6 +69,14 @@ proptest! {
         for (i, a) in got.overview.iter().enumerate() {
             prop_assert_eq!(a.kind, SlotKind::Live);
             prop_assert_eq!(a.rect.intersection(&usable), Some(a.rect));
+            // The icon is a square of 32 to 64, inside the area, centred under the slot.
+            prop_assert_eq!(a.icon.intersection(&usable), Some(a.icon));
+            prop_assert!((32..=64).contains(&a.icon.size.w) && a.icon.size.w == a.icon.size.h);
+            let (slot_mid, icon_mid) = (
+                i64::from(a.rect.origin.x) * 2 + i64::from(a.rect.size.w),
+                i64::from(a.icon.origin.x) * 2 + i64::from(a.icon.size.w),
+            );
+            prop_assert!((slot_mid - icon_mid).abs() <= 1);
             for b in &got.overview[i + 1..] {
                 prop_assert!(overflow || gap(&a.rect, &b.rect) >= 20, "{:?} and {:?} closer than the gap", a.window, b.window);
             }

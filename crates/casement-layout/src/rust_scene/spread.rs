@@ -6,6 +6,7 @@
 //! it at the window's own size, and the renderer draws the frame scaled with the window, so the
 //! box laid out is the scaled content plus the scaled reserve.
 
+use super::icon_rect::icon_rect;
 use super::spread_fit::{Cell, held, push_apart, shelf, start};
 use crate::{LayoutKnobs, OverviewSlot, SlotKind};
 use casement_core::WindowId;
@@ -197,10 +198,12 @@ impl<'a> Ruler<'a> {
                     y: whole(cell.y + half + Self::reserved(e.reserve, scale)),
                 };
                 let rect = LogicalRect::new(at, size);
+                let rect = rect.intersection(&usable).unwrap_or(rect);
                 OverviewSlot {
                     window: e.window,
                     kind: SlotKind::Live,
-                    rect: rect.intersection(&usable).unwrap_or(rect),
+                    rect,
+                    icon: icon_rect(rect, scale, usable),
                 }
             })
             .collect()

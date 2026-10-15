@@ -16,6 +16,7 @@
 mod cascade;
 mod desktop;
 mod floating;
+mod icon_rect;
 mod overview;
 mod split;
 mod spread;
