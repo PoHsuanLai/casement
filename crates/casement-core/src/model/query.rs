@@ -92,6 +92,15 @@ impl Model {
             .map(|state| state.config.logical_rect())
     }
 
+    /// The whole rectangle of every plugged output in the global logical space, by key.
+    pub fn output_rects(&self) -> Vec<(OutputKey, LogicalRect)> {
+        self.outputs
+            .0
+            .iter()
+            .map(|(key, state)| (key.clone(), state.config.logical_rect()))
+            .collect()
+    }
+
     /// What `output` leaves for windows after the layers' exclusive zones.
     pub(super) fn usable_rect(&self, output: &OutputKey) -> Option<LogicalRect> {
         self.output_rect(output)

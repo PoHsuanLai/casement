@@ -43,6 +43,7 @@ mod overview_drag;
 mod presence;
 mod scene;
 mod surfaces;
+mod tile;
 mod titles;
 pub(crate) mod tty;
 mod windows;
@@ -168,6 +169,7 @@ pub fn frame(state: &mut State, output: &OutputKey) {
         minimise_effect: state.core.model.settings().windows.minimise_effect,
         overview,
         backdrop: divider::backdrop(state, output),
+        tile_preview: tile::preview(state, output),
         ..layers_on(&state.core.model, output)
     };
     let capture = tty::capture_watch(&state.wl.image_capture.book, &state.wl.screencopy, output);

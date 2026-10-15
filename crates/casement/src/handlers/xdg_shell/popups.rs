@@ -4,6 +4,8 @@ use crate::core_loop;
 use crate::state::State;
 use casement_core::InputSerial;
 use casement_core::geometry::{LogicalPoint, LogicalSize};
+use casement_core::policy::ConnectionRole;
+use casement_wayland::ClientState;
 use casement_wayland::convert::{point_of, serial_of};
 use casement_wayland::xdg_shell::{
     PopupBounds, on_new_popup, on_popup_acked, on_popup_grab, on_reposition, on_room_changed,
@@ -14,6 +16,7 @@ use smithay::desktop::{
     find_popup_root_surface, get_popup_toplevel_coords,
 };
 use smithay::input::pointer::Focus;
+use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_seat::WlSeat;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::Serial;
@@ -110,10 +113,21 @@ pub(super) fn reposition(
     core_loop::feed(state, events);
 }
 
-/// A popup asked for an explicit grab: if the serial answers a press, it takes the seat's
-/// keyboard and pointer (a menu), and a popup whose grab is refused is dismissed.
+/// Whether `surface` belongs to the shell's own connection. The shell opens the window menu
+/// when the compositor asks (the dwell on the green light), with no input of its own to
+/// name, so its popup grab is taken on trust instead of a serial.
+fn is_shell(surface: &WlSurface) -> bool {
+    surface.client().is_some_and(|client| {
+        ClientState::of(&client).is_some_and(|data| data.role == ConnectionRole::Shell)
+    })
+}
+
+/// A popup asked for an explicit grab: if the serial answers a press (or the shell asks), it
+/// takes the seat's keyboard and pointer (a menu), and a popup whose grab is refused is
+/// dismissed.
 pub(super) fn grab(state: &mut State, surface: PopupSurface, _seat: WlSeat, serial: Serial) {
-    let proven = state.grab_serial_proves(surface.wl_surface(), serial_of(serial));
+    let proven = is_shell(surface.wl_surface())
+        || state.grab_serial_proves(surface.wl_surface(), serial_of(serial));
     let events = on_popup_grab(&mut state.wl.xdg_shell, &surface, serial_of(serial));
     core_loop::feed(state, events);
     if !proven {

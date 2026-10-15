@@ -12,9 +12,11 @@ use casement_core::focus::TokenCheck;
 use casement_core::geometry::{LogicalPoint, LogicalRect};
 use casement_core::policy::ConnectionRole;
 use casement_core::{Event, LayerKey, WindowId};
+use casement_layout::{LayoutKnobs, RustScene, SceneLayout, frame_metrics, spec_of_framed};
 use porter_core::PeerIdentity;
 use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use std::collections::BTreeMap;
 use std::os::fd::OwnedFd;
 use std::os::unix::net::UnixStream;
 use std::time::Duration;
@@ -144,5 +146,31 @@ impl Fixture {
     pub fn refocus_pointer(&mut self) {
         core_loop::refocus_pointer(&mut self.state);
         self.pump();
+    }
+
+    /// Paints the server-side frames in `scheme`, as the desktop's colour scheme does once
+    /// `appearance.theme = "system"` has resolved against it (that table is
+    /// `casement::appearance::resolve`'s, unit tested there; the watch on the settings portal
+    /// and the file is a thread, which a virtual-clock fixture does not drive); then pumps.
+    pub fn set_scheme(&mut self, scheme: casement_layout::Scheme) {
+        self.state.render.scheme = scheme;
+        self.pump();
+    }
+
+    /// Where the layout puts `window`'s content when casement frames it (the server-side
+    /// decoration): the titlebar is reserved above it. The window must be arranged.
+    pub fn framed_content_of(&self, window: WindowId) -> LogicalRect {
+        let model = self.model();
+        let frames = BTreeMap::from([(window, frame_metrics().titlebar)]);
+        RustScene
+            .arrange(
+                &spec_of_framed(model, &frames),
+                &LayoutKnobs::of(model.settings()),
+            )
+            .windows
+            .iter()
+            .find(|target| target.window == window)
+            .map(|target| target.rect)
+            .expect("the window is arranged")
     }
 }
