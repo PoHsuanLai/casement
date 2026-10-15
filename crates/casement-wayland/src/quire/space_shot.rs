@@ -201,7 +201,7 @@ impl SpaceShotBook {
     pub fn changed(&mut self, look_of_session: impl Fn(&SpaceShot) -> Look) -> Vec<SpaceSessionId> {
         let due: Vec<SpaceSessionId> = self
             .waiting
-            .keys()
+            .iter()
             .copied()
             .filter(|id| match self.sessions.get(id) {
                 Some(shot) => self.delivered.get(id) != Some(&look_of_session(shot)),

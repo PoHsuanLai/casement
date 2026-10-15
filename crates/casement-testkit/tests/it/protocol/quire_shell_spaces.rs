@@ -237,7 +237,7 @@ fn a_window_dropped_on_a_target_moves_to_that_space() {
     move_to(&mut desk, at);
     press(&mut desk);
     move_to(&mut desk, LogicalPoint { x: 50, y: 50 });
-    let output = &desk.outputs[0].object;
+    let output = desk.outputs[0].object.clone();
     assert_eq!(
         desk.shell.drop_targets().last(),
         Some(&(output.clone(), Some(desk.second.as_str().to_owned())))
