@@ -7,8 +7,14 @@
 //! frame asked for) and the smithay [`Session`]s, whose drop is the `stopped` event.
 
 mod book;
+mod cursor;
+mod damage;
 
 pub use book::CaptureBook;
+pub use cursor::{
+    CursorBook, CursorHold, CursorSessionId, CursorView, Placement, image_size, place,
+};
+pub use damage::{DamageLog, DamageLogs, Since};
 
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::OutputKey;
@@ -33,6 +39,34 @@ pub struct CaptureSourceId(pub u64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct CaptureSessionId(pub u64);
 
+/// Whether a capture has the cursor in it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum CursorPaint {
+    /// The cursor is composited onto the frame (`paint_cursors`, `overlay_cursor` 1).
+    Painted,
+    /// It is not.
+    Hidden,
+}
+
+impl CursorPaint {
+    /// What `zwlr_screencopy_manager_v1`'s `overlay_cursor` number asks for: 0 leaves the
+    /// cursor out, anything else puts it in.
+    ///
+    /// ```
+    /// use casement_wayland::image_capture::CursorPaint;
+    ///
+    /// assert_eq!(CursorPaint::from_overlay(0), CursorPaint::Hidden);
+    /// assert_eq!(CursorPaint::from_overlay(1), CursorPaint::Painted);
+    /// ```
+    pub fn from_overlay(overlay_cursor: i32) -> CursorPaint {
+        match overlay_cursor {
+            0 => CursorPaint::Hidden,
+            _ => CursorPaint::Painted,
+        }
+    }
+}
+
 /// The managers' state: the book, smithay's two global states and the sessions held.
 #[derive(Debug)]
 pub struct ImageCapturePart {
@@ -42,6 +76,10 @@ pub struct ImageCapturePart {
     pub output_sources: OutputCaptureSourceState,
     /// `ext_image_copy_capture_manager_v1`.
     pub copy: ImageCopyCaptureState,
+    /// What changed on each output, frame by frame (fed as frames are presented).
+    pub damage: DamageLogs,
+    /// The cursor sessions.
+    pub cursors: CursorBook,
     /// The sessions, held so that dropping one tells its client `stopped`.
     held: BTreeMap<CaptureSessionId, Session>,
     /// The frame requests that found no frame presented yet; dropping one tells its client
@@ -62,6 +100,8 @@ impl ImageCapturePart {
             book: CaptureBook::default(),
             output_sources: OutputCaptureSourceState::new_with_filter::<D, _>(display, filter),
             copy: ImageCopyCaptureState::new_with_filter::<D, _>(display, filter),
+            damage: DamageLogs::default(),
+            cursors: CursorBook::default(),
             held: BTreeMap::new(),
             waiting: BTreeMap::new(),
         }
@@ -192,5 +232,7 @@ pub fn apply_output_gone(part: &mut ImageCapturePart, output: &OutputKey) {
         part.held.remove(&id);
         part.waiting.remove(&id);
     }
+    part.damage.forget(output);
+    part.cursors.forget_output(output);
     part.copy.cleanup();
 }

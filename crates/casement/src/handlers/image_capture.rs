@@ -9,9 +9,11 @@
 //! `casement_backend::tty::Readback`); the first frame of a session fails until the next vblank
 //! has drawn one (FINDINGS, p1-t).
 
+mod cursor;
 mod frames;
 
-pub(super) use frames::{last_frame, release_waiting};
+pub(super) use cursor::sync as sync_cursors;
+pub(super) use frames::{last_frame, note_presented, release_waiting};
 
 use super::capture_source;
 use crate::state::State;
@@ -19,6 +21,7 @@ use casement_core::OutputKey;
 use casement_wayland::capture_source::{ToplevelSessionId, ToplevelSourceId};
 use casement_wayland::image_capture::{self, CaptureSessionId, CaptureSourceId};
 use smithay::output::Output;
+use smithay::reexports::wayland_server::protocol::wl_pointer::WlPointer;
 use smithay::reexports::wayland_server::protocol::wl_shm::Format;
 use smithay::utils::Size;
 use smithay::wayland::image_capture_source::{
@@ -26,7 +29,8 @@ use smithay::wayland::image_capture_source::{
     OutputCaptureSourceState,
 };
 use smithay::wayland::image_copy_capture::{
-    BufferConstraints, Frame, ImageCopyCaptureHandler, ImageCopyCaptureState, Session, SessionRef,
+    BufferConstraints, CursorSession, CursorSessionRef, Frame, ImageCopyCaptureHandler,
+    ImageCopyCaptureState, Session, SessionRef,
 };
 
 impl ImageCaptureSourceHandler for State {
@@ -79,6 +83,26 @@ impl ImageCopyCaptureHandler for State {
         let id = source.user_data().get::<CaptureSourceId>()?;
         let output = self.wl.image_capture.book.sources.get(id)?.clone();
         constraints_of(self, &output)
+    }
+
+    fn cursor_capture_constraints(
+        &mut self,
+        source: &ImageCaptureSource,
+        _pointer: &WlPointer,
+    ) -> Option<BufferConstraints> {
+        cursor::constraints(self, source)
+    }
+
+    fn new_cursor_session(&mut self, session: CursorSession) {
+        cursor::new_session(self, session);
+    }
+
+    fn cursor_frame(&mut self, session: &CursorSessionRef, frame: Frame) {
+        cursor::serve(self, session, frame);
+    }
+
+    fn cursor_session_destroyed(&mut self, session: CursorSessionRef) {
+        cursor::release(self, &session);
     }
 
     fn new_session(&mut self, session: Session) {

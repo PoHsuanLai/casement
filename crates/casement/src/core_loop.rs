@@ -136,7 +136,7 @@ pub fn frame(state: &mut State, output: &OutputKey) {
         frames: frames::styles(state),
         ..layers_on(&state.core.model, output)
     };
-    let capture = tty::capture_watch(&state.wl.image_capture.book, output);
+    let capture = tty::capture_watch(&state.wl.image_capture.book, &state.wl.screencopy, output);
     let source = SceneSource {
         frame: &frame,
         view: &view,
@@ -171,7 +171,7 @@ pub fn frame(state: &mut State, output: &OutputKey) {
         }
     }
     // A capture that waited for a frame (the first of a session) may have one now.
-    crate::handlers::serve_captures(state);
+    crate::handlers::serve_captures(state, output);
 }
 
 /// Presents on the headless backend; the sequence number of the frame shown.
