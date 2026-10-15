@@ -60,6 +60,7 @@ fn roots() -> Vec<&'static Interface> {
         wp::fractional_scale::v1::client::wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1,
         wp::fifo::v1::client::wp_fifo_manager_v1::WpFifoManagerV1,
         wp::commit_timing::v1::client::wp_commit_timing_manager_v1::WpCommitTimingManagerV1,
+        wp::color_management::v1::client::wp_color_manager_v1::WpColorManagerV1,
         wp::content_type::v1::client::wp_content_type_manager_v1::WpContentTypeManagerV1,
         wp::cursor_shape::v1::client::wp_cursor_shape_manager_v1::WpCursorShapeManagerV1,
         wp::security_context::v1::client::wp_security_context_manager_v1::WpSecurityContextManagerV1,

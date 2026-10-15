@@ -53,6 +53,7 @@ impl Model {
             })
             .with_all(cover)
             .then(|model| model.redrawn(Cause::OutputChange, vec![key]))
+            .then(Model::night_drive)
     }
 
     /// The configuration a new output gets: place it among the plugged ones, which keep
@@ -102,7 +103,7 @@ impl Model {
         if !self.outputs.0.contains_key(output) {
             return Moved::of(self);
         }
-        let mut model = self;
+        let mut model = self.night_forget(output);
         model.outputs.0.remove(output);
         let model = model.lock_without_output(output);
         let heir = model.primary_output();

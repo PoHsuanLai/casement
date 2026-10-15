@@ -3415,6 +3415,80 @@ on hardware**: nothing was timed; whether the 4K read-back stall is gone is for 
   `R::TextureId`; a `GlesTexture` made by `Offscreen::create_buffer` drawn upright through `render_texture_from_to` after being rendered
   into with a `Transform::Normal` tracker (mirrors `blit_texture`).
 
+## cas23-quit: quit, force quit, not responding (P3-QU, 2026-10-15)
+
+- Not responding: input pings the key window's client (`app/quit.rs` `ping_plan`): none while a
+  ping is out or went within 2 s; unanswered after 4 s marks the app `NotResponding`; a pong clears
+  it. Pings follow input to the key window only; the window under the pointer is not pinged, and a
+  hung app is found only when the person types or clicks into its key window (macOS finds it on
+  any click on its window). The model mirrors the timers it arms (`TimerKey::Ping`, new
+  `TimerKey::PingGap`) in its own book so the next input can see them.
+- The busy cursor over a not-responding app's windows is NOT drawn: casement does not draw
+  cursors per surface yet. The state is in the model (`AppLife::NotResponding`) and published to
+  `quire_desktop_v1` (app life and window responsiveness).
+- Quit (Cmd+Q, `desktop_app.quit`): asks every window to close, shows the app as quitting for
+  3 s, then as running again if it is still here (a "Save changes?" sheet). Departure from macOS:
+  an app with no window cannot be asked to quit (there is no window to close and no quit request in
+  `quire_window_v1`); it only shows as quitting for the grace.
+- Force Quit panel (Option-Command-Escape): `ShellNote::ForceQuitPanel(rows)` goes to the shell
+  edge, which has no event to carry it yet (see the interface ask in the lane report); the shell
+  can already draw the list from `quire_desktop_v1` and call `desktop_app.force_quit`.
+- Force quit (`desktop_app.force_quit`): SIGTERM now, SIGKILL 3 s later if the app is still here.
+  macOS kills at once; the TERM first is the plan's. Processes are those of the connections that
+  serve the app and no other app, from the socket credentials (`Client::get_credentials`), only
+  for connections through the public socket. Left alone on purpose: sandboxed clients (their pid
+  is in another namespace), the shell's and agent connections, and a connection that carries
+  windows of several apps (xwayland-satellite: killing it would end every X11 app). X11 apps are
+  therefore not force-quittable until XWayland windows carry `_NET_WM_PID`.
+- casement does not launch apps in a transient scope (spawn.rs starts a plain child), so there
+  is no app scope to signal; the credential pid is the only handle.
+
+## p3-cm: colour management, the colour pass, night light (2026-10-15)
+
+Written without a compiler (wave 6 rule): every smithay and wayland-scanner name was checked in
+the pinned sources, none was built. Look here first when it fails to compile.
+
+### What landed
+
+- `casement-core/src/output/{gamut,tag,night_light}.rs`, `settings/night_light.rs`: EDID
+  primaries (bytes 25..35 of the base block, ten-thousandths) and `Gamut::{Srgb, Wide}`; a
+  surface's `ColorTag`; the night-light schedule, tint table and gamma ramp (integers only).
+- `casement-render/src/pass/{color_matrix,color,color_gles}.rs`: sRGB-to-panel matrix, the CPU
+  transform (pixman, tests) and the GLES shader (`draw_converted`). `ColorTransform::for_gamut`
+  gives none for an sRGB panel, so the pass is skipped.
+- `casement-wayland/src/color_management/`: `wp_color_manager_v1` version 2, parametric subset.
+- `settings.toml` gains `night_light.{mode,from,to,kelvin,fade_minutes}`.
+
+### Departures and limits
+
+- Served: perceptual intent; features `parametric` and `set_primaries`; curves sRGB
+  (`compound_power_2_4`, `srgb` for v1), gamma22, `ext_linear`; named primaries sRGB and
+  Display P3. Not served (`unsupported_feature`): ICC, `set_tf_power`, luminances, mastering
+  volume, scRGB, BT.2100. No HDR. The `get_image_description` reference request fails the
+  description (`unsupported`). A client's white point is ignored; D65 is assumed.
+- The surface's preferred description is always sRGB; a P3-tagged surface is converted by the
+  renderer, which does not yet read `color_management::surface_tag` (open item below).
+- The panel's own white point is ignored too: content white is the panel's native white.
+- `get_image_description` on an output is built when asked; `image_description_changed` is never
+  sent because the gamut is fixed while an output is plugged.
+- Night light is not double-buffered with anything and is not yet driven: the model has no
+  `NightLightTick` event.
+
+### Open items (wiring that touches files other lanes own)
+
+1. Fill `ColorPart` gamuts: call `color_management::set_gamut(part, key, Gamut::of(primaries))`
+   where the tty backend reads a connector's EDID (`Primaries::from_edid(&connector.edid)`), and
+   `forget` on unplug. `OutputFacts` has 19 literal sites, so a side event is cheaper than a field.
+2. Render: `pass::draw_converted` for the output picture when `ColorTransform::for_gamut(..)` is
+   some, and per-surface `ColorTransform::for_gamut(output).with_source(tag.transfer.into())` when
+   `surface_tag` is some (a tagged P3 surface on an sRGB panel needs the inverse matrix; the maths
+   is `srgb_to_panel` composed with the tag's own `rgb_to_xyz`, not written yet).
+3. Night light driver: a timer in `casement/src/time/` reads the local minute, calls
+   `NightLight::ramp_at(minute, gamma_size)` per output and feeds `Effect::SetGamma`; a gamma
+   control client (`zwlr_gamma_control_v1`) wins while it holds the output. Interface for sill: the
+   `night_light.*` keys in settings.toml (mode off/always/scheduled; sill writes sunset and sunrise
+   into from/to). sill keeps DDC warmth for panels that take it and sets `night_light.mode = off`
+   there.
 ## P3-TL: window tiling by drag (cas22-tile)
 
 - **What landed.** `casement_layout::zone_rect(zone, usable, margin)` (`rust_scene/tile_zone.rs`) cuts a half or quarter out of the
@@ -3558,3 +3632,71 @@ Written without a build or a run (rule of the lane).
   and arms the kill grace; `pids_of` is empty, so nothing is signalled. Open: what the model
   should do when an app has no killable process (leave it running and say so in the panel, or
   close its windows).
+
+### cas28-daily: night light per display (2026-10-16)
+
+- **`night_light.skip_outputs`** (list of text, page Appearance, "Displays left as they are"): outputs
+  night light does not warm. An entry is a connector name (`DP-1`, what sill knows of a DDC monitor:
+  `Endpoint::connector`) or an `OutputKey`'s text (`edid:<make>/<model>/<serial>`, or
+  `connector:<name>` for a display without a serial); surrounding spaces are ignored. The one
+  place it is honoured is `NightLightSettings::ramp_for` (identity for a skipped output).
+- **The driver did not exist** (the p3-cm entry's open item 3: the model had no tick). Added the
+  model half: `Event::NightLightTick(MinuteOfDay)` sets the local minute; every plugged output
+  whose wanted ramp differs from the one last asked gets `Effect::SetGamma` (so a steady minute,
+  a plug, a settings change and a minute of a fade each ask only what changed). Ramps are 256
+  steps; the KMS adapter resamples to the CRTC's own size (`channels`). A gamma-control client
+  (`Event::GammaSet` with a table) holds its output: night light does not touch it until the client
+  gives it back (identity), when night light takes it up again.
+- **Still missing: the producer of the tick.** Nothing in the session reads the local minute:
+  `casement/src/time/` has only the monotonic session clock, and the local time of day needs the
+  time zone (a tz-aware crate such as `jiff`, as sill uses; `chrono`/`time` would do; there is no
+  safe route in std or rustix). Needed: a one-shot timer in `time/` re-armed every minute that
+  feeds `Event::NightLightTick`, and one tick at start. Until then night light does nothing in a
+  real session, skip list or not. Held back because the lane may not touch Cargo.toml/Cargo.lock.
+- **Live.** `settings_live::followed` now takes `night_light` from the file, so a rewrite of
+  `settings.toml` by sill reaches the model (`SettingsChanged`) within the watcher's debounce
+  and the outputs are re-driven in the same step. Before this change only the pointer, the key
+  repeat and the keyboard layout followed.
+- **What sill writes.** `[night_light]` keys as before (`mode`, `from`, `to`, `kelvin`,
+  `fade_minutes`; sill's file merge keeps unknown keys, so `skip_outputs` survives its writes) plus
+  `skip_outputs = ["DP-1", ...]`: the connector of each monitor it warms over DDC
+  (`Endpoint::connector`), written by sill's Night Shift when `display.night_warmth = "hardware"`
+  and the software light is on for the rest, and `[]` (or removed) otherwise. A DDC monitor whose
+  connector sill could not match to a bus is not listed (sill cannot name it either).
+
+### cas28-daily: the night light tick and X11 force quit land (2026-10-16)
+
+- **Tick producer.** `time/local_minute.rs`: a calloop timer (`Timer::immediate()`, so the first
+  tick is the loop's first turn) reads `jiff::Zoned::now()` (the system time zone), feeds
+  `Event::NightLightTick(minute_of(&now))` and sleeps `until_next_minute(&now)`, so each firing
+  re-reads the clock. After a suspend the monotonic timer fires late and re-syncs at once; a
+  clock or zone change is caught at the next boundary at the latest. `run.rs` attaches it only
+  for the monotonic session clock (virtual and stepped runs have no wall time). On a DST day the
+  minute is the wall clock's, so the spring-forward hour is skipped and the fall-back hour
+  repeats (a fade is measured in minutes of the wall clock, as the schedule is). Tested with
+  zones from POSIX strings (no zoneinfo read). Uncertain: whether jiff re-reads `/etc/localtime`
+  often enough to follow a zone change without a restart (it caches the system zone for a
+  short while); not tested, since a test cannot move the real zone.
+- **X11 force quit.** `xwayland/xres.rs` asks the X server (a throw-away `x11rb` connection to
+  the served display, on a thread the loop waits 750 ms for) for the root's children with their
+  `WM_CLASS` and `XResQueryClientIds` / `LocalClientPID`; `xwayland/owners.rs` is the pure
+  decision (class or instance equals the app's claimed id, case-insensitively; never the
+  satellite, casement, init, pid 0 or a negative pid). `Processes` now remembers the satellite's
+  connection as an X11 carrier (`carries_x11`), and `exec::quit::pids_of` adds the X11 pids when
+  a terminated connection is that one.
+- **Not done: more than one X11 app.** `Model::sole_clients_of` names a connection only when all
+  its windows belong to the app, and the test `a_connection_that_carries_two_apps_is_never_force_quit`
+  holds that rule. With two X11 apps open, the satellite connection carries both, so
+  `force_quit_app` finds no client and does nothing; the X11 route is reached only when the app
+  is the sole X11 app. Fixing it needs the model to know a window is X11 (a marker on the
+  connection or window, from the edge) and to name the app's windows rather than connections;
+  that is a model decision (what a force quit of one of two X11 apps should do to the other's
+  windows is nothing, which the X route gives) left to the owner.
+- **Not done / uncertain.** (1) Only the root's direct children are listed: satellite does not
+  reparent X11 windows, so these are the top-levels, but a window manager that did would hide the
+  client windows one level down. (2) Xwayland's own pid is not named as spared: it owns no
+  top-level windows with a `WM_CLASS`, and the server's own resources have no client pid, but this
+  was not run against a real Xwayland (the lane may not build or run it). (3) `XResQueryClientIds`
+  needs X-Resource 1.2 (Xwayland has it since 1.20); no `XResQueryVersion` is sent first.
+  (4) The wait for the X server is a blocked loop turn of at most 750 ms, twice per force quit
+  (the `SIGTERM` and the later `SIGKILL`).

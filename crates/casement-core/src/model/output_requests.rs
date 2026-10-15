@@ -33,7 +33,9 @@ impl Model {
     /// one that is gone.
     pub(super) fn set_gamma(self, output: OutputKey, ramp: GammaRamp) -> Moved {
         match self.outputs.0.contains_key(&output) {
-            true => Moved::of(self).with(Effect::SetGamma(output, ramp)),
+            true => Moved::of(self.night_client_ramp(&output, &ramp))
+                .with(Effect::SetGamma(output, ramp))
+                .then(Model::night_drive),
             false => Moved::of(self),
         }
     }

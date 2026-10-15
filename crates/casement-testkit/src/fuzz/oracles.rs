@@ -136,6 +136,7 @@ fn kind_of(interface: &str) -> Option<GlobalKind> {
         "wp_fifo_manager_v1" => GlobalKind::Fifo,
         "wp_commit_timing_manager_v1" => GlobalKind::CommitTiming,
         "wp_content_type_manager_v1" => GlobalKind::ContentType,
+        "wp_color_manager_v1" => GlobalKind::ColorManagement,
         "xdg_wm_base" => GlobalKind::XdgShell,
         "zxdg_decoration_manager_v1" => GlobalKind::XdgDecoration,
         "xdg_activation_v1" => GlobalKind::XdgActivation,
