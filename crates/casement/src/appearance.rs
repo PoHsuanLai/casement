@@ -200,15 +200,15 @@ pub(crate) fn attach(state: &mut State, home: &ConfigHome) -> Result<(), crate::
 /// Runs each task on a thread of its own, parked between wake-ups: ds-settings' watch is an
 /// async task and casement runs no async runtime.
 #[derive(Debug, Clone, Copy)]
-struct ThreadSpawner;
+pub(crate) struct ThreadSpawner;
 
 impl Spawner for ThreadSpawner {
     fn spawn(&self, task: Pin<Box<dyn Future<Output = ()> + Send>>) {
         let started = std::thread::Builder::new()
-            .name("casement-appearance".to_owned())
+            .name("casement-settings-watch".to_owned())
             .spawn(move || block_on(task));
         if let Err(error) = started {
-            tracing::warn!(%error, "the appearance file is read once: it could not be watched");
+            tracing::warn!(%error, "a settings file is read once: it could not be watched");
         }
     }
 }
