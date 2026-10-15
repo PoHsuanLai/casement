@@ -2975,3 +2975,82 @@ Lane `kbdlive` (not compiled; the orchestrator gates). Closes input2's departure
   types the new layout at once with no restart; a held modifier key still releases cleanly; Caps Lock is cleared by
   the switch; a typo in the layout leaves typing unchanged and one warning in the log; `cmd+space` still works.
   Toolkits that cache the keymap (GTK, Qt, Xwayland through xwayland-satellite) must take the new `keymap` event.
+
+## wave-2026-10-15/mcwire
+
+The three asks of sill's Spaces bar (`## spacesbar`), as `quire_shell_v1` **version 2** (casement-protocols `lane/cas9-mcwire`,
+FINDINGS `## wave-2026-10-15/mcwire` there). Written without a compiler (the lane rules); the gate is the first build. Land
+casement-protocols first. Built on casement 79456e1: `ovpolish` (6cb6035) is not merged here; the files both touch are
+`core_loop/overview.rs` (the `press`, `hover` and `leave` bodies; `window_at`, `draw` and the colours are ovpolish's) and
+`model/overview.rs` (untouched here).
+
+- **1. Which output (`overview_output`).** casement's overview is global (one `Overview` in the model, every output flies its
+  windows), and that is the Mac's behaviour with separate Spaces: Mission Control opens on every display at once. So the event is
+  sent for every output, `shown` while the overview is not closed and `hidden` when it is, just before each `overview_state`
+  (`exec/shell.rs`, `shell_space::send_overview_outputs`, only to objects bound at version 2 or later, through
+  `Output::client_outputs`: a client that has not bound `wl_output` hears nothing). Not done: an output plugged in while Mission
+  Control is open is not told until the next state change; a shell that binds while it is open hears nothing until then.
+- **2. Space pictures (`get_space_capture_source(source, output, space_id, width, height)`).** Reuses ext-image-copy-capture: the
+  request makes an `ImageCaptureSource` (smithay's custom-source path) whose user data is a `SpaceSourceId`
+  (`casement_wayland::quire::space_shot`, a pure book like the toplevel one); `handlers/image_capture.rs` hands such sessions to
+  `handlers/space_shot.rs`. The constraints are exactly the size asked for (each side clamped to 1..=1024), shm and the usual
+  dma-buf offer. A picture is the windows of the Space the output shows, each drawn alone with `capture_source::window_rgba`
+  (no frame, no popups), shrunk to where `arrangement.windows` puts it on the output and composed back to front by
+  `casement_render::pass::compose_thumb` (integer box average, premultiplied over, `thumb_dest` rounds both edges), over a
+  **transparent** background (the shell draws the wallpaper). Damage: a request is held until the Space's `Look` changed (an FNV
+  fingerprint of each window's id, rectangle and commit count; commits are counted only while a session exists), checked after
+  every commit (`capture_source::committed` calls `space_shot::committed`) and every relayout (`core_loop::relayout` calls
+  `space_shot::poll`). **Departures:** (1) only the Space the output shows now: a source on another Space, a removed Space or a
+  Space that is switched away stops its sessions (`stopped`); the bar must ask again after a switch. The other Spaces need their
+  windows' places on a Space that is not shown, which `Arrangement` does not carry. (2) The pictures have no wallpaper, no menu
+  bar, no dock, no window frames or shadows; a full-screen or Split View Space shows its windows as they sit. (3) Each refresh
+  draws every window of the Space again through the software path (one CPU read-back per window): fine for a few small pictures,
+  to be measured with many windows. (4) A window moving during a spring (a Space switch) changes `arrangement` only at its end
+  state, so the picture jumps to the end. (5) Stacking is `arrangement.windows` order, not the focus stack.
+- **3. Dropping a window on a Space.** Pure parts in `casement_core::overview_drag` (table-tested): `SpaceTargets` (per output
+  rectangles, last added in front, only plugged outputs hit), `Drag` (`Idle`, `Pressed`, `Dragging`; threshold `DRAG_THRESHOLD`
+  = 8 logical px, the distance squared compared) and `Released` (`Pick`, `Drop`, `FlyBack`). The loop (`core_loop/overview_drag.rs`):
+  a press on a slot no longer picks at once, it starts a `Drag`; the release picks (as the press did) when it never moved past the
+  threshold. Past it the window's overview slot becomes the pointer's travel from the press (the window keeps its place under the
+  pointer, its slot moved to the front of the list for hit testing), motion is retargeted with `Cause::Drag` (so the window follows
+  the pointer through the existing flight code, no new drawing), the hover ring follows it, the cursor is the closed hand, and the
+  shell hears `drop_target(output, space)` whenever the target under the pointer changes (null when it leaves or the drag ends;
+  `ShellNote::DropTarget`). A release over a target feeds `DesktopRequest::Window { ToSpace }` (the existing path, `window_to_space`)
+  and Mission Control stays open; a release elsewhere calls `relayout(Overview)`, which puts the slot back and the window flies
+  home on the `Move` spring. A press on the picture still leaves at once. `leave()` resets the drag. Requests: `space_target_clear
+  (output)` and `space_target(output, space_id, x, y, w, h)` (global logical pixels; an empty rectangle is `bad_target`; an unknown
+  output or Space id is kept out silently); the table lives on `QuireShellPart::space_targets` and is cleared when the last shell
+  object goes. **Departures:** (1) the dragged window is drawn in the usual window stacking, so it can pass under another window's
+  slot (the slot list is reordered for hits, the scene is not); raising it in the model would change focus order. (2) The drag
+  starts only from entering or open, as a pick did. (3) The target highlight is the shell's: casement draws nothing for it.
+  (4) A window dragged to the Space it is already on is moved to it again, which the model ignores (no change). (5) The fly-back
+  is the `Overview` spring (350 ms settle timer unchanged), not a dedicated animation.
+- **Not asked, not done.** Dragging a window between outputs in Mission Control; dropping on a "new desktop" tile (the Mac adds a
+  Space); dropping a window onto an app; a per-output overview (the event shape allows it).
+- **Test client.** `ShellHandle::{bind_outputs, space_target_clear, space_target, overview_outputs, drop_targets}`, `BoundOutput`
+  (a bound `wl_output` with its connector name), `OutputCapture::open_space`. No catalogue change: `QuireShellV1` is a root and
+  its new messages' interfaces (`ext_image_capture_source_v1`, `wl_output`) are reached from it. No `globals.txt` change (the
+  private globals are not listed), no golden changed, `expected-failures.txt` untouched.
+- **Tests.** casement-core `overview_drag.rs` (hit order and live outputs, clear, threshold table, the window keeps its place, target
+  changes reported, release picks/drops/flies back, doc tests); casement-render `pass/thumb.rs` (placement table, box average,
+  over blending, clipping, half off the picture, doc tests); casement-wayland `quire/space_shot.rs` (size clamp, damage gate,
+  forget, destroyed source, fingerprint) and doc tests on `target_rect`, `clamp_side`, `look_of`; casement-testkit
+  `protocol/quire_shell_spaces.rs` (two outputs hear `overview_output` and a version 1 shell does not; a press that hardly moves
+  picks; drag, hover event, drop and stays open; release elsewhere flies back; an empty target is a protocol error and a cleared
+  one is not hit; a picture on first request, held, sent on commit, background transparent; a picture of a Space not shown stops).
+  Existing: `quire_shell_overview.rs`'s click tests now go through press-then-release and still pick.
+- **Gate.** Likeliest compile faults: `shell_space::on_request` (the generic `D: QuireShellHandler` also needs
+  `Dispatch<ExtImageCaptureSourceV1, ImageCaptureSourceData>`, supplied by the new supertrait `ImageCaptureSourceHandler`; a
+  `GlobalDispatch2/Dispatch2` impl that names `D: QuireShellHandler` only may need the supertrait spelled out), `exec/shell.rs`
+  (`Shown` is the generated server enum, `Overview` is non-exhaustive), `core_loop/overview_drag.rs` (`Moved` and `Released` are
+  non-exhaustive: the `let ... else` and the `_ =>` arm), `handlers/space_shot.rs` (`frame.fail`, `frame.has_failed`,
+  `Frame` is consumed by `answer`), the testclient (`Dispatch<WlOutput, Shared<Option<String>>> for Host`;
+  `get_space_capture_source` is called with the side queue's handle on an object of the main queue). Tests likeliest to need a
+  tweak: `a_space_picture_is_sent_on_damage_only` (assumes the output is `HEADLESS-1` from `small()` and that the second
+  `request` is held; the opaque-pixel bounds assume windows do not cover the whole 640x480), the drag tests (the target at
+  (10,10) 100x90 must be clear of every slot: slots start below a 112 px strip).
+- **Real run (sill (casement)).** Ctrl+Up: the bar appears on every output; hovering a thumbnail shows its picture within a frame
+  or two of a change; press a window, move a few pixels (nothing yet), more (the window follows, the closed hand, the Space tile
+  under it lights); release on the tile (the window leaves the grid, Mission Control stays); release elsewhere (the window glides
+  home); a plain click still picks. With two outputs, each shows its own bar and a window dropped on the other output's tile moves
+  to that Space.

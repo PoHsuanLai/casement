@@ -123,6 +123,8 @@ pub struct RenderState {
     pub titles: Option<casement_chrome::TitleRaster>,
     /// The window Mission Control's pointer is on, if any.
     pub(crate) overview_hover: Option<casement_core::WindowId>,
+    /// The press on a slot of Mission Control: pending, or dragging a window to a Space.
+    pub(crate) overview_drag: casement_core::overview_drag::Drag,
     /// The rasteriser of the title under that window (no margins), made when first needed.
     pub labels: Option<casement_chrome::TitleRaster>,
 }
@@ -339,6 +341,7 @@ impl State {
             scheme: casement_layout::Scheme::default(),
             titles: None,
             overview_hover: None,
+            overview_drag: casement_core::overview_drag::Drag::Idle,
             labels: None,
         };
         Ok(State {

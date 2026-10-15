@@ -17,11 +17,12 @@ pub(super) use cursor::sync as sync_cursors;
 pub(super) use dma::{buffer_size, deliver, fourccs, offer as dma_offer_of};
 pub(super) use frames::{last_frame, note_presented, release_waiting};
 
-use super::capture_source;
+use super::{capture_source, space_shot};
 use crate::state::State;
 use casement_core::OutputKey;
 use casement_wayland::capture_source::{ToplevelSessionId, ToplevelSourceId};
 use casement_wayland::image_capture::{self, CaptureSessionId, CaptureSourceId};
+use casement_wayland::quire::space_shot::{SpaceSessionId, SpaceSourceId};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_pointer::WlPointer;
 use smithay::reexports::wayland_server::protocol::wl_shm::Format;
@@ -39,6 +40,9 @@ impl ImageCaptureSourceHandler for State {
     fn source_destroyed(&mut self, source: ImageCaptureSource) {
         if let Some(id) = source.user_data().get::<CaptureSourceId>() {
             image_capture::on_source_destroyed(&mut self.wl.image_capture.book, *id);
+        }
+        if let Some(id) = source.user_data().get::<SpaceSourceId>() {
+            self.wl.quire_shell.shots.book.on_source_destroyed(*id);
         }
         // A window source (P2-Q3) leaves the window book with it, not when its window closes.
         if let Some(id) = source
@@ -82,6 +86,9 @@ impl ImageCopyCaptureHandler for State {
         if let Some(window) = source.user_data().get::<ToplevelSourceId>().copied() {
             return capture_source::constraints(self, window);
         }
+        if let Some(shot) = source.user_data().get::<SpaceSourceId>().copied() {
+            return space_shot::constraints(self, shot);
+        }
         let id = source.user_data().get::<CaptureSourceId>()?;
         let output = self.wl.image_capture.book.sources.get(id)?.clone();
         constraints_of(self, &output)
@@ -112,6 +119,9 @@ impl ImageCopyCaptureHandler for State {
         if let Some(window) = source.user_data().get::<ToplevelSourceId>().copied() {
             return capture_source::new_session(self, session, window);
         }
+        if let Some(shot) = source.user_data().get::<SpaceSourceId>().copied() {
+            return space_shot::new_session(self, session, shot);
+        }
         let Some(source) = source.user_data().get::<CaptureSourceId>().copied() else {
             return;
         };
@@ -129,12 +139,18 @@ impl ImageCopyCaptureHandler for State {
         if let Some(id) = session.user_data().get::<ToplevelSessionId>().copied() {
             return capture_source::serve(self, session, frame, id);
         }
+        if let Some(id) = session.user_data().get::<SpaceSessionId>().copied() {
+            return space_shot::serve(self, session, frame, id);
+        }
         frames::serve(self, session, frame);
     }
 
     fn session_destroyed(&mut self, session: SessionRef) {
         if let Some(id) = session.user_data().get::<ToplevelSessionId>().copied() {
             return capture_source::release(self, id);
+        }
+        if let Some(id) = session.user_data().get::<SpaceSessionId>().copied() {
+            return space_shot::release(self, id);
         }
         if let Some(id) = session.user_data().get::<CaptureSessionId>() {
             self.wl.image_capture.release(*id);

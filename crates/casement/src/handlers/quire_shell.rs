@@ -3,8 +3,10 @@
 
 use crate::core_loop;
 use crate::state::State;
-use casement_core::{Event, LayerKey, WindowId};
+use casement_core::{Event, LayerKey, OutputKey, WindowId};
 use casement_wayland::quire::shell::{QuireShellHandler, QuireShellPart};
+use smithay::output::Output;
+use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Client, Resource};
 
@@ -24,5 +26,19 @@ impl QuireShellHandler for State {
 
     fn window_known(&self, window: WindowId) -> bool {
         self.core.model.windows().contains_key(&window)
+    }
+
+    fn output_key_of(&self, output: &WlOutput) -> Option<OutputKey> {
+        let advertised = Output::from_resource(output)?;
+        self.wl
+            .output
+            .outputs
+            .iter()
+            .find(|(_, held)| **held == advertised)
+            .map(|(key, _)| key.clone())
+    }
+
+    fn space_known(&self, space: &porter_core::SpaceId) -> bool {
+        self.core.model.spaces().get(space).is_some()
     }
 }

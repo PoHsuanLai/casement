@@ -166,6 +166,7 @@ pub(super) fn committed(state: &mut State, surface: &WlSurface) {
     let Some(window) = state.wl.xdg_shell.window_of_surface(&root) else {
         return;
     };
+    super::space_shot::committed(state, window);
     let sessions = state.wl.capture_source.book.sessions_of(window);
     if sessions.is_empty() {
         return;

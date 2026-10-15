@@ -520,6 +520,7 @@ fn press_edge(
     edge: Edge,
 ) {
     if edge == Edge::Release {
+        overview::released(state);
         grab::end(state, button);
         divider::end(state, button);
         let (taken, fate) = std::mem::take(&mut state.wl.seat.taken).release_button(button);

@@ -242,6 +242,37 @@ impl OutputCapture {
         flush(&self.connection)
     }
 
+    /// Makes a source of the Space `space` of the output named `connector`, from the shell's
+    /// `get_space_capture_source` (`width` by `height` pixels), and a session on it.
+    pub fn open_space(
+        &mut self,
+        shell: &casement_protocols::client::quire_shell_v1::quire_shell_v1::QuireShellV1,
+        connector: &str,
+        space: &str,
+        size: Size,
+    ) -> Result<(), ClientError> {
+        let output = self
+            .state
+            .outputs
+            .iter()
+            .find(|output| output.name.as_deref() == Some(connector))
+            .map(|output| output.output.clone())
+            .ok_or_else(|| ClientError::MissingGlobal(format!("wl_output {connector}")))?;
+        let qh = self.queue.handle();
+        let source =
+            shell.get_space_capture_source(&output, space.to_owned(), size.w, size.h, &qh, ());
+        let session = self
+            .copies
+            .create_session(&source, Options::empty(), &qh, ());
+        self.live = Some(Live {
+            source,
+            cursor: None,
+            session,
+            frame: None,
+        });
+        flush(&self.connection)
+    }
+
     /// The dma-buf formats the session offered in its last complete round of constraints.
     pub fn dmabuf_formats(&self) -> &[DmabufFormat] {
         &self.state.announced.dmabuf

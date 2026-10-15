@@ -39,6 +39,7 @@ mod session_lock;
 mod shm;
 mod shortcuts_inhibit;
 mod single_pixel;
+pub(crate) mod space_shot;
 mod subcompositor;
 mod system_bell;
 mod tablet;

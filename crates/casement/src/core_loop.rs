@@ -38,6 +38,7 @@ mod ime;
 mod input;
 mod menu;
 mod overview;
+mod overview_drag;
 mod presence;
 mod scene;
 mod surfaces;
@@ -373,6 +374,7 @@ pub(crate) fn relayout(state: &mut State, cause: &Cause) {
     }
     state.core.arrangement = next;
     crate::handlers::refit_reactive_popups(state);
+    crate::handlers::space_shot::poll(state);
 }
 
 /// The size to configure `target` to: what layout asks, and for a drag also the size the person

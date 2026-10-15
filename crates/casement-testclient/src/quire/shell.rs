@@ -4,12 +4,14 @@
 use crate::conn::TestClient;
 use crate::surface::toplevel::{Host, Shared};
 use casement_protocols::client::quire_shell_v1::quire_shell_v1::{self, QuireShellV1};
+use wayland_client::protocol::wl_output::{self, WlOutput};
 use wayland_client::protocol::wl_surface::WlSurface;
 use wayland_client::{Connection, Dispatch, QueueHandle, WEnum};
 
 pub use casement_protocols::client::quire_desktop_v1::quire_desktop_window_v1::Toggle;
 pub use casement_protocols::client::quire_shell_v1::quire_shell_v1::{
-    Error as ShellError, MacMods, OverviewMode, OverviewState, ShellRole, SplitSide, WindowEntry,
+    Error as ShellError, MacMods, OverviewMode, OverviewState, ShellRole, Shown, SplitSide,
+    WindowEntry,
 };
 
 /// What a shell object was told.
@@ -26,6 +28,28 @@ pub struct ShellEvents {
     /// Every `overview_state`, in order: the state (`None` for a code this client does not
     /// know) and the progress in thousandths.
     pub overview_states: Vec<(Option<OverviewState>, u32)>,
+    /// Every `overview_output` (version 2), in order: the output and whether its Mission Control
+    /// is up (`None` for a code this client does not know).
+    pub overview_outputs: Vec<(WlOutput, Option<Shown>)>,
+    /// Every `drop_target` (version 2), in order: the output and the Space under the dragged
+    /// window, or none.
+    pub drop_targets: Vec<(WlOutput, Option<String>)>,
+}
+
+/// A bound `wl_output` and the connector name it reported.
+#[derive(Debug, Clone)]
+pub struct BoundOutput {
+    /// The object.
+    pub object: WlOutput,
+    /// Its connector name, once it has arrived.
+    pub name: Shared<Option<String>>,
+}
+
+impl BoundOutput {
+    /// The connector name, if it has arrived.
+    pub fn connector(&self) -> Option<String> {
+        self.name.with(|name| name.clone())
+    }
 }
 
 /// One `split_choose` the shell was told, and the `split_candidate`s after it.
@@ -63,13 +87,60 @@ pub struct ShellHandle {
 }
 
 impl ShellHandle {
-    /// Binds the global at `version` (1 is the only one).
+    /// Binds the global at `version` (1 or 2).
     pub fn bind(client: &mut TestClient, version: u32) -> ShellHandle {
         let log = ShellLog::default();
         let object = client
             .bind(version..=version, log.clone())
             .expect("the compositor advertises quire_shell_v1 to this client");
         ShellHandle { object, log }
+    }
+
+    /// Binds every `wl_output` (the events that name an output reach this client only for the
+    /// ones it has bound). The names arrive at the fixture's next pump.
+    pub fn bind_outputs(client: &TestClient) -> Vec<BoundOutput> {
+        let globals = client.globals();
+        let qh = client.qh();
+        let outputs: Vec<BoundOutput> = globals
+            .contents()
+            .clone_list()
+            .into_iter()
+            .filter(|global| global.interface == "wl_output")
+            .map(|global| {
+                let name = Shared::<Option<String>>::default();
+                let object = globals.registry().bind::<WlOutput, _, _>(
+                    global.name,
+                    global.version.min(4),
+                    &qh,
+                    name.clone(),
+                );
+                BoundOutput { object, name }
+            })
+            .collect();
+        let _ = client.connection().flush();
+        outputs
+    }
+
+    /// Forgets the Space targets of `output` (version 2).
+    pub fn space_target_clear(&self, output: &WlOutput) {
+        self.object.space_target_clear(output);
+    }
+
+    /// Sets a Space target: dropping a dragged window on the rectangle at `at` of `size` (global
+    /// logical pixels) moves it to the Space `space` (version 2).
+    pub fn space_target(&self, output: &WlOutput, space: &str, at: (i32, i32), size: (u32, u32)) {
+        self.object
+            .space_target(output, space.to_owned(), at.0, at.1, size.0, size.1);
+    }
+
+    /// The `overview_output` events, in order.
+    pub fn overview_outputs(&self) -> Vec<(WlOutput, Option<Shown>)> {
+        self.log.with(|seen| seen.overview_outputs.clone())
+    }
+
+    /// The `drop_target` events, in order.
+    pub fn drop_targets(&self) -> Vec<(WlOutput, Option<String>)> {
+        self.log.with(|seen| seen.drop_targets.clone())
     }
 
     /// Gives `surface` the role `role`.
@@ -208,7 +279,32 @@ impl Dispatch<QuireShellV1, ShellLog> for Host {
                 };
                 seen.overview_states.push((state, progress));
             }),
+            quire_shell_v1::Event::OverviewOutput { output, shown } => log.with(|seen| {
+                let shown = match shown {
+                    WEnum::Value(shown) => Some(shown),
+                    WEnum::Unknown(_) => None,
+                };
+                seen.overview_outputs.push((output, shown));
+            }),
+            quire_shell_v1::Event::DropTarget { output, space_id } => {
+                log.with(|seen| seen.drop_targets.push((output, space_id)));
+            }
             _ => {}
+        }
+    }
+}
+
+impl Dispatch<WlOutput, Shared<Option<String>>> for Host {
+    fn event(
+        _: &mut Self,
+        _: &WlOutput,
+        event: wl_output::Event,
+        name: &Shared<Option<String>>,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let wl_output::Event::Name { name: connector } = event {
+            name.with(|held| *held = Some(connector));
         }
     }
 }

@@ -6,6 +6,7 @@
 
 use super::deliver::run_model;
 use super::frames;
+use super::overview_drag as drag;
 use crate::exec;
 use crate::state::State;
 use casement_chrome::{Margins, TitleKey, TitleRaster};
@@ -82,6 +83,9 @@ fn reach(slot: LogicalRect, bar: u32) -> LogicalRect {
 pub(super) fn hover(state: &mut State, at: LogicalPoint) {
     frames::hover(state, None);
     state.render.chrome.cursor = CursorDraw::Named(CursorShape::Default);
+    if drag::moved(state, at) == drag::Follow::Taken {
+        return;
+    }
     state.render.overview_hover = match escape_leaves(state) {
         true => window_at(state, at),
         false => None,
@@ -95,16 +99,23 @@ pub(super) fn press(state: &mut State, event: &InputEvent, at: LogicalPoint) {
     if !escape_leaves(state) {
         return;
     }
-    let pick = window_at(state, at).map(|window| OverviewPick {
-        window,
-        origin: event.origin,
-    });
-    leave(state, pick);
+    // A press on a slot waits for its release (a pick) or its move past the threshold (a drag
+    // to a Space); a press on the picture leaves at once.
+    match window_at(state, at) {
+        Some(window) => drag::press(state, event, window, at),
+        None => leave(state, None),
+    }
+}
+
+/// The button went up: the press on a slot ends (`overview_drag`).
+pub(super) fn released(state: &mut State) {
+    drag::released(state);
 }
 
 /// Mission Control leaves, with `pick` raised and keyed when there is one.
 pub(super) fn leave(state: &mut State, pick: Option<OverviewPick>) {
     state.render.overview_hover = None;
+    state.render.overview_drag = casement_core::overview_drag::Drag::Idle;
     let effects = run_model(state, |model, now| model.close_overview(pick, now));
     exec::exec(state, effects);
 }

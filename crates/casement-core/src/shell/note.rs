@@ -1,7 +1,7 @@
 //! What the model tells the shell's protocol layer (the `Effect::Shell` of this crate).
 
 use crate::geometry::{LogicalPoint, LogicalRect};
-use crate::ids::{LayerKey, WindowId};
+use crate::ids::{LayerKey, OutputKey, WindowId};
 use crate::overview::Overview;
 use crate::window::{MenuItem, SplitSide, enabled_mask};
 use casement_protocols::vocab::{Corner, MacMods, ScreenEdge, ShellRole, Shown};
@@ -37,6 +37,14 @@ pub enum ShellNote {
     /// Mission Control moved to this state (`overview_state`, Mission Control's mode): the shell
     /// draws its Spaces bar while it is not closed.
     Overview(Overview),
+    /// The window dragged in Mission Control is over the Space `space` of a target on `output`,
+    /// or over none (`drop_target`, version 2).
+    DropTarget {
+        /// The output whose bar holds the target.
+        output: OutputKey,
+        /// The Space, or none.
+        space: Option<porter_core::SpaceId>,
+    },
 }
 
 /// The other half of a Split View is being chosen.

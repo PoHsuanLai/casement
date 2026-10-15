@@ -8,27 +8,32 @@
 //! note sends (`apply_note`) are the lane's. The switcher and show-desktop requests are ignored
 //! until P3-Z gives them their machines.
 
+use super::space_shot::SpaceShotPart;
 use super::{Advertised, code_of};
-use super::{shell_overview, shell_split};
+use super::{shell_overview, shell_space, shell_split};
 use crate::foreign_toplevel_list::{identifier_of, window_of_identifier};
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
+use casement_core::overview_drag::SpaceTargets;
 use casement_core::policy::GlobalKind;
 use casement_core::shell::{ShellNote, ShellRequest};
 use casement_core::window::MenuEntry;
-use casement_core::{Event, LayerKey, WindowId};
+use casement_core::{Event, LayerKey, OutputKey, WindowId};
 use casement_protocols::server::quire_shell_v1::quire_shell_v1::{self, QuireShellV1};
 use casement_protocols::vocab::{MacMods, ShellRole, WireCode};
+use porter_core::SpaceId;
 use smithay::reexports::wayland_server::backend::{ClientId, GlobalId};
+use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
+use smithay::wayland::image_capture_source::ImageCaptureSourceHandler;
 use smithay::wayland::{Dispatch2, GlobalDispatch2};
 use std::collections::BTreeMap;
 
 /// The version casement serves.
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 
 /// Whether the global is created yet (P2-Q2 flipped it).
 pub const GLOBAL: Advertised = Advertised::Yes;
@@ -56,6 +61,10 @@ pub struct QuireShellPart {
     pub asked: BTreeMap<LayerKey, WlSurface>,
     /// The modifier keys last sent, so a repeat of the same set sends nothing.
     pub mods: MacMods,
+    /// The rectangles the shell set for dropping a window on a Space (version 2).
+    pub space_targets: SpaceTargets,
+    /// The Space pictures: sources, sessions and held frames (version 2).
+    pub shots: SpaceShotPart,
 }
 
 impl QuireShellPart {
@@ -79,12 +88,14 @@ impl QuireShellPart {
             roles: BTreeMap::new(),
             asked: BTreeMap::new(),
             mods: MacMods::NONE,
+            space_targets: SpaceTargets::default(),
+            shots: SpaceShotPart::default(),
         }
     }
 }
 
 /// What the composition root provides to this protocol's dispatch.
-pub trait QuireShellHandler: 'static {
+pub trait QuireShellHandler: ImageCaptureSourceHandler + 'static {
     /// The part.
     fn quire_shell_part(&mut self) -> &mut QuireShellPart;
     /// Feeds the events a request produced into the model (`core_loop::feed`).
@@ -93,6 +104,11 @@ pub trait QuireShellHandler: 'static {
     fn layer_of_surface(&self, client: &Client, surface: &WlSurface) -> Option<LayerKey>;
     /// Whether the model knows the window `window` (a live toplevel).
     fn window_known(&self, window: WindowId) -> bool;
+    /// The output a client's `wl_output` is, when it is one casement advertises.
+    fn output_key_of(&self, output: &WlOutput) -> Option<OutputKey>;
+    /// Whether the model has the Space `space` (version 2: a picture of one that is gone is a
+    /// source whose sessions stop at once).
+    fn space_known(&self, space: &SpaceId) -> bool;
 }
 
 /// The global's data: the filter its `can_view` asks.
@@ -157,7 +173,7 @@ where
         resource: &QuireShellV1,
         request: quire_shell_v1::Request,
         _dhandle: &DisplayHandle,
-        _data_init: &mut DataInit<'_, D>,
+        data_init: &mut DataInit<'_, D>,
     ) {
         match request {
             quire_shell_v1::Request::SetRole { surface, role } => {
@@ -222,8 +238,9 @@ where
                     code_of(toggle),
                 ));
             }
-            // The switcher and show-desktop requests arrive with P3-Z.
-            _ => {}
+            // The switcher and show-desktop requests arrive with P3-Z; the version 2 requests
+            // are `shell_space`'s, which ignores the rest.
+            other => shell_space::on_request(state, resource, other, data_init),
         }
     }
 
@@ -321,6 +338,7 @@ pub fn on_window_menu_pick(window: Option<WindowId>, entry: Option<MenuEntry>) -
 /// they unmap), only the object is.
 pub fn on_shell_gone(part: &mut QuireShellPart, shell: &QuireShellV1) {
     part.bound.retain(|bound| bound != shell);
+    shell_space::forget_targets(part);
 }
 
 /// A layer surface unmapped: whatever role it held is free again.

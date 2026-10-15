@@ -39,6 +39,7 @@ pub mod layer;
 pub mod lock;
 pub mod output;
 pub mod overview;
+pub mod overview_drag;
 pub mod policy;
 pub mod settings;
 pub mod shell;
