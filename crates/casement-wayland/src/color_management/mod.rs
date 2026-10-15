@@ -22,7 +22,7 @@ mod manager;
 mod named;
 mod surface;
 
-pub use creator::{CreatorData, DescriptionData, IccCreatorData, InfoData};
+pub use creator::{CreatorData, DescriptionData, IccCreatorData, InfoData, send_unsent};
 pub use manager::{ManagerData, ManagerGlobal, OutputData};
 pub use surface::{FeedbackData, SurfaceData, surface_tag};
 
@@ -30,6 +30,7 @@ use crate::states::GlobalFilter;
 use casement_core::OutputKey;
 use casement_core::output::{ColorTag, Gamut, TransferCurve};
 use smithay::reexports::wayland_protocols::wp::color_management::v1::server::wp_color_manager_v1::WpColorManagerV1;
+use smithay::reexports::wayland_protocols::wp::color_management::v1::server::wp_image_description_info_v1::WpImageDescriptionInfoV1;
 use smithay::reexports::wayland_server::backend::GlobalId;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::{DisplayHandle, GlobalDispatch};
@@ -45,6 +46,7 @@ pub struct ColorPart {
     pub global: Option<GlobalId>,
     gamuts: BTreeMap<OutputKey, Gamut>,
     identities: BTreeMap<ColorTag, u64>,
+    unsent: Vec<(WpImageDescriptionInfoV1, ColorTag)>,
 }
 
 impl ColorPart {

@@ -252,7 +252,7 @@ where
 {
     fn request(
         &self,
-        _state: &mut D,
+        state: &mut D,
         _client: &Client,
         resource: &WpImageDescriptionV1,
         request: wp_image_description_v1::Request,
@@ -270,7 +270,19 @@ where
                 Error::NoInformation,
                 "this image description does not allow get_information",
             ),
-            (Some(tag), InfoAllowed::Yes) => send_information(&info, tag),
+            (Some(tag), InfoAllowed::Yes) => state.color_part().unsent.push((info, tag)),
+        }
+    }
+}
+
+/// Sends the information asked for since the last call. `done` is a destructor event: sent from
+/// inside the `get_information` that created the object, it would destroy the object before the
+/// request returns, and the backend then writes the new object's data into freed memory. So the
+/// handler queues the object and the loop calls this after every dispatch of the clients.
+pub fn send_unsent(part: &mut super::ColorPart) {
+    for (info, tag) in std::mem::take(&mut part.unsent) {
+        if info.is_alive() {
+            send_information(&info, tag);
         }
     }
 }
