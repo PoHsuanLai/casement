@@ -1,6 +1,7 @@
 //! A window's legs: its rectangle's origin and size and its opacity, one spring leg each.
 
 use crate::cause_travel::Travel;
+use crate::flight::FlightEnds;
 use crate::pose::Pose;
 use casement_core::OutputKey;
 use casement_core::time::Mono;
@@ -32,6 +33,8 @@ pub(crate) struct WindowLegs {
     pub(crate) stack: u32,
     /// Whether it is meant to be shown.
     pub(crate) fate: Fate,
+    /// The ends of the minimise flight it is on, if it is on one.
+    pub(crate) flight: Option<FlightEnds>,
 }
 
 impl WindowLegs {
@@ -44,6 +47,7 @@ impl WindowLegs {
             output,
             stack,
             fate: Fate::Present,
+            flight: None,
         }
     }
 
@@ -115,6 +119,11 @@ impl WindowLegs {
     /// The same legs, marked as meant to be shown or as leaving.
     pub(crate) fn with_fate(self, fate: Fate) -> WindowLegs {
         WindowLegs { fate, ..self }
+    }
+
+    /// The same legs, on a minimise flight between `flight`'s ends (or on none).
+    pub(crate) fn with_flight(self, flight: Option<FlightEnds>) -> WindowLegs {
+        WindowLegs { flight, ..self }
     }
 
     /// The same legs on another output and stack place.

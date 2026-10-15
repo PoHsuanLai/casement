@@ -3,12 +3,14 @@
 
 use crate::book::{Motion, MotionBook, MotionKey};
 use crate::cause_travel::{Travel, travel_of};
+use crate::flight::FlightEnds;
 use crate::goals::{Goal, Goals};
 use crate::pose::Pose;
 use crate::space_slide::SlideLeg;
 use crate::window_motion::{Fate, WindowLegs};
 use casement_core::Cause;
 use casement_core::WindowId;
+use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::time::Mono;
 use casement_layout::Arrangement;
 use ds_style::appearance::motion::MotionLevel;
@@ -88,7 +90,16 @@ impl Step<'_> {
     /// had standing, else an arrival.
     fn toward(&self, known: Option<WindowLegs>, was: Option<&Goal>, goal: &Goal) -> WindowLegs {
         let shown = Pose::shown(goal.rect);
-        match known.or_else(|| was.map(|was| self.standing(was))) {
+        // Coming back is a window that was leaving or that nothing knew: a flight out of the tile.
+        let returning = match (&known, was) {
+            (Some(legs), _) => legs.fate == Fate::Leaving,
+            (None, was) => was.is_none(),
+        };
+        let flight = match returning {
+            true => self.flight(goal.rect),
+            false => None,
+        };
+        let legs = match known.or_else(|| was.map(|was| self.standing(was))) {
             Some(legs) => legs
                 .with_fate(Fate::Present)
                 .placed(goal.output.clone(), goal.stack)
@@ -100,7 +111,8 @@ impl Step<'_> {
                 self.now,
             )
             .aimed(shown, self.travel, self.level, self.now),
-        }
+        };
+        legs.with_flight(flight)
     }
 
     /// The legs for a window that is not in the new arrangement: it fades out (unless it
@@ -110,12 +122,27 @@ impl Step<'_> {
         match legs.fate {
             Fate::Leaving => Some(legs),
             Fate::Present => {
-                let exit = self.leaving_to(legs.pose(self.now));
+                let here = legs.pose(self.now);
+                let exit = self.leaving_to(here);
+                let flight = self.flight(rect_of(here));
                 Some(
                     legs.with_fate(Fate::Leaving)
-                        .aimed(exit, self.travel, self.level, self.now),
+                        .aimed(exit, self.travel, self.level, self.now)
+                        .with_flight(flight),
                 )
             }
+        }
+    }
+
+    /// The ends of a flight between `window` and the dock tile, when this retarget is a minimise
+    /// that travels (nothing flies under reduced motion).
+    fn flight(&self, window: LogicalRect) -> Option<FlightEnds> {
+        match (self.travel.spring(), self.cause) {
+            (Some(_), Cause::Minimise(target)) => Some(FlightEnds {
+                window,
+                tile: target.rect,
+            }),
+            _ => None,
         }
     }
 
@@ -149,4 +176,20 @@ impl Step<'_> {
             (Some(_), _) => here.tucked().faded(),
         }
     }
+}
+
+/// `pose` as whole logical pixels.
+fn rect_of(pose: Pose) -> LogicalRect {
+    let whole = |value: f64| value.round() as i32;
+    let side = |value: f64| value.round().max(0.0) as u32;
+    LogicalRect::new(
+        LogicalPoint {
+            x: whole(pose.x),
+            y: whole(pose.y),
+        },
+        LogicalSize {
+            w: side(pose.w),
+            h: side(pose.h),
+        },
+    )
 }
