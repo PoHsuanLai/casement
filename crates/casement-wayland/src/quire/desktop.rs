@@ -273,15 +273,19 @@ pub struct AppData {
     pub app: AppKey,
     /// What the connection may do.
     pub standing: Standing,
+    /// The manager it came from, which a refused request is raised on.
+    pub manager: QuireDesktopManagerV1,
 }
 
 /// A window object's data.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct WindowData {
     /// The window, when the toplevel handle named a live one.
     pub window: Option<WindowId>,
     /// What the connection may do.
     pub standing: Standing,
+    /// The manager it came from, which a refused request is raised on.
+    pub manager: QuireDesktopManagerV1,
 }
 
 /// A Space object's data.
@@ -291,6 +295,8 @@ pub struct SpaceData {
     pub space: SpaceId,
     /// What the connection may do.
     pub standing: Standing,
+    /// The manager it came from, which a refused request is raised on.
+    pub manager: QuireDesktopManagerV1,
 }
 
 impl<D> GlobalDispatch2<QuireDesktopManagerV1, D> for DesktopGlobal
@@ -319,13 +325,14 @@ where
     }
 }
 
-/// Posts `not_permitted` on `resource` (an agent connection made a management request) and
-/// says whether the request was refused.
-fn refused<R: Resource>(standing: Standing, resource: &R) -> bool {
+/// Posts the manager's `not_permitted` (an agent connection made a management request) and
+/// says whether the request was refused. The error is the manager's, so it goes on the
+/// manager, whichever of its objects asked.
+fn refused(standing: Standing, manager: &QuireDesktopManagerV1) -> bool {
     match standing {
         Standing::Manager => false,
         Standing::ReadOnly => {
-            resource.post_error(
+            manager.post_error(
                 quire_desktop_manager_v1::Error::NotPermitted,
                 "management requests are not permitted on this connection",
             );
@@ -356,6 +363,7 @@ where
                     WindowData {
                         window,
                         standing: self.standing,
+                        manager: resource.clone(),
                     },
                 );
                 let Some(window) = window else {
@@ -408,7 +416,7 @@ where
         &self,
         state: &mut D,
         _client: &Client,
-        resource: &QuireDesktopAppV1,
+        _resource: &QuireDesktopAppV1,
         request: quire_desktop_app_v1::Request,
         _dhandle: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
@@ -424,7 +432,7 @@ where
             quire_desktop_app_v1::Request::Reopen => AppAsk::Reopen,
             _ => return,
         };
-        if refused(self.standing, resource) {
+        if refused(self.standing, &self.manager) {
             return;
         }
         let events = on_app(state.quire_desktop_parts().part, &self.app, ask);
@@ -440,7 +448,7 @@ where
         &self,
         state: &mut D,
         _client: &Client,
-        resource: &QuireDesktopWindowV1,
+        _resource: &QuireDesktopWindowV1,
         request: quire_desktop_window_v1::Request,
         _dhandle: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
@@ -470,7 +478,7 @@ where
         let (Some(ask), Some(window)) = (ask, self.window) else {
             return;
         };
-        if refused(self.standing, resource) {
+        if refused(self.standing, &self.manager) {
             return;
         }
         let events = on_window(state.quire_desktop_parts().part, window, ask);
@@ -486,7 +494,7 @@ where
         &self,
         state: &mut D,
         _client: &Client,
-        resource: &QuireDesktopSpaceV1,
+        _resource: &QuireDesktopSpaceV1,
         request: quire_desktop_space_v1::Request,
         _dhandle: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
@@ -499,7 +507,7 @@ where
             }
             _ => return,
         };
-        if refused(self.standing, resource) {
+        if refused(self.standing, &self.manager) {
             return;
         }
         let events = on_space(state.quire_desktop_parts().part, &self.space, ask);

@@ -130,6 +130,7 @@ impl Bound {
                 let data = SpaceData {
                     space: id.clone(),
                     standing: self.standing,
+                    manager: self.manager.clone(),
                 };
                 let Some(object) = makers.make_space(&self.manager, data) else {
                     return Outcome::Same;
@@ -161,6 +162,7 @@ impl Bound {
                 let data = AppData {
                     app: key.clone(),
                     standing: self.standing,
+                    manager: self.manager.clone(),
                 };
                 let Some(object) = makers.make_app(&self.manager, data) else {
                     return Outcome::Same;
@@ -190,6 +192,7 @@ impl Bound {
         let data = WindowData {
             window: Some(id),
             standing: self.standing,
+            manager: self.manager.clone(),
         };
         if let Some(object) = makers.make_window(&self.manager, data) {
             self.windows.insert(id, object);

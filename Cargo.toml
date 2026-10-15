@@ -102,14 +102,15 @@ taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "4863877b9cab21645b
 # nested popup's keyboard grab alone. Three more are written on the fork's branch `lane/wlcs-w3-w4-w7`
 # (wave 2 lane fork) and arrive with the next rev: `get_xdg_surface` raising `role` and
 # `invalid_surface_state`, `xdg_toplevel.wm_capabilities` at toplevel creation, and subsurface positions
-# as state of the parent with a sync subtree applying only what it committed. Each patch is its own commit.
+# as state of the parent with a sync subtree applying only what it committed. `wl_surface.damage` with a
+# negative size is ignored like `damage_buffer`, and `xdg_positioner.set_parent_size` with one too (fuzz seed 4 found both). Each patch is its own commit.
 # Patches live only in the fork and nothing goes upstream (A13). No features here: each crate names the
 # ones it uses, so the boundary rows see each crate's own graph. The union (the `casement`
 # binary) is A14's list: wayland_frontend desktop renderer_gl renderer_pixman renderer_multi
 # backend_winit backend_egl backend_drm backend_gbm backend_libinput backend_udev
 # backend_session_libseat backend_libei backend_vulkan use_system_lib; renderer_test only
 # under the `testing` feature; xwayland off until the Q-C5 gate.
-smithay = { git = "https://github.com/PoHsuanLai/smithay", rev = "d7d98e65ea157d90c6d2bbc7edc810e8351a1229", default-features = false }
+smithay = { git = "https://github.com/PoHsuanLai/smithay", rev = "90efde43eba801e0311dead6f361f237fc29c417", default-features = false }
 # The client side of the test kit: the protocol extensions smithay serves from these crates.
 wayland-protocols-wlr = { version = "0.3.12", features = ["client"] }
 wayland-protocols-misc = { version = "0.3.12", features = ["client"] }

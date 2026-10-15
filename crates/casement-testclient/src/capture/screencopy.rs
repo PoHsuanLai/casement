@@ -5,6 +5,7 @@
 use crate::misc::idle::{pump_queue, side_queue};
 use crate::{ClientError, GlobalList, Pumped};
 use desktop_client::Size;
+use desktop_client::capture::CursorMode;
 use rustix::fs::{MemfdFlags, ftruncate, memfd_create};
 use std::fs::File;
 use std::os::fd::AsFd;
@@ -71,8 +72,9 @@ pub struct Copied {
     pub stride: u32,
     /// The pixels as the buffer held them.
     pub bytes: Vec<u8>,
-    /// The damage the frame reported, `(x, y, width, height)`, if any.
-    pub damage: Option<(u32, u32, u32, u32)>,
+    /// The damage the frame reported, one `(x, y, width, height)` a rectangle; none when it
+    /// reported none.
+    pub damage: Option<Vec<(u32, u32, u32, u32)>>,
     /// The flags the frame carried.
     pub flags: u32,
 }
@@ -107,7 +109,7 @@ struct Copying {
     offers: Vec<Offer>,
     file: Option<File>,
     flags: u32,
-    damage: Option<(u32, u32, u32, u32)>,
+    damage: Vec<(u32, u32, u32, u32)>,
     done: Option<Result<(), CopyFailure>>,
     buffer: Option<(Offer, WlBuffer)>,
 }
@@ -183,9 +185,15 @@ impl ScreenCopy {
             .collect()
     }
 
-    /// Asks for a frame of the output named `connector`. The offered buffers arrive at the
-    /// next pumps ([`ScreenCopy::offers`]).
-    pub fn capture(&mut self, connector: &str, area: CopyArea) -> Result<(), ClientError> {
+    /// Asks for a frame of the output named `connector`, with the cursor in it or not
+    /// (`overlay_cursor`; `grim` sends 1 for `-c`). The offered buffers arrive at the next
+    /// pumps ([`ScreenCopy::offers`]).
+    pub fn capture(
+        &mut self,
+        connector: &str,
+        area: CopyArea,
+        cursor: CursorMode,
+    ) -> Result<(), ClientError> {
         let output = self
             .state
             .outputs
@@ -196,12 +204,16 @@ impl ScreenCopy {
         let qh = self.queue.handle();
         self.state.offers.clear();
         self.state.done = None;
-        self.state.damage = None;
+        self.state.damage.clear();
+        let overlay = match cursor {
+            CursorMode::Painted => 1,
+            _ => 0,
+        };
         let frame = match area {
-            CopyArea::Output => self.manager.capture_output(0, &output, &qh, ()),
+            CopyArea::Output => self.manager.capture_output(overlay, &output, &qh, ()),
             CopyArea::Region((x, y, w, h)) => {
                 self.manager
-                    .capture_output_region(0, &output, x, y, w, h, &qh, ())
+                    .capture_output_region(overlay, &output, x, y, w, h, &qh, ())
             }
         };
         self.frame = Some(frame);
@@ -273,7 +285,7 @@ impl ScreenCopy {
             size: offer.size,
             stride: offer.stride,
             bytes,
-            damage: self.state.damage,
+            damage: Some(std::mem::take(&mut self.state.damage)).filter(|rects| !rects.is_empty()),
             flags: self.state.flags,
         }))
     }
@@ -342,7 +354,7 @@ impl Dispatch<ZwlrScreencopyFrameV1, ()> for Copying {
                 y,
                 width,
                 height,
-            } => state.damage = Some((x, y, width, height)),
+            } => state.damage.push((x, y, width, height)),
             Event::Ready { .. } => state.done = Some(Ok(())),
             Event::Failed => state.done = Some(Err(CopyFailure::Failed)),
             _ => {}

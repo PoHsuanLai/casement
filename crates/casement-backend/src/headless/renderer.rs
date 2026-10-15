@@ -8,7 +8,7 @@
 
 use super::FrameSource;
 use crate::backend::BackendError;
-use casement_core::geometry::PhysicalSize;
+use casement_core::geometry::{PhysicalRect, PhysicalSize};
 use casement_render::pass::render_window;
 use casement_render::{CasementElement, Compositor, render_output};
 use ds_core::geometry::scale::Scale;
@@ -98,7 +98,7 @@ impl HeadlessRenderer {
                     .map_err(BackendError::from)?;
                 Ok(match rendered.damage.is_empty() {
                     true => Drawn::Unchanged,
-                    false => Drawn::Nothing,
+                    false => Drawn::Nothing(rendered.damage),
                 })
             }
             (HeadlessRenderer::Pixman(renderer), Target::Pixman(held)) => {
@@ -164,10 +164,11 @@ pub(super) struct Age(pub usize);
 /// What drawing a frame produced.
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum Drawn {
-    /// The frame, read back (rows top to bottom, RGBA).
-    Pixels(Vec<u8>),
-    /// The dummy renderer drew something and has nothing to read back.
-    Nothing,
+    /// The frame, read back (rows top to bottom, RGBA), and the area that changed since the
+    /// last one, in the frame's pixels.
+    Pixels(Vec<u8>, Vec<PhysicalRect>),
+    /// The dummy renderer drew something and has nothing to read back; the area it drew.
+    Nothing(Vec<PhysicalRect>),
     /// Nothing was damaged: the canvas still holds the last frame.
     Unchanged,
 }
@@ -272,7 +273,7 @@ where
         .copy_framebuffer(&framebuffer, region, Fourcc::Abgr8888)
         .map_err(renderer_fault)?;
     let bytes = renderer.map_texture(&mapping).map_err(renderer_fault)?;
-    Ok(Drawn::Pixels(rows_top_down(bytes, size)))
+    Ok(Drawn::Pixels(rows_top_down(bytes, size), rendered.damage))
 }
 
 /// `bytes` as `size` rows of RGBA, top row first. The rows of a read-back come top first on

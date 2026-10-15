@@ -1,6 +1,9 @@
 //! The cursor as elements.
 
+mod face;
 mod raster;
+
+pub use face::{CursorFace, cursor_face, cursor_pixels};
 
 use super::CasementElement;
 use crate::compositor::Compositor;

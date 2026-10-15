@@ -20,6 +20,7 @@ use casement_core::output::OutputConfig;
 use casement_core::time::Mono;
 use casement_core::{Effect, Event, OutputKey, OutputName};
 use casement_wayland::image_capture::CaptureBook;
+use casement_wayland::screencopy::ScreencopyPart;
 use smithay::input::keyboard::Keysym as XkbKeysym;
 use smithay::input::keyboard::ModifiersState;
 
@@ -155,9 +156,14 @@ pub(crate) fn desktop_extent(state: &State) -> LogicalRect {
     )
 }
 
-/// Whether a capture session is open on `output`: then the frame shown is also kept as pixels.
-pub(super) fn capture_watch(book: &CaptureBook, output: &OutputKey) -> Watch {
-    match book.sessions.values().any(|watched| watched == output) {
+/// Whether a capture is open on `output` (an `ext_image_copy_capture` session, or a
+/// `zwlr_screencopy` copy waiting for its frame): then the frame shown is also kept as pixels.
+pub(super) fn capture_watch(
+    book: &CaptureBook,
+    screencopy: &ScreencopyPart,
+    output: &OutputKey,
+) -> Watch {
+    match book.sessions.values().any(|watched| watched == output) || screencopy.wants(output) {
         true => Watch::On,
         false => Watch::Off,
     }

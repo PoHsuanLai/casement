@@ -1,6 +1,10 @@
 //! `ext_image_copy_capture_v1` as a client: a session on a source, one frame into a shared
 //! memory buffer, the events folded into a [`Frame`]. Filled by P1-C1.
 
+mod cursor;
+
+pub use cursor::CursorEvent;
+
 use super::output_source::NamedOutput;
 use crate::misc::idle::{pump_queue, side_queue};
 use crate::{ClientError, GlobalList, Pumped};
@@ -15,6 +19,7 @@ use std::os::fd::AsFd;
 use std::os::unix::fs::FileExt;
 use std::time::Duration;
 use wayland_client::protocol::wl_buffer::{self, WlBuffer};
+use wayland_client::protocol::wl_seat::WlSeat;
 use wayland_client::protocol::wl_shm::{self, Format, WlShm};
 use wayland_client::protocol::wl_shm_pool::{self, WlShmPool};
 use wayland_client::{Connection, Dispatch, EventQueue, QueueHandle, WEnum};
@@ -23,6 +28,7 @@ use wayland_protocols::ext::image_capture_source::v1::client::{
     ext_output_image_capture_source_manager_v1::ExtOutputImageCaptureSourceManagerV1,
 };
 use wayland_protocols::ext::image_copy_capture::v1::client::{
+    ext_image_copy_capture_cursor_session_v1::ExtImageCopyCaptureCursorSessionV1,
     ext_image_copy_capture_frame_v1::{self, ExtImageCopyCaptureFrameV1},
     ext_image_copy_capture_manager_v1::{self, ExtImageCopyCaptureManagerV1, Options},
     ext_image_copy_capture_session_v1::{self, ExtImageCopyCaptureSessionV1},
@@ -38,6 +44,36 @@ pub(super) struct Capturing {
     desktop: DesktopState,
     buffer: Option<Pending>,
     stopped: bool,
+    cursor_events: Vec<CursorEvent>,
+    announced: Announced,
+}
+
+/// The session's last complete constraints. The reducer folds one frame per capture and
+/// forgets the session once its frame is taken; a later frame on the same session starts
+/// from these.
+#[derive(Debug, Default)]
+struct Announced {
+    size: Option<Size>,
+    formats: Vec<ShmFormat>,
+    done: Done,
+}
+
+/// Whether the constraints round is complete.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+enum Done {
+    #[default]
+    Open,
+    Complete,
+}
+
+impl Announced {
+    /// A constraint arrived: one after a `done` starts a new round.
+    fn round(&mut self) {
+        if self.done == Done::Complete {
+            self.formats.clear();
+            self.done = Done::Open;
+        }
+    }
 }
 
 /// The buffer a frame was asked into.
@@ -54,6 +90,21 @@ impl Capturing {
     fn fold(&mut self, event: CaptureEvent) {
         let state = std::mem::take(&mut self.desktop);
         self.desktop = reduce(state, DesktopEvent::Capture { id: ID, event });
+    }
+
+    /// Starts the next frame's capture from the remembered constraints, if the last one was
+    /// taken and the session announced complete constraints.
+    fn reopen(&mut self) {
+        if self.desktop.captures.get(ID).is_some() || self.announced.done == Done::Open {
+            return;
+        }
+        if let Some(size) = self.announced.size {
+            self.fold(CaptureEvent::BufferSize(size));
+        }
+        for format in self.announced.formats.clone() {
+            self.fold(CaptureEvent::Format(format));
+        }
+        self.fold(CaptureEvent::ConstraintsDone);
     }
 }
 
@@ -77,6 +128,7 @@ pub struct OutputCapture {
     shm: WlShm,
     copies: ExtImageCopyCaptureManagerV1,
     sources: ExtOutputImageCaptureSourceManagerV1,
+    seat: Option<WlSeat>,
     live: Option<Live>,
 }
 
@@ -84,6 +136,7 @@ pub struct OutputCapture {
 #[derive(Debug)]
 struct Live {
     source: ExtImageCaptureSourceV1,
+    cursor: Option<ExtImageCopyCaptureCursorSessionV1>,
     session: ExtImageCopyCaptureSessionV1,
     frame: Option<ExtImageCopyCaptureFrameV1>,
 }
@@ -104,6 +157,7 @@ impl OutputCapture {
         let shm = globals
             .bind::<WlShm, _, _>(&qh, 1..=1, ())
             .map_err(|_| missing("wl_shm"))?;
+        let seat = globals.bind::<WlSeat, _, _>(&qh, 1..=1, ()).ok();
         let mut state = Capturing::default();
         for global in globals.contents().clone_list() {
             if global.interface == "wl_output" {
@@ -130,6 +184,7 @@ impl OutputCapture {
             shm,
             copies,
             sources,
+            seat,
             live: None,
         })
     }
@@ -166,6 +221,7 @@ impl OutputCapture {
         let session = self.copies.create_session(&source, options, &qh, ());
         self.live = Some(Live {
             source,
+            cursor: None,
             session,
             frame: None,
         });
@@ -179,6 +235,7 @@ impl OutputCapture {
 
     /// Asks for a frame into a buffer of `ask`. The session's constraints must have arrived.
     pub fn request(&mut self, ask: BufferAsk) -> Result<(), ClientError> {
+        self.state.reopen();
         let session = self
             .session()
             .ok_or_else(|| ClientError::Dispatch("no session is open".to_owned()))?;
@@ -227,6 +284,10 @@ impl OutputCapture {
             .live
             .as_mut()
             .ok_or_else(|| ClientError::Dispatch("no session is open".to_owned()))?;
+        // A session has one frame at a time: the last one goes before the next is made.
+        if let Some(last) = live.frame.take() {
+            last.destroy();
+        }
         let frame = live.session.create_frame(&qh, ());
         frame.attach_buffer(&buffer);
         frame.damage_buffer(0, 0, fits(size.w)?, fits(size.h)?);
@@ -261,6 +322,9 @@ impl OutputCapture {
                 frame.destroy();
             }
             live.session.destroy();
+            if let Some(cursor) = live.cursor {
+                cursor.destroy();
+            }
             live.source.destroy();
         }
         flush(&self.connection)
@@ -305,12 +369,23 @@ impl Dispatch<ExtImageCopyCaptureSessionV1, ()> for Capturing {
         use ext_image_copy_capture_session_v1::Event;
         match event {
             Event::BufferSize { width, height } => {
-                state.fold(CaptureEvent::BufferSize(Size::new(width, height)));
+                let size = Size::new(width, height);
+                state.announced.round();
+                state.announced.size = Some(size);
+                state.fold(CaptureEvent::BufferSize(size));
             }
             Event::ShmFormat { format } => {
-                state.fold(CaptureEvent::Format(ShmFormat::from_code(raw(format))));
+                let format = ShmFormat::from_code(raw(format));
+                state.announced.round();
+                if !state.announced.formats.contains(&format) {
+                    state.announced.formats.push(format);
+                }
+                state.fold(CaptureEvent::Format(format));
             }
-            Event::Done => state.fold(CaptureEvent::ConstraintsDone),
+            Event::Done => {
+                state.announced.done = Done::Complete;
+                state.fold(CaptureEvent::ConstraintsDone);
+            }
             Event::Stopped => {
                 state.stopped = true;
                 state.fold(CaptureEvent::Failed(CaptureFailure::Stopped));

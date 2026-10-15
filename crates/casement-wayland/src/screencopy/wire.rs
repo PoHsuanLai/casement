@@ -25,13 +25,17 @@ pub(super) fn announce(frame: &ZwlrScreencopyFrameV1, area: PhysicalRect) {
 }
 
 /// The frame is in the buffer: no flags (the rows are top first), the damage when the client
-/// asked for it (the whole area: casement keeps no per-client history), and `ready` at `at`.
-pub(super) fn send_ready(frame: &ZwlrScreencopyFrameV1, damage: Option<PhysicalRect>, at: Mono) {
+/// asked for it (one `damage` event a rectangle, in the copied area's pixels), and `ready` at
+/// `at`.
+pub(super) fn send_ready(frame: &ZwlrScreencopyFrameV1, damage: Option<&[PhysicalRect]>, at: Mono) {
     frame.flags(Flags::empty());
-    if let Some(area) = damage
+    if let Some(rects) = damage
         && frame.version() >= DAMAGE_SINCE
     {
-        frame.damage(0, 0, area.w, area.h);
+        for rect in rects {
+            let corner = |n: i32| u32::try_from(n).unwrap_or(0);
+            frame.damage(corner(rect.x), corner(rect.y), rect.w, rect.h);
+        }
     }
     let seconds = at.0.as_secs();
     let high = u32::try_from(seconds >> 32).unwrap_or(u32::MAX);

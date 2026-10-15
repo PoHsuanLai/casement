@@ -6,10 +6,11 @@
 //! ([`crate::image_capture`]); this module keeps the wire and the pending requests, and the
 //! composition root answers them ([`ScreencopyHandler::screencopy_wake`]) as frames are
 //! presented. A copy that finds no frame yet (the first on a real seat, before the capture
-//! shadow has drawn) waits for the next one. `copy_with_damage` waits until the output shows a
-//! frame newer than the one the same client last got of it, and reports the whole area as
-//! damaged. The cursor is never painted (`overlay_cursor` is ignored) and dma-buf buffers are
-//! not offered. Visible to the same connections as `ext_image_copy_capture` (the I7 table's
+//! shadow has drawn) waits for the next one. `copy_with_damage` waits until something changed
+//! on the output since the frame the same client last got of it, and reports what changed
+//! ([`crate::image_capture::DamageLogs`]; the whole area for a client's first frame). The
+//! cursor is in the frame when the request's `overlay_cursor` is not 0 and left out when it is
+//! ([`CursorPaint`]); dma-buf buffers are not offered. Visible to the same connections as `ext_image_copy_capture` (the I7 table's
 //! `ImageCapture`): the public socket and the shell, not a sandbox.
 
 mod region;
@@ -17,6 +18,7 @@ mod wire;
 
 pub use region::physical_region;
 
+use crate::image_capture::CursorPaint;
 use crate::states::GlobalFilter;
 use casement_core::OutputKey;
 use casement_core::geometry::{PhysicalRect, PhysicalSize, Transform};
@@ -119,16 +121,8 @@ pub struct PendingCopy {
     pub target: Target,
     /// Whether it reports damage.
     pub damage: Damage,
-}
-
-/// Whether a pending copy may be answered with the frame at hand.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum Freshness {
-    /// Answer it now.
-    Ready,
-    /// Keep it until a newer frame.
-    Wait,
+    /// Whether the frame has the cursor in it.
+    pub cursor: CursorPaint,
 }
 
 /// The last frame a client was given of an output.
@@ -177,24 +171,21 @@ impl ScreencopyPart {
         self.pending.push(copy);
     }
 
-    /// Whether `copy` may be answered with a frame presented at `at`.
-    pub fn freshness(&self, copy: &PendingCopy, at: Mono) -> Freshness {
-        if copy.damage == Damage::Whole {
-            return Freshness::Ready;
-        }
-        let last = copy
-            .frame
-            .client()
-            .map(|client| client.id())
-            .and_then(|id| {
-                self.delivered
-                    .iter()
-                    .find(|d| d.client == id && d.output == copy.target.output)
-            });
-        match last {
-            Some(delivery) if delivery.at >= at => Freshness::Wait,
-            _ => Freshness::Ready,
-        }
+    /// The instant of the frame `copy`'s client was last given of its output.
+    pub fn last_delivery(&self, copy: &PendingCopy) -> Option<Mono> {
+        let client = copy.frame.client()?.id();
+        self.delivered
+            .iter()
+            .find(|d| d.client == client && d.output == copy.target.output)
+            .map(|d| d.at)
+    }
+
+    /// Whether a copy waits for a frame of `output`: a real seat draws the frame only while
+    /// someone asks for it.
+    pub fn wants(&self, output: &OutputKey) -> bool {
+        self.pending
+            .iter()
+            .any(|copy| copy.target.output == *output)
     }
 
     /// Notes that `copy`'s client was given the frame presented at `at`.
@@ -222,11 +213,17 @@ pub trait ScreencopyHandler: Sized + 'static {
     fn screencopy_wake(&mut self);
 }
 
-/// The frame was copied into the client's buffer, presented at `at`: `ready`.
-pub fn apply_ready(part: &mut ScreencopyPart, copy: &PendingCopy, at: Mono) {
+/// The frame was copied into the client's buffer, presented at `at`: `ready`, with `damage`
+/// (rectangles in the copied area's pixels) when the client asked for it.
+pub fn apply_ready(
+    part: &mut ScreencopyPart,
+    copy: &PendingCopy,
+    at: Mono,
+    damage: &[PhysicalRect],
+) {
     let damage = match copy.damage {
         Damage::Whole => None,
-        Damage::Fresh => Some(copy.target.area),
+        Damage::Fresh => Some(damage),
     };
     wire::send_ready(&copy.frame, damage, at);
     part.note_delivery(copy, at);
@@ -276,13 +273,15 @@ enum Fit {
 #[derive(Debug)]
 pub struct FrameData {
     target: Option<Target>,
+    cursor: CursorPaint,
     used: Mutex<Used>,
 }
 
 impl FrameData {
-    fn new(target: Option<Target>) -> FrameData {
+    fn new(target: Option<Target>, cursor: CursorPaint) -> FrameData {
         FrameData {
             target,
+            cursor,
             used: Mutex::new(Used::No),
         }
     }
@@ -342,26 +341,36 @@ where
         _handle: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
-        let (frame, output, region) = match request {
-            zwlr_screencopy_manager_v1::Request::CaptureOutput { frame, output, .. } => {
-                (frame, output, Region::Whole)
-            }
+        let (frame, output, region, overlay_cursor) = match request {
+            zwlr_screencopy_manager_v1::Request::CaptureOutput {
+                frame,
+                overlay_cursor,
+                output,
+            } => (frame, output, Region::Whole, overlay_cursor),
             zwlr_screencopy_manager_v1::Request::CaptureOutputRegion {
                 frame,
+                overlay_cursor,
                 output,
                 x,
                 y,
                 width,
                 height,
-                ..
-            } => (frame, output, Region::Part((x, y, width, height))),
+            } => (
+                frame,
+                output,
+                Region::Part((x, y, width, height)),
+                overlay_cursor,
+            ),
             _ => return,
         };
         let target = state
             .screencopy_output(&output)
             .and_then(|known| known.target(region));
         let announced = target.as_ref().map(|target| target.area);
-        let frame = data_init.init(frame, FrameData::new(target));
+        let frame = data_init.init(
+            frame,
+            FrameData::new(target, CursorPaint::from_overlay(overlay_cursor)),
+        );
         match announced {
             Some(area) => wire::announce(&frame, area),
             None => frame.failed(),
@@ -401,6 +410,7 @@ impl FrameData {
             buffer,
             target,
             damage,
+            cursor: self.cursor,
         });
         state.screencopy_wake();
     }
