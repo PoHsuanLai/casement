@@ -43,3 +43,22 @@ fn the_default_gpu_is_automatic() {
         crate::gpu::GpuChoice::Auto
     );
 }
+
+#[test]
+fn night_light_is_off_by_default_and_schedules_when_asked() {
+    use crate::output::{MinuteOfDay, Schedule};
+    let settings = CasementSettings::defaults().night_light;
+    assert_eq!(settings.mode, NightLightMode::Off);
+    assert_eq!(settings.light().schedule, Schedule::Off);
+    let scheduled = NightLightSettings {
+        mode: NightLightMode::Scheduled,
+        ..settings
+    };
+    assert_eq!(
+        scheduled.light().schedule,
+        Schedule::Between {
+            from: MinuteOfDay::wrapping(22 * 60),
+            to: MinuteOfDay::wrapping(7 * 60),
+        }
+    );
+}

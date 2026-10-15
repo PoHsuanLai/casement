@@ -6,7 +6,7 @@
 //! with the sRGB curve (a panel is driven as sRGB), clamp to the panel's range.
 
 use super::color_matrix::{ColorMatrix, srgb_to_panel};
-use casement_core::output::Gamut;
+use casement_core::output::{Gamut, TransferCurve};
 
 /// How a surface's values map to light.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -47,6 +47,16 @@ fn encode(light: f64) -> f64 {
     match light <= 0.003_130_8 {
         true => light * 12.92,
         false => 1.055 * light.powf(1.0 / 2.4) - 0.055,
+    }
+}
+
+impl From<TransferCurve> for Transfer {
+    fn from(curve: TransferCurve) -> Transfer {
+        match curve {
+            TransferCurve::Srgb => Transfer::Srgb,
+            TransferCurve::Gamma22 => Transfer::Gamma22,
+            TransferCurve::Linear => Transfer::Linear,
+        }
     }
 }
 

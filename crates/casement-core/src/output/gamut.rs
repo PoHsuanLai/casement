@@ -3,7 +3,7 @@
 //! the maths that turns them into a matrix is in `casement-render`'s colour pass.
 
 /// A point on the CIE 1931 xy chromaticity diagram, in ten-thousandths (0.6400 is 6400).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Chromaticity {
     /// The x coordinate.
     pub x: u16,
@@ -23,7 +23,7 @@ impl Chromaticity {
 }
 
 /// A display's three primaries (the white point is always D65 here: see [`D65`]).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Primaries {
     /// Red.
     pub red: Chromaticity,
@@ -90,6 +90,18 @@ impl Gamut {
 }
 
 impl Primaries {
+    /// Whether the three primaries span a colour space: they are not on one line.
+    ///
+    /// ```
+    /// use casement_core::output::{DISPLAY_P3, SRGB};
+    ///
+    /// assert!(SRGB.is_usable() && DISPLAY_P3.is_usable());
+    /// ```
+    pub fn is_usable(self) -> bool {
+        let [r, g, b] = [self.red, self.green, self.blue].map(|p| (i64::from(p.x), i64::from(p.y)));
+        (g.0 - r.0) * (b.1 - r.1) - (g.1 - r.1) * (b.0 - r.0) != 0
+    }
+
     /// The primaries an EDID base block reports; none when the block is not an EDID or reports
     /// all zeros (a virtual display).
     ///
