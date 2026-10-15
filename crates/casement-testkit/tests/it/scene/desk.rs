@@ -1,10 +1,11 @@
 //! A desk: one fixture, one public client, and the helpers that put surfaces on it the way a
 //! toolkit would (a toplevel at the output's scale, a popup, a layer surface, a lock).
 
-use casement_core::OutputName;
 use casement_core::geometry::{LogicalPoint, PhysicalSize};
 use casement_core::input::DeviceClass;
 use casement_core::policy::ConnectionRole;
+use casement_core::{OutputName, WindowId};
+use casement_testclient::misc::decoration::DecorationManager;
 use casement_testclient::misc::viewporter::Viewporter;
 use casement_testclient::surface::popup::{Popup, PopupSpec};
 use casement_testclient::surface::subsurface::Surface;
@@ -117,8 +118,46 @@ impl<'a> Desk<'a> {
         pattern: Pattern,
         dpi: Dpi,
     ) -> Toplevel {
+        self.window_framed(surface, app_id, None, logical, pattern, dpi)
+    }
+
+    /// As [`Desk::window`], titled `title` and answered server-side: casement draws its frame
+    /// (titlebar, lights, rounded corners and shadow) round the `logical`-sized content.
+    pub fn framed_window(
+        &mut self,
+        app_id: &str,
+        title: &str,
+        logical: (u32, u32),
+        pattern: Pattern,
+        dpi: Dpi,
+    ) -> Toplevel {
+        let surface = self
+            .fixture
+            .client(self.id)
+            .create_surface()
+            .expect("a surface");
+        self.window_framed(surface, app_id, Some(title), logical, pattern, dpi)
+    }
+
+    /// Maps a toplevel on `surface`; with a `title` it asks for the server-side frame first.
+    fn window_framed(
+        &mut self,
+        surface: WlSurface,
+        app_id: &str,
+        title: Option<&str>,
+        logical: (u32, u32),
+        pattern: Pattern,
+        dpi: Dpi,
+    ) -> Toplevel {
         let top = self.base.toplevel_on(self.fixture.client(self.id), surface);
         top.set_app_id(app_id);
+        if let Some(title) = title {
+            top.set_title(title);
+            let client = self.fixture.client(self.id);
+            let manager = DecorationManager::bind(client).expect("xdg_decoration");
+            let decoration = manager.decorate(client, &top);
+            self.kept.keep((manager, decoration));
+        }
         top.commit_bare();
         self.fixture.pump();
         assert!(top.ack_latest().is_some(), "the initial configure arrives");
@@ -201,4 +240,14 @@ pub fn shoot_output(fixture: &mut Fixture) -> image::RgbaImage {
     fixture.advance(SETTLE);
     fixture.frames(&output, FrameCount(2));
     fixture.shot(ShotTarget::Output(output))
+}
+
+/// The model's only window.
+pub fn only_window(fixture: &Fixture) -> WindowId {
+    *fixture
+        .model()
+        .windows()
+        .keys()
+        .next()
+        .expect("a mapped window")
 }

@@ -40,10 +40,8 @@ impl Model {
             AppAsk::Hide => self.hide_app(&app),
             AppAsk::Unhide => self.unhide_app(&app),
             AppAsk::HideOthers => self.hide_others(Some(app)),
-            AppAsk::Quit => self.close_all_of(Some(app)),
-            AppAsk::ForceQuit => {
-                Moved::of(self).with(Effect::Note(CoreNote::Deferred(Deferred::ForceQuit)))
-            }
+            AppAsk::Quit => self.quit_app(Some(app)),
+            AppAsk::ForceQuit => self.force_quit_app(&app),
             AppAsk::Reopen => {
                 Moved::of(self).with(Effect::Note(CoreNote::Deferred(Deferred::Reopen)))
             }

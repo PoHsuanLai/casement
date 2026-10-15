@@ -1,18 +1,15 @@
 //! `quire_shell` (P2-Q2): the shell's surface roles, minimise targets and the events only the
 //! compositor sees. Shell connections only.
 
-use crate::protocol::xdg_shell::{map_toplevel, pointer, settle, windows};
+use crate::protocol::xdg_shell::{map_toplevel, pointer, rect_of, settle, windows};
 use casement_core::WindowId;
-use casement_core::geometry::LogicalRect;
 use casement_core::geometry::PhysicalSize;
 use casement_core::input::{DeviceClass, Edge, KeyCode};
 use casement_core::policy::ConnectionRole;
+use casement_core::space::SpaceContent;
 use casement_core::window::{Light, MenuEntry, WindowState, menu_point};
 use casement_ipc::dbus::ConnectRefusal;
-use casement_layout::{
-    GroupHover, LayoutKnobs, RustScene, SceneLayout, Scheme, frame_metrics, frame_style,
-    spec_of_framed,
-};
+use casement_layout::{GroupHover, Scheme, frame_style};
 use casement_protocols::vocab::ShellRole as ModelRole;
 use casement_testclient::misc::decoration::DecorationManager;
 use casement_testclient::quire::shell::{
@@ -21,14 +18,13 @@ use casement_testclient::quire::shell::{
 use casement_testclient::surface::layer::{
     Anchor, KeyboardInteractivity, Layer, LayerAsk, LayerSurface,
 };
-use casement_testclient::surface::toplevel::WmBase;
+use casement_testclient::surface::toplevel::{Toplevel, WmBase};
 use casement_testclient::{Pattern, shm_buffer};
 use casement_testkit::fakes::FakeCgroups;
 use casement_testkit::{ClientId, Fixture, FixtureSpec, TestOrigin};
 use casement_wayland::foreign_toplevel_list::identifier_of;
 use ds_core::vocab::Activity;
 use porter_core::SandboxFacts;
-use std::collections::BTreeMap;
 use std::time::Duration;
 
 const INTERFACE: &str = "quire_shell_v1";
@@ -298,23 +294,6 @@ fn map_framed(fixture: &mut Fixture, id: ClientId, base: &WmBase, size: (u32, u3
     fixture.pump();
 }
 
-/// Where a server-side-framed `window`'s content is: the layout with the titlebar reserved
-/// above it, as casement arranges it.
-fn framed_rect_of(fixture: &Fixture, window: WindowId) -> LogicalRect {
-    let model = fixture.model();
-    let frames = BTreeMap::from([(window, frame_metrics().titlebar)]);
-    RustScene
-        .arrange(
-            &spec_of_framed(model, &frames),
-            &LayoutKnobs::of(model.settings()),
-        )
-        .windows
-        .iter()
-        .find(|target| target.window == window)
-        .map(|target| target.rect)
-        .expect("the window is arranged")
-}
-
 /// The pointer resting on the green light for half a second asks the shell for the window's
 /// menu, at the light's left edge a little under it, with the entries the window's state
 /// offers; a pick of Left tiles the window to the left half.
@@ -329,7 +308,7 @@ fn resting_on_the_green_light_shows_the_menu_and_a_pick_tiles_the_window() {
     settle(&mut fixture);
 
     // The light is where the frame puts it round the content (the layout's rectangle).
-    let content = framed_rect_of(&fixture, window);
+    let content = fixture.framed_content_of(window);
     let style = frame_style(Scheme::Light, Activity::Active, GroupHover::Away);
     let light = style.around(content).light(Light::Zoom);
     let device = pointer(&mut fixture);
@@ -368,6 +347,72 @@ fn resting_on_the_green_light_shows_the_menu_and_a_pick_tiles_the_window() {
         WindowState::Tiled { .. }
     ));
     assert!(fixture.client(app).protocol_error().is_none());
+}
+
+/// cas-wave "Real-run checks: Window menu" (a pick moves the window): each Move & Resize entry,
+/// Fill and Center put the window where the entry says, on the 1920x1080 desktop (tile margins
+/// leave a few pixels, so the bounds are loose), and Return to Previous Size undoes a tile.
+#[test]
+fn a_pick_moves_and_resizes_the_window_as_its_entry_says() {
+    // name, entry, whether the placed rectangle `(x, y, w, h)` is where the entry says
+    type Check = fn((i32, i32, i32, i32)) -> bool;
+    let cases: [(&str, WindowEntry, Check); 8] = [
+        ("left half", WindowEntry::Left, |(x, _, w, h)| {
+            x <= 20 && (900..=960).contains(&w) && h >= 1000
+        }),
+        ("right half", WindowEntry::Right, |(x, _, w, h)| {
+            x >= 920 && x + w >= 1900 && (900..=960).contains(&w) && h >= 1000
+        }),
+        ("top half", WindowEntry::Top, |(_, y, w, h)| {
+            y <= 20 && (480..=560).contains(&h) && w >= 1880
+        }),
+        ("bottom half", WindowEntry::Bottom, |(_, y, w, h)| {
+            y >= 520 && y + h >= 1060 && (480..=560).contains(&h) && w >= 1880
+        }),
+        ("top left quarter", WindowEntry::TopLeft, |(x, y, w, h)| {
+            x <= 20 && y <= 20 && (900..=960).contains(&w) && (480..=560).contains(&h)
+        }),
+        (
+            "bottom right quarter",
+            WindowEntry::BottomRight,
+            |(x, y, w, h)| {
+                x >= 920 && y >= 520 && x + w >= 1900 && y + h >= 1060 && w <= 960 && h <= 560
+            },
+        ),
+        ("fill", WindowEntry::Fill, |(_, _, w, h)| {
+            w >= 1880 && h >= 1000
+        }),
+        ("center", WindowEntry::Centre, |(x, y, w, h)| {
+            (w, h) == (400, 300) && (x + w / 2 - 960).abs() <= 2 && (y + h / 2 - 540).abs() <= 60
+        }),
+    ];
+    for (name, entry, placed) in cases {
+        let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+        let app = fixture.connect(ConnectionRole::Public);
+        let base = WmBase::bind(fixture.client(app), 7);
+        let _top = map_toplevel(&mut fixture, app, &base, (400, 300));
+        let window = windows(&fixture)[0];
+        let (_, shell) = shell_client(&mut fixture);
+        settle(&mut fixture);
+        let before = rect_of(&fixture, window);
+        shell.window_menu_pick(&identifier_of(window), entry);
+        fixture.pump();
+        let rect = rect_of(&fixture, window);
+        let at = (
+            rect.origin.x,
+            rect.origin.y,
+            i32::try_from(rect.size.w).expect("a small width"),
+            i32::try_from(rect.size.h).expect("a small height"),
+        );
+        assert!(placed(at), "{name}: placed at {at:?}");
+
+        // A tile can be undone from the same menu.
+        if entry == WindowEntry::Left {
+            shell.window_menu_pick(&identifier_of(window), WindowEntry::ReturnToPreviousSize);
+            fixture.pump();
+            assert_eq!(rect_of(&fixture, window), before, "return to previous size");
+        }
+    }
 }
 
 /// A pick naming no window, or an entry the XML does not name, changes nothing and is no
@@ -454,4 +499,66 @@ fn a_cancelled_choice_leaves_the_first_window_alone() {
     assert!(matches!(state(first), WindowState::FullScreen { .. }));
     assert!(!matches!(state(second), WindowState::FullScreen { .. }));
     assert!(fixture.client(id).protocol_error().is_none());
+}
+
+/// Two windows share a Split View: Left of Screen for the first, a pick of the second.
+fn split_pair(fixture: &mut Fixture) -> (WindowId, WindowId, ShellHandle, Toplevel) {
+    let app = fixture.connect(ConnectionRole::Public);
+    let base = WmBase::bind(fixture.client(app), 7);
+    let _first = map_toplevel(fixture, app, &base, (400, 300));
+    let second_top = map_toplevel(fixture, app, &base, (300, 200));
+    let (_, shell) = shell_client(fixture);
+    let (first, second) = match windows(fixture)[..] {
+        [first, second] => (first, second),
+        ref other => panic!("two windows, got {other:?}"),
+    };
+    shell.window_menu_pick(&identifier_of(first), WindowEntry::TileLeftOfScreen);
+    fixture.pump();
+    shell.split_pick(&identifier_of(second));
+    fixture.pump();
+    settle(fixture);
+    (first, second, shell, second_top)
+}
+
+/// Whether the model holds a Split View Space now.
+fn has_split_view(fixture: &Fixture) -> bool {
+    fixture
+        .model()
+        .spaces()
+        .iter()
+        .any(|space| matches!(space.content, SpaceContent::SplitView(_)))
+}
+
+/// cas-wave "Real-run checks: Split View": Exit Full Screen on one half returns both windows to
+/// where they were and ends the Split View; closing one half leaves the other full screen.
+#[test]
+fn exit_full_screen_returns_both_halves_and_closing_one_leaves_the_other_full_screen() {
+    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let (first, second, shell, _top) = split_pair(&mut fixture);
+    assert!(has_split_view(&fixture), "the pair is a Split View");
+    shell.window_menu_pick(&identifier_of(first), WindowEntry::ExitFullScreen);
+    fixture.pump();
+    settle(&mut fixture);
+    let full = |fixture: &Fixture, window: WindowId| {
+        matches!(
+            fixture.model().windows()[&window].state,
+            WindowState::FullScreen { .. }
+        )
+    };
+    assert!(
+        !full(&fixture, first) && !full(&fixture, second),
+        "both back"
+    );
+    assert!(!has_split_view(&fixture), "the Split View is gone");
+
+    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let (first, second, _shell, second_top) = split_pair(&mut fixture);
+    second_top.destroy();
+    fixture.pump();
+    settle(&mut fixture);
+    assert!(
+        !fixture.model().windows().contains_key(&second),
+        "the closed window is gone"
+    );
+    assert!(full(&fixture, first), "the other half stays full screen");
 }

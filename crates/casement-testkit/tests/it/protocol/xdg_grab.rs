@@ -10,6 +10,9 @@ use casement_core::DeviceId;
 use casement_core::WindowId;
 use casement_core::geometry::{LogicalPoint, LogicalRect};
 use casement_core::input::{ButtonCode, Edge};
+use casement_core::window::WindowState;
+use casement_layout::{LayoutKnobs, zone_rect};
+use casement_protocols::vocab::TileZone;
 use casement_testclient::surface::toplevel::{
     BoundPointer, ResizeEdge, Toplevel, WmBase, bind_pointer,
 };
@@ -203,4 +206,125 @@ fn a_resize_configures_the_client_to_the_dragged_size() {
         "the client was configured to the dragged size"
     );
     desk.button(BTN_LEFT, Edge::Release);
+}
+
+impl Desk {
+    /// The state of the dragged window in the model.
+    fn state(&self) -> WindowState {
+        self.fixture.model().windows()[&self.window].state.clone()
+    }
+
+    /// The whole rectangle of the window's output.
+    fn output_rect(&self) -> LogicalRect {
+        let model = self.fixture.model();
+        let output = model
+            .output_of(&model.windows()[&self.window])
+            .expect("the window is on an output");
+        model
+            .output_rects()
+            .into_iter()
+            .find(|(key, _)| *key == output)
+            .map(|(_, rect)| rect)
+            .expect("the output is plugged")
+    }
+
+    /// The rectangle `zone` takes of the window's output.
+    fn zone(&self, zone: TileZone) -> LogicalRect {
+        let model = self.fixture.model();
+        let output = model
+            .output_of(&model.windows()[&self.window])
+            .expect("the window is on an output");
+        let usable = model.layers().usable_area(&output, self.output_rect());
+        zone_rect(zone, usable, LayoutKnobs::of(model.settings()).tile_margin)
+    }
+
+    /// A move of the window begins at its centre.
+    fn begin_move(&mut self) {
+        let centre = self.rect().centre();
+        self.pointer_to(centre);
+        self.top.request_move(&self.seat.seat, self.serial);
+        self.fixture.pump();
+        self.button(BTN_LEFT, Edge::Press);
+    }
+}
+
+/// Dragging by the title to the left edge tiles the window to the left half on release, the
+/// preview-then-tile steps of Sequoia (the preview itself is the render golden's).
+#[test]
+fn a_drag_to_the_left_edge_tiles_the_left_half() {
+    let mut desk = desk(None);
+    desk.begin_move();
+    let y = desk.output_rect().centre().y;
+    desk.pointer_to(LogicalPoint { x: 0, y });
+    desk.button(BTN_LEFT, Edge::Release);
+    assert!(
+        matches!(
+            desk.state(),
+            WindowState::Tiled {
+                zone: TileZone::Left,
+                ..
+            }
+        ),
+        "tiled to the left, not {:?}",
+        desk.state()
+    );
+    let want = desk.zone(TileZone::Left);
+    let got = desk.rect();
+    assert_eq!((got.origin.x, got.size.w), (want.origin.x, want.size.w));
+}
+
+/// The top edge fills, a corner takes a quarter.
+#[test]
+fn the_top_edge_fills_and_a_corner_tiles_a_quarter() {
+    type Spot = fn(LogicalRect) -> LogicalPoint;
+    let cases: [(&str, Spot, Option<TileZone>); 2] = [
+        (
+            "top edge",
+            |full: LogicalRect| LogicalPoint {
+                x: full.centre().x,
+                y: 0,
+            },
+            None,
+        ),
+        (
+            "bottom right corner",
+            |full: LogicalRect| LogicalPoint {
+                x: full.origin.x + i32::try_from(full.size.w).unwrap_or(0) - 1,
+                y: full.origin.y + i32::try_from(full.size.h).unwrap_or(0) - 1,
+            },
+            Some(TileZone::BottomRight),
+        ),
+    ];
+    for (name, point, zone) in cases {
+        let mut desk = desk(None);
+        desk.begin_move();
+        let at = point(desk.output_rect());
+        desk.pointer_to(at);
+        desk.button(BTN_LEFT, Edge::Release);
+        match (zone, desk.state()) {
+            (None, WindowState::Filled { .. }) => {}
+            (Some(want), WindowState::Tiled { zone, .. }) if zone == want => {}
+            (_, state) => panic!("{name}: the window is {state:?}"),
+        }
+    }
+}
+
+/// A drag that leaves the edge before the release, or never reaches one, leaves the window
+/// floating where it was dropped.
+#[test]
+fn a_drag_off_the_edge_or_away_from_it_tiles_nothing() {
+    let mut desk = desk(None);
+    desk.begin_move();
+    let centre = desk.output_rect().centre();
+    desk.pointer_to(LogicalPoint { x: 0, y: centre.y });
+    desk.pointer_to(LogicalPoint {
+        x: 300,
+        y: centre.y,
+    });
+    desk.button(BTN_LEFT, Edge::Release);
+    assert!(
+        matches!(desk.state(), WindowState::Floating(_)),
+        "floating, not {:?}",
+        desk.state()
+    );
 }
