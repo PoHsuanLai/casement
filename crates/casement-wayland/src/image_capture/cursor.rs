@@ -6,6 +6,7 @@
 use casement_core::OutputKey;
 use casement_core::geometry::{
     LogicalPoint, LogicalRect, LogicalSize, PhysicalSize, Transform, buffer_size, to_physical,
+    turn_point, turn_size,
 };
 use ds_core::geometry::scale::Scale;
 use smithay::wayland::image_copy_capture::{CursorSession, Frame};
@@ -53,20 +54,45 @@ pub struct Placement {
     /// The hotspot, from the frame's top-left corner; negative or past the frame when only
     /// part of the cursor is on it.
     pub position: (i32, i32),
-    /// The hotspot's offset from the cursor image's top-left corner, in the image's pixels.
+    /// The hotspot's offset from the cursor image's top-left corner, in the pixels of the image
+    /// as sent (turned with the output).
     pub hotspot: (i32, i32),
+    /// The image as sent: its size at the output's scale, with width and height swapped under a
+    /// quarter turn.
+    pub image: PhysicalSize,
 }
 
-/// The size of the cursor image at `scale`: what a cursor capture session's buffers are.
+/// The size of the cursor image at `scale`, upright: what the element draws.
 pub fn image_size(size: LogicalSize, scale: Scale) -> PhysicalSize {
     buffer_size(size, scale)
+}
+
+/// The size of the cursor image a cursor capture session's buffers have: [`image_size`] turned
+/// with the output's `transform`.
+///
+/// ```
+/// use casement_core::geometry::{LogicalSize, PhysicalSize, Transform};
+/// use casement_wayland::image_capture::sent_image_size;
+/// use ds_core::geometry::scale::Scale;
+///
+/// let size = LogicalSize { w: 24, h: 16 };
+/// assert_eq!(sent_image_size(size, Scale(120), Transform::R90), PhysicalSize { w: 16, h: 24 });
+/// ```
+pub fn sent_image_size(size: LogicalSize, scale: Scale, transform: Transform) -> PhysicalSize {
+    turn_size(image_size(size, scale), transform)
 }
 
 /// Where a cursor whose hotspot is at `at` (global logical pixels), drawn `size` large with its
 /// hotspot `hotspot` from the image's corner (both logical), is on the frame of `view`; none
 /// when no pixel of the image is on it (the cursor "enters" the capture when its image meets
-/// the frame). The position is in the frame's pixels, so under a transform the hotspot is
-/// turned with it; the image itself is sent upright.
+/// the frame).
+///
+/// The image's corner is placed the way the cursor element is: `at - hotspot` in logical
+/// pixels, relative to the output, scaled and rounded once, so the capture and the screen agree
+/// to the pixel at a fractional scale. The hotspot offset is `round(hotspot x scale)` and the
+/// position is the corner plus it. Under a transform the position is turned with the frame, the
+/// hotspot is turned inside the image (which is sent turned too), so `position - hotspot` is
+/// the turned image's corner.
 ///
 /// ```
 /// use casement_core::geometry::{LogicalPoint, LogicalSize, PhysicalSize, Transform};
@@ -82,7 +108,9 @@ pub fn image_size(size: LogicalSize, scale: Scale) -> PhysicalSize {
 /// let size = LogicalSize { w: 24, h: 24 };
 /// let at = LogicalPoint { x: 100, y: 50 };
 /// let placed = place(&view, at, size, LogicalPoint { x: 5, y: 3 }).expect("on the frame");
-/// assert_eq!(placed.position, (150, 75));
+/// // The corner is round(95 x 1.5), round(47 x 1.5) = (143, 71); the hotspot (8, 5).
+/// assert_eq!(placed.position, (151, 76));
+/// assert_eq!(placed.hotspot, (8, 5));
 /// ```
 pub fn place(
     view: &CursorView,
@@ -90,63 +118,38 @@ pub fn place(
     size: LogicalSize,
     hotspot: LogicalPoint,
 ) -> Option<Placement> {
-    let local = LogicalPoint {
-        x: at.x.saturating_sub(view.origin.x),
-        y: at.y.saturating_sub(view.origin.y),
-    };
     let point = |p: LogicalPoint| {
         let rect = to_physical(LogicalRect::new(p, LogicalSize::ZERO), view.scale);
         (rect.x, rect.y)
     };
-    let (x, y) = point(local);
+    let corner = point(LogicalPoint {
+        x: at.x.saturating_sub(hotspot.x).saturating_sub(view.origin.x),
+        y: at.y.saturating_sub(hotspot.y).saturating_sub(view.origin.y),
+    });
     let held = point(hotspot);
     let image = image_size(size, view.scale);
-    let upright = turned(view.mode, view.transform);
-    let meets = |from: i64, length: u32, frame: u32| {
-        from < i64::from(frame) && from + i64::from(length) > 0
+    let upright = turn_size(view.mode, view.transform);
+    let meets = |from: i32, length: u32, frame: u32| {
+        i64::from(from) < i64::from(frame) && i64::from(from) + i64::from(length) > 0
     };
-    let corner = (
-        i64::from(x) - i64::from(held.0),
-        i64::from(y) - i64::from(held.1),
-    );
     if !(meets(corner.0, image.w, upright.w) && meets(corner.1, image.h, upright.h)) {
         return None;
     }
-    let area = (
-        i32::try_from(upright.w).ok()?,
-        i32::try_from(upright.h).ok()?,
-    );
+    let side = |n: u32| i32::try_from(n).ok();
+    let frame = (side(upright.w)?, side(upright.h)?);
+    let inside = (side(image.w)?, side(image.h)?);
     Some(Placement {
-        position: turn(view.transform, (x, y), area),
-        hotspot: held,
+        position: turn_point(
+            view.transform,
+            (
+                corner.0.saturating_add(held.0),
+                corner.1.saturating_add(held.1),
+            ),
+            frame,
+        ),
+        hotspot: turn_point(view.transform, held, inside),
+        image: turn_size(image, view.transform),
     })
-}
-
-/// The frame's size before the transform: width and height swap for the quarter turns.
-fn turned(mode: PhysicalSize, transform: Transform) -> PhysicalSize {
-    match transform {
-        Transform::R90 | Transform::R270 | Transform::Flipped90 | Transform::Flipped270 => {
-            PhysicalSize {
-                w: mode.h,
-                h: mode.w,
-            }
-        }
-        _ => mode,
-    }
-}
-
-/// The point `(x, y)` of an upright area of `area` as the transformed frame has it.
-fn turn(transform: Transform, (x, y): (i32, i32), (w, h): (i32, i32)) -> (i32, i32) {
-    match transform {
-        Transform::Normal => (x, y),
-        Transform::R90 => (h - y, x),
-        Transform::R180 => (w - x, h - y),
-        Transform::R270 => (y, w - x),
-        Transform::Flipped => (w - x, y),
-        Transform::Flipped90 => (y, x),
-        Transform::Flipped180 => (x, h - y),
-        Transform::Flipped270 => (h - y, w - x),
-    }
 }
 
 /// A cursor session held: its output and the last image it was sent.
@@ -264,8 +267,9 @@ mod tests {
         let table = [
             // 1x: nothing moves.
             (120, at(100, 50), Some(((100, 50), (5, 3)))),
-            // 1.5x: 7.5 and 4.5 round away from zero.
-            (180, at(100, 50), Some(((150, 75), (8, 5)))),
+            // 1.5x: the corner (95, 47) is 142.5 and 70.5, which round up to (143, 71); the
+            // hotspot (5, 3) is 7.5 and 4.5, which round to (8, 5); the position is their sum.
+            (180, at(100, 50), Some(((151, 76), (8, 5)))),
             (240, at(100, 50), Some(((200, 100), (10, 6)))),
             // Partly on the frame still counts: 21 of the 24 columns show at x = 2.
             (120, at(2, 2), Some(((2, 2), (5, 3)))),
@@ -282,6 +286,31 @@ mod tests {
     }
 
     #[test]
+    fn the_corner_lands_where_the_cursor_element_puts_it() {
+        // The element rounds `at - hotspot - origin` times the scale once; the capture's
+        // `position - hotspot` is that corner at every fractional scale and sub-pixel phase.
+        for scale in [130_u32, 150, 180, 210, 270] {
+            for origin in [0, 1280, 1281] {
+                for x in 1280..1300 {
+                    let view = view(origin, scale, (1920, 1080), Transform::Normal);
+                    let Some(p) = place(&view, at(x, 77), SIZE, HOT) else {
+                        continue;
+                    };
+                    let expected = to_physical(
+                        LogicalRect::new(at(x - HOT.x - origin, 77 - HOT.y), LogicalSize::ZERO),
+                        Scale(scale),
+                    );
+                    assert_eq!(
+                        (p.position.0 - p.hotspot.0, p.position.1 - p.hotspot.1),
+                        (expected.x, expected.y),
+                        "x {x} origin {origin} scale {scale}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn a_second_output_is_measured_from_its_own_corner() {
         let second = view(1920, 120, (1920, 1080), Transform::Normal);
         assert_eq!(placed(&second, at(2020, 50)), Some(((100, 50), (5, 3))));
@@ -289,36 +318,77 @@ mod tests {
     }
 
     #[test]
-    fn a_transform_turns_the_position_with_the_frame() {
-        // The logical output is 1920 x 1080; a quarter turn makes the frame 1080 x 1920.
+    fn a_transform_turns_the_position_and_the_hotspot_with_the_frame() {
+        // The logical output is 1920 x 1080; a quarter turn makes the frame 1080 x 1920. The
+        // cursor image is 24 x 24 with its hotspot 5 right and 3 down, turned with the frame.
         let table = [
-            (Transform::Normal, (1920, 1080), (100, 50)),
-            (Transform::R90, (1080, 1920), (1030, 100)),
-            (Transform::R180, (1920, 1080), (1820, 1030)),
-            (Transform::R270, (1080, 1920), (50, 1820)),
-            (Transform::Flipped, (1920, 1080), (1820, 50)),
-            (Transform::Flipped90, (1080, 1920), (50, 100)),
-            (Transform::Flipped180, (1920, 1080), (100, 1030)),
-            (Transform::Flipped270, (1080, 1920), (1030, 1820)),
+            (Transform::Normal, (1920, 1080), (100, 50), (5, 3)),
+            (Transform::R90, (1080, 1920), (1030, 100), (21, 5)),
+            (Transform::R180, (1920, 1080), (1820, 1030), (19, 21)),
+            (Transform::R270, (1080, 1920), (50, 1820), (3, 19)),
+            (Transform::Flipped, (1920, 1080), (1820, 50), (19, 3)),
+            (Transform::Flipped90, (1080, 1920), (50, 100), (3, 5)),
+            (Transform::Flipped180, (1920, 1080), (100, 1030), (5, 21)),
+            (Transform::Flipped270, (1080, 1920), (1030, 1820), (21, 19)),
         ];
-        for (transform, mode, position) in table {
+        for (transform, mode, position, hotspot) in table {
             let view = view(0, 120, mode, transform);
             assert_eq!(
                 placed(&view, at(100, 50)),
-                Some((position, (5, 3))),
+                Some((position, hotspot)),
                 "{transform:?}"
             );
         }
     }
 
     #[test]
+    fn the_turned_image_sits_where_the_turned_cursor_does() {
+        // `position - hotspot` is the turned image's top-left corner: the box the upright image
+        // fills, turned with the frame, starts there.
+        let mode = (1080, 1920);
+        for transform in [Transform::R90, Transform::R270, Transform::Flipped90] {
+            let view = view(0, 120, mode, transform);
+            let p = place(&view, at(100, 50), SIZE, HOT).expect("on the frame");
+            let corner = (p.position.0 - p.hotspot.0, p.position.1 - p.hotspot.1);
+            let (w, h) = (1920, 1080);
+            let upright_box = [(95, 47), (95 + 24, 47 + 24)];
+            let turned: Vec<_> = upright_box
+                .iter()
+                .map(|&point| turn_point(transform, point, (w, h)))
+                .collect();
+            let low = (turned[0].0.min(turned[1].0), turned[0].1.min(turned[1].1));
+            assert_eq!(corner, low, "{transform:?}");
+            assert_eq!(p.image, PhysicalSize { w: 24, h: 24 });
+        }
+    }
+
+    #[test]
     fn a_scaled_and_turned_output_composes_both() {
         // 3840 x 2160 at 2x is 1920 x 1080 logical; turned 90 degrees the frame is 2160 x 3840.
+        // The 48 x 48 image has its hotspot (10, 6) turned to (48 - 6, 10).
         let view = view(0, 240, (2160, 3840), Transform::R90);
         assert_eq!(
             placed(&view, at(100, 50)),
-            Some(((2160 - 100, 200), (10, 6)))
+            Some(((2160 - 100, 200), (42, 10)))
         );
+    }
+
+    #[test]
+    fn a_wide_image_is_sent_turned_with_the_output() {
+        let wide = LogicalSize { w: 24, h: 16 };
+        let table = [
+            (Transform::Normal, 120, (24, 16)),
+            (Transform::R90, 120, (16, 24)),
+            (Transform::Flipped270, 180, (24, 36)),
+            (Transform::R180, 180, (36, 24)),
+        ];
+        for (transform, scale, (w, h)) in table {
+            assert_eq!(
+                sent_image_size(wide, Scale(scale), transform),
+                PhysicalSize { w, h },
+                "{transform:?} at {scale}"
+            );
+        }
     }
 
     #[test]

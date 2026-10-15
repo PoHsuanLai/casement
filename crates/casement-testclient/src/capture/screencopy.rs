@@ -52,6 +52,16 @@ pub struct Offer {
     pub stride: u32,
 }
 
+/// A dma-buf the frame offered: `linux_dmabuf`'s fourcc code and size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct DmabufOffer {
+    /// The fourcc code.
+    pub format: u32,
+    /// Its size in pixels.
+    pub size: Size,
+}
+
 /// Why a copy failed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -107,6 +117,7 @@ impl Copied {
 struct Copying {
     outputs: Vec<(u32, WlOutput, Option<String>)>,
     offers: Vec<Offer>,
+    dmabuf: Vec<DmabufOffer>,
     file: Option<File>,
     flags: u32,
     damage: Vec<(u32, u32, u32, u32)>,
@@ -203,6 +214,7 @@ impl ScreenCopy {
             .ok_or_else(|| ClientError::MissingGlobal(format!("wl_output {connector}")))?;
         let qh = self.queue.handle();
         self.state.offers.clear();
+        self.state.dmabuf.clear();
         self.state.done = None;
         self.state.damage.clear();
         let overlay = match cursor {
@@ -223,6 +235,11 @@ impl ScreenCopy {
     /// The buffers the frame offered so far.
     pub fn offers(&self) -> &[Offer] {
         &self.state.offers
+    }
+
+    /// The dma-buf formats the frame offered (`linux_dmabuf`) so far.
+    pub fn dmabuf_offers(&self) -> &[DmabufOffer] {
+        &self.state.dmabuf
     }
 
     /// Copies the frame into a buffer made to `offer`, with `kind`.
@@ -345,6 +362,14 @@ impl Dispatch<ZwlrScreencopyFrameV1, ()> for Copying {
                 format: raw(format),
                 size: Size::new(width, height),
                 stride,
+            }),
+            Event::LinuxDmabuf {
+                format,
+                width,
+                height,
+            } => state.dmabuf.push(DmabufOffer {
+                format,
+                size: Size::new(width, height),
             }),
             Event::Flags { flags } => {
                 state.flags = flags.into_result().map_or(0, |known| known.bits());

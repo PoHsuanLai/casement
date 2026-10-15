@@ -12,16 +12,16 @@ use casement_testclient::capture::{
 use casement_testkit::{ClientId, Fixture, FixtureSpec, FrameCount, ShotTarget, TestOrigin};
 
 /// One small output, so a frame is a few hundred kilobytes.
-fn small() -> FixtureSpec {
+pub(crate) fn small() -> FixtureSpec {
     FixtureSpec::desktop().with_outputs(&["HEADLESS-1:640x480@60000:120:0,0"])
 }
 
-fn name(text: &str) -> OutputName {
+pub(crate) fn name(text: &str) -> OutputName {
     OutputName::parse(text).expect("a name")
 }
 
 /// Pumps the compositor and the capture until neither moves.
-fn settle(fixture: &mut Fixture, capture: &mut OutputCapture) {
+pub(crate) fn settle(fixture: &mut Fixture, capture: &mut OutputCapture) {
     for _ in 0..100 {
         let compositor = fixture.pump();
         let client = capture.pump().expect("pump the capture");
@@ -34,7 +34,7 @@ fn settle(fixture: &mut Fixture, capture: &mut OutputCapture) {
 
 /// A fixture with a client, two presented frames and a capture of `output` opened and
 /// settled (its constraints are in), with the cursor painted or not.
-fn opened_with(
+pub(crate) fn opened_with(
     spec: FixtureSpec,
     output: &str,
     cursor: CursorMode,
@@ -52,7 +52,7 @@ fn opened_with(
 }
 
 /// A capture that does not ask for the cursor.
-fn opened(spec: FixtureSpec, output: &str) -> (Fixture, ClientId, OutputCapture) {
+pub(crate) fn opened(spec: FixtureSpec, output: &str) -> (Fixture, ClientId, OutputCapture) {
     opened_with(spec, output, CursorMode::Hidden)
 }
 
@@ -115,7 +115,7 @@ fn an_unplugged_output_stops_its_sessions() {
 }
 
 /// Plugs a pointer and puts it at `at` (logical pixels), before any client connects.
-fn pointer_at(fixture: &mut Fixture, at: (i32, i32)) -> DeviceId {
+pub(crate) fn pointer_at(fixture: &mut Fixture, at: (i32, i32)) -> DeviceId {
     let device = fixture.input().plug(
         DeviceClass::Pointer,
         TestOrigin::Physical(DeviceClass::Pointer),
@@ -125,7 +125,7 @@ fn pointer_at(fixture: &mut Fixture, at: (i32, i32)) -> DeviceId {
 }
 
 /// Moves the pointer of `device` to `at` (logical pixels).
-fn move_pointer(fixture: &mut Fixture, device: DeviceId, at: (i32, i32)) {
+pub(crate) fn move_pointer(fixture: &mut Fixture, device: DeviceId, at: (i32, i32)) {
     fixture
         .input()
         .pointer_to(device, LogicalPoint { x: at.0, y: at.1 });
@@ -234,7 +234,7 @@ fn two_outputs(scale: u32) -> FixtureSpec {
 
 /// A cursor session on `output` of a fixture whose pointer is at `at`; the session's first
 /// events are in.
-fn cursor_watch(
+pub(crate) fn cursor_watch(
     spec: FixtureSpec,
     output: &str,
     at: (i32, i32),
@@ -297,7 +297,7 @@ fn a_cursor_session_speaks_physical_pixels() {
         [
             CursorEvent::Entered,
             CursorEvent::Hotspot(8, 5),
-            CursorEvent::Position(150, 75)
+            CursorEvent::Position(151, 76)
         ]
     );
     let size = capture.session().and_then(|session| session.size);

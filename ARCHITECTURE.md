@@ -86,6 +86,8 @@ A1: `Instant::now`, `SystemTime::now`, smithay's `Clock::now` and calloop's `Tim
 | the window a foreign-toplevel identifier names | `casement_wayland::foreign_toplevel_list::{identifier_of, window_of_identifier}` |
 | what changed on an output since a capture client's last frame | `casement_wayland::image_capture::{DamageLogs, Since}` (fed by `casement::handlers::serve_captures` from `PresentedFrame::damage`) |
 | where the pointer is on an output's frame, and the cursor's image for capture | `casement_wayland::image_capture::place`; `casement_render::{cursor_face, cursor_pixels}` |
+| turning a point or a size with an output's transform (a cursor's position, hotspot and size in a capture) | `casement_core::geometry::{turn_point, turn_size}` |
+| a capture into or out of a client's dma-buf; a client-drawn cursor's pixels | `casement_render::pass::{write_dmabuf, read_dmabuf, ArgbImage}`, called through `{HeadlessBackend, TtyBackend}::{write_dmabuf, read_dmabuf}`; the offer is `casement_wayland::image_capture::dma_offer` |
 | a window's capture size and when it is captured | `casement_wayland::capture_source::{capture_size, ToplevelCaptureBook}` (damage gate) |
 | where windows go | `casement-layout` (`SceneLayout`, `RustScene`) |
 | how they travel there; the drawn frame | `casement-motion` (`retarget`, `sample`, `FrameScene`) |

@@ -10,9 +10,11 @@
 //! has drawn one (FINDINGS, p1-t).
 
 mod cursor;
+mod dma;
 mod frames;
 
 pub(super) use cursor::sync as sync_cursors;
+pub(super) use dma::{buffer_size, deliver, fourccs, offer as dma_offer_of};
 pub(super) use frames::{last_frame, note_presented, release_waiting};
 
 use super::capture_source;
@@ -141,15 +143,14 @@ impl ImageCopyCaptureHandler for State {
 }
 
 /// What a client must allocate to capture `output` now: its mode's size, in the two shared
-/// memory formats every client has. (smithay's `dma` field is there because the backend
-/// crate always builds smithay with `renderer_multi`, which implies `backend_drm`; dma-buf
-/// capture follows, FINDINGS p1-c1.)
+/// memory formats every client has or, when the renderer can draw into one, a dma-buf of the
+/// formats `dma::offer` names (shared memory stays the fallback).
 pub(super) fn constraints_of(state: &State, output: &OutputKey) -> Option<BufferConstraints> {
     let mode = state.core.model.outputs().0.get(output)?.config.mode.size;
     let side = |n: u32| i32::try_from(n).ok();
     Some(BufferConstraints {
         size: Size::from((side(mode.w)?, side(mode.h)?)),
         shm: vec![Format::Argb8888, Format::Xrgb8888],
-        dma: None,
+        dma: dma::offer(state),
     })
 }

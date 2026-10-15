@@ -7,7 +7,7 @@ use casement_backend::headless::{FrameSource, RgbaFrame};
 use casement_core::WindowId;
 use casement_core::geometry::{LogicalSize, PhysicalRect};
 use casement_core::time::Mono;
-use casement_render::pass::{CapturedFrame, window_capture_size, window_tree, write_frame};
+use casement_render::pass::{CapturedFrame, window_capture_size, window_tree};
 use casement_render::{CasementElement, Compositor};
 use casement_wayland::capture_source::ToplevelCaptureRequest;
 use casement_wayland::image_capture::CaptureFailure;
@@ -98,7 +98,7 @@ pub(super) fn draw_window(
         h: drawn.size.h,
     };
     let captured = CapturedFrame::from_rgba(area, &drawn.bytes);
-    write_frame(buffer, &captured).map_err(|error| {
+    crate::handlers::image_capture::deliver(state, buffer, &captured).map_err(|error| {
         tracing::warn!(%error, "a window capture frame was not written");
         CaptureFailure::BufferMismatch
     })?;

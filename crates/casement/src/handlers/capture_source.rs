@@ -25,7 +25,6 @@ use casement_wayland::image_capture::CaptureFailure;
 use ds_core::geometry::scale::Scale;
 use render::draw_window;
 pub(crate) use render::window_rgba;
-use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_shm::Format;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Buffer, Rectangle, Size, Transform};
@@ -34,7 +33,6 @@ use smithay::wayland::image_capture_source::{
     ImageCaptureSource, ToplevelCaptureSourceHandler, ToplevelCaptureSourceState,
 };
 use smithay::wayland::image_copy_capture::{BufferConstraints, Frame, Session, SessionRef};
-use smithay::wayland::shm::with_buffer_contents;
 
 impl ToplevelCaptureSourceHandler for State {
     fn toplevel_capture_source_state(&mut self) -> &mut ToplevelCaptureSourceState {
@@ -75,7 +73,8 @@ pub(crate) fn content_and_scale(state: &State, window: WindowId) -> Option<(Logi
 }
 
 /// What a client must allocate to capture `window` now: its content size at the scale of the
-/// output it is on, in the two shared-memory formats every client has.
+/// output it is on, in the two shared-memory formats every client has or the dma-buf formats the
+/// renderer draws into.
 fn window_constraints(state: &State, window: WindowId) -> Option<BufferConstraints> {
     let (content, scale) = content_and_scale(state, window)?;
     let size = window_capture_size(content, scale);
@@ -83,7 +82,7 @@ fn window_constraints(state: &State, window: WindowId) -> Option<BufferConstrain
     Some(BufferConstraints {
         size: Size::from((side(size.w)?, side(size.h)?)),
         shm: vec![Format::Argb8888, Format::Xrgb8888],
-        dma: None,
+        dma: super::image_capture::dma_offer_of(state),
     })
 }
 
@@ -132,7 +131,7 @@ pub(super) fn serve(state: &mut State, session: &SessionRef, frame: Frame, id: T
         state.wl.capture_source.book.forget_delivered(id);
         return fail(state, id, frame, CaptureFailure::BufferMismatch);
     }
-    let Some(size) = buffer_size(&frame.buffer()) else {
+    let Some(size) = super::image_capture::buffer_size(&frame.buffer()) else {
         return fail(state, id, frame, CaptureFailure::BufferMismatch);
     };
     if (i64::from(size.w), i64::from(size.h))
@@ -244,13 +243,4 @@ fn fail(state: &mut State, id: ToplevelSessionId, frame: Frame, why: CaptureFail
         tracing::debug!(%fault, "a window capture frame was not pending");
     }
     frame.fail(why.reason());
-}
-
-/// The size of a shared-memory buffer, in pixels.
-fn buffer_size(buffer: &WlBuffer) -> Option<casement_core::geometry::PhysicalSize> {
-    let (w, h) = with_buffer_contents(buffer, |_, _, data| (data.width, data.height)).ok()?;
-    Some(casement_core::geometry::PhysicalSize {
-        w: u32::try_from(w).ok()?,
-        h: u32::try_from(h).ok()?,
-    })
 }

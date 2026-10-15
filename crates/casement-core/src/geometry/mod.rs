@@ -7,12 +7,14 @@ mod physical;
 pub(crate) mod scale_serde;
 mod sub;
 mod transform;
+mod turn;
 
 pub use convert::{buffer_size, to_physical};
 pub use logical::{LogicalPoint, LogicalRect, LogicalSize};
 pub use physical::{PhysicalRect, PhysicalSize};
 pub use sub::{SubPoint, SubPx, SubSize};
 pub use transform::Transform;
+pub use turn::{turn_point, turn_size};
 
 #[cfg(test)]
 mod tests;

@@ -5,6 +5,16 @@ mod cursor;
 
 pub use cursor::CursorEvent;
 
+/// A dma-buf format the session offered: the fourcc code and the modifiers allowed with it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct DmabufFormat {
+    /// The fourcc code.
+    pub format: u32,
+    /// The modifiers.
+    pub modifiers: Vec<u64>,
+}
+
 use super::output_source::NamedOutput;
 use crate::misc::idle::{pump_queue, side_queue};
 use crate::{ClientError, GlobalList, Pumped};
@@ -55,6 +65,8 @@ pub(super) struct Capturing {
 struct Announced {
     size: Option<Size>,
     formats: Vec<ShmFormat>,
+    dmabuf: Vec<DmabufFormat>,
+    device: Option<u64>,
     done: Done,
 }
 
@@ -71,6 +83,8 @@ impl Announced {
     fn round(&mut self) {
         if self.done == Done::Complete {
             self.formats.clear();
+            self.dmabuf.clear();
+            self.device = None;
             self.done = Done::Open;
         }
     }
@@ -228,6 +242,16 @@ impl OutputCapture {
         flush(&self.connection)
     }
 
+    /// The dma-buf formats the session offered in its last complete round of constraints.
+    pub fn dmabuf_formats(&self) -> &[DmabufFormat] {
+        &self.state.announced.dmabuf
+    }
+
+    /// The device the session said dma-bufs are allocated on (`dev_t`), if it offered any.
+    pub fn dmabuf_device(&self) -> Option<u64> {
+        self.state.announced.device
+    }
+
     /// The session, as the reducer has it: its size, formats and phase.
     pub fn session(&self) -> Option<&CaptureSession> {
         self.state.desktop.captures.get(ID)
@@ -381,6 +405,24 @@ impl Dispatch<ExtImageCopyCaptureSessionV1, ()> for Capturing {
                     state.announced.formats.push(format);
                 }
                 state.fold(CaptureEvent::Format(format));
+            }
+            Event::DmabufDevice { device } => {
+                state.announced.round();
+                let bytes = device.as_slice().first_chunk::<8>().copied();
+                state.announced.device = bytes.map(u64::from_ne_bytes);
+            }
+            Event::DmabufFormat { format, modifiers } => {
+                state.announced.round();
+                let modifiers = modifiers
+                    .as_chunks::<8>()
+                    .0
+                    .iter()
+                    .map(|chunk| u64::from_ne_bytes(*chunk))
+                    .collect();
+                state
+                    .announced
+                    .dmabuf
+                    .push(DmabufFormat { format, modifiers });
             }
             Event::Done => {
                 state.announced.done = Done::Complete;

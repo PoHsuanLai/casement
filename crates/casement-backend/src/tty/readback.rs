@@ -104,6 +104,32 @@ impl Readback {
         self.started()?.render_offscreen(size, scale, source)
     }
 
+    /// The dma-buf formats a capture can be drawn into: the shadow's renderer is pixman, which
+    /// binds linear buffers only.
+    pub fn capture_formats(&self) -> Vec<smithay::backend::allocator::Format> {
+        match &self.shadow {
+            Some(shadow) => shadow.capture_formats(),
+            None => crate::headless::linear_capture_formats(),
+        }
+    }
+
+    /// Draws `frame` into a client's dma-buf `target` through the shadow's renderer.
+    pub fn write_dmabuf(
+        &mut self,
+        target: &mut smithay::backend::allocator::dmabuf::Dmabuf,
+        frame: &casement_render::pass::CapturedFrame,
+    ) -> Result<(), BackendError> {
+        self.started()?.write_dmabuf(target, frame)
+    }
+
+    /// Reads a client's dma-buf `source` back through the shadow's renderer.
+    pub fn read_dmabuf(
+        &mut self,
+        source: &smithay::backend::allocator::dmabuf::Dmabuf,
+    ) -> Result<casement_render::pass::ArgbImage, BackendError> {
+        self.started()?.read_dmabuf(source)
+    }
+
     /// Draws `source` into the shadow of `output` as the frame shown at `seq`; nothing when the
     /// output is not watched.
     pub fn draw(
