@@ -265,15 +265,28 @@ fn the_shell_hears_a_window_drag_begin_and_end_with_its_outcome() {
     press(&mut desk);
     assert!(desk.shell.drag_begins().is_empty(), "a press is not a drag");
     move_to(&mut desk, LogicalPoint { x: 50, y: 50 });
+    // One event per wl_output object the shell holds for this output (it may hold several).
     let begun = desk.shell.drag_begins();
-    assert_eq!(begun.len(), 1, "one drag, one output");
-    assert_eq!(begun[0].0, output);
+    let per_drag = begun.len();
+    assert!(per_drag >= 1, "a drag is heard");
+    assert!(begun.iter().any(|(at, _)| *at == output));
+    assert!(
+        begun.iter().all(|(_, held)| *held == begun[0].1),
+        "one window"
+    );
     assert!(desk.shell.drag_ends().is_empty());
     release(&mut desk);
     let ended = desk.shell.drag_ends();
-    assert_eq!(ended.len(), 1);
-    assert_eq!(ended[0].1, begun[0].1, "the same window");
-    assert_eq!(ended[0].2, Some(DragOutcome::DroppedOnNew));
+    assert_eq!(ended.len(), per_drag);
+    assert!(
+        ended.iter().all(|end| end.1 == begun[0].1),
+        "the same window"
+    );
+    assert!(
+        ended
+            .iter()
+            .all(|end| end.2 == Some(DragOutcome::DroppedOnNew))
+    );
     assert!(old.drag_begins().is_empty() && old.drag_ends().is_empty());
 
     // Dropped on nothing: cancelled.
@@ -284,8 +297,12 @@ fn the_shell_hears_a_window_drag_begin_and_end_with_its_outcome() {
     move_to(&mut desk, LogicalPoint { x: 560, y: 440 });
     release(&mut desk);
     let ended = desk.shell.drag_ends();
-    assert_eq!(ended.len(), 2);
-    assert_eq!(ended[1].2, Some(DragOutcome::Cancelled));
+    assert_eq!(ended.len(), 2 * per_drag);
+    assert!(
+        ended[per_drag..]
+            .iter()
+            .all(|end| end.2 == Some(DragOutcome::Cancelled))
+    );
 }
 
 /// Two outputs, two windows on the left one, a version 3 shell with its outputs bound.
