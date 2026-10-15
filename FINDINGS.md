@@ -3442,3 +3442,13 @@ Lane `cas20-multigpu` (not compiled; the orchestrator gates). Supersedes the "Mu
   sampling the buffer after NVIDIA wrote it (the texture comes from a cached EGL image; if stale frames show, re-import per
   frame), the render node opening without a seat (`/dev/dri/renderD*` is opened directly, as `RealFormats` does), no flicker on
   a VT switch back, frame pacing with the extra copy, and the log line "the render GPU and each output's route".
+
+## wave-2026-10-15/wlcs5
+
+Written without a build or a wlcs run (rule of the lane); the orchestrator's run settles it.
+
+| Finding | Root cause | What changed |
+|---|---|---|
+| `ForeignToplevelHandleTest.gets_unminimized_when_maximized`, `gets_unminimized_when_fullscreened` | `wlr_requests` mapped `set_maximized` / `set_fullscreen` straight to the window's own request, which leaves a minimised window alone. | `Model::wlr_request`: a window-list client's maximise-on / full-screen-on first brings a minimised window back from the dock (the activation path, so the restore animation plays), then applies the request. Test: `wlr_toplevel.rs` `a_state_asked_of_a_minimised_window_...`. |
+| `can_maximize_foreign_while_fullscreen` | `place` returned early for a full-screen window, so the fill was dropped. | `place`: Fill on a full-screen window replaces the state it returns to with Filled (xdg-shell: `set_maximized` while full screen takes effect when full screen ends); the window stays full screen. Same test. This also applies to the window's own `xdg_toplevel.set_maximized`. |
+| `text_input_enters_grabbing_popup`, `..._after_child_destroyed` | gmock `InSequence` chains the xdg helpers' `AnyNumber` expectations; a later call retires every earlier link, and the protocol's wire order (toplevel/popup configure, then xdg_surface.configure; wm_capabilities at creation) is the reverse of the chain. The keyboard `enter` was already in order. | Nothing in casement can fix it without dropping configures; the two rows are back on the expected-failures list as W14 with the reasoning. |
