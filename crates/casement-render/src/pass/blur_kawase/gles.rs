@@ -258,7 +258,9 @@ fn pass(
         Some(program),
         uniforms,
     )?;
-    nested.finish()?;
+    // One GL context draws every level and then samples it, and GL keeps that order, so the
+    // level's fence need not be waited on here.
+    let _ordered_by_the_context = nested.finish()?;
     Ok(())
 }
 
