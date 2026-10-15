@@ -7,13 +7,17 @@
 //! hands the compositor the cursor element last, and it either promotes it or composites it),
 //! and overlay planes take direct-scanout candidates when the driver accepts the test commit.
 //!
-//! Each surface draws with the GLES renderer of its own device's GBM node (`casement_render::
-//! gles_on`), one renderer shared by every output of the device (two EGL displays on one native
-//! display would terminate each other). One render GPU for every device (the copy across GPUs
-//! the soft topology tests prove) is not wired: a second GPU's outputs are drawn by that GPU.
-//! The device's vblank events reach the surface through [`Flips`], which the device's event
-//! source fills.
+//! A surface draws one of two ways, by the render plan's route for its device. `Direct`: the
+//! GLES renderer of the GPU that renders and scans out (`casement_render::gles_on`, one renderer
+//! per GPU, shared by every output: two EGL displays on one native display would terminate each
+//! other) builds the elements and the compositor draws them. `Copy`: the render GPU's renderer
+//! draws the picture into a buffer the scanout GPU allocated (`bridge_real.rs`) and the
+//! compositor, running on the scanout GPU's own renderer, puts that one texture on the glass.
+//! When a copy route cannot be built the surface says so in the log and draws as `Direct` on the
+//! scanout GPU's renderer. The device's vblank events reach the surface through [`Flips`], which
+//! the device's event source fills.
 
+use super::bridge_real::{Bridge, Drawn};
 use super::kms::{ConnectorId, KmsError};
 use super::surface::{Presented, QueueOutcome, QueuedFrame, ScanoutSurface};
 use crate::headless::transform_of;
@@ -34,10 +38,10 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 /// Black, opaque: what shows where no element draws.
-const CLEAR: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
+pub(super) const CLEAR: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
 
 /// The compositor type one output's surface runs.
-type Compositor =
+pub(super) type Compositor =
     DrmCompositor<GbmAllocator<DrmDeviceFd>, GbmFramebufferExporter<DrmDeviceFd>, (), DrmDeviceFd>;
 
 /// The flips the device reported done, by CRTC: its event source adds, the surface takes.
@@ -61,12 +65,37 @@ impl Flips {
     }
 }
 
+/// A GLES renderer other code lends, shared by every output of its GPU.
+pub(super) type Shared = Rc<RefCell<GlesRenderer>>;
+
+/// Which renderers draw a device's outputs.
+pub(super) enum Feed {
+    /// The device's own renderer draws and the device scans out (the render GPU, or a machine
+    /// with one GPU).
+    Own(Shared),
+    /// The render GPU draws and this device's renderer composes the copy.
+    Copy {
+        /// The render GPU's renderer.
+        render: Shared,
+        /// This device's renderer.
+        local: Shared,
+    },
+}
+
+/// How one surface draws.
+enum Draw {
+    /// One renderer builds the elements and draws them.
+    Own(Shared),
+    /// The render GPU draws a picture the scanout GPU composes.
+    Copy(Bridge),
+}
+
 /// One output's scanout surface.
 pub struct RealScanout {
     connector: ConnectorId,
     crtc: crtc::Handle,
     compositor: Compositor,
-    renderer: Rc<RefCell<GlesRenderer>>,
+    draw: Draw,
     flips: Rc<RefCell<Flips>>,
     /// The vblank the next queued frame is for (counted here: the kernel's own sequence is
     /// not used, so a missed vblank is not measured on real hardware; FINDINGS "p1-t").
@@ -77,13 +106,13 @@ pub struct RealScanout {
     _claim: Rc<()>,
 }
 
-/// What a device lends each surface it opens: its buffers, its renderer, its cursor plane size
+/// What a device lends each surface it opens: its buffers, its renderers, its cursor plane size
 /// and its flip counts.
 pub(super) struct DeviceShare<'a> {
     /// The device's buffer allocator.
     pub gbm: &'a GbmDevice<DrmDeviceFd>,
-    /// The device's one renderer.
-    pub renderer: Rc<RefCell<GlesRenderer>>,
+    /// The renderers that draw it.
+    pub feed: Feed,
     /// The cursor plane's size.
     pub cursor: Size<u32, Buffer>,
     /// The device's flip counts.
@@ -102,7 +131,7 @@ impl RealScanout {
     ) -> Result<RealScanout, KmsError> {
         let DeviceShare {
             gbm,
-            renderer,
+            feed,
             cursor,
             flips,
         } = share;
@@ -112,22 +141,54 @@ impl RealScanout {
             GbmBufferFlags::RENDERING | GbmBufferFlags::SCANOUT,
         );
         let exporter = GbmFramebufferExporter::new(gbm.clone(), NodeFilter::All);
-        let render_formats: Vec<_> = renderer
+        let size = Size::from((
+            i32::try_from(config.mode.size.w).unwrap_or(i32::MAX),
+            i32::try_from(config.mode.size.h).unwrap_or(i32::MAX),
+        ));
+        let scale = f64::from(config.scale.0) / 120.0;
+        let transform = transform_of(config.transform);
+        let (draw, picture) = match feed {
+            Feed::Own(renderer) => (
+                Draw::Own(renderer),
+                OutputModeSource::Static {
+                    size,
+                    scale: smithay::utils::Scale::from(scale),
+                    transform,
+                },
+            ),
+            Feed::Copy { render, local } => {
+                match Bridge::open((render, Rc::clone(&local)), gbm, (size, scale, transform)) {
+                    // The picture is already scaled and turned: the compositor shows it as is.
+                    Ok(bridge) => (
+                        Draw::Copy(bridge),
+                        OutputModeSource::Static {
+                            size,
+                            scale: smithay::utils::Scale::from(1.0),
+                            transform: smithay::utils::Transform::Normal,
+                        },
+                    ),
+                    Err(error) => {
+                        tracing::warn!(%error, "the render GPU's frames cannot be copied to this output's GPU; this output is drawn by its own GPU");
+                        (
+                            Draw::Own(local),
+                            OutputModeSource::Static {
+                                size,
+                                scale: smithay::utils::Scale::from(scale),
+                                transform,
+                            },
+                        )
+                    }
+                }
+            }
+        };
+        let render_formats: Vec<_> = draw
+            .scanout_renderer()
             .borrow()
             .egl_context()
             .dmabuf_render_formats()
             .iter()
             .copied()
             .collect();
-        let size = Size::from((
-            i32::try_from(config.mode.size.w).unwrap_or(i32::MAX),
-            i32::try_from(config.mode.size.h).unwrap_or(i32::MAX),
-        ));
-        let picture = OutputModeSource::Static {
-            size,
-            scale: smithay::utils::Scale::from(f64::from(config.scale.0) / 120.0),
-            transform: transform_of(config.transform),
-        };
         let compositor = DrmCompositor::new(
             picture,
             surface,
@@ -144,12 +205,19 @@ impl RealScanout {
             connector,
             crtc,
             compositor,
-            renderer,
+            draw,
             flips,
             next: VblankSeq(0),
             pending: None,
             _claim: claim,
         })
+    }
+
+    /// A copy route draws the whole picture next time (the glass lost it, or never got it).
+    fn forget_picture(&mut self) {
+        if let Draw::Copy(bridge) = &mut self.draw {
+            bridge.forget();
+        }
     }
 
     /// The connector it scans out to.
@@ -168,13 +236,19 @@ impl ScanoutSurface for RealScanout {
             // compositor does its own plane assignment (see the module doc).
             return QueueOutcome::Failed(refused("only drawn frames are queued on a device"));
         };
-        let mut renderer = self.renderer.borrow_mut();
-        let elements = source.gles(&mut renderer);
-        let rendered = self
-            .compositor
-            .render_frame(&mut *renderer, &elements, CLEAR, FrameFlags::DEFAULT)
-            .map(|result| result.is_empty)
-            .map_err(refused);
+        let rendered = match &mut self.draw {
+            Draw::Own(renderer) => {
+                let mut renderer = renderer.borrow_mut();
+                let elements = source.gles(&mut renderer);
+                self.compositor
+                    .render_frame(&mut *renderer, &elements, CLEAR, FrameFlags::DEFAULT)
+                    .map(|result| result.is_empty)
+                    .map_err(refused)
+            }
+            Draw::Copy(bridge) => bridge
+                .draw(&mut self.compositor, source)
+                .map(|drawn| drawn == Drawn::Unchanged),
+        };
         // A frame with no change is not queued: `queue_frame` refuses it as empty.
         let queued = match rendered {
             Ok(true) => return QueueOutcome::Unchanged,
@@ -186,7 +260,11 @@ impl ScanoutSurface for RealScanout {
                 self.pending = Some(self.next);
                 QueueOutcome::Queued(self.next)
             }
-            Err(error) => QueueOutcome::Failed(error),
+            Err(error) => {
+                // What the picture held never reached the glass: draw it all again.
+                self.forget_picture();
+                QueueOutcome::Failed(error)
+            }
         }
     }
 
@@ -203,19 +281,31 @@ impl ScanoutSurface for RealScanout {
 
     fn blank(&mut self) -> Result<(), KmsError> {
         self.pending = None;
+        self.forget_picture();
         self.compositor.clear().map_err(refused)
     }
 
     fn reset(&mut self) {
         self.pending = None;
+        self.forget_picture();
         if let Err(error) = self.compositor.reset_state() {
             tracing::warn!(%error, "the compositor did not reset after the seat came back");
         }
     }
 }
 
+impl Draw {
+    /// The renderer of the GPU that scans out: the one the compositor draws with.
+    fn scanout_renderer(&self) -> &Shared {
+        match self {
+            Draw::Own(renderer) => renderer,
+            Draw::Copy(bridge) => bridge.local(),
+        }
+    }
+}
+
 /// A compositor failure as the seam's error (the typed sources stay in the log).
-fn refused(error: impl std::fmt::Display) -> KmsError {
+pub(super) fn refused(error: impl std::fmt::Display) -> KmsError {
     KmsError::Io(std::io::Error::other(error.to_string()))
 }
 

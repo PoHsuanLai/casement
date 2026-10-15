@@ -39,6 +39,8 @@ mod vt;
 mod writeback;
 
 #[cfg(feature = "tty")]
+mod bridge_real;
+#[cfg(feature = "tty")]
 mod capture_gpu_real;
 #[cfg(feature = "tty")]
 mod capture_scene_real;
@@ -48,6 +50,8 @@ mod direct_real;
 mod kms_real;
 #[cfg(feature = "tty")]
 mod real;
+#[cfg(feature = "tty")]
+mod render_hub_real;
 #[cfg(feature = "tty")]
 mod session_real;
 #[cfg(feature = "tty")]
@@ -93,6 +97,8 @@ pub use direct_real::direct_seams;
 pub use kms_real::{FdSource, RealKms, RealKmsOpener, VirtualDisplays};
 #[cfg(feature = "tty")]
 pub use real::real_seams;
+#[cfg(feature = "tty")]
+pub use render_hub_real::RenderHub;
 #[cfg(feature = "tty")]
 pub use session_real::RealSession;
 #[cfg(feature = "tty")]
@@ -474,9 +480,8 @@ impl TtyBackend {
     }
 
     /// The route `output`'s frames take between GPUs; none without a plan or for a connector it
-    /// does not place. The frame loop draws an output with the renderer of
-    /// `route.renders_on()` and copies to `route.scans_out_on()` when they differ; today every
-    /// output is drawn by its scanout GPU (FINDINGS "wave-2026-10-15/session").
+    /// does not place. An output is drawn with the renderer of `route.renders_on()` and copied to
+    /// `route.scans_out_on()` when they differ (`surface_real.rs`, `bridge_real.rs`).
     pub fn route_of(&self, output: &OutputName) -> Option<OutputRoute> {
         self.plan.as_ref()?.route_of(output)
     }

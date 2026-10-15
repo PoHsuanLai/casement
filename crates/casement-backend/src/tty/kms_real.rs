@@ -23,13 +23,14 @@ use super::kms::{
     KmsError, KmsOpener, KmsRefusal, KmsResources, OutputCommit, PlaneFacts, PlaneId, PlaneKind,
     VrrState,
 };
+use super::render_hub_real::RenderHub;
 use super::surface::ScanoutSurface;
-use super::surface_real::{DeviceShare, Flips, RealScanout};
+use super::surface_real::{DeviceShare, Feed, Flips, RealScanout};
 use super::udev::DevicePath;
 use crate::headless::ConnectorEvent;
 use casement_core::OutputName;
 use casement_core::geometry::PhysicalSize;
-use casement_core::gpu::{FormatEntry, Fourcc, Modifier};
+use casement_core::gpu::{FormatEntry, Fourcc, Modifier, OutputRoute};
 use casement_core::output::{
     GammaRamp, Mode, ModePreference, OutputConfig, OutputPower, PhysicalMm, VrrCapability,
 };
@@ -68,6 +69,9 @@ pub struct RealKms {
     scenes: Rc<RefCell<SceneStore>>,
     /// The render node of the device, when it has one: what clients allocate buffers on.
     node: Option<u64>,
+    /// The render GPU's renderer and the plan's routes; none draws every output with the
+    /// device's own renderer.
+    hub: Option<Rc<RenderHub>>,
     /// The surfaces lit and not yet handed to a scanout.
     surfaces: BTreeMap<ConnectorId, DrmSurface>,
     /// The connectors whose surface is out with a scanout (gone when the scanout is dropped).
@@ -100,6 +104,16 @@ impl RealKms {
         fd: OwnedFd,
         handle: &LoopHandle<'static, D>,
     ) -> Result<RealKms, KmsError> {
+        RealKms::open_routed(fd, handle, None)
+    }
+
+    /// The same, with the render GPU's hub: the device draws as the plan's route for its GPU
+    /// says (a frame drawn on the render GPU and copied across when another GPU renders).
+    pub fn open_routed<D: 'static>(
+        fd: OwnedFd,
+        handle: &LoopHandle<'static, D>,
+        hub: Option<Rc<RenderHub>>,
+    ) -> Result<RealKms, KmsError> {
         let node = render_node_of(&fd);
         let fd = DrmDeviceFd::new(DeviceFd::from(fd));
         let (device, notifier) = DrmDevice::new(fd.clone(), false).map_err(io_error)?;
@@ -123,6 +137,7 @@ impl RealKms {
             renderer: None,
             scenes: Rc::default(),
             node,
+            hub,
             surfaces: BTreeMap::new(),
             out: BTreeMap::new(),
             lit: Lit::new(),
@@ -132,16 +147,46 @@ impl RealKms {
         })
     }
 
-    /// The device's GLES renderer, made on first use.
+    /// The route of this device's frames under the plan; none without a hub, without a render
+    /// node, or for a GPU the plan scans no output out on (drawn with its own renderer).
+    fn route(&self) -> Option<OutputRoute> {
+        self.hub.as_ref()?.route_of_device(self.node?)
+    }
+
+    /// The device's GLES renderer, made on first use. The render GPU's device shares the
+    /// hub's renderer (the one every copy route draws with); any other makes its own.
     fn renderer(&mut self) -> Result<Rc<RefCell<GlesRenderer>>, KmsError> {
         if let Some(renderer) = &self.renderer {
             return Ok(Rc::clone(renderer));
         }
-        let renderer = casement_render::gles_on(self.gbm.clone())
-            .map_err(|error| KmsError::Io(io::Error::other(error.to_string())))?;
-        let shared = Rc::new(RefCell::new(renderer));
+        let shared = match (&self.hub, self.route()) {
+            (Some(hub), Some(OutputRoute::Direct { .. })) => hub.renderer(Some(&self.gbm))?,
+            _ => {
+                let renderer = casement_render::gles_on(self.gbm.clone())
+                    .map_err(|error| KmsError::Io(io::Error::other(error.to_string())))?;
+                Rc::new(RefCell::new(renderer))
+            }
+        };
         self.renderer = Some(Rc::clone(&shared));
         Ok(shared)
+    }
+
+    /// The renderers that draw this device's outputs: the render GPU's and this device's own
+    /// when the plan copies, else the device's own. A copy route that cannot start (the render
+    /// GPU's renderer did not come up) is logged and the device draws for itself.
+    fn feed(&mut self) -> Result<Feed, KmsError> {
+        let local = self.renderer()?;
+        let (Some(hub), Some(OutputRoute::Copy { render, scanout })) = (&self.hub, self.route())
+        else {
+            return Ok(Feed::Own(local));
+        };
+        Ok(match hub.renderer(None) {
+            Ok(render) => Feed::Copy { render, local },
+            Err(error) => {
+                tracing::warn!(%error, ?render, ?scanout, "the render GPU did not start; its outputs are drawn by their own GPU");
+                Feed::Own(local)
+            }
+        })
     }
 
     /// Whether the surface of `connector` is out with a live scanout.
@@ -216,11 +261,18 @@ impl RealKms {
 
 impl Kms for RealKms {
     fn capture_gpu(&self) -> Option<Box<dyn CaptureGpu>> {
-        let renderer = self.renderer.as_ref()?;
+        // Captures draw the scene with the renderer that built it: the render GPU's, when this
+        // device's outputs are copied from there.
+        let (renderer, node) = match (&self.hub, self.route()) {
+            (Some(hub), Some(OutputRoute::Copy { render, .. })) => {
+                (hub.existing()?, Some(render.dev_t()))
+            }
+            _ => (Rc::clone(self.renderer.as_ref()?), self.node),
+        };
         Some(Box::new(RealCaptureGpu::new(
-            Rc::clone(renderer),
+            renderer,
             Rc::clone(&self.scenes),
-            self.node,
+            node,
         )))
     }
 
@@ -296,7 +348,7 @@ impl Kms for RealKms {
             .surfaces
             .remove(&connector)
             .ok_or(KmsError::UnknownConnector(connector))?;
-        let renderer = self.renderer()?;
+        let feed = self.feed()?;
         let claim = Rc::new(());
         self.out.insert(connector, Rc::downgrade(&claim));
         let scanout = RealScanout::open(
@@ -304,7 +356,7 @@ impl Kms for RealKms {
             surface,
             DeviceShare {
                 gbm: &self.gbm,
-                renderer,
+                feed,
                 cursor: self.device.cursor_size(),
                 flips: Rc::clone(&self.flips),
             },
@@ -485,6 +537,7 @@ pub struct RealKmsOpener<D: 'static> {
     fds: Box<dyn FdSource>,
     handle: LoopHandle<'static, D>,
     virtual_displays: VirtualDisplays,
+    hub: Option<Rc<RenderHub>>,
 }
 
 /// Whether a virtual test display (a device whose DRM driver is vkms) may be opened.
@@ -504,6 +557,16 @@ impl<D: 'static> RealKmsOpener<D> {
             fds,
             handle,
             virtual_displays: VirtualDisplays::Allow,
+            hub: None,
+        }
+    }
+
+    /// The same, drawing as the plan behind `hub` says (the render GPU renders every output).
+    #[must_use]
+    pub fn routed(self, hub: Rc<RenderHub>) -> RealKmsOpener<D> {
+        RealKmsOpener {
+            hub: Some(hub),
+            ..self
         }
     }
 
@@ -531,7 +594,11 @@ impl<D: 'static> KmsOpener for RealKmsOpener<D> {
         if self.virtual_displays == VirtualDisplays::Refuse && is_vkms(&fd)? {
             return Err(KmsError::VirtualDisplay(path.0.clone()));
         }
-        Ok(Box::new(RealKms::open(fd, &self.handle)?))
+        Ok(Box::new(RealKms::open_routed(
+            fd,
+            &self.handle,
+            self.hub.clone(),
+        )?))
     }
 }
 

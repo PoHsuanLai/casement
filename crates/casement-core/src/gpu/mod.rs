@@ -14,6 +14,7 @@
 //! assert!(plan.is_err(), "no GPU, no plan");
 //! ```
 
+mod bridge;
 mod display;
 mod feedback;
 mod node;
@@ -21,6 +22,7 @@ mod plan;
 mod policy;
 mod route;
 
+pub use bridge::bridge_format;
 pub use display::{DisplayKind, keep_displays};
 pub use feedback::{
     FeedbackPlan, FormatEntry, FormatTable, Fourcc, Modifier, Tranche, TrancheUse, feedback_for,
