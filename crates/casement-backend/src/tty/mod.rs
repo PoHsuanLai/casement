@@ -16,6 +16,7 @@
 //!
 //! The adapters are the only files that name the device crates (row B7).
 
+mod capture_gpu;
 mod connector;
 mod device;
 mod direct;
@@ -37,6 +38,8 @@ mod vt;
 mod writeback;
 
 #[cfg(feature = "tty")]
+mod capture_gpu_real;
+#[cfg(feature = "tty")]
 mod direct_real;
 #[cfg(feature = "tty")]
 mod kms_real;
@@ -51,6 +54,9 @@ mod udev_real;
 #[cfg(feature = "tty")]
 mod writeback_real;
 
+pub use capture_gpu::{
+    CaptureGpu, CaptureRoute, capture_fallback, capture_route, merged_formats, renderable_formats,
+};
 pub use connector::{EdidError, VrrPolicy, output_facts, parse_edid, plan_outputs, vrr_state};
 pub use device::{Announced, OpenDevice, TtyDevices};
 pub use direct::{
@@ -90,6 +96,7 @@ pub use surface_real::RealScanout;
 #[cfg(feature = "tty")]
 pub use udev_real::RealUdev;
 
+use self::capture_gpu::{CaptureRoute, capture_fallback, capture_route, merged_formats};
 use crate::backend::BackendError;
 use crate::gpu::{FormatSource, RenderNodes};
 use crate::headless::{ConnectorEvent, FrameSource, PresentedFrame};
@@ -493,18 +500,40 @@ impl TtyBackend {
         self.readback.last_frame(output)
     }
 
-    /// The dma-buf formats a capture can be drawn into (the shadow's renderer binds linear
-    /// buffers only).
+    /// The dma-buf formats a capture can be drawn into: the display GPU's (with its modifiers)
+    /// and, after them, the software renderer's linear ones.
     pub fn capture_formats(&self) -> Vec<smithay::backend::allocator::Format> {
-        self.readback.capture_formats()
+        let gpu = self
+            .devices
+            .capture_gpu()
+            .map(|gpu| gpu.formats())
+            .unwrap_or_default();
+        merged_formats(gpu, self.readback.capture_formats())
     }
 
-    /// Draws `frame` into a client's dma-buf `target` through the software renderer.
+    /// Draws `frame` into a client's dma-buf `target`: with the display GPU's renderer when it
+    /// lists the buffer's format and modifier, else (or when binding fails, one log line) with
+    /// the software renderer, which binds linear buffers only.
     pub fn write_dmabuf(
         &mut self,
         target: &mut smithay::backend::allocator::dmabuf::Dmabuf,
         frame: &casement_render::pass::CapturedFrame,
     ) -> Result<(), BackendError> {
+        use smithay::backend::allocator::Buffer as _;
+        let wanted = target.format();
+        let mut gpu = self.devices.capture_gpu();
+        let listed = gpu.as_ref().map(|gpu| gpu.formats()).unwrap_or_default();
+        if let (CaptureRoute::Gpu, Some(gpu)) = (capture_route(wanted, &listed), gpu.as_mut()) {
+            match gpu.write_dmabuf(target, frame) {
+                Ok(()) => return Ok(()),
+                Err(error) => {
+                    tracing::info!(%error, "the display GPU did not draw a capture; using the software renderer");
+                    if capture_fallback(wanted, &self.readback.capture_formats()).is_none() {
+                        return Err(error);
+                    }
+                }
+            }
+        }
         self.readback.write_dmabuf(target, frame)
     }
 

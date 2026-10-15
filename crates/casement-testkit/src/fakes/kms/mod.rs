@@ -8,8 +8,10 @@
 //! test keeps another, so a test plugs and unplugs connectors and reads back the commits, the
 //! power and the gamma the backend made. The fake judges commits by the rules in `casement_backend::tty::judge`.
 
+mod capture_gpu;
 mod fake;
 mod topology;
 
+pub use capture_gpu::{CaptureGpuWorld, FakeCaptureGpu, GpuBehaviour};
 pub use fake::{FakeKms, FakeKmsOpener, KmsWorld, LinkBehaviour};
 pub use topology::{KmsFixtureError, SyntheticTopology, edid, load_fixture};

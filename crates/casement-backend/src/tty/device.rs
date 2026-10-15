@@ -1,6 +1,7 @@
 //! The display devices the tty backend holds (P1-Z; filled by P1-D2): one `Kms` per device
 //! node, opened through the injected opener, with the connectors each reported.
 
+use super::capture_gpu::CaptureGpu;
 use super::hotplug::{KnownConnectors, reconcile};
 use super::kms::{Kms, KmsError, KmsOpener};
 use super::udev::DevicePath;
@@ -96,6 +97,15 @@ impl TtyDevices {
             .values_mut()
             .find(|device| device.known.0.values().any(|facts| &facts.name == name))
             .map(|device| &mut device.kms)
+    }
+
+    /// The renderer of the first open device that lends one, to draw captures with. With more
+    /// than one GPU the first by node path answers every capture (a client buffer on another
+    /// GPU fails over to the software renderer).
+    pub fn capture_gpu(&self) -> Option<Box<dyn CaptureGpu>> {
+        self.devices
+            .values()
+            .find_map(|device| device.kms.capture_gpu())
     }
 
     /// The start-up announcement, once: a plug for every connector of every open device, in

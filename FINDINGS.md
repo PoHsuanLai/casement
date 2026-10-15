@@ -2763,3 +2763,58 @@ Lane `input2` (not compiled; the orchestrator gates). Closes the two "Gaps noted
   re-applying `set_scroll_natural_scroll_enabled`/tap/accel on a live device (RealInputFeed::apply is the same call
   as at appearance); the watcher thread starts under the compositor's real config home; our own stamp write does
   not loop (it fires one reload that changes nothing).
+## wave-2026-10-15/capgpu
+
+Nothing here compiled or ran (the lane does not build). Closes the two gaps `capture3` left. No new `unsafe`, no Cargo edit.
+
+- **GPU formats and modifiers in the dma-buf offer (tty).** New seam `casement_backend::tty::CaptureGpu` (`capture_gpu.rs`),
+  lent by a display device through `Kms::capture_gpu` (default none; `TtyDevices::capture_gpu` takes the first open device that
+  lends one). The real lender (`capture_gpu_real.rs`) wraps the device's `Rc<RefCell<GlesRenderer>>`, the renderer that draws the
+  scanout, with `try_borrow` so a busy renderer is an error and an empty offer, never a panic. `TtyBackend::capture_formats` is now
+  the GPU's `Argb8888`/`Xrgb8888` formats with their modifiers first, then the shadow's linear ones (`merged_formats`, no duplicates);
+  `ext` sends them per format with their modifiers, `wlr` sends the fourccs. Pure and table-tested: `capture_route(target, gpu)`
+  (GPU when it lists the buffer's format and modifier, else software), `capture_fallback(target, software)` (after a GPU fault,
+  software only when it can bind that format and modifier, else the frame fails), `merged_formats`. A bind or draw failure logs one
+  `info` line (`the display GPU did not draw a capture; using the software renderer`) and falls back as above. Headless is unchanged
+  (its own renderer already offers whatever it binds, GLES on llvmpipe included).
+- **Departure: the scene is not rendered straight into the client's buffer.** The brief asked to bind the client's dma-buf and render
+  the output or toplevel into it with the GLES renderer. The handlers work from the frame the capture shadow already read back
+  (cursor-less or painted, cropped for a region or a window, damage logs keyed to it), and the scene source is not available at
+  delivery time. Rendering the scene again per request would bypass the cursor/`bare` choice, region crops and window capture,
+  and a change that size cannot be checked blind. So the existing `write_dmabuf` (upload the frame as a texture, bind the dma-buf,
+  draw 1:1, wait) now runs on the **display GPU's** renderer. What this buys: the client allocates in a GPU modifier (OBS and
+  other portal consumers stop being refused), the buffer is written by the GPU that owns it, no linear detour for the client. What
+  it does not buy: the frame is still read back to the CPU once per frame by the pixman shadow; true render-to-dmabuf needs the
+  scene source at delivery (a follow-up: `FrameSource::gles` into a bound dma-buf with a fresh `OutputDamageTracker` at age 0, then
+  cursor-less variant by dropping `Kind::Cursor` elements).
+- **Damage.** Unchanged and shared with shm: the damage the client is told comes from the damage logs, not from the writer, and
+  the dma-buf write redraws the whole frame (as the shm write copies it whole).
+- **Client cursor viewport and transform.** `raw_image` now reads the surface's `buffer_scale`, `buffer_transform` and
+  `SurfaceView::src` and calls `ArgbImage::drawn(&DrawnView)` (`pass/capture/drawn.rs`): the buffer is turned upright by the inverse of
+  its transform (smithay's rule: a surface point sits in the buffer at `transform_point_in(p) x scale`), then cut to the viewport
+  source (`crop_pixels`: edges rounded to the nearest pixel and kept inside the image, at least one pixel); the existing `fitted`
+  then scales to the drawn size (viewport destination x output scale, already what `cursor_face` announces) and turns with the
+  output. So the announced size, the image and the hotspot (surface-local, in destination units) agree with the screen.
+- **`overlay_cursor` / `paint_cursors`.** Their cursor comes from the scene render (`cursor_elements` uses
+  `render_elements_from_surface_tree`), which already applies viewport, transform and scale, so no change was needed there; the
+  gap was in the cursor *session's* own image. Not proven by a test of its own (a painted-frame pixel test needs the cursor's
+  place in the frame); the new protocol tests cover the session. Check in a real run that `grim -c` with a GTK/Qt cursor matches.
+- **Tests.** Pure: `crop_pixels` table (whole, corner, scale 2, fractional rounding, past the edge, sliver, outside), buffer transform
+  undone for all eight transforms, viewport crop under a quarter turn (`drawn.rs`); `capture_route`, `capture_fallback`,
+  `merged_formats` and three doc tests (`capture_gpu.rs`). Backend with fakes (`tests/it/tty/capture_gpu.rs`, new `FakeCaptureGpu`
+  with `GpuBehaviour`, lent by `FakeKms` through `KmsWorld::capture_gpu`): the tty offer is GPU first then linear; no lender, linear
+  only. Protocol (`capture_cursor.rs`): a coordinate-encoded cursor with a viewport source (4, 2, 8 x 8) shown 16 x 16, and one with
+  a 180 degree buffer transform. **Not covered**: a frame actually drawn into a client dma-buf (the test clients cannot import
+  one; a GLES render test needs a GBM/udmabuf-backed `Dmabuf`), a quarter-turn buffer transform at protocol level (the pure test
+  covers the maths), `FakeCaptureGpu` being asked to draw (needs a `Dmabuf`).
+- **Gate.** Likeliest compile faults: `Kms::capture_gpu` default method with `Box<dyn CaptureGpu>` in `kms.rs`/`fake.rs`; `renderable_formats`
+  (`Bind::<Dmabuf>::supported_formats` on `&GlesRenderer`); `use smithay::backend::allocator::Buffer as _` in `TtyBackend::write_dmabuf`
+  and in the fake; the `as i64` cast in `crop_pixels`; `with_states` closure returning `Option<(WlBuffer, DrawnView)>` in
+  `cursor.rs`; `Viewporter::bind(fixture.client(id))` taking `&mut` for `&`. `tty/mod.rs` is the longest file touched.
+- **Real run.** OBS through the pipewire portal on the tty session: it should now negotiate a GPU modifier (not only linear) and show
+  the desktop right way up (if upside down, `flipped` on the bind in `write_dmabuf` is the lever, as capture3 said; GLES binds a
+  dma-buf with the opposite row order to pixman); `grim` and `wf-recorder` (wlr `linux_dmabuf` offers fourccs only, so the client
+  picks the modifier: look for the info line if the GPU refuses and the frame falls back to linear or fails); a GTK/Qt app that sets
+  a cursor with a viewport or `buffer_scale 2` (Firefox, KDE apps) in a cursor-session capture (remote-desktop viewer) matches the
+  screen; a GPU-modifier buffer after the display GPU is busy mid-frame (`try_borrow` fails: expect the info line, then software).
+  With two GPUs only the first device's renderer is lent; a buffer allocated on the other GPU fails over to software.
