@@ -10,10 +10,10 @@
 //! per renderer.
 
 use super::{ClipShape, RoundedClipElement};
+use smithay::backend::renderer::element::Element;
 use smithay::backend::renderer::element::surface::{
     WaylandSurfaceRenderElement, WaylandSurfaceTexture,
 };
-use smithay::backend::renderer::element::Element;
 use smithay::backend::renderer::gles::{
     GlesError, GlesFrame, GlesRenderer, GlesTexProgram, GlesTexture, Uniform, UniformName,
     UniformType,
