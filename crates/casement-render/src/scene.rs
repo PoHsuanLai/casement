@@ -4,7 +4,7 @@ pub(crate) mod convert;
 
 use crate::compositor::Compositor;
 use crate::element::{
-    CasementElement, ClipShape, LockCoverElement, Rgba8, TitleDraw, cursor_elements,
+    CasementElement, ClipShape, FrameDraw, LockCoverElement, Rgba8, TitleDraw, cursor_elements,
     frame_elements, layer_elements, popup_elements, surface_origin_logical, window_content,
     window_elements,
 };
@@ -181,10 +181,12 @@ pub fn output_elements<R: Compositor>(
                         .map(|style| {
                             frame_elements(
                                 placed.window,
-                                style,
-                                layers.titles.get(&placed.window),
-                                content,
-                                placed.opacity,
+                                FrameDraw {
+                                    style,
+                                    title: layers.titles.get(&placed.window),
+                                    content,
+                                    opacity: placed.opacity,
+                                },
                                 view,
                                 book,
                                 renderer,

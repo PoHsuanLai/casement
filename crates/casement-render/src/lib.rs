@@ -33,7 +33,7 @@ pub mod golden;
 pub use compositor::{Compositor, EffectSupport};
 pub use damage::{RenderError, RenderSync, Rendered, render_output};
 pub use element::{
-    BlurV0Element, CasementElement, ClipShape, CursorFace, LockCoverElement, Rgba8,
+    BlurV0Element, CasementElement, ClipShape, CursorFace, FrameDraw, LockCoverElement, Rgba8,
     RoundedClipElement, TitleDraw, cursor_elements, cursor_face, cursor_pixels, frame_elements,
     geometry_size, layer_elements, popup_elements, popup_surfaces, solid_rect, surface_origin,
     surface_origin_logical, window_content, window_elements,

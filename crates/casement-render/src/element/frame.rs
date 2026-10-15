@@ -24,6 +24,19 @@ use smithay::backend::renderer::element::memory::{
 };
 use smithay::utils::{Logical, Rectangle, Size, Transform};
 
+/// One window's frame as it is drawn this frame.
+#[derive(Debug, Clone, Copy)]
+pub struct FrameDraw<'a> {
+    /// The frame's look and metrics.
+    pub style: &'a FrameStyle,
+    /// The window's title raster, when there is one.
+    pub title: Option<&'a TitleDraw>,
+    /// Where the window's content is, global logical pixels.
+    pub content: LogicalRect,
+    /// The window's opacity, which the frame takes.
+    pub opacity: Fraction,
+}
+
 /// The frame `style` makes round the window `window` whose content is at `content`, on `view`.
 /// Nothing for the part that is off this output. The first list goes in front of the window's
 /// surfaces (the title, then the titlebar and the lights), the second behind them (the shadow).
@@ -31,14 +44,17 @@ use smithay::utils::{Logical, Rectangle, Size, Transform};
 /// so a window that fades in, or out into the dock, takes its frame with it.
 pub fn frame_elements<R: Compositor>(
     window: WindowId,
-    style: &FrameStyle,
-    title: Option<&TitleDraw>,
-    content: LogicalRect,
-    opacity: Fraction,
+    draw: FrameDraw<'_>,
     view: &OutputView,
     book: &TextureBook,
     renderer: &mut R,
 ) -> (Vec<CasementElement<R>>, Vec<CasementElement<R>>) {
+    let FrameDraw {
+        style,
+        title,
+        content,
+        opacity,
+    } = draw;
     let faded = alpha(opacity);
     let geometry = style.around(content);
     let bar = geometry.titlebar();
@@ -77,7 +93,7 @@ pub fn frame_elements<R: Compositor>(
         .map(CasementElement::Memory)
         .into_iter()
         .collect();
-    let front = title_element(window, style, title, &bar, view, book, renderer)
+    let front = title_element(window, (style, title), &bar, faded, view, book, renderer)
         .into_iter()
         .chain(front)
         .collect();
@@ -129,9 +145,9 @@ pub fn frame_elements<R: Compositor>(
 /// off this output.
 fn title_element<R: Compositor>(
     window: WindowId,
-    style: &FrameStyle,
-    title: Option<&TitleDraw>,
+    (style, title): (&FrameStyle, Option<&TitleDraw>),
     bar: &LogicalRect,
+    faded: f32,
     view: &OutputView,
     book: &TextureBook,
     renderer: &mut R,
@@ -167,6 +183,7 @@ fn title_element<R: Compositor>(
         bar.origin,
         bar.size,
         (pixels.w, pixels.h),
+        faded,
         &buffer,
     )
     .map(CasementElement::Memory)
