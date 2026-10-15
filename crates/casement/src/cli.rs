@@ -55,11 +55,24 @@ pub struct StartConfig {
     pub state_home: StateHome,
     /// How X11 clients are served (A5).
     pub xwayland: XwaylandConfig,
+    /// Whether `xwayland` came from a flag, or is the default `main` replaces with what the
+    /// settings file and the installed programs say.
+    pub xwayland_source: XwaylandSource,
     /// Where the tty backend gets its seat: the real one, or the vkms test mode.
     pub tty: TtyMode,
     /// Whether the app icons in Mission Control are looked for, and where: `Off` unless `main`
     /// resolves the XDG folders for a backend that has a person at it.
     pub icons: IconSearch,
+}
+
+/// Where [`StartConfig::xwayland`] came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum XwaylandSource {
+    /// Neither `--xwayland` nor `--xwayland-satellite` was given: the settings file decides.
+    Default,
+    /// A flag was given, and it wins over the settings file.
+    Flag,
 }
 
 /// Where the tty backend gets its seat. (Ignored by the other backends.)
@@ -208,6 +221,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, CliError> {
         entropy: Entropy::System,
         state_home: StateHome::Ephemeral,
         xwayland: XwaylandConfig::off(),
+        xwayland_source: XwaylandSource::Default,
         tty: TtyMode::Seat,
         icons: IconSearch::Off,
     };
@@ -268,6 +282,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, CliError> {
                 config.state_home = StateHome::At(StateDirs::at(PathBuf::from(value()?)))
             }
             "--xwayland" => {
+                config.xwayland_source = XwaylandSource::Flag;
                 config.xwayland.mode = word(
                     flag,
                     &value()?,
@@ -278,6 +293,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, CliError> {
                 )?
             }
             "--xwayland-satellite" => {
+                config.xwayland_source = XwaylandSource::Flag;
                 config.xwayland.satellite = SatellitePath(PathBuf::from(value()?))
             }
             "--drm-node" => node = Some(PathBuf::from(value()?)),
@@ -361,6 +377,9 @@ pub const USAGE: &str = concat!(
     "[--xwayland-satellite PATH]\n",
     "       casement --write-schema DIR\n",
     "\n",
+    "Without --xwayland, older X11 apps follow xwayland.mode in settings.toml (auto, satellite\n",
+    "or off; auto runs them when xwayland-satellite is installed). Headless runs stay off.\n",
+    "\n",
     "Test mode for the vkms acceptance script (dev/vkms/accept.sh). It needs --backend tty and\n",
     "is not a general feature: it runs on one virtual (vkms) display node and opens nothing else,\n",
     "no seat, no VT, no other GPU, no input device.\n",
@@ -439,7 +458,9 @@ mod tests {
             config.xwayland.satellite,
             SatellitePath(PathBuf::from("/opt/satellite"))
         );
+        assert_eq!(config.xwayland_source, XwaylandSource::Flag);
         assert_eq!(run("").xwayland.mode, XwaylandMode::Off);
+        assert_eq!(run("").xwayland_source, XwaylandSource::Default);
         assert!(matches!(
             parse_args(&args("--xwayland x11")),
             Err(CliError::BadValue { .. })

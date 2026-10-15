@@ -14,7 +14,9 @@ mod live;
 use crate::fakes::{FakePalmrest, FakeSession, FakeShellCalls, FakeSpawner, MemorySpaceStore};
 use crate::input::FixtureInput;
 use crate::spec::FixtureSpec;
-use casement::cli::{ClockChoice, ConfigHome, Entropy, StartConfig, StartMode, TtyMode};
+use casement::cli::{
+    ClockChoice, ConfigHome, Entropy, StartConfig, StartMode, TtyMode, XwaylandSource,
+};
 use casement::display::{self, SharedDisplay, attach_display};
 use casement::icons::IconSearch;
 use casement::seams::Seams;
@@ -171,6 +173,7 @@ impl Fixture {
             entropy: Entropy::Fixed(FIXTURE_ENTROPY),
             state_home: StateHome::Ephemeral,
             xwayland: XwaylandConfig::off(),
+            xwayland_source: XwaylandSource::Flag,
             tty: TtyMode::Seat,
             icons: IconSearch::Off,
         };
