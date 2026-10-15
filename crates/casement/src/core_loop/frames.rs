@@ -62,10 +62,7 @@ fn styles_where(state: &State, keep: fn(&WindowState) -> bool) -> BTreeMap<Windo
     let down = state.render.light_arm.pressed();
     decorated(state, keep)
         .map(|(id, window)| {
-            let activity = match window.emphasis {
-                Emphasis::Key | Emphasis::Main => Activity::Active,
-                _ => Activity::Inactive,
-            };
+            let activity = activity_of(window);
             let hover = match over {
                 Some(Over {
                     window: hovered,
@@ -75,12 +72,22 @@ fn styles_where(state: &State, keep: fn(&WindowState) -> bool) -> BTreeMap<Windo
             };
             let style = frame_style(state.render.scheme, activity, hover);
             let style = match down {
-                Some(LightAt { window, light }) if window == *id => pressed(style, light),
+                Some(LightAt { window, light }) if window == *id => {
+                    pressed(style, light, state.render.scheme)
+                }
                 _ => style,
             };
             (*id, style)
         })
         .collect()
+}
+
+/// Whether `window` is the one the person works in: its frame and title draw in the key ink.
+pub(super) fn activity_of(window: &casement_core::window::Window) -> Activity {
+    match window.emphasis {
+        Emphasis::Key | Emphasis::Main => Activity::Active,
+        _ => Activity::Inactive,
+    }
 }
 
 /// The windows whose client was answered server-side and whose state `keep` accepts.

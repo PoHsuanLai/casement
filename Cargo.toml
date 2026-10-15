@@ -8,6 +8,7 @@ members = [
   "crates/casement-layout",
   "crates/casement-motion",
   "crates/casement-render",
+  "crates/casement-chrome",
   "crates/casement-wayland",
   "crates/casement-backend",
   "crates/casement-agent",
@@ -33,6 +34,7 @@ casement-core   = { path = "crates/casement-core" }
 casement-layout = { path = "crates/casement-layout" }
 casement-motion = { path = "crates/casement-motion" }
 casement-render = { path = "crates/casement-render" }
+casement-chrome = { path = "crates/casement-chrome" }
 casement-wayland = { path = "crates/casement-wayland" }
 casement-backend = { path = "crates/casement-backend" }
 casement-agent = { path = "crates/casement-agent" }

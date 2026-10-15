@@ -166,10 +166,11 @@ pub(crate) fn shadow(look: &FrameLook, width: u32, height: u32) -> Raster {
             let grow = layer.spread as f32;
             let across: Vec<f32> = (0..w)
                 .map(|x| {
+                    let left = margin + layer.dx as f32 - grow;
                     bar(
                         x as f32 + 0.5,
-                        margin - grow,
-                        margin + width as f32 + grow,
+                        left,
+                        left + width as f32 + 2.0 * grow,
                         sigma,
                     )
                 })
@@ -226,6 +227,7 @@ mod tests {
             rule: BLACK,
             lights: [light; 3],
             shadow: [ShadowLayer {
+                dx: 0,
                 dy: 10,
                 blur: 20,
                 spread: 0,

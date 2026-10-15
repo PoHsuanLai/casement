@@ -37,6 +37,7 @@ mod menu;
 mod presence;
 mod scene;
 mod surfaces;
+mod titles;
 pub(crate) mod tty;
 mod windows;
 
@@ -134,8 +135,11 @@ pub fn frame(state: &mut State, output: &OutputKey) {
         scale: config.scale,
         mode: config.mode.size,
     };
+    let styles = frames::drawn(state);
+    let titles = titles::of(state, &frame, &view, &styles);
     let layers = LayerDraw {
-        frames: frames::drawn(state),
+        frames: styles,
+        titles,
         ..layers_on(&state.core.model, output)
     };
     let capture = tty::capture_watch(&state.wl.image_capture.book, &state.wl.screencopy, output);

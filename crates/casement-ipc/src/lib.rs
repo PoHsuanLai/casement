@@ -15,6 +15,7 @@ pub mod shell_calls;
 pub mod signals;
 pub mod sleep;
 pub mod space_registry;
+pub mod system_scheme;
 
 pub use error::IpcError;
 pub use handles::IpcHandles;

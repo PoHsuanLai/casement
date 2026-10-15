@@ -4,8 +4,9 @@ pub(crate) mod convert;
 
 use crate::compositor::Compositor;
 use crate::element::{
-    CasementElement, ClipShape, LockCoverElement, Rgba8, cursor_elements, frame_elements,
-    layer_elements, popup_elements, surface_origin_logical, window_content, window_elements,
+    CasementElement, ClipShape, FrameDraw, LockCoverElement, Rgba8, TitleDraw, cursor_elements,
+    frame_elements, layer_elements, popup_elements, surface_origin_logical, window_content,
+    window_elements,
 };
 use crate::texture_book::TextureBook;
 use casement_core::geometry::{LogicalPoint, LogicalRect, PhysicalRect, PhysicalSize, SubPoint};
@@ -52,6 +53,9 @@ pub struct LayerDraw {
     /// The windows whose frame casement draws (server-side decoration), and how it looks. A
     /// window not in it is drawn as its client made it.
     pub frames: BTreeMap<WindowId, FrameStyle>,
+    /// The title pixels laid over each framed window's titlebar (made by `casement-chrome`). A
+    /// framed window not in it has no title drawn.
+    pub titles: BTreeMap<WindowId, TitleDraw>,
 }
 
 /// What the compositor draws over everything: the cursor and lock covers.
@@ -177,9 +181,12 @@ pub fn output_elements<R: Compositor>(
                         .map(|style| {
                             frame_elements(
                                 placed.window,
-                                style,
-                                content,
-                                placed.opacity,
+                                FrameDraw {
+                                    style,
+                                    title: layers.titles.get(&placed.window),
+                                    content,
+                                    opacity: placed.opacity,
+                                },
                                 view,
                                 book,
                                 renderer,

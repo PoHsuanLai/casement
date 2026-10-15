@@ -2003,6 +2003,11 @@ without a compiler (wave rule); the orchestrator builds.
 - **Unreachable from quire's pure crates, so written here (asks below):** the window radius 10 (`--r-window` is a CSS string,
   and still 26 until quire's batch), `--shadow-window` (CSS string, hand-copied as two `ShadowLayer`s), the three light hues
   and their mark inks (stylesheet candy colours), and (until chrome2) the colour scheme.
+- **Not done.** (1) Title text: casement had no
+  text stack (`casement-chrome`, B15), so the titlebar title was empty. (Done by chrome3: `casement-chrome` draws it.) (2) The green light has no Move and Resize menu, and
+  the minimise animation target is untouched. (3) The frame is not drawn in the Mission Control and Space-slide passes (they
+  go through `output_elements` with the same `LayerDraw`, so it follows there only if `frames` is filled, which
+  `core_loop::frame` does for every output frame). (4) The shadow is a square-cornered blur at one raster pixel per logical
 - **Not done.** (1) Title text: casement has no
   text stack (`casement-chrome`, B15), so the titlebar title is empty. (2) and (3) are done by winmenu (see `wave-2026-10-15/winmenu`: the green light's window menu, built up to the wire; the minimise target already
   existed and is tested; the frame in the moving passes). (4) The shadow is a square-cornered blur at one raster pixel per logical
@@ -2239,3 +2244,62 @@ The window menu's wire, end to end (casement-protocols `lane/winwire`, casement,
   timer book). Multiple bound shell objects each get the event.
 - **Real run.** Rest the pointer half a second on the green light: sill's menu appears under it; a pick moves the window;
   clicking away sends nothing.
+## wave-2026-10-15/chrome3
+
+Title text, quire's numbers, `theme = "system"`. Written without a compiler (wave rule); the orchestrator builds.
+
+- **casement-chrome (new crate, a workspace member).** `TitleRaster::system(Margins)` reads quire's `title_font(Typeface::System)`
+  (Inter 13 px, weight 600), shapes with parley (`FontContext` made once, kept; fontique scans the system fonts on the first
+  title, never per frame), rasterises with vello_cpu to premultiplied RGBA8 as big as the titlebar at the output's native scale
+  (`device`: half-up, the rounding of `buffer_size`). The family is `Inter, system-ui, sans-serif`, so a missing Inter falls to any
+  sans (no bundled face; the spike bundled ds-style's `FACES`, casement does not). Ink: `ColourToken::Ink` for the key window,
+  `InkSoft` otherwise, in the frame's scheme (`ink(scheme, activity)`). Layout (`place`): the title is centred in the bar, pushed
+  off the lights (left margin 73 = inset 13 + three 12 px lights + two 8 px gaps + one gap) and off a 13 px right margin, and
+  when even that room is too little it is cut with an ellipsis (binary search over the characters, `longest_fit`). Not the CSS's
+  84 px each side (`TitleInset`): that cut a title on a narrow window that has room beside the lights. Titles are tidied
+  (`tidy`: control characters become spaces, 256 characters) because a client's title is untrusted. Cache: `TitleKey`
+  (title, logical size, scale, scheme, activity), 32 entries, least recently used out; each raster has a unique `id`.
+- **Wiring.** `casement-render` takes the pixels as data: `TitleDraw { id, width, height, rgba }` in `LayerDraw::titles`,
+  `frame_elements` gets `Option<&TitleDraw>` and puts a memory element over the titlebar's (same size and place, so one pixel to
+  one pixel); a title not the titlebar's size is not drawn. The draw cache key gained a trailing `u64` stamp (the title's id; 0
+  for the titlebar and the shadow). `casement::core_loop::titles::of` makes them per frame from the model's title, the emphasis
+  and `RenderState::scheme`; `RenderState::titles` is `Option<TitleRaster>`, made on the first server-side frame so a session
+  without one never scans fonts. A raster is made only when the key changes, so a window being resized makes one per frame as
+  its titlebar already does. The titlebar's own raster still has no text, so a golden of a framed window changes (title only).
+- **Departures.** (1) `check-boundary.sh` B15 exempted nothing, yet `casement` must depend on the crate: the graph rule now skips
+  `casement-chrome`, `casement` (the consumer) and `casement-testkit` (reaches it through `casement`), and a new source rule
+  says only `crates/casement-chrome/` names `parley::`, `fontique::` or `vello_cpu::`. B11 is unchanged (its pattern is `vello`,
+  not `vello_cpu`). (2) `ShadowLayer` (casement-core) gained `dx` because quire's layers have one; the shadow raster honours it.
+  (3) `casement_layout::pressed` takes the scheme (the pressed hue is `light_hue`'s for it).
+- **quire's numbers.** `WINDOW_RADIUS`, the two hand-written `ShadowLayer`s and `HUES` are deleted; `frame_style` reads
+  `Radius::Window.px()`, `Shadow::Window.layers(scheme)` and `light_hue(light, scheme)`. Tests in `casement-layout/src/frame.rs`
+  pin the agreement for both schemes (radius, every shadow field and colour, every disc and mark ink, pressed). The light hues
+  change from the macOS candy values casement copied (`#FF5F57`...) to quire's (`#e8483c`...; dark `#ff6b60`...): that is
+  quire's token, the point of the lane. FrameLook holds two shadow layers; a test pins quire's count at two.
+- **theme = system.** `casement_ipc::system_scheme::SchemeWatch` is the follower: a thread with a current-thread tokio runtime
+  (the pattern of `sleep` and `signals`; the portal's zbus needs a runtime and casement has none), `SystemPrefsWatch::start` on
+  it, the first answer and each change passed to a callback. `casement::appearance` starts it the first time the stored theme is
+  `system` (at start, or when the file changes to it), and its answers join the file's over the same calloop channel
+  (`Input::Theme`/`Input::System`); `resolve(theme, system)` picks the scheme. Until it answers, and with no portal, `system`
+  paints Light. The seam is `ConfigHome`: `Xdg` reads the portal, `At(dir)` a fixed default answer, so no test reaches a bus
+  (`SystemPrefsSource::Fixed`). `casement-ipc` has no ds-style dependency, so its callback takes its own `DesktopScheme`
+  (it compares the portal's scheme with `scheme_from_portal(1)` rather than naming `Scheme`); if a ds-style line is added to its
+  manifest, `DesktopScheme` can become `Scheme`. A custom `--config-home` therefore does not follow the desktop (a jail).
+- **Tests.** Table: `place` (device rounding, room, left edge, longest fit, margins), `key` (tidy, device size, key fields),
+  `ink` (token to ink, per scheme and activity), `cache` (LRU, bound), `TitleDraw::argb`, `appearance::{resolve, Heard,
+  system_source}`, `titles::margins`, `DesktopScheme::of_portal`, the quire agreement tests. Needing fonts, but asserting only
+  invariants: `raster.rs` (size per scale, premultiplied, errors, kept raster is the same, bounded, ink stays between the margins).
+  Doc tests: `ink`, `TitleKey::new`, `tidy`, `Margins::in_device`, `device`, `room`, `left_edge`, `longest_fit`,
+  `TitleRaster::system`, `TitleDraw::argb`, `pressed`, `appearance::{system_source, resolve}`, `SchemeWatch`, `DesktopScheme`.
+  No golden was blessed.
+- **Gate and real run.** Likeliest compile faults: `raster.rs` against parley 0.11.1 and the vello_cpu fork (copied from
+  `spikes/casement-sp8/chrome`: `ranged_builder(.., scale, true)`, `FontFamily::Source(String.into())`, `Pixmap` into `render`,
+  `Level::try_detect`), `ColourToken::Ink.value(scheme)` shape, the non-exhaustive `TitleFont` held by value, `Cargo.lock` (a new
+  package, no `--locked`), `core_loop/titles.rs` field-wise borrow of `state.render` beside `state.core.model`, `FrameKey` now
+  seven wide, `prefs.scheme = ...` assignment on a `non_exhaustive` struct in casement-ipc's test, `Light::ALL.map`. Real run on
+  foot: the title sits centred in the bar in Inter 13/600 (or the system sans), dim on a window that is not key, ellipsis on
+  a narrow window with the start of the title left of the right margin and clear of the lights; sharp at 1x, 1.5x and 2x; changes
+  with the window's title with no flash; with `theme = "system"` in `~/.config/quire/appearance.toml`, the frame follows the
+  desktop's light/dark toggle without a restart (KDE/GNOME portal; check `busctl --user` shows no second connection per frame);
+  with `theme = "dark"` it does not. Open: right-to-left titles (parley shapes them; the margins are not mirrored), and
+  the title is not in a window capture of a window without its frame (as the frame is not).

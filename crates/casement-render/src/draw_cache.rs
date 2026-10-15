@@ -10,8 +10,9 @@ use smithay::backend::renderer::element::memory::MemoryRenderBuffer;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
-/// What a frame raster is cached under: window, part, scale numerator, width, height, look.
-pub(crate) type FrameKey = (WindowId, u8, u32, u32, u32, FrameLook);
+/// What a frame raster is cached under: window, part, scale numerator, width, height, look, and
+/// a stamp (a title's raster id; 0 for the parts that depend on nothing else).
+pub(crate) type FrameKey = (WindowId, u8, u32, u32, u32, FrameLook, u64);
 
 /// How many frame rasters the cache holds before it starts again: a window being resized makes
 /// a new size every frame.
@@ -23,7 +24,7 @@ const FRAME_LIMIT: usize = 64;
 pub(crate) struct DrawCache {
     /// Each named cursor's raster per scale, made once.
     rasters: RefCell<BTreeMap<(CursorShape, u32), MemoryRenderBuffer>>,
-    /// Each server-side frame's rasters, by window, part (0 titlebar, 1 shadow), scale, size and
+    /// Each server-side frame's rasters, by window, part (0 titlebar, 1 shadow, 2 title), scale, size and
     /// look. A window keeps its own buffers so no two elements in a frame share an id.
     frames: RefCell<BTreeMap<FrameKey, MemoryRenderBuffer>>,
     /// The cover's id: one for every output (each output has its own damage tracker).

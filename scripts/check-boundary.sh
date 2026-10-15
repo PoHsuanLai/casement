@@ -137,11 +137,15 @@ names_only "B13 the test kit names no ds-settings" '\bds_settings::' '$^' crates
 names_only "B14 only casement-agent names reis or the privileged hand-out" \
   '\breis::|ConnectionRole::(Shell|Agent)\b.*(hand_out|socket)|\bEisFd\b' 'crates/casement-agent/'
 
-# B15 only casement-chrome reaches the text stack.
+# B15 only casement-chrome reaches the text stack. Its one consumer, `casement`, reaches it
+# through the crate's dependency (so does the test kit, which drives `casement`); no other crate
+# does, and no source outside casement-chrome names it.
 for crate in $members; do
-  [ "$crate" = casement-chrome ] && continue
+  case "$crate" in casement-chrome|casement|casement-testkit) continue ;; esac
   reaches_none "$crate" "B15 $crate reaches no text stack" 'parley|fontique|vello_cpu'
 done
+names_only "B15 only casement-chrome names the text stack" \
+  '\b(parley|fontique|vello_cpu)::|extern crate (parley|fontique|vello_cpu)' 'crates/casement-chrome/'
 
 # B16 the excluded crates are never members.
 for excluded in wlcs-casement casement-scene-css; do

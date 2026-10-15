@@ -1,0 +1,19 @@
+[package]
+name = "casement-chrome"
+description = "casement's window title text: parley lays the title out with fontique's system fonts, vello_cpu rasterises it to premultiplied RGBA at the output's native scale. The only crate that reaches the text stack (boundary row B15)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+ds-core = { workspace = true }
+ds-style = { workspace = true }
+parley = { workspace = true }
+thiserror = { workspace = true }
+vello_cpu = { workspace = true }
+
+[lints]
+workspace = true
