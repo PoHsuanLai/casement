@@ -5,7 +5,7 @@
 //! come and go through [`plug_output`] and [`unplug_output`], the path KMS hotplug takes
 //! too; input the backend queued is drained into the model by [`drain_input`].
 
-use self::scene::{SceneSource, empty_frame, layers_on, sample_scene_at};
+use self::scene::{SceneSource, empty_frame, layers_on, row_of, sample_scene_at};
 use crate::exec;
 use crate::state::State;
 use casement_backend::headless::Shown;
@@ -18,7 +18,7 @@ use casement_core::space::SpaceSeed;
 use casement_core::time::{Mono, VblankSeq};
 use casement_core::{Cause, Effect, Event, Model, OutputKey, OutputName, WindowId};
 use casement_layout::{ConfigureNeed, SceneLayout, spec_of_framed};
-use casement_motion::{FrameScene, retarget};
+use casement_motion::{FrameScene, retarget_driven};
 use casement_render::{LayerDraw, OutputView};
 use casement_wayland::{commit_timing, fifo, presentation, session_lock, xdg_shell};
 use smithay::desktop::PopupManager;
@@ -26,11 +26,13 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::wayland::compositor::{
     SurfaceAttributes, TraversalAction, with_surface_tree_downward,
 };
+use std::collections::BTreeSet;
 
 mod bodies;
 mod closing;
 mod deliver;
 mod divider;
+mod fingers;
 mod frames;
 mod grab;
 mod idle;
@@ -84,6 +86,7 @@ pub fn feed(state: &mut State, events: Vec<Event>) {
     exec::exec(state, effects);
     surfaces::sync(state, &events_seen);
     crate::handlers::sync_outputs(state);
+    fingers::follow(state);
     idle::hear(state, &events_seen, now);
     ime::hear(state, &events_seen);
     menu::hear(state, &events_seen);
@@ -170,6 +173,7 @@ pub fn frame(state: &mut State, output: &OutputKey) {
         overview,
         backdrop: divider::backdrop(state, output),
         tile_preview: tile::preview(state, output),
+        row: row_of(state, &frame, now),
         ..layers_on(&state.core.model, output)
     };
     let capture = tty::capture_watch(&state.wl.image_capture.book, &state.wl.screencopy, output);
@@ -339,13 +343,22 @@ pub(crate) fn relayout(state: &mut State, cause: &Cause) {
     let spec = spec_of_framed(&state.core.model, &frames::reserves(state));
     let next = state.core.layout.arrange(&spec, &state.core.knobs);
     let motion = std::mem::replace(&mut state.core.motion, casement_motion::MotionBook::empty());
-    state.core.motion = retarget(
+    // A swipe that moves a row draws it itself, finish included: that row must not slide again.
+    let driven: BTreeSet<OutputKey> = state
+        .core
+        .model
+        .space_strip(now)
+        .map(|strip| strip.output)
+        .into_iter()
+        .collect();
+    state.core.motion = retarget_driven(
         motion,
         &state.core.arrangement,
         &next,
         cause,
         Default::default(),
         now,
+        &driven,
     );
     for target in &next.windows {
         if let Some(size) = configure_size(state, target, cause) {

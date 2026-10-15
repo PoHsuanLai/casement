@@ -266,7 +266,7 @@ check cover what draws without a client surface; the fixture scenes are P0-shoot
 3. **Windows draw at their committed size.** The closed element set has no rescaling wrapper,
    so a sampled size that differs from the committed one shows once the client commits it;
    P3-Z adds the wrapper with its effect elements.
-4. **`OutputFrame.strip` is not applied.** A `PlacedWindow` does not say which Space it is on,
+4. **`OutputFrame.strip` is not applied.** (Closed by cas33-strip.) A `PlacedWindow` does not say which Space it is on,
    so the renderer cannot shift windows per Space; P3-Z.
 5. **Layer placement has one home (closed by P0-reserve).** `casement_core::layer::LayerBook::arrange`
    (`crates/casement-core/src/layer/arrange.rs`) arranges layer surfaces once (exclusive zones,
@@ -3453,14 +3453,75 @@ Built, uncompiled (wave 6 lanes do not build): `input/gesture_route.rs` (finger-
 | Item | Decision / open |
 | --- | --- |
 | Natural direction | `gestures.natural = off` reverses the Spaces swipe only. Mission Control's up/down is not reversed. Unverified against macOS (assumed: the Spaces follow the scroll-direction setting, Mission Control does not). |
-| Mission Control progress | The swipe drives `Model::overview_progress()` (0..1000 open) but the model's overview is still the time-based flight: a committed swipe starts the normal 350 ms entering/leaving flight from rest, a snap-back never opens it. Following the fingers needs the renderer/layout to draw the spread at the progress. Same numbers as the Space swipe: 400 px for a full travel, commit past half unless a reverse 1.5 flick, or under half on a forward flick. |
+| Mission Control progress | DONE in cas33-strip (below): the windows are laid out at `overview_progress()` while the fingers are down; the lift continues from there. Same numbers as the Space swipe: 400 px for a full travel, commit past half unless a reverse 1.5 flick, or under half on a forward flick. |
 | App Exposé | Not built: the model has no App Exposé (`shell_request` ignores every mode but Mission Control), so a swipe down on a closed Mission Control does nothing. |
-| Space strip drawing | `Model::space_strip(now)` gives the row position (rubber band applied, ease-out-cubic finish sampled); nothing draws it yet. The commit calls `show` at the lift (focus and windows follow at once), which also relayouts with `Cause::SpaceSwitch`; the motion/render lane must suppress its own Space slide while a strip is present, or the slide doubles. |
+| Space strip drawing | DONE in cas33-strip (below): the renderer draws every window in its Space's column at `Model::space_strip(now)`; motion's own Space slide is suppressed while a swipe drives the row. |
 | Reduced motion | casement has no reduced-motion setting, so the machine always runs `Reduced::No`. |
 | Finish timer | The finish reuses `TimerKey::SpaceFinish(output)` (its doc: a Space change animation finishes), which nothing armed before. |
 | Client delivery | The model steps an input event before the loop delivers it; `Model::swipe_owner()` right after says whether the desktop took that swipe step. It holds for one input event per `feed` (what every caller does). A taken swipe is not delivered to clients (`core_loop/deliver.rs`); other finger counts still are. |
 | Origins | Physical, test and trusted-feed swipes count; virtual, agent and remote ones never do (I2: system gestures are physical only). |
 | Not done | palmrest's Magic Mouse part (`Fixture::palmrest`); a horizontal swipe while Mission Control is up (the Mac switches Spaces there); the 2-finger Magic Mouse source. |
+## cas33-strip: finger-tracked Spaces and Mission Control (2026-10-16)
+
+Built, uncompiled (the lane does not build). Closes the cas21 rows "Space strip drawing" and "Mission Control progress", and
+the old renderer departure 4 (`OutputFrame.strip` was not applied).
+
+- **The row is drawn (`casement-render/src/scene/row.rs`, `RowDraw`).** Layout arranges every window as if its Space were
+  shown; `RowDraw { offset, page, columns }` is the one place that moves a window to its Space's column: shift =
+  `offset + column * page`, in sub-pixels. `offset` is the first Space's x minus the usable origin. `LayerDraw.row` carries it;
+  `output_elements` shifts the frame's windows before it draws them, so frames, titles, shadows, popups and icons follow. A
+  window the row moves must reach the output (its body, plus 160 px of shadow) or it is not drawn; a window the row does not
+  move (shift 0, or on every Space) is always drawn as before. **This also fixes a standing fault:** windows of a Space that is
+  not shown used to be drawn over the shown one at their desktop places; they now sit a page aside, out of sight.
+- **Where the row is (`core_loop/scene.rs::row_of`).** While `Model::space_strip(now)` is `Some` for the output (fingers down, or
+  the ease-out finish) the first Space's x is the model's (`SpaceStrip::first_x(usable)`, rubber band and ease-out cubic
+  included); otherwise it is the strip motion sampled (`frame.strip`), which is how a keyboard Space switch now slides on the
+  `SpaceSwitch` spring (it did not show before). Columns are `Model::row_columns(output)` (`model/row.rs`; a window on every
+  Space has none).
+- **No second slide (`casement_motion::retarget_driven`).** `retarget` is `retarget_driven` with no driven output. `relayout`
+  passes the output `space_strip(now)` names: its strip leg snaps to the new target (`Travel::Snap`), so the commit's
+  `show` -> `Relayout(SpaceSwitch)` does not slide the row again; the model's finish draws it, and when it settles the
+  sampled strip is already at the same place (no jump). Windows and other outputs travel as before.
+- **The pointer meets what is drawn.** `core_loop::scene::drawn_scene_at` (used by `stack` and `frames::contents`) shifts the
+  same way and keeps only windows whose body is on their output (`RowDraw::touching`, no shadow margin), so a window of the
+  next Space beside the shown one is not hit, not even where a neighbouring output sits. `sample_scene` (the golden text and
+  the debug dump) is unchanged: unshifted.
+- **Mission Control follows the fingers (`core_loop/fingers.rs`).** While `overview_progress()` is `Some`, `feed` snaps motion
+  to the spread mixed to that progress: `Arrangement::spread_at(Fraction)` (layout; windows' rectangles mixed from desktop to
+  slot, 0 desktop, 1000 slot, no slots left) of the current arrangement when Mission Control is up, else of a spread made on the
+  fly (`SceneSpec::in_mission_control`). `overview::draw` draws Mission Control (windows scaled to their sampled size) while
+  the fingers hold it, with the dim scaled by the progress (`OverviewLook::opened`) and no ring, label or icons.
+- **The lift continues from there.** The book holds the followed poses, so the commit's `Relayout(Cause::Overview)` flies on
+  from them to the slots (or home) on the Move spring; no jump (motion test). A part-way lift that stays
+  (`Verdict::Stay`, progress strictly between 0 and 1000) now relays out too (`Model::fingers_stayed`): up, the windows return
+  to their slots; closed, Mission Control shows as `Leaving` for the usual 350 ms settle, the windows fly home, then it is
+  `Closed` (the shell hears `Closed` at the end, never `Entering`). A swipe that never moved the windows changes nothing.
+  Keyboard and hot-corner opens are untouched: the timed flight.
+- **Departures.** (1) The wallpaper is not in the row: the background layer stays put under the sliding windows (sill owns
+  one wallpaper; per-Space wallpapers need a shell protocol). (2) The release velocity does not feed the overview spring (it
+  starts at rest from the followed pose). (3) The dim is not animated in the timed flight, so it pops to full at the lift. (4)
+  A keyboard Space switch during a swipe's finish snaps its strip leg (the output is driven) and so shows no slide of its own.
+  (5) Windows of a hidden Space still get frame callbacks (`drawn_roots` reads the unshifted frame). (6) Swiping vertically
+  while Mission Control is entering jumps from the flight to the followed pose. (7) The Spaces bar (sill) hears nothing of the
+  progress.
+- **Tests.** casement-core `gestures.rs` (the row's first x, a short swipe up snaps back and ends closed, a swipe that never moved
+  the windows changes nothing, a short swipe down returns them to their slots), `model_spaces.rs` (`row_columns`); casement-layout
+  `spread.rs` (`spread_at` at 0, 500, 1000 and past; the old `mission_control` helper became `SceneSpec::in_mission_control`);
+  casement-motion `behaviour.rs` (no slide while driven, other outputs slide, commit and snap-back continue from the followed
+  progress without a jump); casement-render `scene/row.rs` (rest, half-way, rubber band, a window on every Space; doc tests),
+  `OverviewLook::opened` doc test; casement `core_loop/fingers.rs` (`openness`).
+- **Goldens worth adding (not added; needs a blessed run).** Pixman scenes in `casement-testkit/tests/it/scene/`: (a) two
+  Spaces, a window on each, mid-swipe at position 500 (both windows half on screen, wallpaper static); (b) one Space shown,
+  another with a window: only the shown window is drawn (pins the standing fault above); (c) Mission Control held at 500: windows
+  half-way scaled, half dim; (d) rubber band at -250 past the first Space.
+- **Likeliest compile faults.** `RowDraw` building `PlacedWindow` copies (`*placed`, `Copy`), `scene.rs` `in_row` deferred
+  initialisation (`let in_row; ... &in_row`), `row_of`'s `usable_area` call and `model.outputs().0.get(output)?.config`,
+  `Moved::then(Model::fingers_stayed)`, `drawn_scene_at`'s partial move in `OutputFrame { windows, ..frame }`, the
+  `BTreeSet` literal `[output(..)].into()` in the motion test. Tests likeliest to need a tweak: `gestures.rs`
+  (`a_swipe_that_never_moved...` assumes a 12 px downward first step locks the vertical axis and reports progress 0; the
+  down-swipe test assumes Mission Control opened by the command is `Open` after the settle timer), `model_spaces.rs`
+  (assumes full-screen Spaces join the row after the desktop).
+
 ## cas26-menusheet: global menus for other toolkits, sheets, picture in picture (P3-MN, P3-SH)
 
 - **Global menus: the transport is blocked on a dependency.** The recorded address, the model and the shell path are done and tested:
