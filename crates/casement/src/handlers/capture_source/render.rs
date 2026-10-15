@@ -1,11 +1,13 @@
-//! Drawing one window into a client's buffer: its surface tree alone, through the backend's
-//! software renderer (the headless backend's own, or the tty seat's pixman shadow).
+//! Drawing one window into a client's buffer: its surface tree alone. A dma-buf the GPU can draw
+//! into gets it rendered straight in; any other buffer is filled from a read-back through the
+//! backend's software renderer (the headless backend's own, or the tty seat's pixman shadow).
 
+use crate::handlers::image_capture::{Drawn, draw_window_direct};
 use crate::state::State;
 use casement_backend::BackendKind;
 use casement_backend::headless::{FrameSource, RgbaFrame};
 use casement_core::WindowId;
-use casement_core::geometry::{LogicalSize, PhysicalRect};
+use casement_core::geometry::{LogicalSize, PhysicalRect, PhysicalSize};
 use casement_core::time::Mono;
 use casement_render::pass::{CapturedFrame, window_capture_size, window_tree};
 use casement_render::{CasementElement, Compositor};
@@ -47,13 +49,12 @@ impl FrameSource for WindowSource {
     }
 }
 
-/// `window` drawn alone at the scale of its output: its content size, RGBA rows top first,
-/// transparent where it does not draw. What window capture sends and `casementctl shot
-/// --window` writes. `OutputGone` when the window is not drawn or has no output.
-pub(crate) fn window_rgba(
-    state: &mut State,
+/// `window`'s surface tree and the size and scale it is drawn at: what both the read-back
+/// and the direct draw render. `OutputGone` when the window is not drawn or has no output.
+fn window_source(
+    state: &State,
     window: WindowId,
-) -> Result<RgbaFrame, CaptureFailure> {
+) -> Result<(WindowSource, PhysicalSize), CaptureFailure> {
     let (content, scale) =
         super::content_and_scale(state, window).ok_or(CaptureFailure::OutputGone)?;
     let size = window_capture_size(content, scale);
@@ -63,14 +64,27 @@ pub(crate) fn window_rgba(
         .window(&window)
         .map(|entry| entry.root.clone())
         .ok_or(CaptureFailure::OutputGone)?;
-    let source = WindowSource {
-        root,
-        content,
-        scale,
-    };
+    Ok((
+        WindowSource {
+            root,
+            content,
+            scale,
+        },
+        size,
+    ))
+}
+
+/// `window` drawn alone at the scale of its output: its content size, RGBA rows top first,
+/// transparent where it does not draw. What window capture sends and `casementctl shot
+/// --window` writes. `OutputGone` when the window is not drawn or has no output.
+pub(crate) fn window_rgba(
+    state: &mut State,
+    window: WindowId,
+) -> Result<RgbaFrame, CaptureFailure> {
+    let (source, size) = window_source(state, window)?;
     let drawn = match &mut state.backend {
-        BackendKind::Headless(backend) => backend.render_offscreen(size, scale, &source),
-        BackendKind::Tty(tty) => tty.render_offscreen(size, scale, &source),
+        BackendKind::Headless(backend) => backend.render_offscreen(size, source.scale, &source),
+        BackendKind::Tty(tty) => tty.render_offscreen(size, source.scale, &source),
         _ => return Err(CaptureFailure::Renderer),
     };
     drawn.map_err(|error| {
@@ -87,6 +101,15 @@ pub(super) fn draw_window(
     request: &ToplevelCaptureRequest,
     buffer: &WlBuffer,
 ) -> Result<Mono, CaptureFailure> {
+    let (source, size) = window_source(state, request.window)?;
+    if size != request.size {
+        return Err(CaptureFailure::BufferMismatch);
+    }
+    // A dma-buf the GPU can draw into gets the window rendered straight into it; anything else,
+    // or a draw that failed, goes through the read-back.
+    if draw_window_direct(state, buffer, &source, size, source.scale) == Drawn::Direct {
+        return Ok(state.clock.now());
+    }
     let drawn = window_rgba(state, request.window)?;
     if drawn.size != request.size {
         return Err(CaptureFailure::BufferMismatch);

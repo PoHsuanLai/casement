@@ -76,6 +76,9 @@ impl Fixture {
             Some(FramePixels::Dummy) => {
                 panic!("{} is drawn by the dummy renderer", output.as_str())
             }
+            Some(FramePixels::Resident(_)) => {
+                panic!("{} keeps its frame on the GPU", output.as_str())
+            }
             None => panic!("{} presented no frame: advance first", output.as_str()),
         };
         let whole = image::RgbaImage::from_raw(frame.size.w, frame.size.h, frame.bytes.clone())

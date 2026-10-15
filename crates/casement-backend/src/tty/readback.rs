@@ -33,6 +33,16 @@ pub enum Watch {
     On,
 }
 
+/// Where the frame last drawn for an output is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum Residence {
+    /// On the display GPU: a capture draws it into a dma-buf there.
+    Gpu,
+    /// Read back by the software shadow (or not drawn at all).
+    Shadow,
+}
+
 /// The shadow outputs, drawn only while watched.
 #[derive(Debug, Default)]
 pub struct Readback {
@@ -40,6 +50,9 @@ pub struct Readback {
     shadow: Option<HeadlessBackend>,
     /// The outputs watched, and the configuration their shadow was made with.
     watched: BTreeMap<OutputName, OutputConfig>,
+    /// The frames the display GPU kept on the GPU instead of the shadow reading them back
+    /// (`TtyBackend::present` fills it while a lender keeps scenes); they win over the shadow's.
+    resident: BTreeMap<OutputName, PresentedFrame>,
 }
 
 impl Readback {
@@ -58,6 +71,7 @@ impl Readback {
     ) -> Result<(), BackendError> {
         match watch {
             Watch::Off => {
+                self.resident.remove(output);
                 if self.watched.remove(output).is_some()
                     && let Some(shadow) = &mut self.shadow
                 {
@@ -77,6 +91,7 @@ impl Readback {
         let shadow = self.started()?;
         let _ = shadow.plug(spec_of(output, config));
         self.watched.insert(output.clone(), *config);
+        self.resident.remove(output);
         Ok(())
     }
 
@@ -162,9 +177,36 @@ impl Readback {
         }
     }
 
-    /// The frame last drawn for `output`.
+    /// The frame last drawn for `output`: the one kept on the GPU when there is one, else the
+    /// shadow's.
     pub fn last_frame(&self, output: &OutputName) -> Option<&PresentedFrame> {
-        self.shadow.as_ref()?.last_frame(output)
+        self.resident
+            .get(output)
+            .or_else(|| self.shadow.as_ref()?.last_frame(output))
+    }
+
+    /// The configuration `output` is watched with; none when it is not watched.
+    pub fn config_of(&self, output: &OutputName) -> Option<OutputConfig> {
+        self.watched.get(output).copied()
+    }
+
+    /// The display GPU drew `frame` for `output` and kept it on the GPU.
+    pub fn note_resident(&mut self, output: &OutputName, frame: PresentedFrame) {
+        self.resident.insert(output.clone(), frame);
+    }
+
+    /// The frame kept on the GPU for `output` is stale (the GPU did not draw this one): the
+    /// shadow's takes over.
+    pub fn forget_resident(&mut self, output: &OutputName) {
+        self.resident.remove(output);
+    }
+
+    /// Where the frame last drawn for `output` is.
+    pub fn residence(&self, output: &OutputName) -> Residence {
+        match self.resident.contains_key(output) {
+            true => Residence::Gpu,
+            false => Residence::Shadow,
+        }
     }
 
     /// Whether `output` is watched.
@@ -178,6 +220,7 @@ impl Readback {
     /// `output` is gone: its shadow with it.
     pub fn forget(&mut self, output: &OutputName) {
         self.watched.remove(output);
+        self.resident.remove(output);
         if let Some(shadow) = &mut self.shadow {
             let _ = shadow.unplug(output);
         }

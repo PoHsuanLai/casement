@@ -41,6 +41,11 @@ impl BareLayer {
         }
     }
 
+    /// The image the last cursor-less frame was drawn into.
+    pub(super) fn canvas(&self) -> &Canvas {
+        &self.canvas
+    }
+
     /// Draws `source` without its cursor; the bytes read back when something changed.
     pub(super) fn draw(
         &mut self,
@@ -60,7 +65,7 @@ impl BareLayer {
 }
 
 /// A source with the cursor's elements taken out.
-struct Cursorless<'a>(&'a dyn FrameSource);
+pub(crate) struct Cursorless<'a>(pub(crate) &'a dyn FrameSource);
 
 impl FrameSource for Cursorless<'_> {
     fn pixman(&self, renderer: &mut PixmanRenderer) -> Vec<CasementElement<PixmanRenderer>> {
@@ -78,7 +83,9 @@ impl FrameSource for Cursorless<'_> {
 }
 
 /// `elements` but the cursor's.
-fn without_cursor<R: Compositor>(elements: Vec<CasementElement<R>>) -> Vec<CasementElement<R>> {
+pub(crate) fn without_cursor<R: Compositor>(
+    elements: Vec<CasementElement<R>>,
+) -> Vec<CasementElement<R>> {
     elements
         .into_iter()
         .filter(|element| !matches!(element.kind(), Kind::Cursor))

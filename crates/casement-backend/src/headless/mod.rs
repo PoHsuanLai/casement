@@ -11,6 +11,7 @@ mod renderer;
 mod vblank;
 mod virtual_output;
 
+use crate::capture_path::RendererClass;
 pub use cost::RenderCostModel;
 pub use gamma::GAMMA_SIZE;
 pub use input::HeadlessInput;
@@ -24,6 +25,8 @@ pub use virtual_output::{EdidSource, FixtureName, GpuId, SpecError, VirtualOutpu
 use crate::backend::BackendError;
 use crate::input::VirtualInput;
 use bare::BareLayer;
+#[cfg(feature = "tty")]
+pub(crate) use bare::Cursorless;
 use casement_core::geometry::{LogicalPoint, PhysicalRect, PhysicalSize};
 use casement_core::output::{
     EdidFacts, EdidSerial, Mode, OutputConfig, OutputFacts, OutputPower, PhysicalMm,
@@ -31,6 +34,7 @@ use casement_core::output::{
 use casement_core::time::{Mono, VblankSeq};
 use casement_core::{OutputKey, OutputName};
 use casement_render::CasementElement;
+use casement_render::pass::CursorInclusion;
 use ds_core::geometry::scale::Scale;
 use renderer::{Canvas, Drawn};
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -221,6 +225,47 @@ impl HeadlessBackend {
         frame: &casement_render::pass::CapturedFrame,
     ) -> Result<(), BackendError> {
         self.renderer.write_dmabuf(target, frame)
+    }
+
+    /// What this backend's renderer is to a capture into a dma-buf of format `wanted`.
+    pub fn capture_class(&self, wanted: smithay::backend::allocator::Format) -> RendererClass {
+        self.renderer.capture_class(wanted)
+    }
+
+    /// Renders `source` alone straight into a client's dma-buf `target` of exactly `size`: window
+    /// capture with no read-back. A software renderer refuses, and the caller reads back instead.
+    pub fn render_window_dmabuf(
+        &mut self,
+        target: &mut smithay::backend::allocator::dmabuf::Dmabuf,
+        size: PhysicalSize,
+        scale: Scale,
+        source: &dyn FrameSource,
+    ) -> Result<(), BackendError> {
+        self.renderer
+            .render_window_dmabuf(target, size, scale, source)
+    }
+
+    /// Blits `from`, a part of the frame `name` last presented (with or without its cursor, as
+    /// `cursor` says), into a client's dma-buf `target`: the frame is the output's own GPU image,
+    /// so nothing is read back. [`BackendError::NoFrame`] while the output has presented none.
+    pub fn blit_output_dmabuf(
+        &mut self,
+        name: &OutputName,
+        cursor: CursorInclusion,
+        from: PhysicalRect,
+        target: &mut smithay::backend::allocator::dmabuf::Dmabuf,
+    ) -> Result<(), BackendError> {
+        let output = self.outputs.get(name).ok_or(BackendError::NoFrame)?;
+        let last = output.last.as_ref().ok_or(BackendError::NoFrame)?;
+        // As the read-back does: without a cursor-less frame, the one shown is the best there is.
+        let bare = last.bare.as_ref().and(output.bare.as_ref());
+        let canvas = match cursor {
+            CursorInclusion::Exclude => bare.map(BareLayer::canvas),
+            _ => None,
+        }
+        .or(output.canvas.as_ref())
+        .ok_or(BackendError::NoFrame)?;
+        self.renderer.blit_canvas(canvas, from, target)
     }
 
     /// Reads a client's dma-buf `source` back (a cursor surface's buffer).
@@ -457,6 +502,9 @@ pub enum FramePixels {
     Rgba(RgbaFrame),
     /// The dummy renderer draws nothing.
     Dummy,
+    /// Kept on the GPU, not read back (a real seat while a capture is open): the size of the
+    /// frame. A capture draws it into the client's dma-buf, or reads it back for shared memory.
+    Resident(PhysicalSize),
 }
 
 /// Read-back pixels: rows top to bottom, four bytes per pixel in R, G, B, A order,

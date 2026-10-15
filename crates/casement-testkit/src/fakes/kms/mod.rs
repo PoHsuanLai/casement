@@ -12,6 +12,6 @@ mod capture_gpu;
 mod fake;
 mod topology;
 
-pub use capture_gpu::{CaptureGpuWorld, FakeCaptureGpu, GpuBehaviour};
+pub use capture_gpu::{CaptureGpuWorld, FakeCaptureGpu, GpuBehaviour, SceneBehaviour};
 pub use fake::{FakeKms, FakeKmsOpener, KmsWorld, LinkBehaviour};
 pub use topology::{KmsFixtureError, SyntheticTopology, edid, load_fixture};

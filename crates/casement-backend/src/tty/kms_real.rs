@@ -14,6 +14,7 @@
 
 use super::capture_gpu::CaptureGpu;
 use super::capture_gpu_real::RealCaptureGpu;
+use super::capture_scene_real::SceneStore;
 use super::direct::require_vkms;
 use super::hotplug::{KnownConnectors, reconcile};
 use super::judge::{Lit, judge};
@@ -33,7 +34,7 @@ use casement_core::output::{
     GammaRamp, Mode, ModePreference, OutputConfig, OutputPower, PhysicalMm, VrrCapability,
 };
 use casement_core::time::Millihertz;
-use smithay::backend::drm::{DrmDevice, DrmDeviceFd, DrmEvent, DrmSurface};
+use smithay::backend::drm::{DrmDevice, DrmDeviceFd, DrmEvent, DrmNode, DrmSurface, NodeType};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::reexports::calloop::LoopHandle;
 use smithay::reexports::drm::Device as BasicDevice;
@@ -63,6 +64,10 @@ pub struct RealKms {
     flips: Rc<RefCell<Flips>>,
     /// The device's renderer, made for the first scanout and shared by the rest.
     renderer: Option<Rc<RefCell<GlesRenderer>>>,
+    /// The frames kept on the GPU for the outputs a capture watches.
+    scenes: Rc<RefCell<SceneStore>>,
+    /// The render node of the device, when it has one: what clients allocate buffers on.
+    node: Option<u64>,
     /// The surfaces lit and not yet handed to a scanout.
     surfaces: BTreeMap<ConnectorId, DrmSurface>,
     /// The connectors whose surface is out with a scanout (gone when the scanout is dropped).
@@ -71,6 +76,17 @@ pub struct RealKms {
     power: BTreeMap<ConnectorId, OutputPower>,
     known: KnownConnectors,
     last: KmsResources,
+}
+
+/// The number of the render node of the device behind `fd` (its primary node's sibling), or the
+/// node itself when it has no render node.
+fn render_node_of(fd: &OwnedFd) -> Option<u64> {
+    let node = DrmNode::from_file(fd).ok()?;
+    let render = node
+        .node_with_type(NodeType::Render)
+        .and_then(Result::ok)
+        .unwrap_or(node);
+    Some(render.dev_id())
 }
 
 fn io_error(error: impl std::error::Error + Send + Sync + 'static) -> KmsError {
@@ -84,6 +100,7 @@ impl RealKms {
         fd: OwnedFd,
         handle: &LoopHandle<'static, D>,
     ) -> Result<RealKms, KmsError> {
+        let node = render_node_of(&fd);
         let fd = DrmDeviceFd::new(DeviceFd::from(fd));
         let (device, notifier) = DrmDevice::new(fd.clone(), false).map_err(io_error)?;
         let gbm = GbmDevice::new(fd)?;
@@ -104,6 +121,8 @@ impl RealKms {
             gbm,
             flips,
             renderer: None,
+            scenes: Rc::default(),
+            node,
             surfaces: BTreeMap::new(),
             out: BTreeMap::new(),
             lit: Lit::new(),
@@ -198,7 +217,11 @@ impl RealKms {
 impl Kms for RealKms {
     fn capture_gpu(&self) -> Option<Box<dyn CaptureGpu>> {
         let renderer = self.renderer.as_ref()?;
-        Some(Box::new(RealCaptureGpu::new(Rc::clone(renderer))))
+        Some(Box::new(RealCaptureGpu::new(
+            Rc::clone(renderer),
+            Rc::clone(&self.scenes),
+            self.node,
+        )))
     }
 
     fn resources(&self) -> KmsResources {

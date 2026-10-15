@@ -10,7 +10,6 @@
 use super::image_capture;
 use crate::state::State;
 use casement_core::OutputKey;
-use casement_render::pass::CapturedFrame;
 use casement_wayland::image_capture::CaptureFailure;
 use casement_wayland::screencopy::{
     self, Damage, PendingCopy, ScreencopyHandler, ScreencopyOutput, ScreencopyPart,
@@ -80,7 +79,7 @@ fn answer(state: &mut State, copy: &PendingCopy) -> Outcome {
     if !copy.frame.is_alive() {
         return Outcome::Done;
     }
-    let (captured, at) = match image_capture::last_frame(state, &copy.target.output, copy.cursor) {
+    let shown = match image_capture::last_shown(state, &copy.target.output) {
         Ok(Some(found)) => found,
         Ok(None) => return Outcome::Wait,
         Err(why) => return failed(copy, why),
@@ -102,28 +101,21 @@ fn answer(state: &mut State, copy: &PendingCopy) -> Outcome {
     if copy.damage == Damage::Fresh && damage.is_empty() {
         return Outcome::Wait;
     }
-    match write(state, copy, &captured) {
+    // The part of the frame that `copy` names, drawn into its buffer by the GPU or read back.
+    let written = image_capture::write_output(
+        state,
+        &copy.buffer,
+        &copy.target.output,
+        copy.cursor,
+        copy.target.area,
+    );
+    match written {
         Ok(()) => {
-            screencopy::apply_ready(&mut state.wl.screencopy, copy, at, &damage);
+            screencopy::apply_ready(&mut state.wl.screencopy, copy, shown.at, &damage);
             Outcome::Done
         }
         Err(why) => failed(copy, why),
     }
-}
-
-/// The part of `captured` that `copy` names, written into its buffer.
-fn write(
-    state: &mut State,
-    copy: &PendingCopy,
-    captured: &CapturedFrame,
-) -> Result<(), CaptureFailure> {
-    let part = captured
-        .cropped(copy.target.area)
-        .ok_or(CaptureFailure::BufferMismatch)?;
-    image_capture::deliver(state, &copy.buffer, &part).map_err(|error| {
-        tracing::warn!(%error, "a screencopy frame was not written");
-        CaptureFailure::BufferMismatch
-    })
 }
 
 /// Tells the client `failed`; the copy is over.

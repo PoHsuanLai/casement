@@ -69,6 +69,9 @@ pub enum BackendError {
     /// An output's canvas was made by another renderer than the one drawing into it.
     #[error("an output's canvas belongs to another renderer")]
     CanvasMismatch,
+    /// An output has drawn no frame (or none that stayed on the GPU) to copy.
+    #[error("the output has no frame to copy")]
+    NoFrame,
     /// An output's mode does not fit smithay's buffer sizes.
     #[error("a {w}x{h} output is too large")]
     OutputTooLarge {

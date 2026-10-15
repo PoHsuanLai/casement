@@ -8,8 +8,12 @@
 
 use super::FrameSource;
 use crate::backend::BackendError;
+use crate::capture_path::{Import, RendererClass};
 use casement_core::geometry::{PhysicalRect, PhysicalSize};
-use casement_render::pass::{ArgbImage, CapturedFrame, read_dmabuf, render_window, write_dmabuf};
+use casement_render::pass::{
+    ArgbImage, CapturedFrame, blit_texture, read_dmabuf, render_window, render_window_dmabuf,
+    write_dmabuf,
+};
 use casement_render::{CasementElement, Compositor, render_output};
 use ds_core::geometry::scale::Scale;
 use smithay::backend::allocator::dmabuf::Dmabuf;
@@ -133,6 +137,59 @@ impl HeadlessRenderer {
                 .collect()
         })
         .unwrap_or_default()
+    }
+
+    /// What this renderer is to a capture into a dma-buf of format `wanted`: a GL renderer
+    /// keeps frames on the GPU and can draw into the buffer when it binds the format and
+    /// modifier; pixman and the dummy renderer are software.
+    pub fn capture_class(&self, wanted: Format) -> RendererClass {
+        match self {
+            #[cfg(feature = "testing")]
+            HeadlessRenderer::Dummy(_) => RendererClass::Software,
+            HeadlessRenderer::Pixman(_) => RendererClass::Software,
+            HeadlessRenderer::Gles(_) => {
+                RendererClass::Gpu(match self.capture_formats().contains(&wanted) {
+                    true => Import::Accepted,
+                    false => Import::Refused,
+                })
+            }
+        }
+    }
+
+    /// Renders `source` alone straight into the client's dma-buf `target` (window capture on the
+    /// GPU: no read-back). Only a GL renderer does; the others refuse and the caller reads back.
+    pub(super) fn render_window_dmabuf(
+        &mut self,
+        target: &mut Dmabuf,
+        size: PhysicalSize,
+        scale: Scale,
+        source: &dyn FrameSource,
+    ) -> Result<(), BackendError> {
+        match self {
+            HeadlessRenderer::Gles(renderer) => {
+                let renderer = renderer.as_mut();
+                let elements = source.gles(renderer);
+                render_window_dmabuf(renderer, target, &elements, size, scale)
+                    .map_err(BackendError::from)
+            }
+            _ => Err(casement_render::RenderError::NoTarget.into()),
+        }
+    }
+
+    /// Blits `from`, a part of the frame `canvas` holds, into the client's dma-buf `target`: the
+    /// frame an output last drew is already a GPU image, so nothing is read back.
+    pub(super) fn blit_canvas(
+        &mut self,
+        canvas: &Canvas,
+        from: PhysicalRect,
+        target: &mut Dmabuf,
+    ) -> Result<(), BackendError> {
+        match (self, &canvas.target) {
+            (HeadlessRenderer::Gles(renderer), Target::Gles(texture)) => {
+                blit_texture(renderer.as_mut(), texture, from, target).map_err(BackendError::from)
+            }
+            _ => Err(BackendError::CanvasMismatch),
+        }
     }
 
     /// Draws `frame` into the client's dma-buf `target` (a capture's buffer).

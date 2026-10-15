@@ -21,6 +21,7 @@
 //! ```
 
 mod backend;
+pub mod capture_path;
 pub mod gpu;
 pub mod headless;
 pub mod input;

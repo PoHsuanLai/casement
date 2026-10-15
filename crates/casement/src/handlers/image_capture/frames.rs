@@ -1,13 +1,16 @@
 //! Answering one frame request.
 
+use super::direct::{self, Subject};
 use super::{buffer_size, constraints_of, deliver};
 use crate::state::State;
+use casement_backend::capture_path::CapturePath;
 use casement_backend::{BackendKind, FramePixels, PresentedFrame};
-use casement_core::OutputKey;
 use casement_core::geometry::PhysicalRect;
 use casement_core::time::Mono;
+use casement_core::{OutputKey, OutputName};
 use casement_render::pass::CapturedFrame;
 use casement_wayland::image_capture::{self, CaptureFailure, CaptureSessionId, CursorPaint};
+use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::utils::{Buffer, Rectangle, Size, Transform};
 use smithay::wayland::image_copy_capture::{Frame, SessionRef};
 
@@ -69,7 +72,7 @@ fn capture(
         true => CursorPaint::Painted,
         false => CursorPaint::Hidden,
     };
-    let Some((captured, at)) = last_frame(state, &request.output, paint)? else {
+    let Some(shown) = last_shown(state, &request.output)? else {
         return Ok(None);
     };
     let last = state.wl.image_capture.book.delivered.get(&id).copied();
@@ -78,17 +81,14 @@ fn capture(
         .image_capture
         .damage
         .since(&request.output, last)
-        .within(captured.area);
+        .within(shown.area);
     // The first frame of a session is whole; the next waits for something to change.
     if last.is_some() && changed.is_empty() {
         return Ok(None);
     }
-    deliver(state, &buffer, &captured).map_err(|error| {
-        tracing::warn!(%error, "a capture frame was not written");
-        CaptureFailure::BufferMismatch
-    })?;
+    write_output(state, &buffer, &request.output, paint, shown.area)?;
     Ok(Some((
-        at,
+        shown.at,
         changed.into_iter().filter_map(buffer_rect).collect(),
     )))
 }
@@ -102,17 +102,69 @@ fn buffer_rect(rect: PhysicalRect) -> Option<Rectangle<i32, Buffer>> {
     ))
 }
 
-/// The frame `output` last presented, with or without the cursor as `paint` says, as a capture,
-/// and its instant; none while the output has presented none (or, on a real seat, the shadow
-/// has drawn none).
-pub(in crate::handlers) fn last_frame(
+/// When the frame `output` last presented was shown and what it covers, without its pixels;
+/// none while the output has presented none (or, on a real seat, nothing has been drawn for the
+/// capture yet).
+pub(in crate::handlers) struct Shown {
+    /// When it was presented.
+    pub(in crate::handlers) at: Mono,
+    /// The area it covers.
+    pub(in crate::handlers) area: PhysicalRect,
+}
+
+/// The frame `output` last presented, as [`Shown`].
+pub(in crate::handlers) fn last_shown(
     state: &State,
     output: &OutputKey,
-    paint: CursorPaint,
-) -> Result<Option<(CapturedFrame, Mono)>, CaptureFailure> {
+) -> Result<Option<Shown>, CaptureFailure> {
     let Some(presented) = presented(state, output)? else {
         return Ok(None);
     };
+    let size = match &presented.pixels {
+        FramePixels::Rgba(frame) => frame.size,
+        FramePixels::Resident(size) => *size,
+        _ => return Err(CaptureFailure::Renderer),
+    };
+    Ok(Some(Shown {
+        at: presented.at,
+        area: PhysicalRect {
+            x: 0,
+            y: 0,
+            w: size.w,
+            h: size.h,
+        },
+    }))
+}
+
+/// The frame `output` last presented, with or without the cursor as `paint` says, as a capture,
+/// and its instant; none while the output has presented none (or, on a real seat, the shadow
+/// has drawn none). A frame that stayed on the GPU is read back here: this is the read-back path.
+pub(in crate::handlers) fn last_frame(
+    state: &mut State,
+    output: &OutputKey,
+    paint: CursorPaint,
+) -> Result<Option<(CapturedFrame, Mono)>, CaptureFailure> {
+    let Some(shown) = last_shown(state, output)? else {
+        return Ok(None);
+    };
+    let resident = matches!(
+        presented(state, output)?.map(|frame| &frame.pixels),
+        Some(FramePixels::Resident(_))
+    );
+    let captured = match resident {
+        true => read_resident(state, output, paint)?,
+        false => read_shadow(state, output, paint)?,
+    };
+    Ok(Some((captured, shown.at)))
+}
+
+/// The pixels the backend read back when it presented the frame.
+fn read_shadow(
+    state: &State,
+    output: &OutputKey,
+    paint: CursorPaint,
+) -> Result<CapturedFrame, CaptureFailure> {
+    let presented = presented(state, output)?.ok_or(CaptureFailure::Renderer)?;
     let FramePixels::Rgba(shown) = &presented.pixels else {
         return Err(CaptureFailure::Renderer);
     };
@@ -128,10 +180,64 @@ pub(in crate::handlers) fn last_frame(
         w: pixels.size.w,
         h: pixels.size.h,
     };
-    Ok(Some((
-        CapturedFrame::from_rgba(area, &pixels.bytes),
-        presented.at,
-    )))
+    Ok(CapturedFrame::from_rgba(area, &pixels.bytes))
+}
+
+/// The frame the display GPU kept for `output`, read back to the CPU.
+fn read_resident(
+    state: &mut State,
+    output: &OutputKey,
+    paint: CursorPaint,
+) -> Result<CapturedFrame, CaptureFailure> {
+    let name = output_name(state, output)?;
+    let BackendKind::Tty(tty) = &mut state.backend else {
+        return Err(CaptureFailure::Renderer);
+    };
+    tty.read_output(&name, direct::inclusion(paint))
+        .map_err(|error| {
+            tracing::warn!(%error, "the capture frame was not read back from the GPU");
+            CaptureFailure::Renderer
+        })
+}
+
+/// Puts `area` of the frame `output` last presented into the client's `buffer`: drawn by the GPU
+/// when `capture_path` says so, else (or when that fails) read back and delivered.
+pub(in crate::handlers) fn write_output(
+    state: &mut State,
+    buffer: &WlBuffer,
+    output: &OutputKey,
+    paint: CursorPaint,
+    area: PhysicalRect,
+) -> Result<(), CaptureFailure> {
+    let name = output_name(state, output)?;
+    if direct::path_of(state, buffer, Subject::Output(&name)) == CapturePath::Direct {
+        match direct::output(state, buffer, &name, paint, area) {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                tracing::info!(%error, "a frame was not drawn into the dma-buf; reading it back");
+            }
+        }
+    }
+    let (captured, _) = last_frame(state, output, paint)?.ok_or(CaptureFailure::Renderer)?;
+    let part = captured
+        .cropped(area)
+        .ok_or(CaptureFailure::BufferMismatch)?;
+    deliver(state, buffer, &part).map_err(|error| {
+        tracing::warn!(%error, "a capture frame was not written");
+        CaptureFailure::BufferMismatch
+    })
+}
+
+/// The connector name of `output`.
+fn output_name(state: &State, output: &OutputKey) -> Result<OutputName, CaptureFailure> {
+    state
+        .core
+        .model
+        .outputs()
+        .0
+        .get(output)
+        .map(|plugged| plugged.facts.name.clone())
+        .ok_or(CaptureFailure::OutputGone)
 }
 
 /// The frame `output` last presented, as its backend kept it.
@@ -139,14 +245,7 @@ fn presented<'a>(
     state: &'a State,
     output: &OutputKey,
 ) -> Result<Option<&'a PresentedFrame>, CaptureFailure> {
-    let name = state
-        .core
-        .model
-        .outputs()
-        .0
-        .get(output)
-        .map(|plugged| plugged.facts.name.clone())
-        .ok_or(CaptureFailure::OutputGone)?;
+    let name = output_name(state, output)?;
     // The headless backend kept the frame it presented; a tty seat kept the shadow it drew
     // while this output was watched (the first frame of a session waits for the next vblank).
     match &state.backend {

@@ -10,12 +10,14 @@
 //! has drawn one (FINDINGS, p1-t).
 
 mod cursor;
+mod direct;
 mod dma;
 mod frames;
 
 pub(super) use cursor::sync as sync_cursors;
+pub(super) use direct::{Drawn, window as draw_window_direct};
 pub(super) use dma::{buffer_size, deliver, fourccs, offer as dma_offer_of};
-pub(super) use frames::{last_frame, note_presented, release_waiting};
+pub(super) use frames::{last_shown, note_presented, release_waiting, write_output};
 
 use super::{capture_source, space_shot};
 use crate::state::State;

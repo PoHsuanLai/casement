@@ -23,7 +23,7 @@ pub use input_devices::FakeInputDevices;
 pub use input_feed::FakeInputFeed;
 pub use kms::{
     CaptureGpuWorld, FakeCaptureGpu, FakeKms, FakeKmsOpener, GpuBehaviour, KmsFixtureError,
-    KmsWorld, LinkBehaviour, SyntheticTopology, edid, load_fixture,
+    KmsWorld, LinkBehaviour, SceneBehaviour, SyntheticTopology, edid, load_fixture,
 };
 pub use logind::{
     FakeLogind, IdleHint, LogindCall, LogindError, PauseKind, PrivateBus, PrivateBusError,

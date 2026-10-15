@@ -16,6 +16,7 @@
 //!
 //! The adapters are the only files that name the device crates (row B7).
 
+mod capture;
 mod capture_gpu;
 mod connector;
 mod device;
@@ -40,6 +41,8 @@ mod writeback;
 #[cfg(feature = "tty")]
 mod capture_gpu_real;
 #[cfg(feature = "tty")]
+mod capture_scene_real;
+#[cfg(feature = "tty")]
 mod direct_real;
 #[cfg(feature = "tty")]
 mod kms_real;
@@ -55,7 +58,8 @@ mod udev_real;
 mod writeback_real;
 
 pub use capture_gpu::{
-    CaptureGpu, CaptureRoute, capture_fallback, capture_route, merged_formats, renderable_formats,
+    CaptureGpu, CaptureRoute, Picture, SceneSupport, capture_fallback, capture_route,
+    merged_formats, renderable_formats,
 };
 pub use connector::{EdidError, VrrPolicy, output_facts, parse_edid, plan_outputs, vrr_state};
 pub use device::{Announced, OpenDevice, TtyDevices};
@@ -73,7 +77,7 @@ pub use kms::{
 };
 pub use lit::{Lighting, LitOutput};
 pub use offer::scanout_formats;
-pub use readback::{Readback, Watch};
+pub use readback::{Readback, Residence, Watch};
 pub use report::{Due, KmsReport, REPORT_EVERY, ReportPacer, ReportedOutput};
 pub use scanouts::{Flow, FrameTally, PresentOutcome, Scanout, ScanoutSet};
 pub use session::{SeatState, SessionNote, TtySession};
@@ -460,10 +464,10 @@ impl TtyBackend {
         match shown {
             PresentOutcome::Flipped(seq) => {
                 self.queued = self.queued.saturating_add(1);
-                self.readback.draw(output, seq, now, source)?;
+                self.capture_draw(output, seq, now, source)?;
             }
             // A still desktop flips nothing, yet a capture opened on it needs a first frame.
-            PresentOutcome::Unchanged => self.readback.draw_first(output, now, source)?,
+            PresentOutcome::Unchanged => self.capture_first(output, now, source)?,
             _ => {}
         }
         Ok(shown)
@@ -490,6 +494,9 @@ impl TtyBackend {
         config: &OutputConfig,
         watch: Watch,
     ) -> Result<(), BackendError> {
+        if watch == Watch::Off && self.readback.watching(output) == Watch::On {
+            self.capture_stopped(output);
+        }
         self.readback.watch(output, config, watch)
     }
 

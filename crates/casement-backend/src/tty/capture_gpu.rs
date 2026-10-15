@@ -17,7 +17,13 @@
 //! ```
 
 use crate::backend::BackendError;
-use casement_render::pass::CapturedFrame;
+use crate::headless::FrameSource;
+use casement_core::OutputName;
+use casement_core::geometry::{PhysicalRect, PhysicalSize, Transform};
+use casement_core::output::OutputConfig;
+use casement_render::RenderError;
+use casement_render::pass::{CapturedFrame, CursorInclusion};
+use ds_core::geometry::scale::Scale;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::{Format, Fourcc};
 use smithay::backend::renderer::Bind;
@@ -33,6 +39,104 @@ pub trait CaptureGpu: std::fmt::Debug {
         target: &mut Dmabuf,
         frame: &CapturedFrame,
     ) -> Result<(), BackendError>;
+
+    /// The device this renderer draws on (its render node's number), when it can tell. Compared
+    /// with the device clients allocate on, to tell a buffer on another GPU.
+    fn device(&self) -> Option<u64> {
+        None
+    }
+
+    /// Whether it keeps each watched output's frame on the GPU ([`draw_scene`](Self::draw_scene)
+    /// and the calls after it). Absent by default: the capture shadow reads frames back.
+    fn scenes(&self) -> SceneSupport {
+        SceneSupport::Absent
+    }
+
+    /// Draws `source` as the frame `output` shows, into images that stay on the GPU (one with
+    /// the cursor, one without); the area that changed since the last call.
+    fn draw_scene(
+        &mut self,
+        output: &OutputName,
+        picture: &Picture,
+        source: &dyn FrameSource,
+    ) -> Result<Vec<PhysicalRect>, BackendError> {
+        let _ = (output, picture, source);
+        Err(RenderError::NoTarget.into())
+    }
+
+    /// Draws `from`, a part of the frame last drawn for `output`, into the client's dma-buf
+    /// `target` on the GPU, and returns once it is done. No CPU read.
+    fn blit_scene(
+        &mut self,
+        output: &OutputName,
+        cursor: CursorInclusion,
+        from: PhysicalRect,
+        target: &mut Dmabuf,
+    ) -> Result<(), BackendError> {
+        let _ = (output, cursor, from, target);
+        Err(BackendError::NoFrame)
+    }
+
+    /// The frame last drawn for `output` read back to the CPU, for a shared-memory buffer.
+    fn read_scene(
+        &mut self,
+        output: &OutputName,
+        cursor: CursorInclusion,
+    ) -> Result<CapturedFrame, BackendError> {
+        let _ = (output, cursor);
+        Err(BackendError::NoFrame)
+    }
+
+    /// `output` is no longer watched: its images are freed.
+    fn forget_scene(&mut self, output: &OutputName) {
+        let _ = output;
+    }
+
+    /// Renders `source` alone straight into the client's dma-buf `target` of exactly `size` at
+    /// `scale` (window capture), and returns once it is done. No CPU read.
+    fn render_window(
+        &mut self,
+        target: &mut Dmabuf,
+        size: PhysicalSize,
+        scale: Scale,
+        source: &dyn FrameSource,
+    ) -> Result<(), BackendError> {
+        let _ = (target, size, scale, source);
+        Err(RenderError::NoTarget.into())
+    }
+}
+
+/// Whether a lender keeps watched outputs' frames on the GPU.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum SceneSupport {
+    /// It does.
+    Drawn,
+    /// It does not: the software shadow reads frames back.
+    Absent,
+}
+
+/// What an output's frame looks like: the mode's size, the scale and the transform.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Picture {
+    /// The mode's size in physical pixels.
+    pub size: PhysicalSize,
+    /// The output's scale.
+    pub scale: Scale,
+    /// The output's transform.
+    pub transform: Transform,
+}
+
+impl Picture {
+    /// The picture an output shows with `config`.
+    pub fn of(config: &OutputConfig) -> Picture {
+        Picture {
+            size: config.mode.size,
+            scale: config.scale,
+            transform: config.transform,
+        }
+    }
 }
 
 /// Which renderer answers a dma-buf capture frame.
