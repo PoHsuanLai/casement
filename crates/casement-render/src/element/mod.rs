@@ -15,7 +15,7 @@ mod window;
 
 pub use blur_v0::BlurV0Element;
 pub use cursor::{CursorFace, cursor_elements, cursor_face, cursor_pixels};
-pub use frame::frame_elements;
+pub use frame::{TitleDraw, frame_elements};
 pub use geometry::{geometry_size, surface_origin, surface_origin_logical};
 pub use layer::layer_elements;
 pub use lock_cover::LockCoverElement;

@@ -110,6 +110,9 @@ pub struct RenderState {
     pub light_arm: casement_core::window::LightArm,
     /// The person's light or dark scheme, which the server-side frame is drawn in.
     pub scheme: casement_layout::Scheme,
+    /// The window titles' rasteriser (`casement-chrome`), made when the first server-side frame
+    /// needs a title so a session without one never scans the fonts.
+    pub titles: Option<casement_chrome::TitleRaster>,
 }
 
 /// Whether the pointer has been put where it starts: the centre of the primary output, once an
@@ -318,6 +321,7 @@ impl State {
             clicks: casement_core::window::ClickTracker::default(),
             light_arm: casement_core::window::LightArm::default(),
             scheme: casement_layout::Scheme::default(),
+            titles: None,
         };
         Ok(State {
             core,

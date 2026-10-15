@@ -42,10 +42,7 @@ pub(super) fn styles(state: &State) -> BTreeMap<WindowId, FrameStyle> {
     let down = state.render.light_arm.pressed();
     decorated(state)
         .map(|(id, window)| {
-            let activity = match window.emphasis {
-                Emphasis::Key | Emphasis::Main => Activity::Active,
-                _ => Activity::Inactive,
-            };
+            let activity = activity_of(window);
             let hover = match over {
                 Some(Over {
                     window: hovered,
@@ -61,6 +58,14 @@ pub(super) fn styles(state: &State) -> BTreeMap<WindowId, FrameStyle> {
             (*id, style)
         })
         .collect()
+}
+
+/// Whether `window` is the one the person works in: its frame and title draw in the key ink.
+pub(super) fn activity_of(window: &casement_core::window::Window) -> Activity {
+    match window.emphasis {
+        Emphasis::Key | Emphasis::Main => Activity::Active,
+        _ => Activity::Inactive,
+    }
 }
 
 /// The windows that have a server-side frame now: the ones whose client was answered
