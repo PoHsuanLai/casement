@@ -313,16 +313,22 @@ fn a_window_menu_is_recorded_and_the_shell_is_told_through_its_app() {
         map(2, &qt, TokenCheck::Missing),
     ]);
     assert_eq!(mapped.model.app_menu(&qt), MenuSource::None);
+    // Which of the two is key is the focus rules' business; the menu follows whichever it is.
+    let key = mapped.model.focus().key.expect("a key window");
+    let other = if key == WindowId(1) { 2 } else { 1 };
 
-    let declared = support::driver::run_from(mapped.model, vec![hint(2, Menu(source.clone()))]);
-    assert_eq!(declared.model.windows()[&WindowId(2)].hints.menu, source);
+    let declared = support::driver::run_from(mapped.model, vec![hint(other, Menu(source.clone()))]);
+    assert_eq!(
+        declared.model.windows()[&WindowId(other)].hints.menu,
+        source
+    );
     assert_eq!(
         declared.model.app_menu(&qt),
         source,
         "the app's other window answers"
     );
     assert!(last(&declared).contains(&Effect::Desktop(DesktopNote::App(qt.clone()))));
-    assert!(last(&declared).contains(&Effect::Desktop(DesktopNote::Window(WindowId(2)))));
+    assert!(last(&declared).contains(&Effect::Desktop(DesktopNote::Window(WindowId(other)))));
 
     let own = MenuSource::GtkMenus {
         bus: ":1.9".into(),
@@ -330,10 +336,10 @@ fn a_window_menu_is_recorded_and_the_shell_is_told_through_its_app() {
         menubar_path: "/menus".into(),
         window_path: "/win".into(),
     };
-    let keyed = support::driver::run_from(declared.model, vec![hint(1, Menu(own.clone()))]);
+    let keyed = support::driver::run_from(declared.model, vec![hint(key.0, Menu(own.clone()))]);
     assert_eq!(keyed.model.app_menu(&qt), own, "the key window's menu wins");
 
-    let cleared = support::driver::run_from(keyed.model, vec![hint(1, Menu(MenuSource::None))]);
+    let cleared = support::driver::run_from(keyed.model, vec![hint(key.0, Menu(MenuSource::None))]);
     assert_eq!(cleared.model.app_menu(&qt), source);
 }
 
