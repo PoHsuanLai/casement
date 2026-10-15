@@ -111,9 +111,12 @@ mod tests {
         }
     }
 
+    /// A `WM_CLASS` value and the instance and class it reads as.
+    type ClassRow = (&'static [u8], Option<(&'static str, &'static str)>);
+
     #[test]
     fn a_class_value_has_an_instance_and_a_class() {
-        let table: [(&[u8], Option<(&str, &str)>); 6] = [
+        let table: [ClassRow; 6] = [
             (b"xterm\0XTerm\0", Some(("xterm", "XTerm"))),
             (b"xterm\0XTerm", Some(("xterm", "XTerm"))),
             (b"gimp-2.10\0Gimp-2.10\0", Some(("gimp-2.10", "Gimp-2.10"))),
