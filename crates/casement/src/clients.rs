@@ -26,7 +26,9 @@ pub fn insert_client(
     let (clients, key) = state.wl.clients.clone().next();
     state.wl.clients = clients;
     if role == ConnectionRole::Public {
-        state.processes.record(key, &stream);
+        state
+            .processes
+            .record(key, &stream, state.xwayland.satellite_pid());
     }
     let client = state.display.insert_client(
         stream,

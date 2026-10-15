@@ -21,6 +21,9 @@ mod overview;
 mod split;
 mod spread;
 mod spread_fit;
+mod tile_zone;
+
+pub use tile_zone::zone_rect;
 
 use crate::{Arrangement, LayoutKnobs, SceneLayout, SceneSpec};
 
@@ -40,6 +43,9 @@ impl SceneLayout for RustScene {
     ///
     /// A filled window takes the usable area and a full-screen one the whole output.
     ///
+    /// A tiled window takes its zone's half or quarter of the usable area inside the tile margin
+    /// (`tile_zone.rs`).
+    ///
     /// A Split View Space's two windows take the left and right of the whole output with an
     /// 8 px divider between them (`split.rs`).
     ///
@@ -47,7 +53,7 @@ impl SceneLayout for RustScene {
     /// desktop targets; an output in Mission Control also gets an overview slot for each window
     /// of its shown desktop Space, spread without overlap below the Spaces bar's strip
     /// (`spread.rs`; `LayoutReport::SpreadOverflow` when the floor scale cannot separate them).
-    /// Tile zones, App Exposé and Show Desktop arrive with P3-Z, one file each.
+    /// App Exposé and Show Desktop arrive with P3-Z, one file each.
     fn arrange(&self, spec: &SceneSpec, knobs: &LayoutKnobs) -> Arrangement {
         let mut arrangement = Arrangement::default();
         for output in &spec.outputs {

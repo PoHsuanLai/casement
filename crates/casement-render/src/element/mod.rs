@@ -20,6 +20,7 @@ mod rounded_clip;
 mod shared;
 mod solid;
 mod strip;
+mod tile_preview;
 mod window;
 
 pub use blur_v0::BlurV0Element;
@@ -46,6 +47,7 @@ pub use rounded_clip::{ClipShape, RoundedClipElement};
 pub use shared::SharedElement;
 pub use solid::{Rgba8, solid_rect};
 pub use strip::{Margins, StripElement, StripPlan};
+pub use tile_preview::{TilePreview, tile_preview_elements};
 pub(crate) use window::{alpha, flight_ratio};
 pub use window::{window_content, window_drawn, window_elements, window_surfaces};
 

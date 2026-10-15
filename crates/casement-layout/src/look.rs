@@ -45,6 +45,25 @@ pub fn overview_plate(scheme: Scheme) -> FrameColour {
     colour(ColourToken::Raise.value(scheme))
 }
 
+/// How much of the accent the tile preview keeps, out of 255: the plate shows the windows and
+/// the picture under it.
+const TILE_PREVIEW_ALPHA: u8 = 72;
+
+/// The plate a drag to a screen edge shows where the window would tile: the accent, translucent.
+///
+/// ```
+/// use casement_layout::{Scheme, tile_preview_fill};
+///
+/// let plate = tile_preview_fill(Scheme::Light);
+/// assert!(plate.a > 0 && plate.a < 128);
+/// ```
+pub fn tile_preview_fill(scheme: Scheme) -> FrameColour {
+    FrameColour {
+        a: TILE_PREVIEW_ALPHA,
+        ..colour(ColourToken::Accent.value(scheme))
+    }
+}
+
 /// What fills the output behind the halves of a Split View and in the gap between them: the
 /// dark paper in either scheme (the Mac's backdrop stays dark in a light desktop).
 ///
