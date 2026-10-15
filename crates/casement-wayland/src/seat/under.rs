@@ -1,7 +1,7 @@
 //! Which surface is under a point: the pointer focus the scene implies.
 
 use super::SurfaceAt;
-use casement_core::geometry::LogicalPoint;
+use casement_core::geometry::{LogicalPoint, LogicalRect};
 use smithay::desktop::{WindowSurfaceType, utils::under_from_surface_tree};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point};
@@ -13,6 +13,10 @@ pub struct Candidate {
     pub root: WlSurface,
     /// Its top-left.
     pub origin: LogicalPoint,
+    /// The only place the surface takes input, when it has one (a layer surface's placed box:
+    /// a shadow margin drawn outside it renders but is not a hit). `None` leaves the surface's
+    /// own input region to decide.
+    pub clip: Option<LogicalRect>,
 }
 
 /// The surface under `at`: the first of `candidates` (the caller lists them front to back:
@@ -23,6 +27,9 @@ pub struct Candidate {
 pub fn surface_under(candidates: &[Candidate], at: LogicalPoint) -> Option<SurfaceAt> {
     let point: Point<f64, Logical> = Point::from((f64::from(at.x), f64::from(at.y)));
     candidates.iter().find_map(|candidate| {
+        if candidate.clip.is_some_and(|clip| !clip.contains(at)) {
+            return None;
+        }
         let origin: Point<i32, Logical> = Point::from((candidate.origin.x, candidate.origin.y));
         under_from_surface_tree(&candidate.root, point, origin, WindowSurfaceType::ALL).map(
             |(surface, top_left)| SurfaceAt {

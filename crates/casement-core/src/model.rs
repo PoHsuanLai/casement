@@ -69,8 +69,8 @@ pub struct Model {
     minimise_rects: BTreeMap<WindowId, MinimiseTarget>,
     outputs: OutputBook,
     layers: LayerBook,
-    /// The on-demand layer surface that holds the keyboard: the one that mapped with no key
-    /// window, or the one a press last landed on. A window pressed or keyed takes it back.
+    /// The on-demand layer surface that holds the keyboard: the one that last mapped above the
+    /// windows (nothing exclusive or locked holding the keyboard), or the one a press last landed on. A window pressed or keyed takes it back.
     demand: Option<LayerKey>,
     lock: LockState,
     focus: Focus,

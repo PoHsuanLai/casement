@@ -75,10 +75,10 @@ fn an_on_demand_layer_takes_the_keyboard_when_nothing_holds_it() {
     );
 }
 
-/// A window that holds the keyboard keeps it when an on-demand layer maps; a press on the layer
-/// takes it, and a press on the window gives it back.
+/// An on-demand layer takes the keyboard from a window when it maps (the person just opened
+/// it); a press on the window gives it back.
 #[test]
-fn a_press_moves_the_keyboard_between_an_on_demand_layer_and_a_window() {
+fn an_on_demand_layer_takes_the_keyboard_from_a_window_and_a_press_gives_it_back() {
     let (mut fixture, id) = boot();
     let mouse = pointer(&mut fixture);
     let _keyboard = Keyboard::bind(fixture.client(id)).expect("a keyboard");
@@ -95,24 +95,8 @@ fn a_press_moves_the_keyboard_between_an_on_demand_layer_and_a_window() {
     let layer = map(&mut fixture, id, &on_demand());
     assert_eq!(
         keyboard_focus(fixture.client(id)),
-        Some(named(&top.surface)),
-        "a layer that maps over a window that has the keyboard does not take it"
-    );
-    // The layer is in the middle of the output, above the window.
-    fixture
-        .input()
-        .pointer_to(mouse, LogicalPoint { x: 960, y: 540 });
-    fixture
-        .input()
-        .button(mouse, ButtonCode(0x110), Edge::Press);
-    fixture
-        .input()
-        .button(mouse, ButtonCode(0x110), Edge::Release);
-    fixture.pump();
-    assert_eq!(
-        keyboard_focus(fixture.client(id)),
         Some(named(layer.surface())),
-        "a press on the layer gives it the keyboard"
+        "a layer that maps over a window takes the keyboard"
     );
     // The window's corner is outside the layer.
     let rect = super::xdg_shell::rect_of(&fixture, window);

@@ -166,6 +166,7 @@ pub(super) fn stack(state: &State) -> Vec<(Hit, Candidate)> {
                 Candidate {
                     root: lock.wl_surface().clone(),
                     origin: rect.origin,
+                    clip: None,
                 },
             ))
         });
@@ -191,6 +192,7 @@ pub(super) fn stack(state: &State) -> Vec<(Hit, Candidate)> {
                     Candidate {
                         root: entry.root.clone(),
                         origin: area.origin,
+                        clip: Some(area),
                     },
                 ))
             })
@@ -215,6 +217,7 @@ pub(super) fn stack(state: &State) -> Vec<(Hit, Candidate)> {
                             y: placed.at.y.round_logical(),
                         },
                     ),
+                    clip: None,
                 },
             ))
         });
@@ -244,6 +247,7 @@ fn with_popups((hit, root): (Hit, Candidate)) -> Vec<(Hit, Candidate)> {
                 Candidate {
                     root: surface,
                     origin,
+                    clip: None,
                 },
             )
         })

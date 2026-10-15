@@ -1,5 +1,5 @@
 //! Who holds the keyboard: the lock, else a layer surface asking for it exclusively, else an
-//! on-demand layer surface that has it (it mapped with no key window, or was pressed), else the
+//! on-demand layer surface that has it (it mapped above the windows with nothing exclusive holding the keyboard, or was pressed), else the
 //! key window.
 
 use super::Model;
@@ -46,7 +46,7 @@ impl Model {
 
     /// The layer surface that holds the keyboard exclusively: among those above the windows
     /// that ask for it, the highest level, the newest.
-    fn exclusive_layer(&self) -> Option<KeyboardTarget> {
+    pub(super) fn exclusive_layer(&self) -> Option<KeyboardTarget> {
         self.layers
             .iter()
             .filter(|(_, spec)| spec.keyboard == KeyboardInteractivity::Exclusive)

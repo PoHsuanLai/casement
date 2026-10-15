@@ -10,7 +10,10 @@ use casement_core::layer::{
     ShellRoleTag,
 };
 
-use casement_core::{Cause, Effect, Event, KeyboardTarget, LayerKey, OutputKey, WindowId};
+use casement_core::lock::LockEvent;
+use casement_core::{
+    Cause, ClientKey, Effect, Event, KeyboardTarget, LayerKey, OutputKey, WindowId,
+};
 use support::driver::{Op, Run, assert_same_world, last, map, plug, run, run_from, unplug};
 use support::{headless, proven};
 
@@ -446,4 +449,137 @@ fn a_layer_is_told_its_size_again_when_its_output_changes() {
         })],
     );
     assert!(last(&rotated).contains(&configured(1, 1080, 0)));
+}
+
+/// One step of a keyboard ordering case.
+enum Step {
+    /// An op through the driver.
+    Do(Op),
+    /// A press on layer `n`.
+    Click(u64),
+}
+
+fn panel(level: LayerLevel, keyboard: KeyboardInteractivity) -> LayerSpec {
+    LayerSpec {
+        level,
+        keyboard,
+        ..bar("HEADLESS-1", ExclusiveZone::Respect)
+    }
+}
+
+/// A panel a person just opened takes the keyboard when it maps, over a key window, unless an
+/// exclusive layer or the lock holds it; it gives it back to the key window when it unmaps.
+#[test]
+fn an_on_demand_panel_takes_the_keyboard_on_mapping_and_gives_it_back() {
+    let mail = proven("org.quire.Mail");
+    let on_demand = |level| panel(level, KeyboardInteractivity::OnDemand);
+    let exclusive = panel(LayerLevel::Overlay, KeyboardInteractivity::Exclusive);
+    let window = KeyboardTarget::Window(WindowId(1));
+    let layer = |n| KeyboardTarget::Layer(LayerKey(n));
+    let cases: Vec<(&str, Vec<Step>, KeyboardTarget)> = vec![
+        (
+            "maps over a key window and takes the keyboard",
+            vec![Step::Do(mapped(1, on_demand(LayerLevel::Top)))],
+            layer(1),
+        ),
+        (
+            "unmaps and the key window has it back",
+            vec![
+                Step::Do(mapped(1, on_demand(LayerLevel::Top))),
+                Step::Do(unmapped(1)),
+            ],
+            window,
+        ),
+        (
+            "a newer panel takes it, and its unmap returns it to the key window",
+            vec![
+                Step::Do(mapped(1, on_demand(LayerLevel::Top))),
+                Step::Do(mapped(2, on_demand(LayerLevel::Overlay))),
+                Step::Do(unmapped(2)),
+            ],
+            window,
+        ),
+        (
+            "a wallpaper that asks on demand does not steal it",
+            vec![Step::Do(mapped(1, on_demand(LayerLevel::Background)))],
+            window,
+        ),
+        (
+            "a layer that asks for none does not take it",
+            vec![Step::Do(mapped(
+                1,
+                panel(LayerLevel::Top, KeyboardInteractivity::None),
+            ))],
+            window,
+        ),
+        (
+            "an exclusive layer already holding it keeps it",
+            vec![
+                Step::Do(mapped(1, exclusive.clone())),
+                Step::Do(mapped(2, on_demand(LayerLevel::Top))),
+            ],
+            layer(1),
+        ),
+        (
+            "an exclusive layer that maps later takes it from the panel",
+            vec![
+                Step::Do(mapped(1, on_demand(LayerLevel::Top))),
+                Step::Do(mapped(2, exclusive.clone())),
+            ],
+            layer(2),
+        ),
+        (
+            "the panel has it again when the exclusive layer unmaps",
+            vec![
+                Step::Do(mapped(1, on_demand(LayerLevel::Top))),
+                Step::Do(mapped(2, exclusive)),
+                Step::Do(unmapped(2)),
+            ],
+            layer(1),
+        ),
+        (
+            "a panel that maps under the lock does not take it",
+            vec![
+                Step::Do(Op::Event(Event::Lock(LockEvent::Requested {
+                    client: ClientKey(7),
+                }))),
+                Step::Do(mapped(1, on_demand(LayerLevel::Top))),
+                Step::Do(Op::Event(Event::Lock(LockEvent::Unlocked))),
+            ],
+            window,
+        ),
+        (
+            "a click on a panel that never took it gives it the keyboard",
+            vec![
+                Step::Do(mapped(1, on_demand(LayerLevel::Background))),
+                Step::Click(1),
+            ],
+            layer(1),
+        ),
+        (
+            "a click on a layer that asks for none changes nothing",
+            vec![
+                Step::Do(mapped(
+                    1,
+                    panel(LayerLevel::Top, KeyboardInteractivity::None),
+                )),
+                Step::Click(1),
+            ],
+            window,
+        ),
+    ];
+    for (name, steps, want) in cases {
+        let base = run(vec![plug("HEADLESS-1"), map(1, &mail, TokenCheck::Valid)]);
+        let model = steps
+            .into_iter()
+            .fold(base.model, |model, step| match step {
+                Step::Do(op) => run_from(model, vec![op]).model,
+                Step::Click(n) => {
+                    let at = model.now().after(std::time::Duration::from_millis(1));
+                    let (model, _) = model.press_layer(LayerKey(n), at);
+                    model
+                }
+            });
+        assert_eq!(model.keyboard_target(), want, "{name}");
+    }
 }

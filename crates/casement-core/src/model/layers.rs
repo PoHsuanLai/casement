@@ -6,24 +6,32 @@ use crate::cause::Cause;
 use crate::effect::Effect;
 use crate::geometry::{LogicalPoint, LogicalSize};
 use crate::ids::{LayerKey, OutputKey};
-use crate::layer::{ExclusiveZone, KeyboardInteractivity, LayerSpec};
+use crate::layer::{ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerSpec};
 use crate::lock::LockState;
 use crate::time::Mono;
 use std::collections::BTreeMap;
 
 impl Model {
     /// A layer surface mapped on a plugged output. It is told its size, and the windows are
-    /// laid out again when it reserves room. A surface on an output that is not plugged is
+    /// laid out again when it reserves room. A panel above the windows that takes the keyboard
+    /// on demand has it from the moment it maps (the person just opened it and expects to type
+    /// or press Escape), unless the session is locked or an exclusive layer holds it; when it
+    /// unmaps the key window has it back. A surface on an output that is not plugged is
     /// not mapped.
     pub(super) fn map_layer(self, layer: LayerKey, spec: LayerSpec) -> Moved {
         if !self.outputs.0.contains_key(&spec.output) {
             return Moved::of(self);
         }
         let takes_keyboard = spec.keyboard == KeyboardInteractivity::OnDemand
-            && self.focus.key.is_none()
-            && self.demand.is_none();
+            && matches!(spec.level, LayerLevel::Top | LayerLevel::Overlay)
+            && matches!(self.lock, LockState::Unlocked)
+            && self.exclusive_layer().is_none();
         let model = Model {
-            demand: takes_keyboard.then_some(layer).or(self.demand),
+            demand: if takes_keyboard {
+                Some(layer)
+            } else {
+                self.demand
+            },
             ..self
         };
         model.with_layer(layer, spec)
@@ -77,6 +85,7 @@ impl Model {
         let sizes = self.sizes_on(&outputs);
         let model = Model {
             layers: self.layers.without_layer(&layer),
+            demand: self.demand.filter(|held| *held != layer),
             ..self
         };
         Moved::of(model)
