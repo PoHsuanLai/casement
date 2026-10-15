@@ -3,17 +3,21 @@
 
 use crate::taffy_bridge::{SplitRects, split_rects};
 use crate::{
-    Arrangement, ConfigureNeed, LayoutReport, OutputSpec, SpaceSpec, WindowSpec, WindowTarget,
+    Arrangement, BackdropTarget, ConfigureNeed, DividerTarget, LayoutReport, OutputSpec, SpaceSpec,
+    WindowSpec, WindowTarget,
 };
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::space::SplitPair;
+use casement_core::window::MaxSize;
 use ds_core::vocab::Fraction;
 
 /// The width of the strip between the halves, in logical pixels.
 pub(super) const DIVIDER_WIDTH: u32 = 8;
 
-/// Adds the targets of `pair`'s two windows. Both are asked for their half's size, as a
-/// full-screen window is. A pair with a window the Space does not list gets nothing.
+/// Adds the targets of `pair`'s two windows, the divider strip between them and the backdrop
+/// that shows in the strip and round a window centred in its half (its maximum size is
+/// narrower than the half). Both windows are asked for their size (the half's, or their maximum), as a full-screen window
+/// is. A pair with a window the Space does not list gets nothing.
 pub(super) fn arrange_split(
     output: &OutputSpec,
     space: &SpaceSpec,
@@ -33,11 +37,53 @@ pub(super) fn arrange_split(
         trailing.limits.min.w,
     );
     let rects = split_rects(area, lead_w, gap).unwrap_or_else(|| by_arithmetic(area, lead_w, gap));
-    for (spec, rect) in [(leading, rects.leading), (trailing, rects.trailing)] {
-        let (target, report) = target(spec, output, rect);
+    into.dividers.push(DividerTarget {
+        space: space.space.clone(),
+        output: output.output.clone(),
+        leading: pair.leading,
+        trailing: pair.trailing,
+        strip: rects.divider,
+        span: area,
+        min_leading: leading.limits.min.w,
+        min_trailing: trailing.limits.min.w,
+    });
+    for (spec, half) in [(leading, rects.leading), (trailing, rects.trailing)] {
+        let (target, report) = target(spec, output, within_max(half, spec.limits.max));
         into.windows.push(target);
         into.reports.extend(report);
     }
+    into.backdrops.push(BackdropTarget {
+        space: space.space.clone(),
+        output: output.output.clone(),
+    });
+}
+
+/// The rectangle a window takes in `half`: the half itself, or when its maximum size is
+/// smaller on a side, that size centred in the half (as the Mac centres it on a backdrop).
+/// A zero side of the maximum means none.
+pub(super) fn within_max(half: LogicalRect, max: MaxSize) -> LogicalRect {
+    let MaxSize::Bounded(max) = max else {
+        return half;
+    };
+    let fit = |room: u32, most: u32| match most {
+        0 => room,
+        most => room.min(most),
+    };
+    let size = LogicalSize {
+        w: fit(half.size.w, max.w),
+        h: fit(half.size.h, max.h),
+    };
+    let beside = |from: i32, room: u32, used: u32| {
+        let x = i64::from(from) + i64::from((room - used) / 2);
+        i32::try_from(x).unwrap_or(i32::MAX)
+    };
+    LogicalRect::new(
+        LogicalPoint {
+            x: beside(half.origin.x, half.size.w, size.w),
+            y: beside(half.origin.y, half.size.h, size.h),
+        },
+        size,
+    )
 }
 
 /// The widths of the two halves out of `room` (the width without the divider): the leading one

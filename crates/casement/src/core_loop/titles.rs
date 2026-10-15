@@ -10,7 +10,8 @@ use casement_core::window::{FrameMetrics, FrameStyle};
 use casement_layout::frame_metrics;
 use casement_motion::OutputFrame;
 use casement_render::{
-    FlightDraw, OutputView, OverviewDraw, TitleDraw, scaled_content, window_content, window_drawn,
+    ClosingFrame, FlightDraw, OutputView, OverviewDraw, TitleDraw, closing_content,
+    scaled_content, window_content, window_drawn,
 };
 use std::collections::BTreeMap;
 
@@ -71,6 +72,56 @@ pub(super) fn of(
                 view.scale,
                 *scheme,
                 activity_of(window),
+            );
+            let pixels = raster.render(&key).ok()?;
+            Some((
+                placed.window,
+                TitleDraw {
+                    id: pixels.id,
+                    width: pixels.width,
+                    height: pixels.height,
+                    rgba: pixels.rgba,
+                },
+            ))
+        })
+        .collect()
+}
+
+/// The title pixels for the closing windows on `frame` (`closing`), made from the title the
+/// loop kept, for the titlebar at the size the window has as it shrinks. A window whose title
+/// cannot be drawn has none.
+pub(super) fn of_closing(
+    state: &mut State,
+    frame: &OutputFrame,
+    view: &OutputView,
+    closing: &BTreeMap<WindowId, ClosingFrame>,
+) -> BTreeMap<WindowId, TitleDraw> {
+    if closing.is_empty() {
+        return BTreeMap::new();
+    }
+    let RenderState {
+        titles,
+        scheme,
+        closing: kept,
+        ..
+    } = &mut state.render;
+    let raster = titles.get_or_insert_with(|| TitleRaster::system(margins(&frame_metrics())));
+    frame
+        .windows
+        .iter()
+        .filter_map(|placed| {
+            let style = &closing.get(&placed.window)?.style;
+            let note = kept.get(&placed.window)?;
+            let bar = style
+                .around(closing_content(placed.at, placed.size))
+                .titlebar();
+            let key = TitleKey::new(
+                &note.title,
+                bar.size.w,
+                bar.size.h,
+                view.scale,
+                *scheme,
+                note.activity,
             );
             let pixels = raster.render(&key).ok()?;
             Some((

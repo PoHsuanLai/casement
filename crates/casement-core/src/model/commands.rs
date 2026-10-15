@@ -140,6 +140,10 @@ impl Model {
                 Some(window) => self.place(&window, target),
                 None => Moved::of(self),
             },
+            DesktopCommand::SplitTile(side) => match key {
+                Some(window) => self.split_view(&window, side),
+                None => Moved::of(self),
+            },
         }
     }
 

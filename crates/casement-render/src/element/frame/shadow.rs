@@ -8,6 +8,10 @@
 //! made by a separable Gaussian over its exact coverage, so the blur follows the rounded shape
 //! and not a square. An edge strip is the blurred straight edge, a one-dimensional profile that
 //! is constant along the edge. Tiles are made at the output's scale, so they are sharp.
+//!
+//! The shadow is cut out under the window: where the window's rounded shape is, the tiles are
+//! transparent (`punch`), so a translucent window does not show its own shadow through itself.
+//! A window too small for the tiles to meet has one raster of its own size (`whole.rs`).
 
 use super::raster::{Px, Raster, bytes, cover, over};
 use super::slices::{Corner, EDGE_DEPTH, MARGIN, Side};
@@ -92,13 +96,15 @@ fn corner_local(
         .zip(offsets)
         .map(|(layer, off)| field(layer, *off, radius, per, side))
         .collect();
+    let at = |i: usize| (i as f32 + 0.5) / per - MARGIN as f32;
     let argb = (0..side * side)
         .flat_map(|i| {
             let mut px: Px = [0.0; 4];
             for (layer, f) in layers.iter().zip(&fields) {
                 over(&mut px, layer.colour, f[i]);
             }
-            bytes(px)
+            let inside = distance((at(i % side), at(i / side)), (0.0, 0.0), radius as f32);
+            bytes(punch(px, inside, per))
         })
         .collect();
     Raster {
@@ -154,38 +160,59 @@ fn kernel(sigma: f32, pad: usize) -> Vec<f32> {
 /// rounded corner, blurred along rows and then along columns. Only the tile and the rows the
 /// blur reads from are ever held, never a window.
 fn field(layer: &ShadowLayer, off: (i32, i32), radius: u32, per: f32, side: usize) -> Vec<f32> {
-    let sigma_px = sigma(layer) * per;
-    let pad = (3.0 * sigma_px).ceil() as usize;
-    let weights = kernel(sigma_px, pad);
     let grow = layer.spread as f32;
     let edge = (off.0 as f32 - grow, off.1 as f32 - grow);
     let round = (radius as f32 + grow).max(0.0);
-    let span = side + 2 * pad;
+    blurred(layer, (side, side), per, |p| distance(p, edge, round))
+}
+
+/// One layer's alpha over a `cols` by `rows` grid whose top-left is `MARGIN` logical pixels
+/// above and left of the outline's corner: the shape `dist` says (a signed distance from a
+/// point in logical pixels from the outline's corner, negative inside), blurred along rows and
+/// then along columns. The coverage is computed over a margin of three sigma round the grid so
+/// the blur has no edge.
+fn blurred(
+    layer: &ShadowLayer,
+    (cols, rows): (usize, usize),
+    per: f32,
+    dist: impl Fn((f32, f32)) -> f32,
+) -> Vec<f32> {
+    let sigma_px = sigma(layer) * per;
+    let pad = (3.0 * sigma_px).ceil() as usize;
+    let weights = kernel(sigma_px, pad);
+    let (span_x, span_y) = (cols + 2 * pad, rows + 2 * pad);
     let at = |i: usize| (i as f32 - pad as f32 + 0.5) / per - MARGIN as f32;
-    let mut across = vec![0.0f32; span * side];
-    for r in 0..span {
+    let mut across = vec![0.0f32; span_y * cols];
+    for r in 0..span_y {
         let v = at(r);
-        let row: Vec<f32> = (0..span)
-            .map(|c| cover(distance((at(c), v), edge, round), per))
-            .collect();
-        for x in 0..side {
-            across[r * side + x] = row[x..x + weights.len()]
+        let row: Vec<f32> = (0..span_x).map(|c| cover(dist((at(c), v)), per)).collect();
+        for x in 0..cols {
+            across[r * cols + x] = row[x..x + weights.len()]
                 .iter()
                 .zip(&weights)
                 .map(|(a, b)| a * b)
                 .sum();
         }
     }
-    let mut out = vec![0.0f32; side * side];
-    for y in 0..side {
+    let mut out = vec![0.0f32; cols * rows];
+    for y in 0..rows {
         for (k, w) in weights.iter().enumerate() {
-            let source = &across[(y + k) * side..][..side];
-            for (o, s) in out[y * side..][..side].iter_mut().zip(source) {
+            let source = &across[(y + k) * cols..][..cols];
+            for (o, s) in out[y * cols..][..cols].iter_mut().zip(source) {
                 *o += s * w;
             }
         }
     }
     out
+}
+
+/// `px` with the window's shape cut out of it: `inside` is the distance in logical pixels from
+/// the pixel's centre to the window's edge (negative under the window). The cut starts half a
+/// device pixel inside the edge, so the window's own anti-aliased edge pixel still has its
+/// shadow under it, and is complete one device pixel in.
+fn punch(px: Px, inside: f32, per: f32) -> Px {
+    let keep = 1.0 - cover(inside + 0.5 / per, per);
+    px.map(|v| v * keep)
 }
 
 /// The error function (Abramowitz and Stegun 7.1.26, error under 1.5e-7).
@@ -230,7 +257,7 @@ fn strip(layers: &[ShadowLayer], side: Side, per: f32) -> Raster {
                 let low = (along(layer, side) - layer.spread) as f32;
                 over(&mut px, layer.colour, half(t, low, sigma(layer)));
             }
-            bytes(px)
+            bytes(punch(px, -t, per))
         })
         .collect();
     match side {
@@ -246,6 +273,10 @@ fn strip(layers: &[ShadowLayer], side: Side, per: f32) -> Raster {
         },
     }
 }
+
+mod whole;
+
+pub(crate) use whole::{full, wanted};
 
 #[cfg(test)]
 mod tests;

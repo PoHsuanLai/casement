@@ -15,7 +15,7 @@ use casement_core::geometry::LogicalPoint;
 use casement_core::gpu::GpuChoice;
 use casement_core::settings::CasementSettings;
 use casement_core::space::SpaceSeed;
-use casement_core::{IdMint, Model, OutputKey, OutputName};
+use casement_core::{IdMint, Model, OutputKey, OutputName, WindowId};
 use casement_layout::{Arrangement, LayoutKnobs, RustScene};
 use casement_motion::MotionBook;
 use casement_render::{ChromeLayer, CursorDraw, CursorShape, TextureBook};
@@ -104,6 +104,10 @@ pub struct RenderState {
     pub frame_faults: RepeatGate<OutputName>,
     /// The server-side frame part the pointer is on, if any.
     pub(crate) frame_over: Option<crate::core_loop::FrameOver>,
+    /// The frame of each framed window as it last was, to draw once the window has closed.
+    pub(crate) closing: BTreeMap<WindowId, crate::core_loop::Kept>,
+    /// The pointer and a Split View divider: over its strip, or dragging it.
+    pub(crate) divider: crate::core_loop::DividerPointer,
     /// The last titlebar press, for the double click.
     pub clicks: casement_core::window::ClickTracker,
     /// The traffic light held down, if any (a light acts on release).
@@ -324,6 +328,8 @@ impl State {
             presence: crate::core_loop::Presence::default(),
             frame_faults: RepeatGate::new(FAULT_LOG_EVERY),
             frame_over: None,
+            closing: BTreeMap::new(),
+            divider: crate::core_loop::DividerPointer::default(),
             clicks: casement_core::window::ClickTracker::default(),
             light_arm: casement_core::window::LightArm::default(),
             light_dwell: casement_core::window::Dwell::default(),

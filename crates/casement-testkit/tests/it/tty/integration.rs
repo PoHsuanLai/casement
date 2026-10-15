@@ -429,6 +429,64 @@ fn a_mouse_and_a_touchpad_both_start_with_natural_scrolling() {
     );
 }
 
+/// A change in the settings file reaches the devices that are already there, each by its own
+/// profile, and not a keyboard; an unrelated change tells nobody; a device that left is not told.
+#[test]
+fn a_settings_change_reaches_a_device_already_present() {
+    use casement::config::{CasementDoc, PointerSection, TouchpadSection};
+    use casement_core::settings::Enabled;
+    let mut seat = seat_with(two_monitors(), FixtureSpec::desktop());
+    let (mouse, touchpad, gone) = (DeviceId(3), DeviceId(4), DeviceId(5));
+    seat.world.input.plug(mouse, DeviceClass::Pointer, "mouse");
+    seat.world
+        .input
+        .plug(touchpad, DeviceClass::Touchpad, "touchpad");
+    seat.world
+        .input
+        .plug(gone, DeviceClass::Pointer, "other mouse");
+    seat.world
+        .input
+        .plug(KEYBOARD, DeviceClass::Keyboard, "keyboard");
+    seat.fixture.pump();
+    seat.world.input.unplug(gone);
+    seat.fixture.pump();
+    let before = seat.world.input.applied().len();
+
+    let doc = CasementDoc {
+        pointer: PointerSection {
+            natural_scroll: Enabled::Off,
+            ..PointerSection::default()
+        },
+        ..CasementDoc::default()
+    };
+    seat.fixture.settings_file_changed(&doc);
+    let applied = seat.world.input.applied();
+    assert_eq!(applied.len(), before + 1, "only the mouse is told");
+    let (device, settings) = applied.last().expect("an application");
+    assert_eq!(*device, mouse);
+    assert_eq!(settings.natural_scroll, Enabled::Off);
+
+    seat.fixture.settings_file_changed(&doc);
+    assert_eq!(
+        seat.world.input.applied().len(),
+        before + 1,
+        "the same file again changes nothing"
+    );
+
+    let doc = CasementDoc {
+        touchpad: TouchpadSection {
+            tap: Enabled::Off,
+            ..TouchpadSection::default()
+        },
+        ..doc
+    };
+    seat.fixture.settings_file_changed(&doc);
+    let applied = seat.world.input.applied();
+    assert_eq!(applied.len(), before + 2, "then only the touchpad");
+    assert_eq!(applied.last().map(|(device, _)| *device), Some(touchpad));
+    assert_eq!(applied.last().map(|(_, s)| s.tap), Some(Enabled::Off));
+}
+
 #[test]
 fn input_devices_are_configured_and_their_keys_reach_the_bindings() {
     let mut spec = FixtureSpec::desktop();

@@ -17,6 +17,11 @@ impl<E> SharedElement<E> {
     pub fn new(element: E) -> SharedElement<E> {
         SharedElement(Rc::new(element))
     }
+
+    /// The element all the clones share.
+    pub fn get(&self) -> &E {
+        &self.0
+    }
 }
 
 impl<E> Clone for SharedElement<E> {

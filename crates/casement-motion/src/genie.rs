@@ -18,8 +18,18 @@
 //! assert_eq!(at_rest[0].dst.y, 100.0);
 //! ```
 
-/// How many strips a window is cut into.
+/// How many strips a window is cut into where the curve is gentle.
 pub const STRIPS: usize = 48;
+
+/// The most strips a window is cut into where the curve is steep (see [`strips_fine`]).
+pub const MAX_STRIPS: usize = 120;
+
+/// The most pieces one base strip is cut into, so no piece is thinner than a base strip over this.
+const MAX_SPLIT: usize = 6;
+
+/// How far the stepped silhouette may stray from the curve, in logical pixels, when the budget
+/// of [`MAX_STRIPS`] allows.
+pub const TOLERANCE: f64 = 1.0;
 
 /// How much later the top of the window leaves than the bottom, as a share of the whole flight.
 const LAG: f64 = 0.6;
@@ -68,26 +78,95 @@ struct Row {
 /// `tile`; held to that range), top strip first. At least one strip.
 pub fn strips(window: RectF, tile: RectF, progress: f64, count: usize) -> Vec<Strip> {
     let count = count.max(1);
+    let shares: Vec<f64> = (0..=count)
+        .map(|index| index as f64 / count as f64)
+        .collect();
+    strips_at(window, tile, progress, &shares)
+}
+
+/// The strips of `strips(.., base)`, with the steep ones cut finer so the stepped silhouette
+/// stays within `tolerance` logical pixels of the curve where the budget allows.
+///
+/// A strip is a rectangle, and the curve through it is slanted: the edge of a strip is off the
+/// curve by up to half the distance the curve's edge moves across the strip. So a base strip
+/// whose rows' edges are `jump` apart is cut in `ceil(jump / (2 * tolerance))` pieces, at
+/// equal heights. When the pieces together would pass `limit` strips, the extra cuts are shared
+/// out in proportion to what each strip wanted. At rest nothing is cut: exactly `base` strips.
+///
+/// ```
+/// use casement_motion::genie::{RectF, STRIPS, strips_fine};
+///
+/// let window = RectF { x: 100.0, y: 100.0, w: 400.0, h: 300.0 };
+/// let tile = RectF { x: 900.0, y: 1040.0, w: 48.0, h: 30.0 };
+/// assert_eq!(strips_fine(window, tile, 0.0, STRIPS, 1.0, 120).len(), STRIPS);
+/// assert!(strips_fine(window, tile, 0.5, STRIPS, 1.0, 120).len() > STRIPS);
+/// ```
+pub fn strips_fine(
+    window: RectF,
+    tile: RectF,
+    progress: f64,
+    base: usize,
+    tolerance: f64,
+    limit: usize,
+) -> Vec<Strip> {
+    let base = base.max(1);
     let progress = progress.clamp(0.0, 1.0);
-    let share = |index: usize| index as f64 / count as f64;
+    let step = tolerance.max(0.25) * 2.0;
+    let edges: Vec<f64> = (0..=base).map(|index| index as f64 / base as f64).collect();
+    let sides = |v: f64| {
+        let row = row_at(window, tile, progress, v);
+        (row.centre - row.width / 2.0, row.centre + row.width / 2.0)
+    };
+    let wanted: Vec<usize> = edges
+        .windows(2)
+        .map(|pair| {
+            let (above, below) = (sides(pair[0]), sides(pair[1]));
+            let jump = (below.0 - above.0).abs().max((below.1 - above.1).abs());
+            ((jump / step).ceil() as usize).clamp(1, MAX_SPLIT)
+        })
+        .collect();
+    let extra: usize = wanted.iter().map(|n| n - 1).sum();
+    let budget = limit.saturating_sub(base);
+    let pieces: Vec<usize> = wanted
+        .iter()
+        .map(|n| match extra > budget {
+            true => 1 + (n - 1) * budget / extra,
+            false => *n,
+        })
+        .collect();
+    let shares: Vec<f64> = edges
+        .windows(2)
+        .zip(&pieces)
+        .flat_map(|(pair, count)| {
+            (0..*count).map(move |at| pair[0] + (pair[1] - pair[0]) * at as f64 / *count as f64)
+        })
+        .chain([1.0])
+        .collect();
+    strips_at(window, tile, progress, &shares)
+}
+
+/// The strips between consecutive `shares` (rows as shares of the height, rising from 0 to 1).
+fn strips_at(window: RectF, tile: RectF, progress: f64, shares: &[f64]) -> Vec<Strip> {
+    let progress = progress.clamp(0.0, 1.0);
     let mut floor = f64::NEG_INFINITY;
-    let rows: Vec<Row> = (0..=count)
-        .map(|index| {
-            let row = row_at(window, tile, progress, share(index));
+    let rows: Vec<Row> = shares
+        .iter()
+        .map(|share| {
+            let row = row_at(window, tile, progress, *share);
             // A tile above the window's rows would fold the window over itself; rows never go up.
             floor = floor.max(row.y);
             Row { y: floor, ..row }
         })
         .collect();
     rows.windows(2)
-        .zip(0..count)
-        .map(|(pair, index)| {
+        .zip(shares.windows(2))
+        .map(|(pair, share)| {
             let (above, below) = (pair[0], pair[1]);
             let width = (above.width + below.width) / 2.0;
             let centre = (above.centre + below.centre) / 2.0;
             Strip {
-                top: share(index),
-                bottom: share(index + 1),
+                top: share[0],
+                bottom: share[1],
                 dst: RectF {
                     x: centre - width / 2.0,
                     y: above.y,
@@ -205,6 +284,70 @@ mod tests {
             let all = strips(WINDOW, above, f64::from(step) / 20.0, STRIPS);
             assert!(all.iter().all(|strip| strip.dst.h >= 0.0));
             assert!(all.windows(2).all(|pair| pair[1].dst.y >= pair[0].dst.y));
+        }
+    }
+
+    #[test]
+    fn a_window_at_rest_is_cut_into_exactly_the_base_strips() {
+        let all = strips_fine(WINDOW, TILE, 0.0, STRIPS, TOLERANCE, MAX_STRIPS);
+        assert_eq!(all.len(), STRIPS);
+        assert_eq!(all, strips(WINDOW, TILE, 0.0, STRIPS));
+    }
+
+    #[test]
+    fn a_limit_of_the_base_count_is_the_plain_strips() {
+        for step in 0..=10 {
+            let progress = f64::from(step) / 10.0;
+            let fine = strips_fine(WINDOW, TILE, progress, STRIPS, TOLERANCE, STRIPS);
+            assert_eq!(fine, strips(WINDOW, TILE, progress, STRIPS), "p {progress}");
+        }
+    }
+
+    #[test]
+    fn the_steep_part_is_cut_finer_within_the_limit() {
+        for step in 1..20 {
+            let progress = f64::from(step) / 20.0;
+            let all = strips_fine(WINDOW, TILE, progress, STRIPS, TOLERANCE, MAX_STRIPS);
+            assert!(
+                all.len() >= STRIPS && all.len() <= MAX_STRIPS,
+                "p {progress}: {}",
+                all.len()
+            );
+            for pair in all.windows(2) {
+                assert!(
+                    close(pair[0].dst.y + pair[0].dst.h, pair[1].dst.y),
+                    "p {progress}"
+                );
+                assert!(close(pair[0].bottom, pair[1].top), "p {progress}");
+            }
+            assert!(close(all[0].top, 0.0) && close(all[all.len() - 1].bottom, 1.0));
+        }
+        let mid = strips_fine(WINDOW, TILE, 0.5, STRIPS, TOLERANCE, MAX_STRIPS);
+        assert!(
+            mid.len() > STRIPS,
+            "halfway the curve is steep: {}",
+            mid.len()
+        );
+    }
+
+    #[test]
+    fn with_room_enough_each_strip_edge_is_within_the_tolerance_of_its_rows() {
+        let all = strips_fine(WINDOW, TILE, 0.5, STRIPS, 2.0, 100_000);
+        for strip in &all {
+            let row = |v: f64| {
+                let went = reach(v, 0.5);
+                let width = 400.0 + (48.0 - 400.0) * went;
+                let centre = 300.0 + (924.0 - 300.0) * went;
+                (centre - width / 2.0, centre + width / 2.0)
+            };
+            let (above, below) = (row(strip.top), row(strip.bottom));
+            let left = strip.dst.x;
+            let right = strip.dst.x + strip.dst.w;
+            for (edge, ends) in [(left, (above.0, below.0)), (right, (above.1, below.1))] {
+                let off = (edge - ends.0).abs().max((edge - ends.1).abs());
+                // The cut is at equal heights, the curve is not linear in them: a little slack.
+                assert!(off <= 2.5, "an edge is {off} px off its rows");
+            }
         }
     }
 

@@ -9,10 +9,13 @@
 //!                                                          mission_control
 //! ["desktop", "switch_space", "next"]                      previous, next or the Space's number
 //! ["desktop", "place", "left"]                             a `PlaceTarget` word
+//! ["desktop", "split_tile", "left"]                        left or right: Tile Window to Left / Right
+//!                                                          of Screen (bound to no chord by default)
 //! ```
 
 use casement_core::CoreError;
 use casement_core::input::{Argv, BindingAction, DbusCall, DesktopCommand, SpaceStep};
+use casement_core::window::SplitSide;
 use casement_protocols::vocab::PlaceTarget;
 use serde::{Deserialize, Serialize};
 
@@ -35,6 +38,10 @@ const PLACE_TARGETS: [(&str, PlaceTarget); 11] = [
     ("centre", PlaceTarget::Centre),
     ("restore", PlaceTarget::Restore),
 ];
+
+/// The Split View sides and the word each is written as.
+const SPLIT_SIDES: [(&str, SplitSide); 2] =
+    [("left", SplitSide::Left), ("right", SplitSide::Right)];
 
 /// The unit commands and the word each is written as.
 const UNIT_COMMANDS: [(&str, DesktopCommand); 7] = [
@@ -111,6 +118,10 @@ fn desktop(words: &[&str]) -> Option<DesktopCommand> {
             .iter()
             .find(|(name, _)| name == word)
             .map(|(_, target)| DesktopCommand::Place(*target)),
+        ["split_tile", word] => SPLIT_SIDES
+            .iter()
+            .find(|(name, _)| name == word)
+            .map(|(_, side)| DesktopCommand::SplitTile(*side)),
         [word] => UNIT_COMMANDS
             .iter()
             .find(|(name, _)| name == word)
@@ -137,6 +148,7 @@ fn command_words(command: DesktopCommand) -> Vec<String> {
     match command {
         DesktopCommand::SwitchSpace(step) => vec!["switch_space".to_owned(), step_word(step)],
         DesktopCommand::Place(target) => vec!["place".to_owned(), target_word(target)],
+        DesktopCommand::SplitTile(side) => vec!["split_tile".to_owned(), side_word(side)],
         other => unit(other).unwrap_or_default(),
     }
 }
@@ -153,6 +165,14 @@ fn target_word(target: PlaceTarget) -> String {
     PLACE_TARGETS
         .iter()
         .find(|(_, known)| *known == target)
+        .map(|(name, _)| (*name).to_owned())
+        .unwrap_or_default()
+}
+
+fn side_word(side: SplitSide) -> String {
+    SPLIT_SIDES
+        .iter()
+        .find(|(_, known)| *known == side)
         .map(|(name, _)| (*name).to_owned())
         .unwrap_or_default()
 }

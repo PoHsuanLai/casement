@@ -90,7 +90,7 @@ fn map_layer(fixture: &mut Fixture, id: ClientId, ask: &LayerAsk) -> LayerSurfac
 }
 
 /// A shell connection with `quire_shell_v1` bound.
-fn shell_client(fixture: &mut Fixture) -> (ClientId, ShellHandle) {
+pub(super) fn shell_client(fixture: &mut Fixture) -> (ClientId, ShellHandle) {
     let id = fixture.connect(ConnectionRole::Shell);
     let shell = ShellHandle::bind(fixture.client(id), 1);
     fixture.pump();

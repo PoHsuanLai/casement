@@ -79,6 +79,17 @@ pub struct SplitPair {
     pub divider: Fraction,
 }
 
+impl SplitPair {
+    /// The nearest to an edge the divider may be dragged, as the leading window's share in
+    /// thousandths: the least, then the most.
+    ///
+    /// ```
+    /// use casement_core::space::SplitPair;
+    /// assert_eq!(SplitPair::NEAREST, (200, 800));
+    /// ```
+    pub const NEAREST: (u16, u16) = (200, 800);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

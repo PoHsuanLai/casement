@@ -4,7 +4,8 @@
 
 use casement::cli::ConfigHome;
 use casement::config::{
-    ActionWords, BindingsSection, CasementDoc, load, schema, to_core, write_schema,
+    ActionWords, BindingsSection, CasementDoc, Stamped, Version, load, schema, stamp_version,
+    to_core, write_schema,
 };
 use casement_core::input::{
     Argv, Binding, BindingAction, Bindings, Chord, DbusCall, DesktopCommand, SpaceStep,
@@ -14,6 +15,7 @@ use casement_core::settings::{
     AccelProfile, CasementSettings, Enabled, FirstClick, MinimiseEffect, RepeatRate,
     TitleDoubleClick,
 };
+use casement_core::window::SplitSide;
 use casement_protocols::vocab::PlaceTarget;
 use ds_core::geometry::scale::Scale;
 use ds_core::vocab::Fraction;
@@ -47,8 +49,8 @@ fn the_defaults_come_from() {
             let doc = load(&ConfigHome::At(home.path().to_path_buf())).expect("load");
             assert_eq!(
                 doc,
-                CasementDoc::default(),
-                "a missing document is the default one"
+                CasementDoc::default().migrated(),
+                "a missing document is the default one, at the current version"
             );
             to_core(&doc)
         }),
@@ -325,6 +327,8 @@ fn every_kind_of_binding_survives_the_document() {
         BindingAction::Desktop(DesktopCommand::Place(PlaceTarget::TopLeft)),
         BindingAction::Desktop(DesktopCommand::Place(PlaceTarget::Fill)),
         BindingAction::Desktop(DesktopCommand::Place(PlaceTarget::Restore)),
+        BindingAction::Desktop(DesktopCommand::SplitTile(SplitSide::Left)),
+        BindingAction::Desktop(DesktopCommand::SplitTile(SplitSide::Right)),
     ];
     let keys = "abcdefghijklmnopqrstuvwxyz".chars();
     let table: BTreeMap<String, ActionWords> = keys
@@ -337,7 +341,7 @@ fn every_kind_of_binding_survives_the_document() {
     };
     let (_dir, home) = home_with(&toml::to_string(&doc).expect("serialises"));
     let loaded = load(&home).expect("load");
-    assert_eq!(loaded, doc);
+    assert_eq!(loaded, doc.migrated());
     let mut got: Vec<BindingAction> = to_core(&loaded)
         .bindings
         .0
@@ -415,4 +419,133 @@ fn the_binary_answers_help() {
         .status()
         .expect("the casement binary runs");
     assert!(status.success());
+}
+
+/// Each row: a file as an older casement wrote it, and what a mouse's natural scrolling is when
+/// it is read. The old default (off) was written by every save; only a file that predates the
+/// version loses it, and a value the person set to anything else, or a file that says it is
+/// current, is kept.
+#[test]
+fn an_old_file_drops_the_retired_default_and_keeps_what_the_person_set() {
+    let table: &[(&str, &str, Enabled)] = &[
+        ("no file keys", "", Enabled::On),
+        (
+            "the old default, no version",
+            "[pointer]\nnatural_scroll = \"off\"\n",
+            Enabled::On,
+        ),
+        (
+            "the old default, version 1",
+            "version = 1\n[pointer]\nnatural_scroll = \"off\"\n",
+            Enabled::On,
+        ),
+        (
+            "on, no version",
+            "[pointer]\nnatural_scroll = \"on\"\n",
+            Enabled::On,
+        ),
+        (
+            "off, chosen after the migration",
+            "version = 2\n[pointer]\nnatural_scroll = \"off\"\n",
+            Enabled::Off,
+        ),
+        (
+            "off in a file from a newer casement",
+            "version = 9\n[pointer]\nnatural_scroll = \"off\"\n",
+            Enabled::Off,
+        ),
+    ];
+    for (what, text, want) in table {
+        assert_eq!(
+            settings_of(text).pointer.mouse.natural_scroll,
+            *want,
+            "{what}"
+        );
+    }
+}
+
+/// The other keys of an old file are the person's, whatever they equal.
+#[test]
+fn migration_touches_only_the_retired_default() {
+    let settings = settings_of(
+        "[pointer]\nnatural_scroll = \"off\"\ntap = \"on\"\n[touchpad]\nnatural_scroll = \"off\"\n",
+    );
+    assert_eq!(settings.pointer.mouse.natural_scroll, Enabled::On);
+    assert_eq!(settings.pointer.mouse.tap, Enabled::On);
+    assert_eq!(
+        settings.pointer.touchpad.natural_scroll,
+        Enabled::Off,
+        "the touchpad's default never changed, so this was a choice"
+    );
+}
+
+#[test]
+fn a_migrated_document_is_written_at_the_current_version() {
+    let doc = CasementDoc::default().migrated();
+    assert_eq!(doc.version, Some(Version::CURRENT));
+    let text = toml::to_string(&doc).expect("serialises");
+    assert!(text.starts_with("version = 2\n"), "{text}");
+    let (_dir, home) = home_with(&text);
+    assert_eq!(load(&home).expect("load"), doc);
+}
+
+#[test]
+fn stamping_writes_only_the_version_and_only_once() {
+    let old = "# mine\n[pointer]\nnatural_scroll = \"off\"\n";
+    let (dir, home) = home_with(old);
+    let file = dir.path().join("casement/settings.toml");
+    assert_eq!(stamp_version(&home).expect("stamp"), Stamped::Written);
+    let stamped = std::fs::read_to_string(&file).expect("read");
+    assert_eq!(stamped, format!("version = 2\n{old}"));
+    assert_eq!(stamp_version(&home).expect("stamp"), Stamped::Left);
+    assert_eq!(std::fs::read_to_string(&file).expect("read"), stamped);
+    // The choice made after the stamp survives the next read.
+    assert_eq!(
+        to_core(&load(&home).expect("load"))
+            .pointer
+            .mouse
+            .natural_scroll,
+        Enabled::Off
+    );
+}
+
+#[test]
+fn stamping_a_missing_file_writes_nothing() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let home = ConfigHome::At(dir.path().to_path_buf());
+    assert_eq!(stamp_version(&home).expect("stamp"), Stamped::Left);
+    assert!(!dir.path().join("casement").exists());
+}
+
+/// Each row: what a change in the file does to the settings casement runs with. Only the
+/// pointer and the key repeat follow; the bindings and the layout the keymap gave stay.
+#[test]
+fn the_file_changes_the_pointer_and_the_repeat_and_nothing_else() {
+    use casement::settings_live::followed;
+    let mut current = CasementSettings::defaults();
+    current.keyboard.layout.layout = "de".to_owned();
+    let doc = |text: &str| -> CasementDoc {
+        let (_dir, home) = home_with(text);
+        load(&home).expect("load")
+    };
+    let same = followed(&current, &doc(""));
+    assert_eq!(
+        same, current,
+        "an empty file is the defaults, which it already has"
+    );
+
+    let next = followed(
+        &current,
+        &doc(
+            "[pointer]\ntap = \"on\"\n[keyboard]\nrepeat_rate = 30\nxkb_layout = \"fr\"\n[windows]\nquit_grace_ms = 9000\n",
+        ),
+    );
+    assert_eq!(next.pointer.mouse.tap, Enabled::On);
+    assert_eq!(next.keyboard.repeat_rate, RepeatRate(30));
+    assert_eq!(
+        next.keyboard.layout.layout, "de",
+        "the layout waits for a restart"
+    );
+    assert_eq!(next.windows, current.windows);
+    assert_eq!(next.bindings, current.bindings);
 }

@@ -3,9 +3,12 @@
 //! click ring, trust frame).
 
 mod blur_v0;
+mod clip_strip;
+mod closing;
 mod cursor;
 mod flight;
 mod frame;
+mod genie;
 mod geometry;
 mod layer;
 mod lock_cover;
@@ -18,24 +21,27 @@ mod strip;
 mod window;
 
 pub use blur_v0::BlurV0Element;
+pub use clip_strip::ClipStripElement;
+pub use closing::{ClosingFrame, closing_content, closing_elements};
 pub use cursor::{CursorFace, cursor_elements, cursor_face, cursor_pixels};
 pub use flight::{
-    FlightDraw, at_rest, choose, drawn_content, genie_elements, rest_place, scale_ratio,
-    scaled_content, strip_plans,
+    FlightDraw, at_rest, choose, drawn_content, rest_place, scale_ratio, scaled_content,
 };
 pub use frame::{FrameDraw, TitleDraw, frame_elements, label_element};
-pub(crate) use frame::{ShadowKey, ShadowSet, Tiles};
+pub(crate) use frame::{Raster, ShadowKey, ShadowSet, Tiles, WholeShadow};
 #[cfg(test)]
 pub(crate) use frame::{shadow_key, shadow_tiles};
+pub use genie::{GenieParts, GenieWindow, genie_elements, genie_window, strip_plans};
 pub use geometry::{geometry_size, surface_origin, surface_origin_logical};
 pub use layer::layer_elements;
 pub use lock_cover::LockCoverElement;
 pub use overview::{dim_elements, ring_elements};
-pub use popup::{popup_elements, popup_surfaces};
+pub use popup::{PopupRide, popup_elements, popup_elements_riding, popup_surfaces};
 pub use rounded_clip::{ClipShape, RoundedClipElement};
 pub use shared::SharedElement;
 pub use solid::{Rgba8, solid_rect};
-pub use strip::{StripElement, StripPlan};
+pub use strip::{Margins, StripElement, StripPlan};
+pub(crate) use window::{alpha, flight_ratio};
 pub use window::{window_content, window_drawn, window_elements, window_surfaces};
 
 use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
@@ -62,4 +68,6 @@ smithay::backend::renderer::element::render_elements! {
     SurfaceStrip = StripElement<SharedElement<WaylandSurfaceRenderElement<R>>>,
     /// One strip of a genie's frame (titlebar and title).
     MemoryStrip = StripElement<SharedElement<MemoryRenderBufferRenderElement<R>>>,
+    /// One strip of a genie's client surface that the window's rounded clip reaches.
+    ClipStrip = ClipStripElement<R>,
 }

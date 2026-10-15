@@ -1,17 +1,21 @@
 //! A window's surface clipped at its two bottom corners (a Mac window is rounded on all four;
 //! the titlebar rounds the top two itself). The element wraps a surface element of the window's
 //! tree and says where the window's rounded rectangle is; on GLES the renderer draws the
-//! surface's texture through a shader that masks outside it (`gles.rs`), elsewhere the surface
-//! is drawn unclipped (FINDINGS, `wave-2026-10-15/clip`).
+//! surface's texture through a shader that masks outside it (`gles.rs`); every other draw
+//! (Pixman, the dummy renderer, a multi-GPU copy, and the GLES surfaces the shader leaves out)
+//! draws the surface in pieces by coverage (`bands.rs`; FINDINGS, `wave-2026-10-15/corners`).
 //!
 //! Only windows casement decorates are clipped: one that draws its own frame draws its own
 //! corners, a full-screen window has square ones, and popups are never wrapped.
 
+mod bands;
 mod gles;
 mod shape;
 
+pub(crate) use gles::{Mask, draw_masked};
 pub use shape::ClipShape;
 
+use crate::compositor::Compositor;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement};
 use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer};
@@ -137,6 +141,21 @@ where
     ) -> Result<(), R::Error> {
         self.surface
             .draw(frame, src, dst, damage, opaque_regions, cache)
+    }
+}
+
+impl<R: Compositor> RoundedClipElement<R> {
+    /// Draws the surface clipped to the shape on any renderer, from pieces of the surface
+    /// weighted by coverage (see `bands`). `damage` is relative to `dst`.
+    pub(crate) fn draw_banded(
+        &self,
+        frame: &mut R::Frame<'_, '_>,
+        src: Rectangle<f64, BufferCoords>,
+        dst: Rectangle<i32, Physical>,
+        damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
+    ) -> Result<(), R::Error> {
+        bands::draw(frame, self, src, dst, damage, opaque_regions)
     }
 }
 

@@ -16,7 +16,7 @@ use casement_core::output::OutputConfig;
 use casement_core::settings::CasementSettings;
 use casement_core::space::SpaceSeed;
 use casement_core::time::{Mono, VblankSeq};
-use casement_core::{Cause, Effect, Event, Model, OutputKey, OutputName};
+use casement_core::{Cause, Effect, Event, Model, OutputKey, OutputName, WindowId};
 use casement_layout::{ConfigureNeed, SceneLayout, spec_of_framed};
 use casement_motion::{FrameScene, retarget};
 use casement_render::{LayerDraw, OutputView};
@@ -27,7 +27,9 @@ use smithay::wayland::compositor::{
     SurfaceAttributes, TraversalAction, with_surface_tree_downward,
 };
 
+mod closing;
 mod deliver;
+mod divider;
 mod frames;
 mod grab;
 mod idle;
@@ -42,6 +44,8 @@ mod titles;
 pub(crate) mod tty;
 mod windows;
 
+pub(crate) use closing::Kept;
+pub(crate) use divider::DividerPointer;
 pub(crate) use frames::Over as FrameOver;
 pub(crate) use grab::start as start_grab;
 pub(crate) use idle::sync_inhibitors;
@@ -103,14 +107,17 @@ pub(super) fn standing_in(now: Mono) -> Model {
     )
 }
 
-/// New keyboard settings reach clients already bound (`repeat_info`).
-fn note_settings(state: &State, events: &[Event]) {
-    let seat = &state.wl.seat.seat;
+/// New settings reach what is already running, at once: the keyboard's repeat to the clients
+/// already bound (`repeat_info`), the pointer's to the devices already present.
+fn note_settings(state: &mut State, events: &[Event]) {
     for event in events {
-        if let Event::SettingsChanged(settings) = event
-            && let Err(fault) = casement_wayland::seat::apply_repeat_info(seat, &settings.keyboard)
-        {
-            tracing::warn!(%fault, "repeat info did not follow the settings");
+        if let Event::SettingsChanged(settings) = event {
+            if let Err(fault) =
+                casement_wayland::seat::apply_repeat_info(&state.wl.seat.seat, &settings.keyboard)
+            {
+                tracing::warn!(%fault, "repeat info did not follow the settings");
+            }
+            tty::reconfigure_pointers(state, &settings.pointer);
         }
     }
 }
@@ -126,6 +133,11 @@ pub fn frame(state: &mut State, output: &OutputKey) {
     };
     let (name, config) = (plugged.facts.name.clone(), plugged.config);
     let sampled = sample_scene_at(state, now);
+    let in_scene: Vec<WindowId> = sampled
+        .outputs
+        .iter()
+        .flat_map(|frame| frame.windows.iter().map(|placed| placed.window))
+        .collect();
     let frame = sampled
         .outputs
         .into_iter()
@@ -137,13 +149,19 @@ pub fn frame(state: &mut State, output: &OutputKey) {
         mode: config.mode.size,
     };
     let styles = frames::drawn(state);
+    closing::remember(state, &styles);
+    closing::forget(state, &in_scene);
+    let leaving = closing::on(state, &frame);
     let overview = overview::draw(state, &view);
-    let titles = titles::of(state, &frame, &view, &styles, &overview);
+    let mut titles = titles::of(state, &frame, &view, &styles, &overview);
+    titles.extend(titles::of_closing(state, &frame, &view, &leaving));
     let layers = LayerDraw {
         frames: styles,
         titles,
+        closing: leaving,
         minimise_effect: state.core.model.settings().windows.minimise_effect,
         overview,
+        backdrop: divider::backdrop(state, output),
         ..layers_on(&state.core.model, output)
     };
     let capture = tty::capture_watch(&state.wl.image_capture.book, &state.wl.screencopy, output);

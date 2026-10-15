@@ -2443,6 +2443,60 @@ The Split View picker and divider on the wire (casement-protocols `lane/splitwir
   can receive the drag; see sill's findings. A real drag needs: (1) the gap between the two halves routed to a shell
   layer surface or a compositor grab, (2) a resize cursor, (3) persistence of the share if wanted.
 
+## wave-2026-10-15/split2
+
+Split View finished the Mac way: the divider drag, maximum widths, candidates from one desktop, cancel on a Space switch and a
+key command. Written without a compiler (wave rule); the orchestrator builds.
+
+- **Divider drag, compositor-side (sill draws no handle).** `Arrangement` gains `dividers: Vec<DividerTarget>` (the 8 px strip,
+  the row it divides, both windows and their minimum widths; pure `hit(point)` and `share_at(x)`) and `backdrops`. In the loop,
+  `core_loop/divider.rs` holds `RenderState::divider: DividerPointer { Away, Over, Dragging }`. Motion (`deliver::motion`, right
+  after the window-grab follow) asks `divider::moved`: on a strip of the Space the output shows, the cursor is `ResizeEw` and the
+  pointer moves with no focus (clients are left); a press (`press_edge`, before the frame pick) swallows the press and starts the
+  drag with the reach table's say (`InputUse::Press` on the leading window); each motion feeds
+  `ShellRequest::SplitDivide { window: leading, share: share_at(x) }`; the release of the starting button ends it
+  (`ends_with`, so `pressed` refocuses afterwards). The share is `SplitPair::divider`, so it lasts as long as the Space (no
+  persistence across sessions). `share_at` keeps 200..800 (`SplitPair::NEAREST`) and, when both minimum widths fit inside that,
+  each window's minimum; the model clamps again to 200..800 and layout still holds minimums.
+- **Departures.** (1) Any pointer button starts a drag (there is no left-button constant in the loop; frames do the same).
+  (2) No extra throttle: like an interactive resize, each motion is one `feed`, which makes one relayout and one configure per
+  window; the model ignores an unchanged share, so a still pointer sends nothing. (3) A divider yields to the lock, an overlay
+  layer and any window surface in front of it (a popup over the strip); layers under the full-screen windows do not. (4) The
+  divider changes the Space with `Cause::Configure` (snap), not a spring, so the halves follow the pointer exactly.
+- **Backdrop.** Every Split View Space gets a `BackdropTarget`; the loop sets `LayerDraw::backdrop` (dark grey, 28/28/30) for the
+  output whose shown Space it is, and `output_elements` draws one opaque `LockCoverElement` (same element id as the lock cover,
+  which never shares a frame with it) behind the full-screen windows and above the top layers. So the strip is a solid bar, not
+  the wallpaper showing through, and a window centred in its half has something behind it. During a Space slide the backdrop
+  appears and goes at once (it follows the shown Space, not the slide).
+- **Maximum width.** `rust_scene/split.rs::within_max`: a half whose window has a bounded maximum smaller than the half (a zero
+  side means none) centres that size in the half; the window is asked for it. Not done: the share does not shrink a half to a
+  window's maximum (the Mac sizes the halves the same way: the pointer decides).
+- **Candidates from the first window's desktop.** `SplitChoice::desktop` records the first window's `SpacePlace` before it goes
+  full screen; `can_share` (now a free function) requires it. A first window on every desktop (`AllSpaces`) falls back to any
+  desktop of its output, as before.
+- **Switching Space cancels.** `Model::show` ends with `choice_unless_on(shown)`: another Space than the choice's own ends the
+  choosing and sends `SplitChoiceEnd(first)`; the first window stays full screen.
+- **Key command.** `DesktopCommand::SplitTile(SplitSide)`, `SplitSide` now `Hash + Serialize + Deserialize` (`left` / `right`),
+  words `["desktop", "split_tile", "left"]` in the bindings document (`config/action.rs`, header comment updated), no default
+  chord. It runs `split_view` on the key window. casementctl exposes no binding command list (its `DesktopCommand` is the
+  desktop client's, a different type), so nothing changed there; the bindings document is the list.
+- **Tests.** Layout table tests: `tests/it/divider.rs` (strip hit, share from pointer x with limits and minimums),
+  `tests/it/split.rs` (divider strip per share, centred maximum widths and the backdrop). Model (`model_split.rs`): the key
+  command, candidates from one desktop, cancel on a Space switch. `round_trip.rs` pins the serde form; `config.rs` round trips
+  the new words; `model_props.rs` and `model_input.rs` include `SplitTile`. Testkit: `protocol/quire_shell_divider.rs` drives a
+  real pointer through the fixture (press on the strip, drag, release, a press beside the strip). No golden changed.
+- **Gate.** Likeliest compile faults: `core_loop/divider.rs` (borrow of `state.render.divider` before `feed(state, ..)` in
+  `moved`; `bool::then` returning a clone), `deliver.rs` (`press_on_divider`, the early return in `motion`), `model/split.rs`
+  (`can_share` as a free fn over private `Model` fields, `Option::is_none_or`), `spaces.rs` (`move` closure after `then`),
+  `casement-render/src/scene.rs` (`cover(.., colour)`). The test that needs the most from reality is
+  `dragging_the_strip_sets_the_share_...`: it assumes the fixture's two test clients' buffers do not reach the strip and that
+  `pointer_to` then `button` hit the compositor path above (a test client that committed a larger buffer would block the strip).
+  `desktop_filter` test assumes a window mapped while desktop 2 is shown lands on desktop 2.
+- **Real run.** Tile Left of Screen with two windows, pick the second: the strip is a dark bar, the cursor over it is left-right,
+  a drag moves the split live and both clients re-lay out; released, nothing else moves; the share stays until Exit Full Screen.
+  A window with a maximum width sits centred in its half on dark grey. Switching Space while the picker is up closes it.
+  Windows of another desktop are not offered. Look at the frame time during a drag on a large window.
+
 ## wave-2026-10-15/shadow
 
 The window shadow stops re-rastering per frame. Written without a compiler (wave rule); the orchestrator builds.
@@ -2554,3 +2608,164 @@ one, Escape or the same key leaves. Written without a compiler (the lane rules);
   click raises and keys it and the windows fly back; Escape and Ctrl+Up leave; the pointer is an arrow; typing in the key window
   still works; the bar and dock are not dimmed; 1.5x and 2x scales have no seam in the ring; with 20 windows the scale is about 0.3
   and at 50 the overflow report is logged.
+## wave-2026-10-15/flight2
+
+Minimise, restore and close without anything dropped (the follow-ups "Genie and Scale gaps" and "A closing window loses its frame
+at once"). Written without a compiler (wave rule); the orchestrator builds.
+
+- **Genie: clip.** The rounded clip is applied to the surface strips that reach the bottom corners (`ClipShape::touches`, the
+  strip's `source` rows against the radius band, plus a pixel), as the new variant `ClipStrip` (`clip_strip.rs`) with a
+  `Compositor::draw_clip_strip` hook (default: the plain strip, so pixman and the dummy renderer stay unclipped as before). The
+  GLES draw reuses the clip shader (`rounded_clip/gles.rs::draw_masked`) but takes the mask's src/dst from the shared surface
+  element as it stands at rest, not from the strip's own draw arguments. The coverage is therefore a function of the window's own
+  pixels and the strip carries the cut along under any scale and move; no per-strip ellipse maths. Strips above the corner band
+  stay plain `SurfaceStrip`s. A clipped strip offers no opaque regions.
+- **Genie: shadow.** Cut into the same strips, not a nine-slice. Reason: the shadow already exists as eight memory pieces, the strip
+  wrappers take them unchanged, and a strip follows the bent silhouette at every row; a nine-slice scaled over the bounding
+  trapezoid would leave the halo straight while the window bends. Each shadow strip is the window strip's plan `widened` by the
+  shadow margin sideways (the first strip also above, the last also below). Cost: up to (strips x 8) crop attempts per frame, most
+  return `None` at once.
+- **Genie: blur.** One `BlurV0Element` whose region is the blur rectangles of the window mapped through every strip
+  (`StripPlan::mapped`, rows clipped to the strip's drawn band so no two rectangles share a pixel). A blur per strip would be one
+  framebuffer capture each. `BlurV0Element` now has an alpha (`with_alpha`; the stand-in, the GLES draw, the commit counter and the
+  opaque regions follow), set to the window's opacity.
+- **Scale: blur.** Stretched by the flight's ratio about the window's corner and faded with the window's opacity
+  (`blur_v0::behind_scaled`). Only windows in a flight take the opacity; a window that is merely fading in or out keeps a full-strength
+  blur as before (no golden moves). Open question for the owner: fade the blur for every fading window.
+- **Popups.** Scale: they ride with the window (`popup_elements_riding`: the corner moves toward the window's corner by the ratio,
+  the tree is drawn at the ratio, alpha is the window's). Genie: not drawn, from the first frame of the flight. Reason: a strip
+  can only carry what lies inside the window's rows, and a menu hangs outside; macOS closes menus before a window minimises.
+  The popup surface itself is not dismissed (the client is not told); it comes back when the window has landed. If the owner wants
+  the client told, that is a `popup_done` on minimise (core change, not this lane).
+- **Genie silhouette.** `casement_motion::genie::strips_fine`: the 48 base strips, each cut at equal heights into up to 6 pieces
+  when the curve's edge moves more than `2 x TOLERANCE` (1 px) across it, with a total budget of `MAX_STRIPS` (120); when the wish
+  passes the budget the extra cuts are shared in proportion. At rest it is exactly 48. A strip is still a rectangle (its edges are
+  the mean of its rows' edges), so the stepped silhouette stays within about 1 px only where the budget allows; a 1600 px window
+  squeezing to a 48 px tile is limited by the budget (a few px at the steepest rows). A true trapezoid would need a custom vertex
+  or a per-row fragment remap: a new shader and element for every kind of strip (surface and memory), judged not worth it blind.
+  The strip count never passes the window's physical height (no strip thinner than a row).
+- **Genie: no double blend.** The 1 px overlap is gone. `strip_plans` rounds the edge between two strips once and both use it, so
+  strips meet exactly. The price is up to one source row of repeat or skip at a seam (each strip is cropped at integer pixels of
+  its own scaled copy), not seen unless a strip is stretched hard. Test: solid strips never overlap (`genie.rs`), and meet exactly
+  at 21 progress values and three scales.
+- **Closing window keeps its frame.** The loop keeps, for every framed window while it lives, its `FrameStyle`, title and activity
+  (`RenderState::closing`, `core_loop/closing.rs`, refreshed every frame, forgotten once the window is neither in the model nor in
+  the motion scene). When the model no longer has a window that motion still places, `LayerDraw::closing` carries the snapshot and
+  `output_elements` draws its frame (`closing_elements`: titlebar, lights, title, shadow) round the sampled rectangle at the
+  sampled opacity; the title is rastered again for the shrinking bar (`titles::of_closing`). Tests: `leaving` (which windows),
+  `closing_content` (the sampled rectangle).
+- **Not solved: the content of a closed window.** `core_loop/windows.rs::sync` drops the window from the surface book on
+  `ToplevelUnmapped` (the client has detached or destroyed its surface; there is nothing left to draw). So today a closing window's
+  CONTENT already vanishes at once, and with this change its frame fades alone: a titlebar and shadow with an empty body for
+  about 380 ms. Whether that reads better than vanishing is a real-run call. To fade the body too the loop must keep a
+  texture of the window (render it into an offscreen texture on the frame before the unmap), a separate piece of work. To turn the
+  ghost frame off: build `LayerDraw::closing` empty in `core_loop.rs::frame`.
+- **Tests added.** `casement-motion` `genie.rs`: at rest exactly the base strips, limit == base is the plain strips, steep part
+  finer within the limit with shared edges, edges within tolerance with room (+ doc test). `casement-render`: `genie.rs` (6: at
+  rest/shared edges, exact meeting at progress x scale, finer halfway, short window, source rows cover once, no area; halo; solid
+  strips never overlap), `strip.rs` (widened band, mapped rectangle), `shape.rs` (`touches`), `popup.rs` (corner by ratio),
+  `closing.rs` (+ doc test), doc tests on `strips_fine`, `with_alpha`, `faded`. `casement`: `closing.rs` (2). The old strip tests moved
+  from `flight.rs` to `genie.rs`; the overlap assertion became "end equals next start". No golden, no `expected-failures.txt` change.
+  No doc test on `StripPlan` methods (the struct is `non_exhaustive`, a doc test cannot build one).
+- **Gate and real run.** Likeliest compile faults: `clip_strip.rs` (`Element`/`RenderElement` bounds on `ClipStripElement<R>`, `Mask`
+  re-exported `pub(crate)` from a private module), `Compositor::draw_clip_strip`'s default (same shape as `draw_rounded_clip`'s),
+  `genie.rs::shared` generic helper and the partial moves out of `GenieParts`, `blur.remapped` closure returning a `Vec`,
+  `scene.rs` (`&&PlacedWindow` coerced to `&PlacedWindow` in `GenieWindow`/`closing_elements`), `core_loop/closing.rs::leaving`'s
+  lifetimes (an `impl Fn + 'a` captured with the model), the `RenderState` field using a `pub(crate)` type. Real run: Genie with a
+  framed window: rounded bottom corners during the flight, the shadow bends with it and fades, a blur-behind window keeps a blur
+  that fades, a translucent window shows no light line at strip seams, no stepped edge on a 700-1000 px window at 1x and 2x; frame time
+  with up to 120 strips x (titlebar, title, tree, shadow pieces) elements (lower `MAX_STRIPS` if it drops); Scale with a menu open:
+  the menu shrinks and fades with the window; Genie with a menu open: the menu is gone from the first frame; close a framed
+  window: the titlebar and shadow fade and shrink in step and the title stays centred.
+## wave-2026-10-15/corners
+
+Rounded corners and shadows right everywhere (wave 5). Written without a compiler (wave rule); the orchestrator builds.
+
+- **Clip on every renderer.** New `element/rounded_clip/bands.rs`. A clipped draw that has no corner shader draws the window in
+  pieces: the body (damage minus the two radius-sized corner squares) and the fully covered runs of the squares at full strength,
+  then each partly covered pixel of the curve alone with the surface's alpha times its coverage. The pieces are `damage`
+  rectangles in the destination's space and go through `Frame::render_texture_from_to` (or `draw_solid` for a single-pixel
+  buffer), so the texture's own transform never enters. Coverage is `ClipShape::coverage` at the pixel centre, in 32 steps
+  (`LEVELS`; error under 1/64), so a corner costs at most 31 extra draws whatever the radius. It is the default of
+  `Compositor::draw_rounded_clip`, so Pixman, the dummy renderer and a multi-GPU copy renderer (none is wired in the tty path
+  yet; a future `Compositor` impl gets it for free) clip. On GLES `gles::draw` falls back to it for a turned or flipped texture,
+  a y-inverted texture and a single-pixel buffer.
+- **Departures from the brief.** (1) No Pixman mask image per corner, and no clip transformed into texture space: alpha steps
+  on 1-pixel damage rectangles need neither the pixman crate (no Cargo edit) nor the texture matrix, and work for any transform.
+  Cost: up to 31 small draws per clipped surface per frame on those paths (the GLES shader path for an upright texture is
+  unchanged: one draw). (2) The edge is quantised to 32 steps, not exact. (3) The dummy renderer draws nothing, so its only
+  proof is that it compiles and calls the same pieces; the pieces are table-tested as a pure `plan`.
+- **Window capture** (`pass::window_tree`) and the opaque regions are unchanged.
+- **Shadow cut-out.** The tiles are transparent under the window's rounded shape (`shadow::punch`): factor
+  `1 - cover(distance + 0.5 / per, per)`, with the distance from the pixel centre to the window's rounded outline (the same
+  radius as the frame). The cut starts half a device pixel inside the edge, so the window's own anti-aliased edge pixel keeps
+  part of its shadow beneath it, and is complete one pixel in. Edge strips are cut the same way (their 2 px under the edge go
+  to zero from 1 px in). The corner squares inside the curve now show shadow where the window is not (outside the curve) and
+  none where it is. A window drawn at opacity below 1 (fade) has no shadow beneath its body either, as the Mac.
+- **Small windows.** A window with one side under twice the corner reach (`inner_reach`, about 120 to 150 logical px for
+  quire's shadow) and neither side over 240 gets one raster of its own size plus the margin, the true separable Gaussian blur of
+  its rounded shape (`shadow/whole.rs`, sharing `blurred` with the corner tiles), cut out under the window. It is cached by
+  (scale, radius, layers, width, height) in `DrawCache::wholes` (16 sizes), and uploaded once per window and size
+  (`whole_sets`). A window past the limit on a side (a long thin one) keeps the tile pieces and their cropped, slightly strong
+  shadow. Departure: resizing a small window through many sizes makes a raster per size (tens of ms at 1x, up to a couple of
+  hundred at 2x for a 240 px window), so a drag across the threshold may hitch once per size; the cache is bounded.
+- **Tests.** Table: `bands.rs` (every pixel of a 120x80 window is drawn at its coverage, once at most, at scales 1, 1.5 and 2
+  and at an offset; corner pixels; only the damaged part; at most 31 draws; a subsurface inside the curve); `shadow/tests.rs`
+  (cut-out table at scales 1 and 2 for corner and strips, the half-pixel start, rounded versus square corner, sharpness at
+  scale 2 rewritten for the cut, the reference raster now cut out, a large window's whole raster against its pieces within 4/255,
+  a tiny window's whole raster lighter than its cropped pieces, whole raster sizes and cut-out at 1, 1.5 and 2, which sizes get a
+  raster); `draw_cache.rs` (a raster per size, shared by windows, not the buffers). Testkit `scene/clip.rs` runs the corner
+  check on GLES (llvmpipe) and Pixman, for a shm buffer and for a single-pixel buffer under a viewport, and checks the curve
+  is blended. No golden changed (no golden scene binds the decoration manager); no `expected-failures` change.
+- **Gate and real run.** Likeliest compile faults: `bands::draw` generic over `R: Compositor` with `R::Frame<'_, '_>` and
+  `frame.render_texture_from_to` (needs `Frame` in scope), `*color * alpha` on `Color32F`, `Rectangle::subtract_rects` with a
+  `copied()` iterator, the glob `use super::*` in `shadow/tests.rs` reaching `punch`, `full`, `wanted`; `SoftRenderer`'s `Debug`
+  in the testkit messages; `with_renderer` on the spec. Likeliest test-number faults: the "cropped lighter than whole by 4"
+  margin and the "out beyond the corner" shadow being non-zero at 3 px off a radius-20 corner (about 4/255). In a real run:
+  a translucent window (a terminal with opacity) shows no shadow through itself, including at the corners, in light and dark; a
+  Pixman session (`--renderer pixman`) has round bottom corners; a GL client on a y-inverted dma-buf window and a
+  single-pixel-buffer window have round bottom corners without a seam where the curve meets the straight edge; a 100x60
+  dialog's shadow is lighter than before and has no seam; resizing it across 120 px does not hitch badly.
+## wave-2026-10-15/input2
+
+Lane `input2` (not compiled; the orchestrator gates). Closes the two "Gaps noted, not changed" of `session`.
+
+- **Live apply.** casement watched no `settings.toml` before (only quire's `appearance.toml`). New
+  `casement::settings_live` watches the document through ds-settings (the appearance watch's thread
+  spawner, now `pub(crate)`), and `settings_live::apply` tells the model `followed(current, doc)`:
+  the file's pointer and touchpad profiles and the key repeat; everything else (bindings from the
+  keymap, the layout, windows, outputs) stays as running. `core_loop::note_settings` now also calls
+  `tty::reconfigure_pointers` on every `SettingsChanged`, whatever its source. The seam side:
+  `casement_backend::input::PresentDevices` (pure; remembers each device's class and what it was last
+  configured with; `changes(&PointerSettings)` is the diff), held by `TtyBackend`, which records
+  appearances, departures and every successful `configure_device`; `TtyBackend::reconfigure_pointers`
+  applies the diff through `InputDevices::apply`. The fake (`FakeInputFeed`) needed no change.
+  Tests: table `a_settings_change_reaches_exactly_the_devices_it_changes` and three more in
+  `casement-backend/tests/it/input_config.rs`; fixture test `a_settings_change_reaches_a_device_already_present`
+  (`Fixture::settings_file_changed`); table `the_file_changes_the_pointer_and_the_repeat_and_nothing_else`.
+- **Departures.** (1) The keymap layout (`keyboard.xkb_*`) does not follow the file: the seat's keymap is
+  compiled at start, and putting the new names in the model without recompiling would make them disagree;
+  still a restart. Key repeat does follow (`repeat_info` already ran on `SettingsChanged`). (2) A scroll
+  factor change alone also re-applies the device settings (libinput ignores it; the scroll scaling reads the
+  stored value per event, so it was already live). (3) Windows, spaces, outputs, GPU settings are still read
+  at start only.
+- **Old files.** `settings.toml` has a top-level `version` (`config::Version`, none in old files, current 2).
+  `config::load` returns `CasementDoc::migrated()`: from no version or an older one, a key that still holds a
+  retired default (only `pointer.natural_scroll = "off"`, the old mouse default) takes today's default;
+  any other value, and all of a file at version 2 or newer, is kept. `touchpad.natural_scroll` is untouched
+  (its default never changed). A migrated read is in memory only; `settings_live::attach` runs
+  `config::stamp_version` at start, which prepends `version = 2` to an existing unversioned file as plain
+  text (comments, unknown keys and order stay), so a person who then sets mouse natural scrolling off keeps
+  it at the next start. Live reloads are not migrated (the stamp is already there, or a tool dropped it and the
+  values are deliberate). Cost, unavoidable: a person who set mouse natural scroll off by hand between 8b10803
+  and this change, in a file with no version, loses it once. Tests: `an_old_file_drops_the_retired_default_and_keeps_what_the_person_set`
+  (table), `migration_touches_only_the_retired_default`, `a_migrated_document_is_written_at_the_current_version`,
+  `stamping_writes_only_the_version_and_only_once`, `stamping_a_missing_file_writes_nothing`. Two existing tests
+  now compare with `.migrated()` (a missing file loads at the current version). The schema (`casement.settings.toml`)
+  does not list `version`, as `[bindings]` is not listed: the schema test skips nothing because a default
+  document serialises without it.
+- **Only a real run proves.** Editing `~/.config/casement/settings.toml` (or a Settings app save) while a mouse
+  and a touchpad are in use: the next scroll/tap follows within the 30 ms debounce and no replug; libinput accepts
+  re-applying `set_scroll_natural_scroll_enabled`/tap/accel on a live device (RealInputFeed::apply is the same call
+  as at appearance); the watcher thread starts under the compositor's real config home; our own stamp write does
+  not loop (it fires one reload that changes nothing).
