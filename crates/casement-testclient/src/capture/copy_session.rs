@@ -284,6 +284,10 @@ impl OutputCapture {
             .live
             .as_mut()
             .ok_or_else(|| ClientError::Dispatch("no session is open".to_owned()))?;
+        // A session has one frame at a time: the last one goes before the next is made.
+        if let Some(last) = live.frame.take() {
+            last.destroy();
+        }
         let frame = live.session.create_frame(&qh, ());
         frame.attach_buffer(&buffer);
         frame.damage_buffer(0, 0, fits(size.w)?, fits(size.h)?);

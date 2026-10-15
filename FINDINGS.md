@@ -2121,4 +2121,4 @@ To check in a real run: wlcs counts (expect 8 more passes, 9 listed); the caseme
   catalogue gained the capture roots). The children's data now carries their manager and the error goes there, as the
   XML says.
 - **Negative `wl_surface.damage`.** smithay built a negative `Size` and panicked inside dispatch (fuzz seed 4). Fork
-  commit `65518b3a` ignores it, as `damage_buffer` already did.
+  commits `65518b3a` and `90efde43` ignore it, as `damage_buffer` already did, and a negative `xdg_positioner.set_parent_size` (seed 4 again).
