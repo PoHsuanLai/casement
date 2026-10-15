@@ -96,7 +96,6 @@ pub use surface_real::RealScanout;
 #[cfg(feature = "tty")]
 pub use udev_real::RealUdev;
 
-use self::capture_gpu::{CaptureRoute, capture_fallback, capture_route, merged_formats};
 use crate::backend::BackendError;
 use crate::gpu::{FormatSource, RenderNodes};
 use crate::headless::{ConnectorEvent, FrameSource, PresentedFrame};
