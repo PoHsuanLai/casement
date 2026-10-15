@@ -418,8 +418,8 @@ fn left_of_screen_offers_the_other_window_and_a_pick_makes_both_halves() {
 
     shell.split_pick(&identifier_of(second));
     fixture.pump();
-    let spaces = |window: WindowId| match fixture.model().windows()[&window].state {
-        WindowState::FullScreen { space, .. } => Some(space),
+    let spaces = |window: WindowId| match &fixture.model().windows()[&window].state {
+        WindowState::FullScreen { space, .. } => Some(space.clone()),
         _ => None,
     };
     assert!(spaces(first).is_some(), "the first half is full screen");
