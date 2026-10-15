@@ -1,2 +1,145 @@
-/* casement-scene-css: the scene's layout rules as CSS (lane P3-CSS). One rule set per scene mode;
-   knobs arrive as custom properties on the root. Written at P3. */
+/* casement-scene-css: the scene's layout rules as CSS (lane P3-CSS).
+
+   The document is flat: every box is `position: absolute` under <body>, whose margin is zero, so a
+   box's laid-out position is its position in global logical pixels. The knobs and the spec arrive
+   as custom properties on each box (document/*.rs writes them); every rule here only combines
+   them with min(), max(), clamp(), round(), mod() and sign(). Lengths are whole pixels, so the
+   results are whole pixels. What CSS cannot say (the Mission Control spread, App Expose) is not
+   here: see FINDINGS.md, "casement-scene-css: the exclusions". */
+
+html > body {
+  display: block;
+  margin: 0;
+  padding: 0;
+}
+
+div {
+  display: block;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* A Space's origin: the shown Space at the usable origin, the others one usable width apart
+   (--apart is the row distance from the shown Space). Read for its position only. */
+.space {
+  position: absolute;
+  width: 0;
+  height: 0;
+  left: calc(var(--ux) + var(--uw) * var(--apart));
+  top: var(--uy);
+}
+
+/* A desktop window. --ux/--uy/--uw/--uh is the output's usable area, --reserve the frame above
+   the content (the area loses that much off its top: --ty/--th), --min-*/--max-* its limits (no
+   --max-* = unbounded), --w/--h the size asked for. --fw/--fh is the size held to the limits and
+   then to the area (floating.rs fit_size). */
+.win {
+  position: absolute;
+  --ty: calc(var(--uy) + min(var(--reserve), var(--uh)));
+  --th: calc(var(--uh) - min(var(--reserve), var(--uh)));
+  --fw: min(max(min(var(--w), var(--max-w, 1000000000px)), var(--min-w), 1px), var(--uw));
+  --fh: min(max(min(var(--h), var(--max-h, 1000000000px)), var(--min-h), 1px), var(--th));
+  width: var(--fw);
+  height: var(--fh);
+}
+
+/* Where it is: kept when it fits, else pushed the shortest way inside the usable area. */
+.floating {
+  left: clamp(var(--ux), var(--x), calc(var(--ux) + var(--uw) - var(--fw)));
+  top: clamp(var(--ty), var(--y), calc(var(--ty) + var(--th) - var(--fh)));
+}
+
+/* Put there by hand: only its size is fitted. */
+.placed {
+  left: var(--x);
+  top: var(--y);
+}
+
+/* The usable area. */
+.filled {
+  --w: var(--uw);
+  --h: var(--th);
+  left: var(--ux);
+  top: var(--ty);
+}
+
+/* The whole output (--full-x, --full-y, --full-w, --full-h). */
+.fullscreen {
+  left: var(--full-x);
+  top: var(--full-y);
+  width: var(--full-w);
+  height: var(--full-h);
+}
+
+/* Just mapped: centred in the usable area, then --nth steps of --step further, the walk starting
+   over at the centre when one more step would leave the area (cascade.rs). The two axes share one
+   step, so the walk is one length: the room for whole steps on the tighter axis, plus one step,
+   is the period. */
+.new {
+  --cx: calc(var(--ux) + round(down, calc((var(--uw) - var(--fw)) / 2), 1px));
+  --cy: calc(var(--ty) + round(down, calc((var(--th) - var(--fh)) / 2), 1px));
+  --rx: calc(var(--ux) + var(--uw) - var(--cx) - var(--fw));
+  --ry: calc(var(--ty) + var(--th) - var(--cy) - var(--fh));
+  --period: calc(min(round(down, var(--rx), var(--step)), round(down, var(--ry), var(--step))) + var(--step));
+  --walk: mod(calc(var(--nth) * var(--step)), var(--period));
+  left: calc(var(--cx) + var(--walk));
+  top: calc(var(--cy) + var(--walk));
+}
+
+/* Split View: a row over the whole output (--ax/--ay/--aw/--ah): the leading half, the divider
+   strip, the trailing half. The leading width is --share thousandths of the row without the
+   strip, held between the leading minimum and what leaves the trailing minimum, unless the two
+   minimums cannot both fit (--ok is 0 then and the share stands). */
+.split {
+  position: absolute;
+  display: flex;
+  flex-direction: row;
+  left: var(--ax);
+  top: var(--ay);
+  width: var(--aw);
+  height: var(--ah);
+  --gap: min(8px, var(--aw));
+  --room: calc(var(--aw) - var(--gap));
+  --want: round(down, calc(var(--room) * min(var(--share), 1000) / 1000 + 0.0005px), 1px);
+  --hi: max(calc(var(--room) - var(--min-trail)), 0px);
+  --ok: max(sign(calc(var(--hi) - var(--min-lead) + 0.5px)), 0);
+  --lead: clamp(calc(var(--min-lead) * var(--ok)), var(--want), calc(var(--hi) * var(--ok) + var(--room) * (1 - var(--ok))));
+  --trail: calc(var(--room) - var(--lead));
+}
+
+.part {
+  position: relative;
+  flex-shrink: 0;
+  height: var(--ah);
+}
+
+.lead {
+  width: var(--lead);
+  --half-w: var(--lead);
+}
+
+.strip {
+  width: var(--gap);
+}
+
+.trail {
+  width: 0;
+  flex-grow: 1;
+  --half-w: var(--trail);
+}
+
+/* A Split View window: its half, held to its maximum (--max-* 0 = none) and centred in the
+   half with the odd pixel on the far side (split.rs within_max). */
+.swin {
+  position: absolute;
+  --has-w: sign(var(--max-w));
+  --has-h: sign(var(--max-h));
+  --ww: calc(min(var(--half-w), var(--max-w)) * var(--has-w) + var(--half-w) * (1 - var(--has-w)));
+  --wh: calc(min(var(--ah), var(--max-h)) * var(--has-h) + var(--ah) * (1 - var(--has-h)));
+  width: var(--ww);
+  height: var(--wh);
+  left: round(down, calc((var(--half-w) - var(--ww)) / 2), 1px);
+  top: round(down, calc((var(--ah) - var(--wh)) / 2), 1px);
+}
