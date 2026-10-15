@@ -32,6 +32,8 @@ pub struct LightDraw {
 /// One layer of the window's shadow: a blurred copy of the outline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ShadowLayer {
+    /// How far to the right it falls, in logical pixels.
+    pub dx: i32,
     /// How far down it falls, in logical pixels.
     pub dy: i32,
     /// The blur radius, in logical pixels.

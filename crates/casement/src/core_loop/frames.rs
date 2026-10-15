@@ -52,7 +52,9 @@ pub(super) fn styles(state: &State) -> BTreeMap<WindowId, FrameStyle> {
             };
             let style = frame_style(state.render.scheme, activity, hover);
             let style = match down {
-                Some(LightAt { window, light }) if window == *id => pressed(style, light),
+                Some(LightAt { window, light }) if window == *id => {
+                    pressed(style, light, state.render.scheme)
+                }
                 _ => style,
             };
             (*id, style)

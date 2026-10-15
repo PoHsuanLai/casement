@@ -38,7 +38,7 @@ pub use arrangement::{
 };
 pub use ds_style::appearance::theme::{Scheme, Theme};
 pub use ds_style::tokens::chrome::GroupHover;
-pub use frame::{WINDOW_RADIUS, frame_style, metrics as frame_metrics, pressed, scheme_of};
+pub use frame::{frame_style, metrics as frame_metrics, pressed, scheme_of};
 pub use knobs::LayoutKnobs;
 pub use of_model::{spec_of, spec_of_framed};
 pub use rust_scene::RustScene;

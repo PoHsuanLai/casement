@@ -1,31 +1,20 @@
 //! The window frame casement draws for a client that asked for a server-side one, read from
-//! quire's tokens: the chrome lengths, the colour table, `light_state`'s reveal rule. Pure; the
-//! renderer draws the [`FrameStyle`] this makes.
-//!
-//! Three values are not reachable from quire's pure crates as numbers yet, so they are written
-//! here with the token they mirror and an ask for quire (FINDINGS "wave-2026-10-15/ssd"): the
-//! window radius (`--r-window`, a CSS string), the shadow (`--shadow-window`, a CSS string) and
-//! the three light hues (stylesheet-only candy colours).
+//! quire's tokens: the chrome lengths, the colour table, `light_state`'s reveal rule, the window
+//! radius (`Radius::px`), the shadow (`Shadow::layers`), the three light hues (`light_hue`).
+//! Pure; the renderer draws the [`FrameStyle`] this makes. Nothing here is a copy of a number
+//! quire owns.
 
 use casement_core::window::{
     FrameColour, FrameLook, FrameMetrics, FrameStyle, Light, LightDraw, ShadowLayer,
 };
 use ds_core::vocab::{Activity, Shown};
 use ds_style::appearance::theme::{Scheme, Theme};
+use ds_style::tokens::chrome::light_hue::{Light as HueLight, light_hue};
 use ds_style::tokens::chrome::{ChromeToken, GroupHover, LightFill, LightState, light_state};
 use ds_style::tokens::colour::ColourToken;
-use ds_style::tokens::hex::Colour;
-
-/// `--r-window` for the Sonoma and Sequoia window (quire's batch moves the token to 10).
-pub const WINDOW_RADIUS: u32 = 10;
-
-/// The close light, minimise light and zoom light hues, and the ink of their marks (the macOS
-/// values the candy shelf holds).
-const HUES: [(u32, u32); 3] = [
-    (0xFF5F57, 0x4D0000),
-    (0xFEBC2E, 0x985600),
-    (0x28C840, 0x0A6400),
-];
+use ds_style::tokens::elevation::Shadow;
+use ds_style::tokens::hex::{Colour, Hex};
+use ds_style::tokens::shape::Radius;
 
 /// The frame's lengths from the chrome tokens.
 pub fn metrics() -> FrameMetrics {
@@ -52,10 +41,10 @@ pub fn frame_style(scheme: Scheme, activity: Activity, hover: GroupHover) -> Fra
     FrameStyle {
         metrics: metrics(),
         look: FrameLook {
-            radius: WINDOW_RADIUS,
+            radius: u32::from(Radius::Window.px()),
             titlebar: token(ground),
             rule: token(ColourToken::Line),
-            lights: HUES.map(|(hue, ink)| light(state, hue, ink, scheme)),
+            lights: Light::ALL.map(|which| light(state, which, scheme)),
             shadow: shadow(scheme),
         },
     }
@@ -78,8 +67,8 @@ pub fn scheme_of(theme: Theme) -> Scheme {
     }
 }
 
-/// `style` with `light` drawn pressed: its hue a shade darker, its mark showing, as the Mac
-/// draws a light under the button.
+/// `style` (drawn in `scheme`) with `light` drawn pressed: its hue a shade darker, its mark
+/// showing, as the Mac draws a light under the button.
 ///
 /// ```
 /// use casement_core::window::Light;
@@ -87,19 +76,14 @@ pub fn scheme_of(theme: Theme) -> Scheme {
 /// use ds_core::vocab::Activity;
 ///
 /// let rest = frame_style(Scheme::Light, Activity::Active, GroupHover::Away);
-/// let down = pressed(rest, Light::Close);
+/// let down = pressed(rest, Light::Close, Scheme::Light);
 /// assert!(down.look.light(Light::Close).mark.is_some());
 /// assert_eq!(down.look.light(Light::Zoom), rest.look.light(Light::Zoom));
 /// ```
-pub fn pressed(style: FrameStyle, light: Light) -> FrameStyle {
-    let slot = match light {
-        Light::Close => 0,
-        Light::Minimise => 1,
-        Light::Zoom => 2,
-    };
-    let (hue, ink) = HUES[slot];
+pub fn pressed(style: FrameStyle, light: Light, scheme: Scheme) -> FrameStyle {
+    let (hue, ink) = light_hue(hue_light(light), scheme);
     let mut look = style.look;
-    look.lights[slot] = LightDraw {
+    look.lights[slot(light)] = LightDraw {
         fill: darker(rgb(hue)),
         ring: darker(darker(rgb(hue))),
         mark: Some(rgb(ink)),
@@ -107,8 +91,27 @@ pub fn pressed(style: FrameStyle, light: Light) -> FrameStyle {
     FrameStyle { look, ..style }
 }
 
+/// Where `light` is in a look's `lights`: left to right.
+fn slot(light: Light) -> usize {
+    match light {
+        Light::Close => 0,
+        Light::Minimise => 1,
+        Light::Zoom => 2,
+    }
+}
+
+/// quire's name for casement's `light`.
+fn hue_light(light: Light) -> HueLight {
+    match light {
+        Light::Close => HueLight::Close,
+        Light::Minimise => HueLight::Minimise,
+        Light::Zoom => HueLight::Zoom,
+    }
+}
+
 /// One light: its hue or the grey pill, and its mark while the group shows marks.
-fn light(state: LightState, hue: u32, ink: u32, scheme: Scheme) -> LightDraw {
+fn light(state: LightState, which: Light, scheme: Scheme) -> LightDraw {
+    let (hue, ink) = light_hue(hue_light(which), scheme);
     let (fill, ring) = match state.fill {
         LightFill::Colour => (rgb(hue), darker(rgb(hue))),
         LightFill::Grey => (
@@ -123,33 +126,36 @@ fn light(state: LightState, hue: u32, ink: u32, scheme: Scheme) -> LightDraw {
     LightDraw { fill, ring, mark }
 }
 
-/// `--shadow-window`: `0 1px 3px rgba(0,0,0,.12), 0 24px 64px -16px rgba(0,0,0,.4)` (dark:
-/// .4 and .66).
+/// `--shadow-window`, from quire's numeric layers (contact shadow, then the wide one). A third
+/// layer would not be drawn: `FrameLook::shadow` holds two, and a test pins quire's count.
 fn shadow(scheme: Scheme) -> [ShadowLayer; 2] {
-    let (contact, ambient) = match scheme {
-        Scheme::Light => (0.12, 0.4),
-        Scheme::Dark => (0.4, 0.66),
-    };
-    let black = |alpha: f64| FrameColour {
-        r: 0,
-        g: 0,
-        b: 0,
-        a: (alpha * 255.0).round() as u8,
-    };
-    [
-        ShadowLayer {
-            dy: 1,
-            blur: 3,
-            spread: 0,
-            colour: black(contact),
-        },
-        ShadowLayer {
-            dy: 24,
-            blur: 64,
-            spread: -16,
-            colour: black(ambient),
-        },
-    ]
+    let layers = Shadow::Window.layers(scheme);
+    [0, 1].map(|at| {
+        layers.get(at).map_or_else(
+            || ShadowLayer {
+                dx: 0,
+                dy: 0,
+                blur: 0,
+                spread: 0,
+                colour: FrameColour {
+                    r: 0,
+                    g: 0,
+                    b: 0,
+                    a: 0,
+                },
+            },
+            |layer| {
+                let [r, g, b, a] = layer.rgba();
+                ShadowLayer {
+                    dx: i32::from(layer.dx),
+                    dy: i32::from(layer.dy),
+                    blur: u32::from(layer.blur),
+                    spread: i32::from(layer.spread),
+                    colour: FrameColour { r, g, b, a },
+                }
+            },
+        )
+    })
 }
 
 /// A token's value as a straight-alpha colour.
@@ -170,12 +176,12 @@ fn colour(value: Colour) -> FrameColour {
     }
 }
 
-/// `0xRRGGBB` opaque.
-fn rgb(value: u32) -> FrameColour {
+/// An opaque colour from quire's hex.
+fn rgb(value: Hex) -> FrameColour {
     FrameColour {
-        r: (value >> 16) as u8,
-        g: (value >> 8) as u8,
-        b: value as u8,
+        r: value.0[0],
+        g: value.0[1],
+        b: value.0[2],
         a: 255,
     }
 }
@@ -244,7 +250,11 @@ mod tests {
                 assert_eq!(look.mark.is_some(), *marked, "{name} mark");
             }
             let red = draw.look.light(Light::Close).fill;
-            assert_eq!(red == rgb(0xFF5F57), *coloured, "{name} fill");
+            assert_eq!(
+                red == rgb(light_hue(HueLight::Close, Scheme::Light).0),
+                *coloured,
+                "{name} fill"
+            );
         }
     }
 
@@ -252,7 +262,7 @@ mod tests {
     fn a_pressed_light_is_darker_with_its_mark_and_the_others_stay() {
         let rest = frame_style(Scheme::Light, Activity::Inactive, GroupHover::Away);
         for light in Light::ALL {
-            let down = pressed(rest, light);
+            let down = pressed(rest, light, Scheme::Light);
             let (was, now) = (rest.look.light(light), down.look.light(light));
             assert!(now.mark.is_some(), "{light:?} mark");
             assert_ne!(now.fill, was.fill, "{light:?} fill");
@@ -286,5 +296,65 @@ mod tests {
         let key = frame_style(Scheme::Light, Activity::Active, GroupHover::Away);
         let idle = frame_style(Scheme::Light, Activity::Inactive, GroupHover::Away);
         assert!(idle.look.titlebar.r > key.look.titlebar.r);
+    }
+
+    const SCHEMES: [Scheme; 2] = [Scheme::Light, Scheme::Dark];
+
+    #[test]
+    fn the_radius_is_quires_window_radius() {
+        for scheme in SCHEMES {
+            let look = frame_style(scheme, Activity::Active, GroupHover::Away).look;
+            assert_eq!(look.radius, u32::from(Radius::Window.px()), "{scheme:?}");
+        }
+    }
+
+    #[test]
+    fn the_shadow_is_quires_window_layers_in_both_schemes() {
+        for scheme in SCHEMES {
+            let quire = Shadow::Window.layers(scheme);
+            assert_eq!(quire.len(), 2, "{scheme:?}: FrameLook holds two layers");
+            let look = frame_style(scheme, Activity::Active, GroupHover::Away).look;
+            for (ours, theirs) in look.shadow.iter().zip(quire) {
+                let [r, g, b, a] = theirs.rgba();
+                assert_eq!(
+                    (ours.dx, ours.dy, ours.blur, ours.spread),
+                    (
+                        i32::from(theirs.dx),
+                        i32::from(theirs.dy),
+                        u32::from(theirs.blur),
+                        i32::from(theirs.spread)
+                    ),
+                    "{scheme:?}"
+                );
+                assert_eq!(ours.colour, FrameColour { r, g, b, a }, "{scheme:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_lights_are_quires_hues_and_inks_in_both_schemes() {
+        for scheme in SCHEMES {
+            let marked = frame_style(scheme, Activity::Active, GroupHover::Over).look;
+            for light in Light::ALL {
+                let (disc, ink) = light_hue(hue_light(light), scheme);
+                let draw = marked.light(light);
+                assert_eq!(draw.fill, rgb(disc), "{scheme:?} {light:?} disc");
+                assert_eq!(draw.mark, Some(rgb(ink)), "{scheme:?} {light:?} mark");
+                let rest = frame_style(scheme, Activity::Active, GroupHover::Away);
+                let held = pressed(rest, light, scheme).look.light(light);
+                assert_eq!(held.mark, Some(rgb(ink)), "{scheme:?} {light:?} held mark");
+                assert_eq!(
+                    held.fill,
+                    darker(rgb(disc)),
+                    "{scheme:?} {light:?} held disc"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_lights_have_a_slot_each() {
+        let slots: Vec<usize> = Light::ALL.iter().map(|light| slot(*light)).collect();
+        assert_eq!(slots, [0, 1, 2]);
     }
 }
