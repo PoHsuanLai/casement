@@ -6,6 +6,8 @@ mod frame_draw;
 mod frame_press;
 mod hints;
 mod limits;
+mod menu;
+mod menu_dwell;
 mod request;
 mod state;
 mod title;
@@ -23,6 +25,11 @@ pub use frame_press::{
 };
 pub use hints::{A11yRoot, FirstMouse, FrameHint, WindowHints};
 pub use limits::{MaxSize, SizeLimits};
+pub use menu::{
+    MenuAction, MenuEntry, MenuGroup, MenuItem, Offer, SplitSide, SplitSupport, enabled_mask,
+    is_offered, menu_for, menu_point,
+};
+pub use menu_dwell::{Dwell, DwellInput, DwellOutcome, DwellTiming};
 pub use request::WlrToplevelRequest;
 pub use state::{Restore, WindowState};
 pub use title::WindowTitle;

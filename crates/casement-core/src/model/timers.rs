@@ -40,6 +40,7 @@ impl Model {
             | TimerKey::IdleNotify(..)
             | TimerKey::SwitcherDelay
             | TimerKey::HotCorner(_)
+            | TimerKey::LightDwell
             | TimerKey::TrustedArm(_)
             | TimerKey::LeaseYield(_) => None,
             TimerKey::LockWait => Some(Gone::No),

@@ -1,7 +1,8 @@
 //! What the model tells the shell's protocol layer (the `Effect::Shell` of this crate).
 
-use crate::geometry::LogicalRect;
+use crate::geometry::{LogicalPoint, LogicalRect};
 use crate::ids::{LayerKey, WindowId};
+use crate::window::{MenuItem, enabled_mask};
 use casement_protocols::vocab::{Corner, MacMods, ScreenEdge, ShellRole, Shown};
 
 /// Something the shell's protocol layer records or sends.
@@ -21,4 +22,39 @@ pub enum ShellNote {
     HotCorner(Corner),
     /// An edge reveal (the dock or the bar over a full-screen window) opened or closed (P3).
     Reveal(ScreenEdge, Shown),
+    /// Show the window menu: the shell draws it and answers with
+    /// [`ShellRequest::WindowMenuPick`](super::ShellRequest::WindowMenuPick).
+    WindowMenu(WindowMenuShow),
+}
+
+/// The window menu to show: for which window, where, and which entries can be picked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WindowMenuShow {
+    /// The window the menu is for.
+    pub window: WindowId,
+    /// Where it opens, in global logical pixels.
+    pub at: LogicalPoint,
+    /// Every entry in menu order, each enabled or dimmed.
+    pub items: Vec<MenuItem>,
+}
+
+impl WindowMenuShow {
+    /// The enabled entries as the wire's bit set.
+    ///
+    /// ```
+    /// use casement_core::WindowId;
+    /// use casement_core::geometry::LogicalPoint;
+    /// use casement_core::shell::WindowMenuShow;
+    /// use casement_core::window::{MenuEntry, MenuItem, Offer};
+    ///
+    /// let show = WindowMenuShow {
+    ///     window: WindowId(1),
+    ///     at: LogicalPoint { x: 0, y: 0 },
+    ///     items: vec![MenuItem { entry: MenuEntry::Fill, offer: Offer::Enabled }],
+    /// };
+    /// assert_eq!(show.enabled(), 1 << MenuEntry::Fill.code());
+    /// ```
+    pub fn enabled(&self) -> u32 {
+        enabled_mask(&self.items)
+    }
 }

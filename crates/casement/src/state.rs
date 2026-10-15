@@ -108,6 +108,8 @@ pub struct RenderState {
     pub clicks: casement_core::window::ClickTracker,
     /// The traffic light held down, if any (a light acts on release).
     pub light_arm: casement_core::window::LightArm,
+    /// Hover intent on the green light: when it rests long enough the window menu shows.
+    pub light_dwell: casement_core::window::Dwell,
     /// The person's light or dark scheme, which the server-side frame is drawn in.
     pub scheme: casement_layout::Scheme,
 }
@@ -317,6 +319,7 @@ impl State {
             frame_over: None,
             clicks: casement_core::window::ClickTracker::default(),
             light_arm: casement_core::window::LightArm::default(),
+            light_dwell: casement_core::window::Dwell::default(),
             scheme: casement_layout::Scheme::default(),
         };
         Ok(State {

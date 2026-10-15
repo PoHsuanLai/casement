@@ -33,6 +33,7 @@ mod grab;
 mod idle;
 mod ime;
 mod input;
+mod menu;
 mod presence;
 mod scene;
 mod surfaces;
@@ -72,6 +73,7 @@ pub fn feed(state: &mut State, events: Vec<Event>) {
     crate::handlers::sync_outputs(state);
     idle::hear(state, &events_seen, now);
     ime::hear(state, &events_seen);
+    menu::hear(state, &events_seen);
     events_seen
         .iter()
         .filter_map(|event| match event {
