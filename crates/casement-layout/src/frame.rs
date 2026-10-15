@@ -50,9 +50,10 @@ pub fn frame_style(scheme: Scheme, activity: Activity, hover: GroupHover) -> Fra
     }
 }
 
-/// The scheme a person's `appearance.theme` paints. `System` would follow the desktop's
-/// preference, which casement does not read (the settings portal is not built in), so it paints
-/// Light, the scheme the desktop starts in.
+/// The scheme a person's `appearance.theme` paints before the desktop is asked. `System` follows
+/// the desktop's preference, which `casement::appearance` reads over the settings portal; until
+/// it has answered (and on a desktop without a portal) it paints Light, the scheme the desktop
+/// starts in.
 ///
 /// ```
 /// use casement_layout::{Scheme, Theme, scheme_of};
