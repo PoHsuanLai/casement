@@ -2361,6 +2361,28 @@ compiler (wave rule); the orchestrator builds.
   (`Style { flex_shrink, flex_grow }`, `tree.layout(node)?`). The proptest model run (`model_props.rs`) never issues a Split
   command, so it is unchanged; add the menu picks to its strategies if wanted. Real run: Left of Screen with two windows open
   fills the left half and (once the wire lands) the shell offers the second; today Left of Screen only goes full screen.
+## wave-2026-10-15/splitwire
+
+The Split View picker and divider on the wire (casement-protocols `lane/splitwire`, casement, sill). Written without a compiler.
+
+- **Protocol.** `quire_shell_v1` (still version 1): enum `split_side`, events `split_choose(first, side)` +
+  one `split_candidate(toplevel)` per candidate + `split_choice_end(first)`, requests `split_pick`, `split_cancel`,
+  `split_divide(toplevel, share)`. Land casement-protocols first. This closes the "picker has no wire" departure of
+  `## wave-2026-10-15/split`.
+- **Dispatch.** `casement_wayland::quire::shell_split` (new file; `shell.rs` was at 400 lines): `send_choose`,
+  `send_choice_end`, `on_split_pick`, `on_split_cancel`, `on_split_divide`. A pick/divide naming an unknown window is
+  ignored, no protocol error. `share` above 1000 is cut to 1000; the model clamps to 200..800.
+- **Test client.** `ShellHandle::{split_pick, split_cancel, split_divide, split_choices, split_ends}`
+  (`SplitChoiceSeen`). No new interface, so no catalogue change.
+- **Tests.** `protocol/quire_shell.rs`: `left_of_screen_offers_the_other_window_and_a_pick_makes_both_halves`,
+  `a_cancelled_choice_leaves_the_first_window_alone`; doc tests on the three `on_split_*`. No golden or `globals.txt` changed.
+- **Check at the gate.** The tests assume both toplevels (no app id) are candidates of each other and that
+  `windows()` is in id order; the second window must not be hidden or in the dock.
+- **Divider drag: still open (model side).** The wire carries `split_divide`, but casement has no hit test on the 8 px
+  strip and no pointer grab, and no divider rectangle in `Arrangement`. sill draws the handle only if a shell surface
+  can receive the drag; see sill's findings. A real drag needs: (1) the gap between the two halves routed to a shell
+  layer surface or a compositor grab, (2) a resize cursor, (3) persistence of the share if wanted.
+
 ## wave-2026-10-15/shadow
 
 The window shadow stops re-rastering per frame. Written without a compiler (wave rule); the orchestrator builds.
