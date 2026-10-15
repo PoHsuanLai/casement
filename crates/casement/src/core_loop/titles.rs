@@ -10,8 +10,8 @@ use casement_core::window::{FrameMetrics, FrameStyle};
 use casement_layout::frame_metrics;
 use casement_motion::OutputFrame;
 use casement_render::{
-    ClosingFrame, FlightDraw, OutputView, OverviewDraw, TitleDraw, closing_content,
-    scaled_content, window_content, window_drawn,
+    ClosingFrame, FlightDraw, OutputView, OverviewDraw, TitleDraw, closing_content, scaled_content,
+    window_content, window_drawn,
 };
 use std::collections::BTreeMap;
 

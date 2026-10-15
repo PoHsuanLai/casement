@@ -201,108 +201,107 @@ pub fn output_elements<R: Compositor>(
         .windows
         .iter()
         .partition(|placed| layers.full_screen.contains(&placed.window));
-    let draw_windows =
-        |placed: &[&PlacedWindow], elements: &mut Vec<CasementElement<R>>, renderer: &mut R| {
-            for placed in placed.iter().rev() {
-                let title = layers.titles.get(&placed.window);
-                let Some(entry) = book.window(&placed.window) else {
-                    // A window that has closed: its frame fades and shrinks with it.
-                    if let Some(closing) = layers.closing.get(&placed.window) {
-                        elements.extend(closing_elements(
-                            placed, closing, title, view, book, renderer,
-                        ));
-                    }
-                    continue;
-                };
-                let (flown, effect) =
-                    in_overview(placed, window_content(placed, &entry.root), layers);
-                let placed = &flown;
-                let flight = choose(effect, placed.flight);
-                let style = layers.frames.get(&placed.window);
-                // A window casement frames is clipped at its bottom corners, unless it
-                // covers the screen (macOS drops the radius in full screen; a zoomed
-                // window keeps it). A window with its own frame is not in `frames`.
-                let clip_radius = style
-                    .filter(|_| !layers.full_screen.contains(&placed.window))
-                    .map(|style| style.look.radius);
-                if let FlightDraw::Genie(flight) = flight {
-                    // The genie cuts the window as it stands at rest, and the strips go
-                    // where the curve says. Its popups are closed (a menu does not ride
-                    // a minimise on a Mac, and a strip cannot carry what hangs outside the
-                    // window).
-                    let window = GenieWindow {
-                        placed,
-                        flight,
-                        style,
-                        title,
-                        clip_radius,
-                    };
-                    elements.extend(genie_window(window, &entry.root, view, book, renderer));
-                    continue;
+    let draw_windows = |placed: &[&PlacedWindow],
+                        elements: &mut Vec<CasementElement<R>>,
+                        renderer: &mut R| {
+        for placed in placed.iter().rev() {
+            let title = layers.titles.get(&placed.window);
+            let Some(entry) = book.window(&placed.window) else {
+                // A window that has closed: its frame fades and shrinks with it.
+                if let Some(closing) = layers.closing.get(&placed.window) {
+                    elements.extend(closing_elements(
+                        placed, closing, title, view, book, renderer,
+                    ));
                 }
-                let origin = surface_origin_logical(
-                    &entry.root,
-                    LogicalPoint {
+                continue;
+            };
+            let (flown, effect) = in_overview(placed, window_content(placed, &entry.root), layers);
+            let placed = &flown;
+            let flight = choose(effect, placed.flight);
+            let style = layers.frames.get(&placed.window);
+            // A window casement frames is clipped at its bottom corners, unless it
+            // covers the screen (macOS drops the radius in full screen; a zoomed
+            // window keeps it). A window with its own frame is not in `frames`.
+            let clip_radius = style
+                .filter(|_| !layers.full_screen.contains(&placed.window))
+                .map(|style| style.look.radius);
+            if let FlightDraw::Genie(flight) = flight {
+                // The genie cuts the window as it stands at rest, and the strips go
+                // where the curve says. Its popups are closed (a menu does not ride
+                // a minimise on a Mac, and a strip cannot carry what hangs outside the
+                // window).
+                let window = GenieWindow {
+                    placed,
+                    flight,
+                    style,
+                    title,
+                    clip_radius,
+                };
+                elements.extend(genie_window(window, &entry.root, view, book, renderer));
+                continue;
+            }
+            let origin = surface_origin_logical(
+                &entry.root,
+                LogicalPoint {
+                    x: placed.at.x.round_logical(),
+                    y: placed.at.y.round_logical(),
+                },
+            );
+            match flight {
+                FlightDraw::Still => {
+                    elements.extend(popup_elements(&entry.root, origin, view, renderer));
+                }
+                // A Scale flight: the popups shrink about the window's corner and fade
+                // with it.
+                _ => {
+                    let about = LogicalPoint {
                         x: placed.at.x.round_logical(),
                         y: placed.at.y.round_logical(),
-                    },
-                );
-                match flight {
-                    FlightDraw::Still => {
-                        elements.extend(popup_elements(&entry.root, origin, view, renderer));
-                    }
-                    // A Scale flight: the popups shrink about the window's corner and fade
-                    // with it.
-                    _ => {
-                        let about = LogicalPoint {
-                            x: placed.at.x.round_logical(),
-                            y: placed.at.y.round_logical(),
-                        };
-                        let ratio = flight_ratio(placed, &entry.root);
-                        let ride = PopupRide::new(about, ratio, alpha(placed.opacity));
-                        elements.extend(popup_elements_riding(
-                            &entry.root,
-                            origin,
-                            ride,
-                            view,
-                            renderer,
-                        ));
-                    }
+                    };
+                    let ratio = flight_ratio(placed, &entry.root);
+                    let ride = PopupRide::new(about, ratio, alpha(placed.opacity));
+                    elements.extend(popup_elements_riding(
+                        &entry.root,
+                        origin,
+                        ride,
+                        view,
+                        renderer,
+                    ));
                 }
-                // The frame goes round the content as it is drawn: shrunk, for a window
-                // that flies scaled.
-                let content = drawn_content(placed, window_content(placed, &entry.root), effect);
-                let clip = clip_radius.map(|radius| ClipShape::of_content(content, radius, view));
-                let (front, back) = style
-                    .map(|style| {
-                        frame_elements(
-                            placed.window,
-                            FrameDraw {
-                                style,
-                                title,
-                                content,
-                                opacity: placed.opacity,
-                            },
-                            view,
-                            book,
-                            renderer,
-                        )
-                    })
-                    .unwrap_or_default();
-                if let OverviewDraw::On { hover: Some(hover) } = &layers.overview
-                    && hover.window == placed.window
-                {
-                    let visual = style.map_or(content, |style| style.around(content).outline());
-                    elements.extend(ring_elements(visual, view));
-                    elements.extend(hover.label.as_ref().and_then(|(size, draw)| {
-                        let at = label_place(visual, *size);
-                        label_element(draw, at, view, renderer)
-                    }));
-                }
-                elements.extend(front);
-                elements.extend(window_elements(placed, clip, view, book, renderer));
-                elements.extend(back);
             }
+            // The frame goes round the content as it is drawn: shrunk, for a window
+            // that flies scaled.
+            let content = drawn_content(placed, window_content(placed, &entry.root), effect);
+            let clip = clip_radius.map(|radius| ClipShape::of_content(content, radius, view));
+            let (front, back) = style
+                .map(|style| {
+                    frame_elements(
+                        placed.window,
+                        FrameDraw {
+                            style,
+                            title,
+                            content,
+                            opacity: placed.opacity,
+                        },
+                        view,
+                        book,
+                        renderer,
+                    )
+                })
+                .unwrap_or_default();
+            if let OverviewDraw::On { hover: Some(hover) } = &layers.overview
+                && hover.window == placed.window
+            {
+                let visual = style.map_or(content, |style| style.around(content).outline());
+                elements.extend(ring_elements(visual, view));
+                elements.extend(hover.label.as_ref().and_then(|(size, draw)| {
+                    let at = label_place(visual, *size);
+                    label_element(draw, at, view, renderer)
+                }));
+            }
+            elements.extend(front);
+            elements.extend(window_elements(placed, clip, view, book, renderer));
+            elements.extend(back);
         }
     };
     draw_level(&layers.overlay, &mut elements, renderer);
