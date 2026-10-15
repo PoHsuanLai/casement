@@ -7,8 +7,6 @@
 use crate::state::State;
 use casement_core::ClientKey;
 use casement_core::app::{StopSignal, Termination};
-use casement_core::policy::ConnectionRole;
-use casement_wayland::ClientState;
 use rustix::process::{Pid, RawPid, Signal, getpid, kill_process};
 use std::collections::BTreeSet;
 
@@ -23,22 +21,10 @@ pub(super) fn terminate(state: &mut State, stop: Termination) {
     tracing::debug!(app = %stop.app.wire(), signal = ?stop.signal, sent, "an app was force quit");
 }
 
-/// The processes behind these connections: those that came through the public socket.
+/// The processes behind these connections: those that came through the public socket, as
+/// recorded when they connected.
 fn pids_of(state: &State, clients: &[ClientKey]) -> BTreeSet<RawPid> {
-    let handle = state.display.backend_handle();
-    let mut ids = Vec::new();
-    handle.with_all_clients(|id| ids.push(id));
-    ids.into_iter()
-        .filter_map(|id| {
-            let data = handle.get_client_data(id.clone()).ok()?;
-            let held = (*data).downcast_ref::<ClientState>()?;
-            let wanted = clients.contains(&held.key) && held.role == ConnectionRole::Public;
-            match wanted {
-                true => handle.get_client_credentials(id).ok().map(|cred| cred.pid),
-                false => None,
-            }
-        })
-        .collect()
+    state.processes.of(clients).collect()
 }
 
 /// Sends `signal` to each of `pids`, except init and `own` (this process). How many were sent.

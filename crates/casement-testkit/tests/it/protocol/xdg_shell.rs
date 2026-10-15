@@ -591,13 +591,14 @@ fn a_client_that_stops_answering_pings_is_not_responding() {
         pings: Pings::default(),
     };
     map_toplevel(&mut fixture, id, &base, (400, 300));
-    let app = fixture
+    let (window, app) = fixture
         .model()
         .windows()
-        .values()
+        .iter()
         .next()
-        .map(|window| window.app.clone())
+        .map(|(id, window)| (*id, window.app.clone()))
         .expect("a window");
+    fixture.activate_window(window);
     let keyboard = fixture.input().plug(
         DeviceClass::Keyboard,
         TestOrigin::Physical(DeviceClass::Keyboard),
@@ -618,13 +619,14 @@ fn a_client_that_answers_pings_stays_responding() {
     let (mut fixture, id) = boot();
     let base = WmBase::bind(fixture.client(id), 7);
     map_toplevel(&mut fixture, id, &base, (400, 300));
-    let app = fixture
+    let (window, app) = fixture
         .model()
         .windows()
-        .values()
+        .iter()
         .next()
-        .map(|window| window.app.clone())
+        .map(|(id, window)| (*id, window.app.clone()))
         .expect("a window");
+    fixture.activate_window(window);
     let keyboard = fixture.input().plug(
         DeviceClass::Keyboard,
         TestOrigin::Physical(DeviceClass::Keyboard),
