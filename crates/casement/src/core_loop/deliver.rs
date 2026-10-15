@@ -7,6 +7,7 @@
 //! remembered (`seat.taken`), so their releases are not delivered either. Keys wait at the
 //! text-input gate while an input method is about to grab the keyboard.
 
+use super::frames;
 use super::grab;
 use super::scene::{Hit, hit_test, stack};
 use crate::exec;
@@ -146,12 +147,12 @@ fn remember(
     }
 }
 
-fn next_serial() -> InputSerial {
+pub(super) fn next_serial() -> InputSerial {
     InputSerial(SERIAL_COUNTER.next_serial().into())
 }
 
 /// The modifiers as the Mac view of the keyboard.
-fn mac_mods(mods: &ModifiersState) -> MacMods {
+pub(super) fn mac_mods(mods: &ModifiersState) -> MacMods {
     [
         (mods.shift, MacMods::SHIFT),
         (mods.ctrl, MacMods::CONTROL),
@@ -310,7 +311,7 @@ fn carry_out(state: &mut State, action: &BindingAction) {
 }
 
 /// Runs a model entry point at the clock's now; the effects it asks for.
-fn run_model(
+pub(super) fn run_model(
     state: &mut State,
     step: impl FnOnce(Model, Mono) -> (Model, Vec<Effect>),
 ) -> Vec<Effect> {
@@ -372,15 +373,20 @@ fn motion(
     if grab::follow(state, logical(at)) == grab::Follow::Taken {
         return;
     }
-    let under = hit_test(&stack(state), logical(at));
-    if refused(
-        state,
-        event,
-        &target_of(under.as_ref().map(|(hit, _)| hit)),
-        InputUse::Motion,
-    ) {
+    let stacked = stack(state);
+    let over = frames::under(state, &stacked, logical(at));
+    let under = match over {
+        Some(_) => None,
+        None => hit_test(&stacked, logical(at)),
+    };
+    let target = match over {
+        Some(over) => InputTarget::Window(over.window),
+        None => target_of(under.as_ref().map(|(hit, _)| hit)),
+    };
+    if refused(state, event, &target, InputUse::Motion) {
         return;
     }
+    frames::hover(state, over);
     state.render.chrome.cursor_at = logical(at);
     let delivery = PointerDelivery::Motion {
         focus: under.map(|(_, surface)| surface),
@@ -428,13 +434,22 @@ fn press_edge(
     let Some(here) = pointer_at(seat) else {
         return;
     };
-    let under = hit_test(
-        &stack(state),
+    let (over, under) = frames::pick(
+        state,
         LogicalPoint {
             x: here.0,
             y: here.1,
         },
     );
+    if let (Some(over), Edge::Press) = (over, edge) {
+        // A frame's press never reaches a client; its release is swallowed with it.
+        state.wl.seat.taken = std::mem::take(&mut state.wl.seat.taken).take_button(button);
+        let target = InputTarget::Window(over.window);
+        if !refused(state, event, &target, InputUse::Press) {
+            frames::press(state, seat, event, button, over);
+        }
+        return;
+    }
     let target = target_of(under.as_ref().map(|(hit, _)| hit));
     let surface = under.as_ref().map(|(_, at)| at.surface.clone());
     let delivered = !refused(state, event, &target, InputUse::Press)
@@ -569,13 +584,14 @@ fn gesture(state: &mut State, seat: &Seat<State>, event: &InputEvent, step: Gest
 /// What is under the pointer now.
 fn under_pointer(state: &State, seat: &Seat<State>) -> Option<(Hit, SurfaceAt)> {
     let here = pointer_at(seat)?;
-    hit_test(
-        &stack(state),
+    frames::pick(
+        state,
         LogicalPoint {
             x: here.0,
             y: here.1,
         },
     )
+    .1
 }
 
 /// A touch step; a touch going down is hit-tested where it lands.
@@ -650,13 +666,14 @@ pub(super) fn refocus(state: &mut State) {
     let Some(here) = pointer_at(&seat) else {
         return;
     };
-    let under = hit_test(
-        &stack(state),
+    let under = frames::pick(
+        state,
         LogicalPoint {
             x: here.0,
             y: here.1,
         },
     )
+    .1
     .map(|(_, at)| at);
     let now = state.clock.now();
     log(seat::apply_refocus(&seat, state, under, now));
