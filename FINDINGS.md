@@ -3414,3 +3414,35 @@ on hardware**: nothing was timed; whether the 4K read-back stall is gone is for 
   `TextureRenderElement::from_static_texture` argument order with `renderer.context_id()`; the `&dyn Any` downcast of `GlesTexture` to
   `R::TextureId`; a `GlesTexture` made by `Offscreen::create_buffer` drawn upright through `render_texture_from_to` after being rendered
   into with a `Transform::Normal` tracker (mirrors `blit_texture`).
+
+## cas26-menusheet: global menus for other toolkits, sheets, picture in picture (P3-MN, P3-SH)
+
+- **Global menus: the transport is blocked on a dependency.** The recorded address, the model and the shell path are done and tested:
+  `MenuSource` (`core/app/menu.rs`) on `WindowHints.menu`, `WindowHintChange::Menu`, `Model::app_menu` (the key window's address, else the
+  app's first window that declared one), and the existing `quire_desktop_app_v1.menu_source` and `quire_desktop_window_v1.menu_path`
+  events now carry it (no new `quire_shell` event, no change to casement-protocols). `casement-wayland/src/{appmenu,gtk_shell}.rs` are
+  the meaning of the requests as pure functions (validation of bus names and object paths, staging until the window maps). What is
+  missing is the generated server code, which needs a dependency edit (a Cargo.toml change is outside a lane): for
+  `org_kde_kwin_appmenu` the crate `wayland-protocols-plasma` 0.3.12 (already in Cargo.lock, client only) with feature `server`, whose
+  `appmenu.xml` is the protocol; for `gtk_shell1` no crate carries it, so its XML must be vendored verbatim from GTK 3.24
+  (`gdk/wayland/protocol/gtk-shell.xml`; opcodes follow declaration order, so it must not be retyped) and generated with
+  `wayland-scanner` (`generate_interfaces!`/`generate_server_code!`). Then: two `GlobalKind`s (`AppMenu`, `GtkShell`, both `Yes` to every
+  role but sandboxed), two Parts in `WaylandStates`, the dispatch glue calling `on_address`/`on_released`/`on_properties`, and
+  `appmenu::on_mapped` at the window's map. Not done: a lane cannot compile or edit Cargo.toml.
+- **Wire mapping.** Qt: kind `dbus_menu`, bus = service name, `menubar_path` = the object path, `app_path` empty, window `menu_path` = the
+  object path. GTK 3: kind `gtk_menus`, bus = `unique_bus_name`, `app_path` = `application_object_path`, `menubar_path`, window `menu_path` =
+  `window_object_path`. `application_id` and `app_menu_path` are ignored (an app's identity is proven by its process; macOS has no app
+  menu inside the window). A GTK call without a menu bar path clears the menu.
+- **Sheets.** A window with a parent of its app and the modal hint was already a sheet to the focus machine (blocks the parent's presses with
+  the bell, takes the key, gives it back). Layout now hangs it: `WindowPlacement::Sheet { parent, size }` puts it at the top of its
+  window's content rectangle (just under the title bar), centred and no wider than the window, recomputed on every arrangement so it
+  moves with the window. A sheet whose window has no target in the same arrangement (tiled, in the dock) is placed as a new window.
+  Departure: the open and close slide ([`window::slide_start`], [`window::slide_clip`]) is geometry only; the motion and render sides are
+  the animation lane's and the renderer's (see the report's interface asks). A sheet is not draggable.
+- **Picture in picture.** Role `pip` (set through `quire_window_v1`) moves the window to every Space of its output, floats it above the
+  stack (layout sorts by `(floats above, rank)`), holds the aspect ratio of its current rectangle during a drag, and snaps it to the nearest
+  corner of the usable area, 16 px in, when the person lets go (new `Event::WindowDragEnded`, fed from the seat grab's end). Heuristic
+  (only when the client declared nothing): role `document` with title `Picture-in-Picture` or `Picture in picture` and an app id starting
+  with firefox, chromium, google-chrome, brave, microsoft-edge, vivaldi or org.chromium. 16 px is a guess at macOS's margin. Departures:
+  the ratio is the one of the current rectangle, so a long resize can drift by a pixel of rounding; a resize also snaps on release;
+  the corner is by the window's centre, with no flick velocity.

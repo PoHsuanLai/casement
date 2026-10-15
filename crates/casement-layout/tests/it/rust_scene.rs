@@ -303,3 +303,43 @@ fn minimised_windows_have_no_target() {
     let ids: Vec<_> = got.windows.iter().map(|t| t.window).collect();
     assert_eq!(ids, vec![WindowId(2)]);
 }
+
+#[test]
+fn a_sheet_hangs_from_its_window_and_follows_it() {
+    let usable = rect(0, 24, 1920, 1056);
+    let sheet = WindowPlacement::Sheet {
+        parent: WindowId(1),
+        size: size(400, 200),
+    };
+    let rows = [
+        (
+            "centred",
+            rect(560, 252, 800, 600),
+            rect(760, 252, 400, 200),
+        ),
+        (
+            "moved with it",
+            rect(100, 100, 800, 600),
+            rect(300, 100, 400, 200),
+        ),
+    ];
+    for (name, parent, want) in rows {
+        let spec = one_desktop(
+            usable,
+            vec![
+                window(1, WindowPlacement::Floating(parent), ANY_SIZE),
+                window(2, sheet.clone(), ANY_SIZE),
+            ],
+        );
+        let got = RustScene.arrange(&spec, &knobs());
+        assert_eq!(target(&got, 2).rect, want, "{name}");
+        assert_eq!(target(&got, 2).size, ConfigureNeed::Keep, "{name}");
+    }
+    let orphan = one_desktop(usable, vec![window(2, sheet, ANY_SIZE)]);
+    let got = RustScene.arrange(&orphan, &knobs());
+    assert_eq!(
+        target(&got, 2).rect,
+        rect(760, 452, 400, 200),
+        "with no window it is a new one"
+    );
+}

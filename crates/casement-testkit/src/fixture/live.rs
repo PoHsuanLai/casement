@@ -71,6 +71,13 @@ impl Fixture {
         self.state.wl.layer_shell.key_of(&surface)
     }
 
+    /// Feeds `events` to the core as if the protocol layer had produced them (for a protocol
+    /// whose client the kit does not have, such as the global menu ones); then pumps.
+    pub fn feed_events(&mut self, events: Vec<Event>) {
+        core_loop::feed(&mut self.state, events);
+        self.pump();
+    }
+
     /// Puts `layer`'s top-left corner at `at` wherever its anchors would have put it
     /// ([`Event::LayerPlaced`]); then pumps.
     pub fn place_layer(&mut self, layer: LayerKey, at: LogicalPoint) {

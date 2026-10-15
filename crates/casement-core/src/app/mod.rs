@@ -6,6 +6,8 @@
 )]
 mod app;
 mod key;
+mod menu;
 
 pub use app::{App, AppLife, AppVisibility, PidSet, QuitPhase};
 pub use key::AppKey;
+pub use menu::MenuSource;

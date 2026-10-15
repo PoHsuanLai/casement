@@ -11,6 +11,7 @@ use crate::{
     WindowPlacement,
 };
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
+use casement_core::window::attach_rect;
 use porter_core::SpaceId;
 
 /// Adds `output`'s Space origins and window targets to `into`.
@@ -83,6 +84,7 @@ fn arrange_space(
         return;
     }
     let mut new_so_far = 0;
+    let mut sheets = Vec::new();
     for window in &space.windows {
         let usable = below_chrome(output.usable, window.reserve_top);
         let (target, report) = match window.placement {
@@ -105,7 +107,30 @@ fn arrange_space(
                 full_screen_target(window.window, &output.output, output.full),
                 None,
             ),
+            WindowPlacement::Sheet { parent, size } => {
+                sheets.push((window, parent, size));
+                continue;
+            }
             WindowPlacement::Minimised | WindowPlacement::Tiled(_) => continue,
+        };
+        into.windows.push(target);
+        into.reports.extend(report);
+    }
+    for (window, parent, asked) in sheets {
+        let usable = below_chrome(output.usable, window.reserve_top);
+        let hung = into
+            .windows
+            .iter()
+            .find(|target| target.window == parent)
+            .map(|target| attach_rect(target.rect, asked));
+        let (target, report) = match hung {
+            Some(rect) => placed(window.window, &output.output, asked, rect, window.limits),
+            None => {
+                let size = fit_size(asked, window.limits, usable);
+                let rect = cascade_rect(usable, size, new_so_far, knobs.cascade_step);
+                new_so_far += 1;
+                placed(window.window, &output.output, asked, rect, window.limits)
+            }
         };
         into.windows.push(target);
         into.reports.extend(report);

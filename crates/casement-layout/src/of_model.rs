@@ -7,7 +7,7 @@ use crate::{
 use casement_core::app::AppVisibility;
 use casement_core::overview::Overview;
 use casement_core::space::{Space, SpaceContent};
-use casement_core::window::{SpacePlace, Window, WindowState};
+use casement_core::window::{SpacePlace, Window, WindowState, floats_above, sheet_parent};
 use casement_core::{Model, OutputKey, OutputState, WindowId};
 use porter_core::SpaceId;
 use std::collections::BTreeMap;
@@ -128,7 +128,8 @@ fn space_spec(
             }
         })
         .collect::<Vec<&Window>>();
-    held.sort_by_key(|window| (window.stack, window.id));
+    // Picture in picture floats above the rest, whatever the stack ranks say.
+    held.sort_by_key(|window| (floats_above(window), window.stack, window.id));
     let windows = held
         .into_iter()
         .enumerate()
@@ -158,12 +159,21 @@ fn window_spec(
     WindowSpec {
         window: window.id,
         app: window.app.clone(),
-        placement: match (hidden, placement_of(&window.state)) {
-            (true, _) => WindowPlacement::Minimised,
-            (false, WindowPlacement::Floating(rect)) if model.is_placed_by_hand(window.id) => {
+        placement: match (hidden, sheet_parent(window), placement_of(&window.state)) {
+            (true, _, _) => WindowPlacement::Minimised,
+            (false, Some(parent), WindowPlacement::New(size)) => {
+                WindowPlacement::Sheet { parent, size }
+            }
+            (false, Some(parent), WindowPlacement::Floating(rect)) => WindowPlacement::Sheet {
+                parent,
+                size: rect.size,
+            },
+            (false, None, WindowPlacement::Floating(rect))
+                if model.is_placed_by_hand(window.id) =>
+            {
                 WindowPlacement::Placed(rect)
             }
-            (false, placement) => placement,
+            (false, _, placement) => placement,
         },
         limits: window.limits,
         stack,

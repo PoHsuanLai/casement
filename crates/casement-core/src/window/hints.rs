@@ -1,5 +1,6 @@
 //! What a client asked of the compositor about its window (`quire_window_v1`, C50).
 
+use crate::app::MenuSource;
 use crate::geometry::LogicalRect;
 use casement_protocols::vocab::{Edited, FrameMode};
 
@@ -14,6 +15,8 @@ pub struct WindowHints {
     pub edited: Edited,
     /// Its accessibility tree's root.
     pub a11y: A11yRoot,
+    /// Where its global menu lives, when the app is not ours (a Qt or GTK 3 client).
+    pub menu: MenuSource,
 }
 
 /// Where a first click passes through to the app.
@@ -60,6 +63,7 @@ impl WindowHints {
             },
             edited: Edited::Saved,
             a11y: A11yRoot::Unknown,
+            menu: MenuSource::None,
         }
     }
 }

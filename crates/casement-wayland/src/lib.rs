@@ -27,6 +27,7 @@ pub mod serial;
 pub mod states;
 
 pub mod alpha_modifier;
+pub mod appmenu;
 pub mod background_effect;
 pub mod capture_source;
 pub mod commit_timing;
@@ -40,6 +41,7 @@ pub mod fifo;
 pub mod foreign_toplevel_list;
 pub mod fractional_scale;
 pub mod gamma;
+pub mod gtk_shell;
 pub mod idle_inhibit;
 pub mod idle_notify;
 pub mod image_capture;

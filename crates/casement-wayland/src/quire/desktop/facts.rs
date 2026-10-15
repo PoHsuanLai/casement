@@ -4,7 +4,7 @@
 //! publishing the same state twice sends nothing the second time.
 
 use super::DesktopView;
-use casement_core::app::{AppKey, AppVisibility as Held};
+use casement_core::app::{AppKey, AppVisibility as Held, MenuSource};
 use casement_core::space::SpaceContent;
 use casement_core::window::{Parent, SpacePlace};
 use casement_core::{OutputKey, WindowId};
@@ -48,6 +48,27 @@ pub(super) struct Objects<'a> {
     pub(super) windows: &'a BTreeMap<WindowId, QuireDesktopWindowV1>,
 }
 
+/// Where an app's global menu is, as `menu_source` carries it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct MenuFacts {
+    kind: app::MenuSourceKind,
+    bus: String,
+    app_path: String,
+    menubar_path: String,
+}
+
+impl MenuFacts {
+    /// `source` as the wire carries it (`None` for a kind the XML lacks).
+    fn of(source: &MenuSource) -> Option<MenuFacts> {
+        Some(MenuFacts {
+            kind: wire(source.kind())?,
+            bus: source.bus().to_owned(),
+            app_path: source.app_path().to_owned(),
+            menubar_path: source.menubar_path().to_owned(),
+        })
+    }
+}
+
 /// An app as a manager is told it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct AppFacts {
@@ -58,6 +79,7 @@ pub(super) struct AppFacts {
     visibility: app::AppVisibility,
     attention: app::Attention,
     rank: u32,
+    menu: MenuFacts,
 }
 
 impl AppFacts {
@@ -84,6 +106,7 @@ impl AppFacts {
             visibility: wire(visibility)?,
             attention: wire(held.attention)?,
             rank: u32::try_from(rank).unwrap_or(u32::MAX),
+            menu: MenuFacts::of(&view.model.app_menu(key))?,
         })
     }
 
@@ -104,12 +127,13 @@ impl AppFacts {
             object.visibility(self.visibility);
             sent += 1;
         }
-        if was.is_none() {
+        if was.is_none_or(|was| was.menu != self.menu) {
+            let menu = &self.menu;
             object.menu_source(
-                app::MenuSourceKind::None,
-                String::new(),
-                String::new(),
-                String::new(),
+                menu.kind,
+                menu.bus.clone(),
+                menu.app_path.clone(),
+                menu.menubar_path.clone(),
             );
             sent += 1;
         }
@@ -219,6 +243,7 @@ pub(super) struct WindowFacts {
     sensitivity: SensitivityLevel,
     responsiveness: window::Responsiveness,
     mark: PlacementMark,
+    menu_path: String,
 }
 
 impl WindowFacts {
@@ -269,6 +294,7 @@ impl WindowFacts {
             sensitivity: wire(held.sensitivity)?,
             responsiveness,
             mark: wire(held.state.mark())?,
+            menu_path: held.hints.menu.window_path().to_owned(),
         })
     }
 
@@ -352,8 +378,8 @@ impl WindowFacts {
             object.placement(self.mark);
             sent += 1;
         }
-        if was.is_none() {
-            object.menu_path(String::new());
+        if was.is_none_or(|was| was.menu_path != self.menu_path) {
+            object.menu_path(self.menu_path.clone());
             sent += 1;
         }
         sent

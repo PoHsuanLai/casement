@@ -76,6 +76,7 @@ impl Model {
     pub(super) fn dragged(self, id: WindowId, rect: LogicalRect) -> Moved {
         let mut model = self;
         let reach = Reach::of(model.hand_placed.remove(&id));
+        let rect = model.pip_fitted(id, rect);
         model.window_moved_to(id, rect, reach)
     }
 

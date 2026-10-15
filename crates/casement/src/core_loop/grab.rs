@@ -93,7 +93,11 @@ pub(super) fn follow(state: &mut State, at: LogicalPoint) -> Follow {
 /// `released` was let go: the grab ends when it is the button the grab began with.
 pub(super) fn end(state: &mut State, released: ButtonCode) {
     if ends_with(state, released) {
+        let window = state.wl.seat.grab.map(|drag| drag.window());
         state.wl.seat.grab = None;
+        if let Some(window) = window {
+            feed(state, vec![Event::WindowDragEnded { window }]);
+        }
     }
 }
 

@@ -8,7 +8,9 @@ mod hints;
 mod limits;
 mod menu;
 mod menu_dwell;
+mod pip;
 mod request;
+mod sheet;
 mod state;
 mod title;
 #[allow(
@@ -30,7 +32,9 @@ pub use menu::{
     is_offered, menu_for, menu_point,
 };
 pub use menu_dwell::{Dwell, DwellInput, DwellOutcome, DwellTiming};
+pub use pip::{PIP_MARGIN, PipSource, fit_aspect, floats_above, pip_source_of, snap_corner};
 pub use request::WlrToplevelRequest;
+pub use sheet::{attach_rect, sheet_parent, slide_clip, slide_start};
 pub use state::{Restore, WindowState};
 pub use title::WindowTitle;
 pub use window::{Parent, SpacePlace, StackRank, Window};

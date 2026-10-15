@@ -472,3 +472,41 @@ fn the_manager_follows_what_goes_away() {
         "a stopped manager still hears that what it has ended"
     );
 }
+
+/// A window's menu address, declared through the Qt or GTK 3 protocols, reaches the shell as the
+/// app's `menu_source` and the window's `menu_path`; a repeat of the same address sends nothing.
+#[test]
+fn a_menu_address_reaches_the_shell_as_the_apps_menu_source() {
+    use casement_core::app::MenuSource;
+    use casement_core::{Event, WindowHintChange};
+    let (mut fixture, _public, _tops) = mapped(1);
+    let (_shell, mut watch) = watched(&mut fixture, ConnectionRole::Shell);
+    let window = windows(&fixture)[0];
+    let (sources, paths) = (
+        watch.apps()[0].menu_sources,
+        watch.windows()[0].menu_path.clone(),
+    );
+    let declare = |source: MenuSource| {
+        vec![Event::WindowHint {
+            window,
+            hint: WindowHintChange::Menu(source),
+        }]
+    };
+    let qt = MenuSource::DbusMenu {
+        bus: "org.example.Qt".to_owned(),
+        path: "/MenuBar".to_owned(),
+    };
+    fixture.feed_events(declare(qt.clone()));
+    settle(&mut fixture, &mut watch);
+    assert_eq!(watch.apps()[0].menu_sources, sources + 1);
+    assert_eq!(watch.windows()[0].menu_path.as_deref(), Some("/MenuBar"));
+    assert_ne!(watch.windows()[0].menu_path, paths);
+
+    fixture.feed_events(declare(qt));
+    settle(&mut fixture, &mut watch);
+    assert_eq!(
+        watch.apps()[0].menu_sources,
+        sources + 1,
+        "unchanged: nothing sent"
+    );
+}
