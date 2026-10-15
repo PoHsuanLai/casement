@@ -39,6 +39,7 @@ mod quire_shell;
 mod quire_window;
 mod relative_pointer;
 mod sandbox;
+mod screencopy;
 mod seat;
 mod security_context;
 mod session_lock;

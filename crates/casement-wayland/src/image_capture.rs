@@ -20,7 +20,8 @@ use smithay::wayland::image_capture_source::{
     OutputCaptureSourceHandler, OutputCaptureSourceState,
 };
 use smithay::wayland::image_copy_capture::{
-    CaptureFailureReason, ImageCopyCaptureHandler, ImageCopyCaptureState, Session,
+    CaptureFailureReason, Frame, ImageCopyCaptureHandler, ImageCopyCaptureState, Session,
+    SessionRef,
 };
 use std::collections::BTreeMap;
 
@@ -43,6 +44,9 @@ pub struct ImageCapturePart {
     pub copy: ImageCopyCaptureState,
     /// The sessions, held so that dropping one tells its client `stopped`.
     held: BTreeMap<CaptureSessionId, Session>,
+    /// The frame requests that found no frame presented yet; dropping one tells its client
+    /// `failed`.
+    waiting: BTreeMap<CaptureSessionId, Frame>,
 }
 
 impl ImageCapturePart {
@@ -59,6 +63,7 @@ impl ImageCapturePart {
             output_sources: OutputCaptureSourceState::new_with_filter::<D, _>(display, filter),
             copy: ImageCopyCaptureState::new_with_filter::<D, _>(display, filter),
             held: BTreeMap::new(),
+            waiting: BTreeMap::new(),
         }
     }
 
@@ -67,9 +72,26 @@ impl ImageCapturePart {
         self.held.insert(id, session);
     }
 
+    /// Keeps `frame`, the request of `id` that found no frame to copy yet (a request it
+    /// replaces is dropped, which fails it).
+    pub fn wait_frame(&mut self, id: CaptureSessionId, frame: Frame) {
+        self.waiting.insert(id, frame);
+    }
+
+    /// The waiting requests, to be served again.
+    pub fn take_waiting(&mut self) -> Vec<(CaptureSessionId, Frame)> {
+        std::mem::take(&mut self.waiting).into_iter().collect()
+    }
+
+    /// The session `id`, if it is still held.
+    pub fn session_ref(&self, id: CaptureSessionId) -> Option<SessionRef> {
+        self.held.get(&id).map(Session::as_ref)
+    }
+
     /// The client destroyed a session: forgets it (the dead session sends nothing).
     pub fn release(&mut self, id: CaptureSessionId) {
         self.book.drop_session(id);
+        self.waiting.remove(&id);
         self.held.remove(&id);
         self.copy.cleanup();
     }
@@ -166,7 +188,9 @@ pub fn apply_failed(
 /// `output` was unplugged: its sessions get `stopped` (the held session is dropped).
 pub fn apply_output_gone(part: &mut ImageCapturePart, output: &OutputKey) {
     for id in part.book.forget_output(output) {
+        // The session first: its drop fails the waiting frame with `stopped`.
         part.held.remove(&id);
+        part.waiting.remove(&id);
     }
     part.copy.cleanup();
 }

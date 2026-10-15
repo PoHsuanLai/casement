@@ -32,6 +32,7 @@ mod quire_desktop;
 mod quire_shell;
 mod quire_window;
 mod relative_pointer;
+mod screencopy;
 mod seat;
 mod security_context;
 mod session_lock;
@@ -58,3 +59,4 @@ pub(crate) use xdg_shell::popups::{
 mod xdg_toplevel_icon;
 mod xdg_toplevel_tag;
 pub(crate) use output_management::sync_outputs;
+pub(crate) use screencopy::serve_captures;

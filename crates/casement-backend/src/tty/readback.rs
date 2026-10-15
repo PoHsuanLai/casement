@@ -122,6 +122,20 @@ impl Readback {
         }
     }
 
+    /// Draws `source` into the shadow of `output` when it is watched and has no frame yet (the
+    /// scene is unchanged, so no flip drew one).
+    pub fn draw_first(
+        &mut self,
+        output: &OutputName,
+        at: Mono,
+        source: &dyn FrameSource,
+    ) -> Result<(), BackendError> {
+        match self.last_frame(output) {
+            None => self.draw(output, VblankSeq(1), at, source),
+            Some(_) => Ok(()),
+        }
+    }
+
     /// The frame last drawn for `output`.
     pub fn last_frame(&self, output: &OutputName) -> Option<&PresentedFrame> {
         self.shadow.as_ref()?.last_frame(output)

@@ -56,6 +56,7 @@ pub mod primary_selection;
 pub mod quire;
 pub mod quire_window;
 pub mod relative_pointer;
+pub mod screencopy;
 pub mod seat;
 pub mod security_context;
 pub mod session_lock;

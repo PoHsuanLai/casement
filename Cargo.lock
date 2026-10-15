@@ -234,7 +234,7 @@ dependencies = [
  "casement-protocols",
  "casement-render",
  "casement-wayland",
- "chordkit",
+ "chordkit 0.1.0 (git+https://github.com/PoHsuanLai/chordkit.git?rev=ba094c62006c280ac53c4c5df5c0e639c1226c07)",
  "ds-core",
  "ds-settings",
  "keycap-client",
@@ -475,6 +475,14 @@ dependencies = [
 [[package]]
 name = "chordkit"
 version = "0.1.0"
+source = "git+https://github.com/PoHsuanLai/chordkit.git?rev=6ef54930760208ed28b81269878ded080600fd35#6ef54930760208ed28b81269878ded080600fd35"
+dependencies = [
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "chordkit"
+version = "0.1.0"
 source = "git+https://github.com/PoHsuanLai/chordkit.git?rev=ba094c62006c280ac53c4c5df5c0e639c1226c07#ba094c62006c280ac53c4c5df5c0e639c1226c07"
 dependencies = [
  "thiserror 2.0.21",
@@ -634,7 +642,7 @@ dependencies = [
 name = "ds-core"
 version = "0.1.0"
 dependencies = [
- "chordkit",
+ "chordkit 0.1.0 (git+https://github.com/PoHsuanLai/chordkit.git?rev=6ef54930760208ed28b81269878ded080600fd35)",
  "ds-core-derive",
  "futures-timer",
  "keyboard-types 0.7.0",
@@ -1258,7 +1266,7 @@ name = "keycap-client"
 version = "0.1.0"
 source = "git+https://github.com/PoHsuanLai/keycap?rev=31e21dbb80c1b9a1b57bc4e64c39b7a892bae3f2#31e21dbb80c1b9a1b57bc4e64c39b7a892bae3f2"
 dependencies = [
- "chordkit",
+ "chordkit 0.1.0 (git+https://github.com/PoHsuanLai/chordkit.git?rev=ba094c62006c280ac53c4c5df5c0e639c1226c07)",
  "keycap-protocol",
  "rustix 1.1.5",
 ]

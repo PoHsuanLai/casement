@@ -1867,3 +1867,45 @@ Kept, with reasons (also in `dev/wlcs/expected-failures.txt`):
 To check in a real run: wlcs counts (expect 6 more passes, no new failures; the first configure of every
 lenient toplevel now carries its final state, so a wlcs test that counts configures could move); that
 `Event::WindowPlaced` windows stay put through other windows mapping.
+## wave-2026-10-15/capture
+
+Nothing here compiled or ran (the lane does not build). Real session finding: `grim` failed with "failed to copy
+output".
+
+- **Cause 1: no `zwlr_screencopy_manager_v1`.** casement served only ext-image-copy-capture. Added
+  `casement_wayland::screencopy` (version 3; smithay has no plumbing for it, so the wire is ours on
+  `wayland-protocols-wlr`'s server side, through smithay's re-export): `capture_output`, `capture_output_region`,
+  `copy`, `copy_with_damage`, shm `argb8888` (and `xrgb8888` from version 3, with `buffer_done`). The frame is the one
+  `ext_image_copy_capture` serves (`handlers/image_capture/frames.rs::last_frame`), so the two paths agree byte for byte.
+  Region: output-local logical pixels, `round(l x scale)` per edge, cut to the output (`physical_region`, table-tested),
+  cropped from the frame (`CapturedFrame::cropped`). A region of a turned (non-Normal transform) output, or one with
+  nothing of the output in it, is `failed`; a whole-output copy of a turned output is the mode-sized frame, as in the
+  ext path.
+- **Cause 2 (likely the actual one on a tty): the first frame of a session failed.** On a real seat the shadow draws
+  only while a session is open, so a one-shot client (grim) always asked before any shadow frame existed and got
+  `failed` (FINDINGS p1-t listed this as accepted). Now a request that finds no frame is held (ext:
+  `ImageCapturePart::waiting`; wlr: the pending list) and served after the next frame the loop presents
+  (`handlers::serve_captures`, called at the end of `core_loop::frame`). Because a still desktop flips nothing
+  (`PresentOutcome::Unchanged`), `TtyBackend::present` now also draws the shadow's first frame on `Unchanged`
+  (`Readback::draw_first`). Real run must prove: `grim` on the tty session returns within a frame or two on a static
+  desktop, and the shadow frame is not stale-looking (it is drawn from the same scene source as the flip).
+- **Limits (departures).** `overlay_cursor` is ignored (the cursor is never painted, as with `CursorMode::Hidden`);
+  no `linux_dmabuf` offer (shm only); `copy_with_damage` waits for a frame newer than the same client's last of that
+  output and then reports the whole area as damaged (no per-region damage); a headless output whose scene is unchanged
+  presents no new frame, so a second `copy_with_damage` stays queued until something changes. `flags` is always 0 (rows
+  top first).
+- **Privacy decision.** The existing policy already allows grim: output capture (`GlobalKind::ImageCapture`) is
+  visible to the public socket, the agent tier and the shell, and hidden from sandboxes (I7); window capture is the same
+  (P2-Q3). There is no consent step in either path today. I kept that, and gave `zwlr_screencopy_manager_v1` the same
+  `ImageCapture` kind (no new `GlobalKind`), so exactly the connections that could use ext output capture can use it:
+  the person's own tools launched in the session work as grim does elsewhere, a Flatpak/sandbox client never sees the
+  global. If a consent prompt for the public socket is wanted later it belongs on `ImageCapture` for both protocols at
+  once.
+- **Expected grim invocations after this change** (to confirm in a real run): `grim out.png`, `grim -o HEADLESS-1
+  out.png`, `grim -g "x,y wxh" out.png` (grim crops itself on the ext path and asks the compositor for the region on
+  the wlr path; both are served), `grim -` to stdout. `slurp` needs `zwlr_layer_shell_v1` (already served).
+- **Tests.** `tests/it/protocol/screencopy.rs` (whole output equals the scanout frame; region crops at 1x and at 2x
+  logical pixels; region off the output fails; `copy_with_damage` reports the whole area; other output unaffected),
+  `sandbox.rs` row, the globals golden row `zwlr_screencopy_manager_v1 3 screencopy`, the fuzz oracle's interface map;
+  unit tests for `physical_region` and `CapturedFrame::cropped`; client `casement_testclient::capture::ScreenCopy`.
+  Not covered here (needs a real seat): the tty first-frame hold.

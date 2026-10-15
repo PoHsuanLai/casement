@@ -447,9 +447,14 @@ impl TtyBackend {
             return Ok(PresentOutcome::Waiting);
         }
         let shown = self.scanouts.present(output, source, now)?;
-        if let PresentOutcome::Flipped(seq) = shown {
-            self.queued = self.queued.saturating_add(1);
-            self.readback.draw(output, seq, now, source)?;
+        match shown {
+            PresentOutcome::Flipped(seq) => {
+                self.queued = self.queued.saturating_add(1);
+                self.readback.draw(output, seq, now, source)?;
+            }
+            // A still desktop flips nothing, yet a capture opened on it needs a first frame.
+            PresentOutcome::Unchanged => self.readback.draw_first(output, now, source)?,
+            _ => {}
         }
         Ok(shown)
     }

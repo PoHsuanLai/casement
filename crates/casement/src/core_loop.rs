@@ -165,6 +165,8 @@ pub fn frame(state: &mut State, output: &OutputKey) {
             }
         }
     }
+    // A capture that waited for a frame (the first of a session) may have one now.
+    crate::handlers::serve_captures(state);
 }
 
 /// Presents on the headless backend; the sequence number of the frame shown.

@@ -324,6 +324,7 @@ fn lit_on_tty(
 pub(crate) fn withdraw_output(state: &mut State, output: &OutputKey) {
     presentation::forget_output(&mut state.wl.presentation, output);
     image_capture::apply_output_gone(&mut state.wl.image_capture, output);
+    casement_wayland::screencopy::apply_output_gone(&mut state.wl.screencopy, output);
     if state.wl.output.outputs.contains_key(output) {
         log(output::apply_unplug(
             &mut state.wl.output,
