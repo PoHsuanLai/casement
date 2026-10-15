@@ -18,6 +18,7 @@ use casement_testclient::{Pattern, shm_buffer};
 use casement_testkit::{Fixture, FixtureSpec};
 use porter_core::SpaceId;
 use std::time::Duration;
+use wayland_client::protocol::wl_output::WlOutput;
 
 /// The tile in the top left corner, where no slot is (slots start below the 112 px strip).
 const TILE_AT: (i32, i32) = (10, 10);
@@ -150,8 +151,8 @@ fn a_window_dropped_on_the_new_space_tile_gets_a_space_of_its_own() {
     );
     assert_eq!(desk.fixture.model().overview(), Overview::Open);
     assert_eq!(
-        desk.shell.drop_targets_new().last().cloned(),
-        Some((output, Some(Shown::Hidden))),
+        last_for(&desk, &output),
+        Some(Shown::Hidden),
         "the drag's end unlights it"
     );
 }
@@ -175,8 +176,8 @@ fn the_tile_wins_over_a_space_target_and_leaving_it_unlights_it() {
     );
     move_to(&mut desk, LogicalPoint { x: 560, y: 440 });
     assert_eq!(
-        desk.shell.drop_targets_new().last().cloned(),
-        Some((output, Some(Shown::Hidden))),
+        last_for(&desk, &output),
+        Some(Shown::Hidden),
         "leaving the tile unlights it"
     );
     release(&mut desk);
@@ -407,4 +408,14 @@ fn a_window_released_over_its_own_output_flies_back() {
     drag_across(&mut pair, LogicalPoint { x: 560, y: 440 });
     let_go(&mut pair);
     assert_eq!(pair.fixture.model().windows()[&window].place, before);
+}
+
+/// The tile's last state the shell heard for `output` (the unlight goes to every output's tile).
+fn last_for(desk: &Desk, output: &WlOutput) -> Option<Shown> {
+    desk.shell
+        .drop_targets_new()
+        .iter()
+        .rev()
+        .find(|(object, _)| object == output)
+        .and_then(|(_, shown)| *shown)
 }
