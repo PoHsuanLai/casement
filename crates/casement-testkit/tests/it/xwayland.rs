@@ -85,10 +85,22 @@ fn satellite_starts_with_its_listen_sockets() {
     let display = display_of(&state);
     let _client = UnixStream::connect(path_of(&dir, &display)).expect("connected");
     let mut spawner = FakeSpawner::new();
+    assert_eq!(
+        state.satellite_pid(),
+        None,
+        "not running yet: nothing to spare"
+    );
     let step = state
         .serve(&config, &mut spawner, &wayland(), at(0))
         .expect("served");
-    assert!(matches!(step, ServeStep::Started(_)));
+    let ServeStep::Started(process) = step else {
+        panic!("satellite should have started, got {step:?}");
+    };
+    assert_eq!(
+        state.satellite_pid().map(i64::from),
+        Some(i64::from(process.pid.0)),
+        "force quit spares the running satellite's process"
+    );
     let started = spawner.started();
     assert_eq!(started.len(), 1);
     let argv = &started[0].argv.0;

@@ -12,6 +12,7 @@ mod call;
 mod desktop;
 mod gamma;
 mod publish;
+mod quit;
 mod shell;
 mod spawn;
 
@@ -142,6 +143,8 @@ fn apply(state: &mut State, effect: Effect) {
         // the shell's protocol is advertised (P2-Q2), so these arms are not reached before then.
         Effect::Desktop(note) => desktop::publish(state, note),
         Effect::Shell(note) => shell::note(state, note),
+        // P3-QU: force quit stops an app's processes by its connections' credentials.
+        Effect::Terminate(stop) => quit::terminate(state, stop),
         // `Effect` grows in core; one this build does not know is logged, never a panic.
         other => tracing::warn!(?other, "an effect this build does not apply"),
     }

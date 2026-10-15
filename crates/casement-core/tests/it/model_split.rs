@@ -1,9 +1,9 @@
 //! Split View through `Model::step`: entering from the window menu, choosing the other half,
 //! the pick, a cancel, leaving, closing one window and the divider.
 
-use crate::support::driver::{Op, Run, last, map, plug, request, run, unmap};
+use crate::support::driver::{Op, Run, last, map, plug, request, run, run_from, unmap};
 use crate::support::{headless, proven};
-use casement_core::desktop::DesktopRequest;
+use casement_core::desktop::{DesktopRequest, WindowAsk};
 use casement_core::focus::TokenCheck;
 use casement_core::input::{DesktopCommand, SpaceStep};
 use casement_core::shell::{ShellNote, ShellRequest, SplitChoices};
@@ -353,6 +353,40 @@ fn only_windows_of_the_desktop_the_first_came_from_can_be_picked() {
         "window 3 is on another desktop"
     );
     let got = then(ops, vec![menu(1, MenuEntry::TileLeftOfScreen)]);
+    assert_eq!(notes(&got), vec![choose(1, SplitSide::Left, &[2])]);
+}
+
+/// cas-wave "Real-run checks: Split View" (the picker shows on the chosen output only): the
+/// candidates are the windows of the first window's own output, so the shell raises the picker
+/// there and nowhere else; a window on the other output is not offered.
+#[test]
+fn only_windows_of_the_output_the_first_is_on_can_be_picked() {
+    let mail = proven("org.quire.Mail");
+    let made = run(vec![
+        plug("HEADLESS-1"),
+        plug("HEADLESS-2"),
+        map(1, &mail, TokenCheck::Valid),
+        map(2, &mail, TokenCheck::Missing),
+        map(3, &mail, TokenCheck::Missing),
+    ]);
+    let model = made.model;
+    let here = model
+        .output_of(&model.windows()[&WindowId(1)])
+        .expect("an output");
+    let other = [headless("HEADLESS-1").key, headless("HEADLESS-2").key]
+        .into_iter()
+        .find(|key| *key != here)
+        .expect("the other output");
+    let target = model.spaces().row(&other)[0].id.clone();
+    let moved = run_from(
+        model,
+        vec![Op::Event(Event::Desktop(DesktopRequest::Window {
+            window: WindowId(3),
+            ask: WindowAsk::ToSpace(target),
+        }))],
+    )
+    .model;
+    let got = run_from(moved, vec![menu(1, MenuEntry::TileLeftOfScreen)]);
     assert_eq!(notes(&got), vec![choose(1, SplitSide::Left, &[2])]);
 }
 

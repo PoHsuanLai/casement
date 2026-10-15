@@ -59,6 +59,8 @@ pub struct State {
     pub seams: Seams,
     /// X11 clients through xwayland-satellite (P1-X1 starts it; off until then).
     pub xwayland: XwaylandState,
+    /// The process behind each public connection, for force quit.
+    pub processes: crate::clients::Processes,
     /// The display, for creating globals, inserting clients and sending events. (Not in the
     /// plan's sketch; the handlers need it: FINDINGS.)
     pub display: DisplayHandle,
@@ -110,6 +112,8 @@ pub struct RenderState {
     pub(crate) bodies: crate::core_loop::Bodies,
     /// The pointer and a Split View divider: over its strip, or dragging it.
     pub(crate) divider: crate::core_loop::DividerPointer,
+    /// A window move that may tile: the zone its pointer arms.
+    pub(crate) tile_drag: casement_core::window::TileDrag,
     /// The last titlebar press, for the double click.
     pub clicks: casement_core::window::ClickTracker,
     /// The traffic light held down, if any (a light acts on release).
@@ -338,6 +342,7 @@ impl State {
             closing: BTreeMap::new(),
             bodies: crate::core_loop::Bodies::default(),
             divider: crate::core_loop::DividerPointer::default(),
+            tile_drag: casement_core::window::TileDrag::default(),
             clicks: casement_core::window::ClickTracker::default(),
             light_arm: casement_core::window::LightArm::default(),
             light_dwell: casement_core::window::Dwell::default(),
@@ -360,6 +365,7 @@ impl State {
             clock,
             seams,
             xwayland: XwaylandState::Off,
+            processes: crate::clients::Processes::default(),
             display: dh,
             event_loop: event_loop.clone(),
             #[cfg(feature = "testing")]

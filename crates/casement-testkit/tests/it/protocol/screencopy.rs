@@ -264,6 +264,36 @@ fn the_cursor_is_in_a_copy_only_when_asked_for() {
     );
 }
 
+/// cas-wave "Real-run checks: Capture" (`grim` returns within a frame or two): a capture and its
+/// copy are answered with at most two frames of the headless clock passing. (The real tty's
+/// frame time is hardware and stays a manual check.)
+#[test]
+fn a_capture_request_completes_within_two_frames() {
+    let (mut fixture, _client, mut copy, _pointer) = started(output_at(120));
+    let output = name("HEADLESS-1");
+    copy.capture("HEADLESS-1", CopyArea::Output, CursorMode::Painted)
+        .expect("a frame");
+    settle(&mut fixture, &mut copy);
+    let offer = *copy.offers().first().expect("the frame offered a buffer");
+    copy.copy(offer, CopyKind::Plain).expect("a copy");
+    settle(&mut fixture, &mut copy);
+    let mut waited = 0;
+    let answer = loop {
+        if let Some(answer) = copy.take() {
+            break answer;
+        }
+        assert!(waited < 2, "not answered within two frames");
+        fixture.frames(&output, FrameCount(1));
+        settle(&mut fixture, &mut copy);
+        waited += 1;
+    };
+    assert!(
+        answer.is_ok(),
+        "the copy failed: {:?}",
+        answer.as_ref().err()
+    );
+}
+
 /// `copy_with_damage` answers its first frame whole, then waits for a change and reports where
 /// it was.
 #[test]

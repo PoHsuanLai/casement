@@ -13,7 +13,8 @@ use chordkit::{Action, Keymap, StandardAction};
 enum Does {
     /// A command casement runs itself.
     Itself(DesktopCommand),
-    /// A command line of sill, the shell (its launcher, switcher, screenshots, power menu).
+    /// A command line of sill, the shell (its launcher, switcher, screenshots, power menu, Force
+    /// Quit panel).
     Sill(&'static [&'static str]),
 }
 
@@ -22,9 +23,11 @@ type Row = (StandardAction, Does);
 /// The standard actions the compositor binds. The Space numbers are not rows (nine actions
 /// with one meaning each): see [`shell_action`].
 const ROWS: &[Row] = &[
+    // sill draws the panel from the desktop manager's app list (quire_shell_v1 has no event for
+    // the panel yet).
     (
         StandardAction::ForceQuit,
-        Does::Itself(DesktopCommand::ForceQuitPanel),
+        Does::Sill(&["force-quit", "toggle"]),
     ),
     (
         StandardAction::MissionControl,
@@ -160,7 +163,7 @@ mod tests {
             (
                 "force quit",
                 "option+cmd+Escape",
-                itself(DesktopCommand::ForceQuitPanel),
+                sill(&["force-quit", "toggle"]),
             ),
             (
                 "Mission Control",

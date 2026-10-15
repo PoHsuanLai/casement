@@ -103,9 +103,38 @@ struct Desk {
     keys: DeviceId,
 }
 
+/// What opens the menu.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Opened {
+    /// A person clicks the bar of a public client; the grab answers that press.
+    ByClick,
+    /// The compositor asks the shell for a window menu (the dwell on the green light): the
+    /// shell's overlay hangs the menu, and the shell has had no input to name.
+    ByDwell,
+}
+
+/// A transparent overlay over the whole output, the parent of the shell's window menu.
+fn overlay_ask() -> LayerAsk {
+    LayerAsk {
+        level: Layer::Overlay,
+        namespace: "window-menu",
+        anchor: Anchor::Top | Anchor::Bottom | Anchor::Left | Anchor::Right,
+        exclusive_zone: 0,
+        keyboard: KeyboardInteractivity::None,
+        size: (0, 0),
+    }
+}
+
+/// The serial a shell names when it has had no input at all.
+const NO_INPUT_SERIAL: u32 = 1;
+
 impl Desk {
     /// Opens the menu: a click on the bar, then the popup grab answering its press.
     fn open() -> Desk {
+        Desk::open_by(Opened::ByClick)
+    }
+
+    fn open_by(opened: Opened) -> Desk {
         let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
         let keys = fixture.input().plug(
             DeviceClass::Keyboard,
@@ -113,7 +142,11 @@ impl Desk {
         );
         let mouse = pointer(&mut fixture);
         let app = fixture.connect(ConnectionRole::Public);
-        let shell = fixture.connect(ConnectionRole::Public);
+        let role = match opened {
+            Opened::ByClick => ConnectionRole::Public,
+            Opened::ByDwell => ConnectionRole::Shell,
+        };
+        let shell = fixture.connect(role);
         fixture.pump();
         let _app_keyboard = Keyboard::bind(fixture.client(app)).expect("the app's keyboard");
         let _shell_keyboard = Keyboard::bind(fixture.client(shell)).expect("the shell's keyboard");
@@ -127,7 +160,11 @@ impl Desk {
         let window = windows(&fixture)[0];
         click(&mut fixture, mouse, window);
         fixture.pump();
-        let bar = map_layer(&mut fixture, shell, &bar_ask());
+        let ask = match opened {
+            Opened::ByClick => bar_ask(),
+            Opened::ByDwell => overlay_ask(),
+        };
+        let bar = map_layer(&mut fixture, shell, &ask);
         // The app holds the keyboard before the menu opens.
         let typed = keys_of(fixture.client(app));
         fixture.input().key(keys, KEY_A, Edge::Press);
@@ -137,14 +174,19 @@ impl Desk {
             keys_of(fixture.client(app)) > typed,
             "the app holds the keyboard"
         );
-        // A person clicks the bar's menu button.
-        fixture
-            .input()
-            .pointer_to(mouse, LogicalPoint { x: 110, y: 10 });
-        fixture.input().button(mouse, LEFT, Edge::Press);
-        fixture.input().button(mouse, LEFT, Edge::Release);
-        fixture.pump();
-        let serial = presses.last_press().expect("the bar's press reached it");
+        let serial = match opened {
+            Opened::ByClick => {
+                // A person clicks the bar's menu button.
+                fixture
+                    .input()
+                    .pointer_to(mouse, LogicalPoint { x: 110, y: 10 });
+                fixture.input().button(mouse, LEFT, Edge::Press);
+                fixture.input().button(mouse, LEFT, Edge::Release);
+                fixture.pump();
+                presses.last_press().expect("the bar's press reached it")
+            }
+            Opened::ByDwell => NO_INPUT_SERIAL,
+        };
         let base = WmBase::bind(fixture.client(shell), 7);
         let surface = fixture.client(shell).create_surface().expect("a surface");
         let spec = PopupSpec {
@@ -461,4 +503,32 @@ fn a_popup_may_anchor_to_a_point() {
     fixture.pump();
     assert!(fixture.client(id).protocol_error().is_none(), "no error");
     assert!(popup.ack_latest().is_some(), "the popup was configured");
+}
+
+/// cas-wave "Real-run checks: Window menu" (the popup has no input serial): the shell's window
+/// menu hangs from an overlay and grabs with a serial it has no input to name, because the
+/// compositor asked for it. The grab holds (the popup is not dismissed), the keyboard goes to the
+/// menu so Escape reaches it, and when it closes the keyboard goes back to the app. (A press
+/// outside dismissing the grab is the bar menu's test above; a public client with a serial it
+/// was not given is refused, `popup_grab.rs`.)
+#[test]
+fn the_window_menu_popup_holds_the_grab_with_no_input_serial_and_escape_reaches_it() {
+    let mut desk = Desk::open_by(Opened::ByDwell);
+    assert_eq!(
+        desk.popup.log.with(|seen| seen.done),
+        0,
+        "the shell's menu is not dismissed for want of a serial"
+    );
+    let (app, shell) = (desk.app_keys(), desk.shell_keys());
+    desk.tap(KEY_ESC);
+    assert!(
+        desk.shell_keys() > shell && desk.app_keys() == app,
+        "Escape reaches the open menu, not the app"
+    );
+    desk.popup.destroy();
+    desk.fixture.pump();
+    assert!(
+        desk.app_gets_a_typed_key(),
+        "after the menu closed the app gets the keys"
+    );
 }
