@@ -2361,3 +2361,44 @@ compiler (wave rule); the orchestrator builds.
   (`Style { flex_shrink, flex_grow }`, `tree.layout(node)?`). The proptest model run (`model_props.rs`) never issues a Split
   command, so it is unchanged; add the menu picks to its strategies if wanted. Real run: Left of Screen with two windows open
   fills the left half and (once the wire lands) the shell offers the second; today Left of Screen only goes full screen.
+## wave-2026-10-15/shadow
+
+The window shadow stops re-rastering per frame. Written without a compiler (wave rule); the orchestrator builds.
+
+- **What it is now.** `element/frame/shadow.rs` is a pure function `tiles(layers, radius, scale) -> Tiles`: four corner tiles
+  and four edge strips, no window size in the inputs. `slices.rs` is the pure geometry: where the eight pieces go round an
+  outline of any size and which part of each tile they show. `frame.rs::shadow_elements` draws the pieces (corners as they
+  are, strips stretched along their axis). The cache key is `(scale numerator, radius, layers)` (`shadow_set::key`); the
+  window's size and the hover/activity colours of the titlebar are not in it, so a resize (and a light hover) hits the cache
+  every frame. `DrawCache` keeps the tiles per key (limit 8) and, per window, the uploaded buffers (limit 64): two windows
+  share the raster but not a buffer, because two elements of one frame must not share an id.
+- **Rounded, and sharp.** A corner tile is the exact coverage of the layer's rounded rectangle (dx/dy moved, spread grown, radius
+  plus spread) blurred by a separable Gaussian (sigma half the blur radius, as before), so the blur follows the curve. Tiles are
+  rastered at the output's scale (pixel count `round(logical * scale)`), not one pixel per logical pixel. An edge strip is
+  the one-dimensional blurred edge (erf), one pixel across. The corner reaches `inner_reach` logical pixels into the window
+  (radius + 3 sigma + offset + spread + 1, at most 160) so the strip takes over with no seam; a test compares the strip with
+  the corner's inner column.
+- **Departures.** (1) Eight pieces, not nine: the middle is not drawn (item 3, nothing under the opaque body); strips reach
+  2 px under the edge for the anti-aliased edge and the clipped corners. The corner tiles do include the square of the window
+  inside the curve (up to `inner`), which the opaque body covers; a translucent window would show that part (the old shadow
+  was the same). (2) A window smaller than twice `inner` (about 120 to 150 logical pixels) crops its corners to half its size,
+  so a tiny window's shadow is a little stronger than a true blur of a tiny shape; no strip is drawn where the corners meet.
+  (3) The look is the old one for a window of any size where it is square-cornered: a test builds the old full raster (square
+  shape, erf product) for four sizes and checks the pieces within 4/255 per channel (40 for the two windows that crop). The
+  look changes where it should: near the corners the shadow now follows the radius, so it is lighter at the corner than the old
+  square blur. No pixel golden pinned the shadow; none was blessed. (4) At a fractional scale a tile's pixel size is rounded, so
+  a piece is stretched by under a pixel over its length; the src rectangle is taken by ratio so the seams stay within that.
+- **Tests.** Table: tile sizes at scale 1 and 2; no window-sized buffer in the tiles; mirror symmetry without an offset; a falling
+  shadow is stronger below; a strip meets the corner's inner column (no seam); rounded versus square corner; sharpness at
+  scale 2; pieces versus the old raster; `slices` (no overlap, every src inside its tile, the area of the ring, corners mirror
+  images, tiny windows, the dest changes with size but the src sizes do not). `DrawCache::shadow`: 100 sizes make the tiles
+  once, two windows share the raster but not the buffers, a new scale is a new raster. The old `shadow` raster and its test
+  are deleted (`raster.rs`).
+- **Gate and real run.** Likeliest compile faults: `Corner::ALL.map` with a closure that mutates `made` (FnMut is allowed for
+  `array::map`), `each_ref().map(to_buffer)` in `ShadowSet::new` (fn item over `&Raster`), the `pub(crate)` re-exports through
+  `element/mod.rs`, a glob `use super::*` in `shadow/tests.rs` reaching `Px`, `over`, `bytes`. The first shadow at a scale costs a
+  few tens of milliseconds of CPU (two layers, four corners, or two when dx is 0); only a real run shows if that hitches the first
+  window on a 2x output. Real run: resize a large window (say 1600x1000) by dragging an edge on a 2x output and look at the
+  frame time (no per-frame raster, only the elements' rectangles change); the shadow is sharp at 2x, follows the rounded
+  bottom corners, and has no seam where a strip meets a corner (look at light and dark); the dim shadow under a fade (`opacity`)
+  fades with the window; a very small window (a 100x60 dialog) has a plausible shadow.
