@@ -3489,3 +3489,35 @@ Written without a build or a wlcs run (rule of the lane); the orchestrator's run
 | `ForeignToplevelHandleTest.gets_unminimized_when_maximized`, `gets_unminimized_when_fullscreened` | `wlr_requests` mapped `set_maximized` / `set_fullscreen` straight to the window's own request, which leaves a minimised window alone. | `Model::wlr_request`: a window-list client's maximise-on / full-screen-on first brings a minimised window back from the dock (the activation path, so the restore animation plays), then applies the request. Test: `wlr_toplevel.rs` `a_state_asked_of_a_minimised_window_...`. |
 | `can_maximize_foreign_while_fullscreen` | `place` returned early for a full-screen window, so the fill was dropped. | `place`: Fill on a full-screen window replaces the state it returns to with Filled (xdg-shell: `set_maximized` while full screen takes effect when full screen ends); the window stays full screen. Same test. This also applies to the window's own `xdg_toplevel.set_maximized`. |
 | `text_input_enters_grabbing_popup`, `..._after_child_destroyed` | gmock `InSequence` chains the xdg helpers' `AnyNumber` expectations; a later call retires every earlier link, and the protocol's wire order (toplevel/popup configure, then xdg_surface.configure; wm_capabilities at creation) is the reverse of the chain. The keyboard `enter` was already in order. | Nothing in casement can fix it without dropping configures; the two rows are back on the expected-failures list as W14 with the reasoning. |
+
+## cas28-daily: force quit and X11 apps (2026-10-16)
+
+- **The hole this closes.** `Model::sole_clients_of` names a connection when every window on it
+  belongs to the app. With one X11 app open, xwayland-satellite (one Wayland client, public
+  socket, so its credential pid was recorded) was that connection, and force quit would have
+  sent SIGTERM and then SIGKILL to the satellite: every X11 program and the X server gone.
+  `Processes::record` now takes the running satellite's pid (`XwaylandState::satellite_pid`) and
+  records nothing for it; `exec::quit::pids_of` removes it again at signal time (the satellite
+  can be started after a record on a restart, so both). Tests: `clients/processes.rs`
+  `the_satellites_connection_is_never_recorded`, `casement-testkit/tests/it/xwayland.rs`
+  `satellite_starts_with_its_listen_sockets` (the pid is spared once running).
+- **Why X11 apps still cannot be force quit.** Nothing on casement's side of the wire carries an
+  X11 window's process: satellite creates an ordinary `xdg_toplevel` per X11 window with the
+  `WM_CLASS` as its app id and forwards no window id, no `_NET_WM_PID`, no pid. The pid lives in
+  the X server: `_NET_WM_PID` on the window (set by the client, self-declared) or the X-Resource
+  extension's `XResQueryClientIds` with `LOCAL_CLIENT_PID` (the server's own peer credential
+  read, which cannot be forged by the client). Reading either needs an X11 connection from
+  casement to the display it serves (`XwaylandState::display`; casement holds the listening
+  sockets, so the connect succeeds even before satellite accepts it). `casement` has no X11
+  client dependency; `x11rb` 0.13 is already a workspace dependency and in `Cargo.lock`
+  (used by `casement-testclient`'s `casement-x11probe`), so the route is one line in
+  `crates/casement/Cargo.toml`: `x11rb = { workspace = true, features = ["res"] }` (`res` for
+  XRes; `_NET_WM_PID` needs no feature). The mapping app to pids would be: list the root's
+  children, match each window's `WM_CLASS` class to the app's claimed id (the same match
+  satellite made for the app id), take `XResQueryClientIds` per matching window (fall back to
+  `_NET_WM_PID`), signal those, minus satellite and Xwayland (`satellite_pid` and its child).
+  Held back because the lane may not touch `Cargo.toml` / `Cargo.lock`.
+- **State after a force quit of an X11 app today.** The model marks the app `Quitting(Stopping)`
+  and arms the kill grace; `pids_of` is empty, so nothing is signalled. Open: what the model
+  should do when an app has no killable process (leave it running and say so in the panel, or
+  close its windows).
