@@ -126,7 +126,7 @@ pub(super) fn released(state: &mut State) {
 /// Mission Control leaves, with `pick` raised and keyed when there is one.
 pub(super) fn leave(state: &mut State, pick: Option<OverviewPick>) {
     state.render.overview_hover = None;
-    state.render.overview_drag = casement_core::overview_drag::Drag::Idle;
+    drag::abandon(state);
     let effects = run_model(state, |model, now| model.close_overview(pick, now));
     exec::exec(state, effects);
 }

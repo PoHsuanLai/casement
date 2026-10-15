@@ -77,6 +77,13 @@ proptest! {
                 i64::from(a.icon.origin.x) * 2 + i64::from(a.icon.size.w),
             );
             prop_assert!((slot_mid - icon_mid).abs() <= 1);
+            for b in &got.overview {
+                // An icon never covers another window's slot.
+                prop_assert!(
+                    overflow || b.window == a.window || a.icon.intersection(&b.rect).is_none(),
+                    "{:?}'s icon covers {:?}", a.window, b.window
+                );
+            }
             for b in &got.overview[i + 1..] {
                 prop_assert!(overflow || gap(&a.rect, &b.rect) >= 20, "{:?} and {:?} closer than the gap", a.window, b.window);
             }

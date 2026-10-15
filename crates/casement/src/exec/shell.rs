@@ -46,6 +46,29 @@ pub(super) fn note(state: &mut State, note: ShellNote) {
             );
             return;
         }
+        ShellNote::WindowDragBegin { output, window } => {
+            shell_space::send_window_drag_begin(
+                &state.wl.quire_shell,
+                &state.wl.output.outputs,
+                output,
+                *window,
+            );
+            return;
+        }
+        ShellNote::WindowDragEnd {
+            output,
+            window,
+            outcome,
+        } => {
+            shell_space::send_window_drag_end(
+                &state.wl.quire_shell,
+                &state.wl.output.outputs,
+                output,
+                *window,
+                shell_space::wire_outcome(*outcome),
+            );
+            return;
+        }
         _ => {}
     }
     log(shell::apply_note(&mut state.wl.quire_shell, &note));

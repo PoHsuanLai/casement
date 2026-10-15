@@ -9,11 +9,13 @@ use crate::headless::FrameSource;
 use casement_core::OutputName;
 use casement_core::geometry::{PhysicalRect, PhysicalSize};
 use casement_render::RenderError;
-use casement_render::pass::{CapturedFrame, CursorInclusion, render_window_dmabuf, write_dmabuf};
+use casement_render::pass::{
+    CapturedFrame, CursorInclusion, render_window_dmabuf, render_window_texture, write_dmabuf,
+};
 use ds_core::geometry::scale::Scale;
 use smithay::backend::allocator::Format;
 use smithay::backend::allocator::dmabuf::Dmabuf;
-use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
 
@@ -131,6 +133,19 @@ impl CaptureGpu for RealCaptureGpu {
         let mut renderer = self.renderer()?;
         let elements = source.gles(&mut renderer);
         render_window_dmabuf(&mut *renderer, target, &elements, size, scale)
+            .map_err(BackendError::from)
+    }
+
+    fn render_window_texture(
+        &mut self,
+        size: PhysicalSize,
+        scale: Scale,
+        radius: u32,
+        source: &dyn FrameSource,
+    ) -> Result<GlesTexture, BackendError> {
+        let mut renderer = self.renderer()?;
+        let elements = source.gles(&mut renderer);
+        render_window_texture(&mut renderer, &elements, size, (scale, radius))
             .map_err(BackendError::from)
     }
 }

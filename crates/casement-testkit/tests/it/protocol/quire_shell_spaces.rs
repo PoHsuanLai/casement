@@ -25,7 +25,7 @@ use std::time::Duration;
 /// The left button (`BTN_LEFT`).
 const LEFT: ButtonCode = ButtonCode(0x110);
 
-/// A one-output desktop with two windows, a version 3 shell with its outputs bound, a pointer
+/// A one-output desktop with two windows, a version 4 shell with its outputs bound, a pointer
 /// and a second Space on the output.
 pub(super) struct Desk {
     pub(super) fixture: Fixture,
@@ -50,7 +50,7 @@ pub(super) fn desk() -> Desk {
         map_toplevel(&mut fixture, app, &base, (240, 160)),
     ];
     let shell_id = fixture.connect(ConnectionRole::Shell);
-    let shell = ShellHandle::bind(fixture.client(shell_id), 3);
+    let shell = ShellHandle::bind(fixture.client(shell_id), 4);
     let outputs = ShellHandle::bind_outputs(fixture.client(shell_id));
     let mut watch = DesktopWatch::start(fixture.client(shell_id).globals()).expect("the manager");
     for _ in 0..3 {

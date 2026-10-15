@@ -9,12 +9,26 @@ use casement_render::{OverviewIcon, TitleDraw};
 use casement_wayland::xdg_toplevel_icon::IconParts;
 use ds_core::geometry::scale::Scale;
 use std::collections::BTreeMap;
+use std::path::PathBuf;
+
+/// Whether Mission Control has been drawn since the book was last cleared.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Phase {
+    /// Closed: the next icon asked for opens it, and the desktop's icon theme is read again.
+    Closed,
+    /// Open: the theme read when it opened stands.
+    Open,
+}
 
 /// The icons found for the windows of one Mission Control, by window and pixel edge.
 #[derive(Debug)]
 pub struct IconBook {
     /// Looks icons up; none when icons are off.
     finder: Option<Finder<SystemTheme>>,
+    /// The config folder the desktop's icon theme is named under.
+    config: Option<PathBuf>,
+    /// Whether the theme was read for this Mission Control yet.
+    phase: Phase,
     /// What the lookups found, by question and edge.
     cache: IconCache,
     /// The raster each window draws, made from the cache.
@@ -27,15 +41,23 @@ pub struct IconBook {
 impl IconBook {
     /// A book that looks for icons as `search` says.
     pub fn new(search: IconSearch) -> IconBook {
-        let finder = match search {
-            IconSearch::Off => None,
-            IconSearch::Dirs(applications) => Some(Finder {
+        let (finder, config) = match search {
+            IconSearch::Off => (None, None),
+            IconSearch::Dirs {
                 applications,
-                theme: SystemTheme::default(),
-            }),
+                config,
+            } => (
+                Some(Finder {
+                    applications,
+                    theme: SystemTheme::default(),
+                }),
+                config,
+            ),
         };
         IconBook {
             finder,
+            config,
+            phase: Phase::Closed,
             cache: IconCache::new(),
             drawn: BTreeMap::new(),
             shown: BTreeMap::new(),
@@ -53,8 +75,26 @@ impl IconBook {
         &self.shown
     }
 
+    /// The icon theme lookups use now.
+    pub fn theme(&self) -> Option<&SystemTheme> {
+        self.finder.as_ref().map(|finder| &finder.theme)
+    }
+
+    /// Reads the desktop's icon theme again when Mission Control has just opened, so a theme
+    /// changed in the desktop's settings shows at the next opening.
+    fn open(&mut self) {
+        if self.phase == Phase::Open {
+            return;
+        }
+        self.phase = Phase::Open;
+        if let (Some(finder), Some(config)) = (self.finder.as_mut(), self.config.as_deref()) {
+            finder.theme = SystemTheme::of_desktop(config);
+        }
+    }
+
     /// Lets go of every icon (Mission Control is closed).
     pub fn clear(&mut self) {
+        self.phase = Phase::Closed;
         self.cache.clear();
         self.drawn.clear();
         self.shown.clear();
@@ -73,6 +113,8 @@ impl IconBook {
         plate_ink: [u8; 4],
         want: impl FnOnce() -> Want,
     ) -> Option<TitleDraw> {
+        self.finder.as_ref()?;
+        self.open();
         let finder = self.finder.as_ref()?;
         let edge = buffer_size(icon.size, scale).w;
         if let Some(kept) = self.drawn.get(&(window, edge)) {
@@ -135,7 +177,10 @@ mod tests {
 
     #[test]
     fn an_app_without_an_icon_gets_the_plate_at_the_output_scale_and_keeps_it() {
-        let mut book = IconBook::new(IconSearch::Dirs(Vec::new()));
+        let mut book = IconBook::new(IconSearch::Dirs {
+            applications: Vec::new(),
+            config: None,
+        });
         let mut asked = 0;
         for _ in 0..3 {
             let got = book
@@ -154,5 +199,45 @@ mod tests {
         });
         assert!(again.is_some());
         assert_eq!(asked, 2);
+    }
+
+    #[test]
+    fn the_theme_is_read_again_each_time_mission_control_opens() {
+        let dir = tempfile::tempdir().expect("a scratch folder");
+        let file = casement_icons::theme_file(dir.path());
+        std::fs::create_dir_all(file.parent().expect("a parent")).expect("the folder");
+        let mut book = IconBook::new(IconSearch::Dirs {
+            applications: Vec::new(),
+            config: Some(dir.path().to_owned()),
+        });
+        let mut theme_after = |text: &str| {
+            std::fs::write(&file, text).expect("the file");
+            book.draw_of(
+                WindowId(1),
+                icon(),
+                Scale::ONE,
+                [1, 2, 3, 255],
+                Want::default,
+            );
+            book.theme().cloned()
+        };
+        let first = theme_after("gtk-icon-theme-name=One\n");
+        // Still open: the change waits for the next opening.
+        let same = theme_after("gtk-icon-theme-name=Two\n");
+        assert_eq!(first, Some(SystemTheme::new(Some("One".to_owned()))));
+        assert_eq!(same, first);
+        book.clear();
+        std::fs::write(&file, "gtk-icon-theme-name=Two\n").expect("the file");
+        book.draw_of(
+            WindowId(1),
+            icon(),
+            Scale::ONE,
+            [1, 2, 3, 255],
+            Want::default,
+        );
+        assert_eq!(
+            book.theme(),
+            Some(&SystemTheme::new(Some("Two".to_owned())))
+        );
     }
 }

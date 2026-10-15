@@ -33,7 +33,7 @@ use smithay::wayland::{Dispatch2, GlobalDispatch2};
 use std::collections::BTreeMap;
 
 /// The version casement serves.
-pub const VERSION: u32 = 3;
+pub const VERSION: u32 = 4;
 
 /// Whether the global is created yet (P2-Q2 flipped it).
 pub const GLOBAL: Advertised = Advertised::Yes;

@@ -1,14 +1,17 @@
-//! `quire_shell_v1` versions 2 and 3, the Spaces bar's part: which outputs Mission Control is up on
+//! `quire_shell_v1` versions 2 to 4, the Spaces bar's part: which outputs Mission Control is up on
 //! (`overview_output`), the rectangles a dragged window can be dropped on (`space_target_clear`,
 //! `space_target`, and from version 3 `space_target_new`, the "add desktop" tile) and the target
-//! under it (`drop_target`, `drop_target_new`). The picture of a Space is
+//! under it (`drop_target`, `drop_target_new`), and from version 4 where a window drag begins and ends
+//! (`window_drag_begin`, `window_drag_end`). The picture of a Space is
 //! [`super::space_shot`]. The model and the loop decide; this only carries.
 
 use super::shell::{QuireShellHandler, QuireShellPart};
-use casement_core::OutputKey;
+use crate::foreign_toplevel_list::identifier_of;
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::overview_drag::SpaceTarget;
+use casement_core::{OutputKey, WindowId};
 use casement_protocols::server::quire_shell_v1::quire_shell_v1;
+use casement_protocols::vocab::DragOutcome;
 use porter_core::SpaceId;
 use smithay::output::Output;
 use smithay::reexports::wayland_server::{DataInit, Resource};
@@ -169,7 +172,60 @@ pub fn send_drop_target_new(
     }
 }
 
-/// A version 2 or 3 request of the shell; every other request is ignored here.
+/// `window_drag_begin`: a window drag started in Mission Control on `output` (version 4
+/// objects only).
+pub fn send_window_drag_begin(
+    part: &QuireShellPart,
+    outputs: &BTreeMap<OutputKey, Output>,
+    output: &OutputKey,
+    window: WindowId,
+) {
+    let Some(output) = outputs.get(output) else {
+        return;
+    };
+    let identifier = identifier_of(window);
+    for shell in part.bound.iter().filter(|shell| shell.version() >= 4) {
+        let Some(client) = shell.client() else {
+            continue;
+        };
+        for wl_output in output.client_outputs(&client) {
+            shell.window_drag_begin(&wl_output, identifier.clone());
+        }
+    }
+}
+
+/// `window_drag_end`: the drag is over on `output`, with `outcome` (version 4 objects only).
+pub fn send_window_drag_end(
+    part: &QuireShellPart,
+    outputs: &BTreeMap<OutputKey, Output>,
+    output: &OutputKey,
+    window: WindowId,
+    outcome: quire_shell_v1::DragOutcome,
+) {
+    let Some(output) = outputs.get(output) else {
+        return;
+    };
+    let identifier = identifier_of(window);
+    for shell in part.bound.iter().filter(|shell| shell.version() >= 4) {
+        let Some(client) = shell.client() else {
+            continue;
+        };
+        for wl_output in output.client_outputs(&client) {
+            shell.window_drag_end(&wl_output, identifier.clone(), outcome);
+        }
+    }
+}
+
+/// The wire's outcome of a drag.
+pub fn wire_outcome(outcome: DragOutcome) -> quire_shell_v1::DragOutcome {
+    match outcome {
+        DragOutcome::DroppedOnSpace => quire_shell_v1::DragOutcome::DroppedOnSpace,
+        DragOutcome::DroppedOnNew => quire_shell_v1::DragOutcome::DroppedOnNew,
+        _ => quire_shell_v1::DragOutcome::Cancelled,
+    }
+}
+
+/// A version 2, 3 or 4 request of the shell; every other request is ignored here.
 pub fn on_request<D: QuireShellHandler>(
     state: &mut D,
     resource: &quire_shell_v1::QuireShellV1,

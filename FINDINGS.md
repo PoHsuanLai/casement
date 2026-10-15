@@ -3311,10 +3311,10 @@ Lane cas12-winit: the winit backend usable for hands-on testing in a host deskto
 (`OverviewIcon`, `icon_place`, `icon_element`), `casement::icons` (`IconSearch`, `IconBook`) and
 `core_loop/overview.rs` join them. Departures from the Mac:
 
-- **The spread does not make room for the icons.** The icon hangs 26 px below its slot (a 64 px icon, its middle 6 px
-  below the bottom edge); the spread's gap between rows is 24, so in a crowded row pair the icon overlaps the top of the
-  window below it (and its frame). The Mac's cell is taller. Adding the icon's lower half to a cell's height changes
-  every spread golden, so it waits for a deliberate bless.
+- **The spread makes room for the icons** (cas14-mcfit). Each cell keeps `icon_rect::below(scale)` under its slot: the
+  icon's drop, its lower half and the 30 px the hovered title takes (gap 8 + height 22, the renderer's numbers), so an
+  icon and its title never cover the window beneath (the spread proptest checks it). The 30 is a copy of
+  `LABEL_GAP + LABEL_HEIGHT` kept in layout, which cannot read the renderer's constants.
 - **The title moves down.** The hovered window's title sits under the icon, not under the window, so the two never
   overlap. The Mac shows no title there.
 - **Looked up on the first frame, not at the key press.** The icon is found the first frame Mission Control is drawn
@@ -3323,9 +3323,12 @@ Lane cas12-winit: the winit backend usable for hands-on testing in a host deskto
 - **How the icon arrives.** It is not animated by itself: its size and opacity follow how far the window has flown from its
   desktop size to its slot (`icon_place`), so it grows and fades in with the slot and leaves with it. On the way out the
   layout has no slots, so `IconBook::remembered` keeps the last ones.
-- **The theme.** `SystemTheme` looks in `hicolor` (and the themes it falls back to, then `/usr/share/pixmaps`): casement
-  has no icon-theme setting yet. `freedesktop-icons` reads the process's own folders (`$XDG_DATA_DIRS`) and cannot be
-  pointed elsewhere, so `ThemeLookup` is the seam the tests fake.
+- **The theme** follows the desktop (cas14-mcfit): `gtk-icon-theme-name` in `gtk-3.0/settings.ini` under
+  `$XDG_CONFIG_HOME` (else `$HOME/.config`), the file sill reads too (quire has no icon-theme setting of its own;
+  `ds-settings::icon_assets` is quire's own app-icon set). `IconBook` reads it again each time Mission Control opens
+  (a change while it is open shows at the next opening; no watcher), `hicolor` when the file names none.
+  `freedesktop-icons` reads the process's own folders (`$XDG_DATA_DIRS`) and cannot be pointed elsewhere, so
+  `ThemeLookup` is the seam the tests fake.
 - **No icons without a person.** `IconSearch::Off` (the default, and the headless backend in `main`) looks for and draws
   nothing, so no golden and no jail run changes. The test kit passes `Off`.
 - **The plate.** An app with no icon gets a plain rounded plate in quire's raised ground (`overview_plate`), drawn by
@@ -3372,3 +3375,42 @@ behaviour below was read in stylo 0.21 or assumed):
 - `DocumentConfig::default()` has no viewport: the boxes are absolute and sized in pixels, so none depends on it.
 - Positions are read with `Node::absolute_position(0.0, 0.0)` (the sum of `final_layout().location` up the layout parents) and
   sizes from `final_layout().size`; `absolute_position` rounds nothing, `final_layout` is blitz's rounded layout.
+## wave-2026-10-15/dragstart
+
+`quire_shell_v1` is served at **version 4** (lane `cas17-dragstart`, written without a compiler; needs casement-protocols
+`08bcc62`). `window_drag_begin(output, toplevel)` goes out once per output when a press on a Mission Control slot passes the
+drag threshold (`Drag` goes from `Pressed` to `Dragging`), before any `drop_target`. `window_drag_end(output, toplevel,
+outcome)` goes out once per output after the highlight is cleared: `dropped_on_space` (a target, or the Space the other
+output shows), `dropped_on_new` (the new-desktop tile), `cancelled` (flew back, or Mission Control left mid-drag). Only
+objects bound at version 4 or later hear them. Tests: `quire_shell_drop.rs`
+`the_shell_hears_a_window_drag_begin_and_end_with_its_outcome`.
+## wave-2026-10-15/closegpu
+
+Follow-up to closesnap: the closing body stays on the GPU. Written without a compiler (wave rule); the orchestrator builds. **Unmeasured
+on hardware**: nothing was timed; whether the 4K read-back stall is gone is for a real run to say.
+
+- **What changed.** `ClosingBody` holds `Pixels`: `Memory` (closesnap's baked buffer, every renderer) or `Gpu { texture, element }` (a
+  `GlesTexture` the display GPU drew at close, bottom corners already cut). `casement_render::pass::render_window_texture` draws the
+  window tree into a scratch texture, then once into the kept texture through the existing corner-mask shader
+  (`rounded_clip/gles.rs::bake_corners`, the same coverage formula as the CPU bake), over transparent, and waits on the sync point. The
+  frame draws it as a `TextureRenderElement` (new `CasementElement::Texture`, stable element id, alpha and stretch as the memory
+  element had). No CPU read and no upload.
+- **The typed choice.** `casement_backend::tty::BodyCopy { Gpu, ReadBack }` from `body_copy(devices, lending)` (pure, table test): `Gpu`
+  only on a seat with exactly one open device and that device lends its renderer. `core_loop/bodies.rs::make_body` takes `Gpu` first and
+  falls back to the read-back when the GPU copy errs. Headless (GLES on llvmpipe included), winit, pixman and the dummy renderer always
+  read back.
+- **Why one device.** A texture belongs to one GL context. With two GPUs the second scanout would draw the first's texture from another
+  context, so a second GPU reads back. `CaptureGpu::render_window_texture` is the seam (default `NoTarget`; the testkit fake takes the
+  default; the real lender uses the scanout's own `Rc<RefCell<GlesRenderer>>`). A device that has lit no output yet lends nothing; a
+  second device opened after a texture was made is not detected (see open questions).
+- **Released when.** The body is dropped with `Bodies::release_finished` (every frame, `closing::forget`): the window is back in the
+  model or its fade left the motion scene. The cap (6 images, 192 MiB) counts a texture at `w x h x 4` like a memory image.
+  `GlesTexture`'s drop queues the GL delete for the renderer's next use.
+- **Tests.** `body_copy` table + doctest (casement-backend), `release_finished` table (casement `bodies.rs`, replaces the older
+  `retain`-only test). The memory path's existing unit and `it` tests are unchanged and still cover the fallback. The GPU path has no
+  automated test (no GL in the jail): real run, close a framed window on the tty seat; the fade and shrink must look as before (bottom
+  corners round, not flipped, not blank), then `grim` after the fade.
+- **Unverified API guesses.** `render_elements!` accepting `TextureRenderElement<<R as RendererSuper>::TextureId>` as a variant;
+  `TextureRenderElement::from_static_texture` argument order with `renderer.context_id()`; the `&dyn Any` downcast of `GlesTexture` to
+  `R::TextureId`; a `GlesTexture` made by `Offscreen::create_buffer` drawn upright through `render_texture_from_to` after being rendered
+  into with a `Transform::Normal` tracker (mirrors `blit_texture`).

@@ -4,6 +4,7 @@
 mod capture;
 mod thumb;
 mod window;
+mod window_texture;
 
 pub use capture::{
     ArgbImage, CaptureFormat, CaptureRequest, CapturedFrame, CursorInclusion, DrawnView, ReadError,
@@ -12,3 +13,4 @@ pub use capture::{
 };
 pub use thumb::{ThumbLayer, compose_thumb, thumb_dest};
 pub use window::{render_window, render_window_dmabuf, window_capture_size, window_tree};
+pub use window_texture::render_window_texture;

@@ -4,7 +4,7 @@ use crate::geometry::{LogicalPoint, LogicalRect};
 use crate::ids::{LayerKey, OutputKey, WindowId};
 use crate::overview::Overview;
 use crate::window::{MenuItem, SplitSide, enabled_mask};
-use casement_protocols::vocab::{Corner, MacMods, ScreenEdge, ShellRole, Shown};
+use casement_protocols::vocab::{Corner, DragOutcome, MacMods, ScreenEdge, ShellRole, Shown};
 
 /// Something the shell's protocol layer records or sends.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,6 +52,24 @@ pub enum ShellNote {
         output: OutputKey,
         /// Whether the dragged window is over it.
         over: Shown,
+    },
+    /// A window drag started in Mission Control; one note per output Mission Control is up on
+    /// (`window_drag_begin`, version 4).
+    WindowDragBegin {
+        /// The output.
+        output: OutputKey,
+        /// The window being dragged.
+        window: WindowId,
+    },
+    /// The window drag in Mission Control is over (`window_drag_end`, version 4); one note per
+    /// output, after the notes that cleared the highlight.
+    WindowDragEnd {
+        /// The output.
+        output: OutputKey,
+        /// The window that was dragged.
+        window: WindowId,
+        /// Where it went.
+        outcome: DragOutcome,
     },
 }
 

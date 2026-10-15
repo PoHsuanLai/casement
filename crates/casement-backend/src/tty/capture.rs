@@ -5,7 +5,7 @@
 //! shadow (`readback.rs`) draws only when no GPU does: a lender that keeps no scenes, a busy
 //! renderer, a draw that failed.
 
-use super::capture_gpu::{CaptureRoute, Picture, SceneSupport, capture_route};
+use super::capture_gpu::{BodyCopy, CaptureRoute, Picture, SceneSupport, body_copy, capture_route};
 use super::{Residence, TtyBackend};
 use crate::backend::BackendError;
 use crate::capture_path::{Import, RendererClass};
@@ -77,6 +77,39 @@ impl TtyBackend {
     /// The device the display GPU draws on, when it can tell (its render node's number).
     pub fn capture_device(&self) -> Option<u64> {
         self.devices.capture_gpu()?.device()
+    }
+
+    /// How a closing window's last image is kept on this seat: on the display GPU when it is the
+    /// seat's only device and lends its renderer, else read back.
+    pub fn body_copy(&self) -> BodyCopy {
+        let lending = self
+            .devices
+            .devices
+            .values()
+            .filter(|device| device.kms.capture_gpu().is_some())
+            .count();
+        body_copy(self.devices.devices.len(), lending)
+    }
+
+    /// Renders `source` alone into a texture on the display GPU that stays there (the last image
+    /// of a closing window), its bottom corners cut by `radius` logical pixels. Only for a seat
+    /// whose [`body_copy`](Self::body_copy) is [`BodyCopy::Gpu`]; the texture is drawn by the
+    /// scanout's renderer, which is that GPU's.
+    pub fn render_window_texture(
+        &mut self,
+        size: PhysicalSize,
+        scale: Scale,
+        radius: u32,
+        source: &dyn FrameSource,
+    ) -> Result<smithay::backend::renderer::gles::GlesTexture, BackendError> {
+        match self.body_copy() {
+            BodyCopy::Gpu => self
+                .devices
+                .capture_gpu()
+                .ok_or(BackendError::NoFrame)?
+                .render_window_texture(size, scale, radius, source),
+            _ => Err(BackendError::NoFrame),
+        }
     }
 
     /// What the display GPU is to a capture into a dma-buf of format `wanted` (a window: the

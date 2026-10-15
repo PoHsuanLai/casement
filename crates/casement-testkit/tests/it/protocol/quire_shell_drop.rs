@@ -1,4 +1,4 @@
-//! `quire_shell_v1` version 3: the pictures of Spaces that are not shown, the new-Space tile
+//! `quire_shell_v1` versions 3 and 4: the pictures of Spaces that are not shown, the new-Space tile
 //! (`space_target_new`, `drop_target_new`) and a window dragged to another output in Mission
 //! Control. Shell connections only. The desk and its helpers are `quire_shell_spaces.rs`'s.
 
@@ -12,7 +12,7 @@ use casement_core::window::SpacePlace;
 use casement_core::{OutputKey, WindowId};
 use casement_layout::SceneLayout;
 use casement_testclient::capture::{BufferAsk, OutputCapture, Size};
-use casement_testclient::quire::shell::{BoundOutput, ShellHandle, Shown};
+use casement_testclient::quire::shell::{BoundOutput, DragOutcome, ShellHandle, Shown};
 use casement_testclient::surface::toplevel::WmBase;
 use casement_testclient::{Pattern, shm_buffer};
 use casement_testkit::{Fixture, FixtureSpec};
@@ -245,6 +245,64 @@ fn a_version_two_shell_does_not_hear_the_tile() {
     release(&mut desk);
     assert!(!desk.shell.drop_targets_new().is_empty());
     assert!(old.drop_targets_new().is_empty());
+}
+
+/// The shell hears a window drag begin when the pointer passes the threshold, before any
+/// `drop_target`, and end with where the window went; a press that never becomes a drag says
+/// nothing, and a shell that bound version 3 hears none of it.
+#[test]
+fn the_shell_hears_a_window_drag_begin_and_end_with_its_outcome() {
+    let mut desk = desk();
+    tile(&mut desk);
+    let old_id = desk.fixture.connect(ConnectionRole::Shell);
+    let old = ShellHandle::bind(desk.fixture.client(old_id), 3);
+    desk.fixture.pump();
+    open(&mut desk);
+    let output = desk.outputs[0].object.clone();
+    let window = desk.windows[0];
+    let at = centre_of(&desk, window);
+    move_to(&mut desk, at);
+    press(&mut desk);
+    assert!(desk.shell.drag_begins().is_empty(), "a press is not a drag");
+    move_to(&mut desk, LogicalPoint { x: 50, y: 50 });
+    // One event per wl_output object the shell holds for this output (it may hold several).
+    let begun = desk.shell.drag_begins();
+    let per_drag = begun.len();
+    assert!(per_drag >= 1, "a drag is heard");
+    assert!(begun.iter().any(|(at, _)| *at == output));
+    assert!(
+        begun.iter().all(|(_, held)| *held == begun[0].1),
+        "one window"
+    );
+    assert!(desk.shell.drag_ends().is_empty());
+    release(&mut desk);
+    let ended = desk.shell.drag_ends();
+    assert_eq!(ended.len(), per_drag);
+    assert!(
+        ended.iter().all(|end| end.1 == begun[0].1),
+        "the same window"
+    );
+    assert!(
+        ended
+            .iter()
+            .all(|end| end.2 == Some(DragOutcome::DroppedOnNew))
+    );
+    assert!(old.drag_begins().is_empty() && old.drag_ends().is_empty());
+
+    // Dropped on nothing: cancelled.
+    let other = desk.windows[1];
+    let at = centre_of(&desk, other);
+    move_to(&mut desk, at);
+    press(&mut desk);
+    move_to(&mut desk, LogicalPoint { x: 560, y: 440 });
+    release(&mut desk);
+    let ended = desk.shell.drag_ends();
+    assert_eq!(ended.len(), 2 * per_drag);
+    assert!(
+        ended[per_drag..]
+            .iter()
+            .all(|end| end.2 == Some(DragOutcome::Cancelled))
+    );
 }
 
 /// Two outputs, two windows on the left one, a version 3 shell with its outputs bound.
