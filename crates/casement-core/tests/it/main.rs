@@ -2,6 +2,7 @@
 //!
 //! One integration binary: every former `tests/*.rs` is a module here, and `support` is shared.
 
+mod display_trial;
 mod focus;
 mod focus_beyond;
 mod focus_props;

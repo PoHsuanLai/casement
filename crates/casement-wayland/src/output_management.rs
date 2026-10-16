@@ -21,7 +21,7 @@ pub use heads::{HeadData, ModeData};
 use crate::consent::{ConsentHandler, Held};
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::output::{
-    OutputChangeSet, OutputConfig, OutputFacts, keeps_one_lit, resolve_change,
+    OutputChangeSet, OutputConfig, OutputFacts, Requester, keeps_one_lit, resolve_change,
 };
 use casement_core::policy::GlobalKind;
 use casement_core::{Event, OutputBook, OutputKey};
@@ -160,12 +160,14 @@ pub struct Configuration {
     /// The heads it enables or changes. (The protocol makes a client configure every head; a
     /// head left out is refused before a configuration is made.)
     pub heads: Vec<HeadRequest>,
+    /// Who built it: a program's change is a trial the person keeps or reverts.
+    pub by: Requester,
 }
 
 impl Configuration {
-    /// A configuration.
-    pub fn new(serial: ConfigSerial, heads: Vec<HeadRequest>) -> Configuration {
-        Configuration { serial, heads }
+    /// A configuration `by` its client.
+    pub fn new(serial: ConfigSerial, heads: Vec<HeadRequest>, by: Requester) -> Configuration {
+        Configuration { serial, heads, by }
     }
 }
 
@@ -185,12 +187,13 @@ pub enum ConfigurationAnswer {
 ///
 /// ```no_run
 /// use casement_core::OutputBook;
+/// use casement_core::output::Requester;
 /// use casement_wayland::output_management::{
 ///     ConfigSerial, Configuration, ConfigurationIntent, OutputManagementPart, on_configuration,
 /// };
 ///
 /// let mut part = OutputManagementPart::default();
-/// let nothing = Configuration::new(ConfigSerial(0), Vec::new());
+/// let nothing = Configuration::new(ConfigSerial(0), Vec::new(), Requester::Program);
 /// let answer = on_configuration(&mut part, &OutputBook::default(), ConfigurationIntent::Test, &nothing);
 /// let _ = answer;
 /// ```
@@ -226,6 +229,7 @@ pub fn on_configuration(
                 .map(|head| Event::OutputRequested {
                     output: head.output.clone(),
                     change: head.change,
+                    by: configuration.by,
                 })
                 .collect(),
         ),

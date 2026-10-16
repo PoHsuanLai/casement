@@ -8,7 +8,9 @@ use crate::ids::{ClientKey, InputSerial, LayerKey, OutputKey, WindowId};
 use crate::input::InputEvent;
 use crate::layer::LayerSpec;
 use crate::lock::LockEvent;
-use crate::output::{GammaRamp, MinuteOfDay, OutputChangeSet, OutputConfig, OutputFacts};
+use crate::output::{
+    GammaRamp, MinuteOfDay, OutputChangeSet, OutputConfig, OutputFacts, Requester,
+};
 use crate::policy::ConnectionRole;
 use crate::privilege::{Book, ClientStanding, Floor, Subject, UnixSeconds};
 use crate::settings::CasementSettings;
@@ -20,7 +22,7 @@ use crate::window::{
     WlrToplevelRequest,
 };
 use casement_protocols::vocab::{
-    Answer, AskId, Edited, Modality, PlaceTarget, Power, Toggle, WindowRole,
+    Answer, AskId, Edited, Modality, PlaceTarget, Power, Toggle, TrialAnswer, TrialId, WindowRole,
 };
 use porter_core::{ClaimedId, PeerIdentity};
 
@@ -171,12 +173,24 @@ pub enum Event {
     SettingsChanged(Box<CasementSettings>),
     /// A client asked to change an output (`zwlr_output_manager_v1`, `zwlr_output_power_v1`);
     /// the model checks it against the display's facts and answers with `ApplyOutput` or a
-    /// note (P1-M1).
+    /// note (P1-M1). A change by a program is a trial the person keeps or reverts
+    /// ([`Event::DisplaysAnswered`]); the shell's own is not asked.
     OutputRequested {
         /// The output.
         output: OutputKey,
         /// What it asked to change.
         change: OutputChangeSet,
+        /// Who asked.
+        by: Requester,
+    },
+    /// The person answered a question about a changed display setup
+    /// (`quire_shell_v1.displays_trial_answer`). An answer for a trial that is not open is
+    /// ignored.
+    DisplaysAnswered {
+        /// The trial.
+        trial: TrialId,
+        /// What the person said.
+        answer: TrialAnswer,
     },
     /// A client took control of an output's gamma, or gave it back with `Identity`
     /// (`zwlr_gamma_control_v1`; P1-M1).

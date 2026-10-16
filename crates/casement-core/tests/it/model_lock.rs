@@ -381,7 +381,7 @@ fn nothing_asked_of_the_desktop_gets_through_a_lock() {
 /// window's, else the first lit one), not to whichever output sorts first.
 #[test]
 fn the_keyboard_goes_to_the_lock_surface_of_the_output_in_use() {
-    use casement_core::output::{OutputChangeSet, OutputPower};
+    use casement_core::output::{OutputChangeSet, OutputPower, Requester};
     let (a, b) = ("HEADLESS-1", "HEADLESS-2");
     let both = run(vec![
         plug(a),
@@ -399,6 +399,7 @@ fn the_keyboard_goes_to_the_lock_surface_of_the_output_in_use() {
         vec![Op::Event(Event::OutputRequested {
             output: key(a),
             change: OutputChangeSet::none().with_power(OutputPower::Off),
+            by: Requester::Shell,
         })],
     );
     assert_eq!(

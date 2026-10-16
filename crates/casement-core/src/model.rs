@@ -14,6 +14,7 @@ mod commands;
 mod desktop_notes;
 mod desktop_places;
 mod desktop_requests;
+mod display_trial;
 mod focus_feed;
 mod keyboard;
 mod layers;
@@ -118,6 +119,11 @@ pub struct Model {
     /// The multi-finger swipes in flight (`model/swipe.rs`).
     swipe: swipe::SwipeState,
     timers: TimerBook,
+    /// The display change a program made that the person has not yet kept or reverted
+    /// (`model/display_trial.rs`).
+    display_trial: Option<display_trial::Trial>,
+    /// The last display trial id minted.
+    trial_ids: u32,
     settings: CasementSettings,
     /// The night light's ramps and holds (`model/night_light.rs`).
     night: night_light::NightDrive,
@@ -163,6 +169,8 @@ impl Model {
             focus: Focus::none(),
             swipe: swipe::SwipeState::default(),
             timers: TimerBook::empty(),
+            display_trial: None,
+            trial_ids: 0,
             settings,
             night: night_light::NightDrive::default(),
             privilege: Privilege::new(epoch),
@@ -272,7 +280,10 @@ impl Model {
             Event::Pong { client } => self.pong(client),
             Event::QuitListener { client, toggle } => self.quit_listener(client, toggle),
             Event::SettingsChanged(settings) => self.change_settings(*settings),
-            Event::OutputRequested { output, change } => self.request_output(output, change),
+            Event::OutputRequested { output, change, by } => {
+                self.request_output(output, change, by)
+            }
+            Event::DisplaysAnswered { trial, answer } => self.display_trial_answered(trial, answer),
             Event::GammaSet { output, ramp } => self.set_gamma(output, ramp),
             Event::NightLightTick(minute) => self.night_tick(minute),
             Event::WlrToplevel { window, request } => {

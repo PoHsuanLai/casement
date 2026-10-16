@@ -14,7 +14,8 @@ use crate::output::{GammaRamp, OutputConfig};
 use crate::privilege::{AskSubject, Book, PowerOutcome};
 use crate::shell::ShellNote;
 use crate::time::{Due, TimerKey};
-use casement_protocols::vocab::{AskId, Attention, Emphasis, Memory, Power};
+use casement_protocols::vocab::{AskId, Attention, Emphasis, Memory, Power, TrialId};
+use std::time::Duration;
 
 /// Something the model wants done.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -140,6 +141,22 @@ pub enum Effect {
     WithdrawAsk {
         /// The question.
         ask: AskId,
+    },
+    /// Ask the person whether to keep the displays as a program changed them
+    /// (`quire_shell_v1.displays_trial`): the shell shows "Keep these display settings?" and
+    /// answers with `Event::DisplaysAnswered`. Sent again, with the same id, when a further
+    /// change restarts the time.
+    AskKeepDisplays {
+        /// The trial's id on the wire.
+        trial: TrialId,
+        /// How long the person has.
+        within: Duration,
+    },
+    /// The question about the displays is over (`displays_trial_end`): answered, timed out and
+    /// reverted, or the shell changed the displays itself.
+    EndDisplaysTrial {
+        /// The trial.
+        trial: TrialId,
     },
     /// Write the person's book: it is the whole book as it now is.
     SaveBook(Box<Book>),

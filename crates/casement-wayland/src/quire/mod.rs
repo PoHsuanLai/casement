@@ -17,6 +17,7 @@ pub mod shell_overview;
 pub mod shell_permission;
 pub mod shell_space;
 pub mod shell_split;
+pub mod shell_trial;
 pub mod space_shot;
 
 use smithay::reexports::wayland_server::WEnum;

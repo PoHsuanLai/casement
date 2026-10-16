@@ -5,11 +5,14 @@ use crate::core_loop;
 use crate::state::State;
 use casement_core::time::Mono;
 use casement_core::{Event, LayerKey, OutputKey, WindowId};
+use casement_protocols::vocab::TrialId;
 use casement_wayland::quire::shell::{QuireShellHandler, QuireShellPart};
+use casement_wayland::quire::shell_trial;
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Client, Resource};
+use std::time::Duration;
 
 impl QuireShellHandler for State {
     fn quire_shell_part(&mut self) -> &mut QuireShellPart {
@@ -46,4 +49,15 @@ impl QuireShellHandler for State {
     fn space_known(&self, space: &porter_core::SpaceId) -> bool {
         self.core.model.spaces().get(space).is_some()
     }
+}
+
+/// `Effect::AskKeepDisplays`: the question about the changed displays goes to the shell.
+pub(crate) fn trial_ask(state: &mut State, trial: TrialId, within: Duration) {
+    let now = state.clock.now();
+    shell_trial::apply_trial(&mut state.wl.quire_shell, trial, within, now);
+}
+
+/// `Effect::EndDisplaysTrial`: the question about the displays is taken down.
+pub(crate) fn trial_end(state: &mut State, trial: TrialId) {
+    shell_trial::apply_end(&mut state.wl.quire_shell, trial);
 }

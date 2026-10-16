@@ -31,7 +31,7 @@ mod pointer_gestures;
 mod presentation;
 mod primary_selection;
 mod quire_desktop;
-mod quire_shell;
+pub(crate) mod quire_shell;
 mod quire_window;
 mod relative_pointer;
 mod screencopy;

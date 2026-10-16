@@ -31,6 +31,7 @@ pub use watch::{ImageWatch, Unwatched};
 use crate::client::ClientState;
 use casement_core::ClientKey;
 use casement_core::Event;
+use casement_core::output::Requester;
 use casement_core::privilege::PowerOutcome;
 use casement_protocols::vocab::Power;
 use ledger::Begin;
@@ -125,4 +126,10 @@ pub fn allowed<D: ConsentHandler>(state: &D, client: &Client, power: Power) -> A
 /// The key of `client`, when casement inserted it.
 pub fn key_of(client: &Client) -> Option<ClientKey> {
     ClientState::of(client).map(|data| data.key)
+}
+
+/// Who a request from `client` is from: the shell's own connection, or a program. A client
+/// casement did not insert is a program.
+pub fn requester_of(client: &Client) -> Requester {
+    ClientState::of(client).map_or(Requester::Program, |data| Requester::of(&data.role))
 }

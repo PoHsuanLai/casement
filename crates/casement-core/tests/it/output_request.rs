@@ -6,7 +6,7 @@ use crate::support::{display, headless, mode, ms};
 use casement_core::geometry::{LogicalPoint, Transform};
 use casement_core::output::{
     GammaRamp, GammaTable, Kelvin, MinuteOfDay, ModePreference, OutputChangeSet, OutputConfig,
-    OutputPower, OutputRefusal, keeps_one_lit, resolve_change,
+    OutputPower, OutputRefusal, Requester, keeps_one_lit, resolve_change,
 };
 use casement_core::settings::{CasementSettings, NightLightMode, NightLightSettings};
 use casement_core::space::SpaceSeed;
@@ -112,6 +112,7 @@ fn requested(change: OutputChangeSet) -> (casement_core::Model, Vec<Effect>) {
         Event::OutputRequested {
             output: key,
             change,
+            by: Requester::Shell,
         },
         at,
     )
@@ -197,6 +198,7 @@ fn a_request_cannot_darken_the_last_lit_output() {
         Op::Event(Event::OutputRequested {
             output: output.clone(),
             change: dark,
+            by: Requester::Shell,
         })
     };
     let alone = run(vec![plug("HEADLESS-1"), ask(&a)]);

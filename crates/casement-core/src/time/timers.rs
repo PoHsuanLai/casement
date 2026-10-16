@@ -51,6 +51,9 @@ pub enum TimerKey {
     /// The next question to the person is due to time out, or the wait for a shell to ask it
     /// is over.
     AskDeadline,
+    /// The person has had as long as they may to keep a display change a program made; the
+    /// previous setup comes back.
+    DisplayTrial,
 }
 
 /// A timer: when, and what for.

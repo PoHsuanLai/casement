@@ -188,7 +188,8 @@ impl ConfigData {
             .into_iter()
             .map(|head| HeadRequest::new(head.output, head.change))
             .collect();
-        let configuration = Configuration::new(self.serial, requests);
+        let configuration =
+            Configuration::new(self.serial, requests, consent::requester_of(client));
         match consent::admit(state, client, Power::Displays) {
             Admission::Go => settle(state, resource, intent, &configuration),
             Admission::Hold => hold(state, client, resource, intent, configuration),

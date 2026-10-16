@@ -31,7 +31,7 @@ const SMALLER: Mode = Mode {
 };
 
 /// A fixture with `outputs`, and a manager that has read the heads.
-fn boot(outputs: &[&str]) -> (Fixture, casement_testkit::ClientId, OutputManager) {
+pub(super) fn boot(outputs: &[&str]) -> (Fixture, casement_testkit::ClientId, OutputManager) {
     let mut fixture =
         Fixture::start(FixtureSpec::desktop().with_outputs(outputs)).expect("fixture");
     let id = fixture.connect(ConnectionRole::Public);
@@ -42,18 +42,18 @@ fn boot(outputs: &[&str]) -> (Fixture, casement_testkit::ClientId, OutputManager
 }
 
 /// Lets the compositor and the manager's client talk until both are quiet.
-fn settle(fixture: &mut Fixture, manager: &mut OutputManager) {
+pub(super) fn settle(fixture: &mut Fixture, manager: &mut OutputManager) {
     fixture.pump();
     manager.pump().expect("pump");
     fixture.pump();
     manager.pump().expect("pump");
 }
 
-fn name(text: &str) -> OutputName {
+pub(super) fn name(text: &str) -> OutputName {
     OutputName::parse(text).expect("a connector name")
 }
 
-fn config_of(fixture: &Fixture, connector: &str) -> OutputConfig {
+pub(super) fn config_of(fixture: &Fixture, connector: &str) -> OutputConfig {
     fixture
         .model()
         .outputs()
@@ -64,7 +64,7 @@ fn config_of(fixture: &Fixture, connector: &str) -> OutputConfig {
         .expect("a plugged output")
 }
 
-fn plan(connector: &str, properties: Properties) -> HeadPlan {
+pub(super) fn plan(connector: &str, properties: Properties) -> HeadPlan {
     HeadPlan {
         name: connector.to_owned(),
         setting: Setting::Enable(properties),

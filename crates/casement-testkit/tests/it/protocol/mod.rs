@@ -45,6 +45,7 @@ mod quire_shell_divider;
 mod quire_shell_drop;
 mod quire_shell_overview;
 mod quire_shell_spaces;
+mod quire_shell_trial;
 mod quire_window;
 mod relative_pointer;
 mod sandbox;

@@ -5,14 +5,22 @@ use super::Model;
 use super::moved::Moved;
 use crate::effect::{CoreNote, Effect};
 use crate::ids::OutputKey;
-use crate::output::{GammaRamp, OutputChangeSet, OutputRefusal, keeps_one_lit, resolve_change};
+use crate::output::{
+    GammaRamp, OutputChangeSet, OutputRefusal, Requester, keeps_one_lit, resolve_change,
+};
 
 impl Model {
     /// A client asked to change `output`: checked against its facts with
     /// `output::resolve_change`, then `Effect::ApplyOutput` with the new configuration (and an
     /// arrangement redraw), or a note when it was refused. A request that changes nothing
-    /// moves nothing, and one that would leave every display dark is refused.
-    pub(super) fn request_output(self, output: OutputKey, change: OutputChangeSet) -> Moved {
+    /// moves nothing, and one that would leave every display dark is refused. A change `by` a
+    /// program is then a trial the person keeps or reverts (`model/display_trial.rs`).
+    pub(super) fn request_output(
+        self,
+        output: OutputKey,
+        change: OutputChangeSet,
+        by: Requester,
+    ) -> Moved {
         let Some(plugged) = self.outputs.0.get(&output).cloned() else {
             let refusal = OutputRefusal::UnknownOutput(output);
             return Moved::of(self).with(Effect::Note(CoreNote::RefusedOutput(refusal)));
@@ -29,7 +37,8 @@ impl Model {
                     output: output.clone(),
                     config,
                 })
-                .then(|model| model.configure_output(&output, config)),
+                .then(|model| model.configure_output(&output, config))
+                .then(|model| model.display_changed(by, output, plugged.config)),
         }
     }
 

@@ -161,6 +161,12 @@ fn apply(state: &mut State, effect: Effect) {
             memory,
         } => crate::handlers::consent::ask(state, ask, power, &subject, memory),
         Effect::WithdrawAsk { ask } => crate::handlers::consent::withdraw(state, ask),
+        // A display change a program made waits for the person to keep it
+        // (`handlers/quire_shell.rs`, `quire_shell_v1` version 6).
+        Effect::AskKeepDisplays { trial, within } => {
+            crate::handlers::quire_shell::trial_ask(state, trial, within)
+        }
+        Effect::EndDisplaysTrial { trial } => crate::handlers::quire_shell::trial_end(state, trial),
         Effect::Resolve {
             client,
             power,

@@ -27,6 +27,7 @@ impl Model {
             (Gone::No, TimerKey::LockWait) => model.lock_wait_over(),
             (Gone::No, TimerKey::OverviewSettle) => model.overview_settled(),
             (Gone::No, TimerKey::AskDeadline) => model.privileged(Input::Tick),
+            (Gone::No, TimerKey::DisplayTrial) => model.display_trial_timed_out(),
             (Gone::No, TimerKey::SpaceFinish(_)) => model.space_swipe(SwipeIn::Elapsed),
             (Gone::No, _) => Moved::of(model),
         }
@@ -51,7 +52,10 @@ impl Model {
             | TimerKey::LightDwell
             | TimerKey::TrustedArm(_)
             | TimerKey::LeaseYield(_) => None,
-            TimerKey::LockWait | TimerKey::OverviewSettle | TimerKey::AskDeadline => Some(Gone::No),
+            TimerKey::LockWait
+            | TimerKey::OverviewSettle
+            | TimerKey::AskDeadline
+            | TimerKey::DisplayTrial => Some(Gone::No),
         }
     }
 

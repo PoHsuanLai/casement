@@ -12,6 +12,7 @@ mod night_light;
 mod request;
 mod scale_policy;
 mod tag;
+mod trial;
 
 pub use arrangement::place_outputs;
 pub use config::{OutputConfig, OutputPower, SavedOutputs};
@@ -25,6 +26,7 @@ pub use night_light::{Kelvin, MinuteOfDay, NightLight, Schedule, Tint};
 pub use request::{OutputChangeSet, OutputRefusal, keeps_one_lit, resolve_change};
 pub use scale_policy::{ScalePolicy, first_sight_scale};
 pub use tag::{ColorTag, TransferCurve};
+pub use trial::{DISPLAY_CONFIRM_WITHIN, Requester};
 
 #[cfg(test)]
 mod tests;

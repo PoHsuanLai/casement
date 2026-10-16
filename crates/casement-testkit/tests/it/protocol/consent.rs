@@ -13,7 +13,7 @@ use casement_core::privilege::{
     ASK_TTL, Book, ClientStanding, Grant, ProgramPath, SHELL_WAIT, Subject, UnixSeconds, Verdict,
 };
 use casement_protocols::client::quire_shell_v1::quire_shell_v1::{self as wire, QuireShellV1};
-use casement_protocols::vocab::{Answer, Memory, Power, SubjectKind, WireCode};
+use casement_protocols::vocab::{Answer, Memory, Power, SubjectKind, TrialAnswer, WireCode};
 use casement_testclient::ClientState;
 use casement_testclient::ime::virtual_keyboard::VirtualBoard;
 use casement_testclient::quire::shell::ShellHandle;
@@ -45,6 +45,10 @@ pub(super) struct Asked {
 struct Heard {
     asks: Vec<Asked>,
     withdrawn: Vec<u32>,
+    /// Every `displays_trial` (version 6): the trial and the seconds the person has.
+    trials: Vec<(u32, u32)>,
+    /// Every `displays_trial_end` (version 6).
+    trial_ends: Vec<u32>,
 }
 
 /// The shell object's user data: where its events are written.
@@ -94,12 +98,16 @@ impl wayland_client::Dispatch<QuireShellV1, ShellEar> for ClientState {
                 }
             }
             wire::Event::PermissionWithdraw { ask } => ear.heard().withdrawn.push(ask),
+            wire::Event::DisplaysTrial { trial, seconds } => {
+                ear.heard().trials.push((trial, seconds));
+            }
+            wire::Event::DisplaysTrialEnd { trial } => ear.heard().trial_ends.push(trial),
             _ => {}
         }
     }
 }
 
-/// The shell's connection with `quire_shell_v1` bound at version 5, listening for questions.
+/// The shell's connection with `quire_shell_v1` bound at version 6, listening for questions.
 pub(super) struct ScriptedShell {
     /// Its connection.
     pub(super) id: ClientId,
@@ -108,15 +116,20 @@ pub(super) struct ScriptedShell {
 }
 
 impl ScriptedShell {
-    /// Connects the shell and binds `quire_shell_v1` at version 5; the compositor then knows
+    /// Connects the shell and binds `quire_shell_v1` at version 6; the compositor then knows
     /// the shell can be asked.
     pub(super) fn start(fixture: &mut Fixture) -> ScriptedShell {
+        ScriptedShell::start_at(fixture, 6)
+    }
+
+    /// Connects the shell and binds `quire_shell_v1` at `version` (5 or 6).
+    pub(super) fn start_at(fixture: &mut Fixture, version: u32) -> ScriptedShell {
         let id = fixture.connect(ConnectionRole::Shell);
         let ear = ShellEar::default();
         let object = fixture
             .client(id)
-            .bind::<QuireShellV1, _>(5..=5, ear.clone())
-            .expect("the shell is offered quire_shell_v1 at version 5");
+            .bind::<QuireShellV1, _>(version..=version, ear.clone())
+            .expect("the shell is offered quire_shell_v1 at that version");
         fixture.pump();
         ScriptedShell { id, object, ear }
     }
@@ -129,6 +142,16 @@ impl ScriptedShell {
     /// The questions taken back so far, in order.
     pub(super) fn withdrawn(&self) -> Vec<u32> {
         self.ear.heard().withdrawn.clone()
+    }
+
+    /// Every `displays_trial` heard so far, in order: the trial and the seconds.
+    pub(super) fn trials(&self) -> Vec<(u32, u32)> {
+        self.ear.heard().trials.clone()
+    }
+
+    /// Every `displays_trial_end` heard so far, in order.
+    pub(super) fn trial_ends(&self) -> Vec<u32> {
+        self.ear.heard().trial_ends.clone()
     }
 
     /// The id of the one question heard.
@@ -149,6 +172,27 @@ impl ScriptedShell {
     pub(super) fn answer_at_once(&self, fixture: &mut Fixture, ask: u32, answer: Answer) {
         let wire = wire::Answer::try_from(answer.code()).expect("an answer on the wire");
         self.object.permission_answer(ask, wire);
+        fixture.pump();
+    }
+}
+
+impl ScriptedShell {
+    /// Answers display trial `trial` as a person would, after the sheet's delay, and lets the
+    /// compositor act on it.
+    pub(super) fn answer_trial(&self, fixture: &mut Fixture, trial: u32, answer: TrialAnswer) {
+        fixture.advance(ANSWER_NOT_BEFORE);
+        self.answer_trial_at_once(fixture, trial, answer);
+    }
+
+    /// Answers display trial `trial` at the instant it is, with no wait.
+    pub(super) fn answer_trial_at_once(
+        &self,
+        fixture: &mut Fixture,
+        trial: u32,
+        answer: TrialAnswer,
+    ) {
+        let wire = wire::TrialAnswer::try_from(answer.code()).expect("an answer on the wire");
+        self.object.displays_trial_answer(trial, wire);
         fixture.pump();
     }
 }

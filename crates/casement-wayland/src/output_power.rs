@@ -14,7 +14,7 @@
 
 use crate::consent::{self, Admission, ConsentHandler, Held, Mortal, Pushed};
 use crate::states::{GlobalFilter, WaylandFault};
-use casement_core::output::{OutputChangeSet, OutputPower};
+use casement_core::output::{OutputChangeSet, OutputPower, Requester};
 use casement_core::policy::GlobalKind;
 use casement_core::privilege::PowerOutcome;
 use casement_core::{ClientKey, Event, OutputBook, OutputKey};
@@ -109,15 +109,16 @@ pub struct PowerData {
 }
 
 /// A client's `set_mode` on `output`: one `Event::OutputRequested` that changes only the power
-/// (an output it darkens is lit again when its control goes, [`on_released`]).
+/// (an output it darkens is lit again when its control goes, [`on_released`]). `by` is who the
+/// control's client is: a program's change is a trial the person keeps or reverts.
 ///
 /// ```no_run
-/// use casement_core::output::OutputPower;
+/// use casement_core::output::{OutputPower, Requester};
 /// use casement_wayland::output_power::{OutputPowerPart, on_set_mode};
 ///
 /// # fn demo(key: casement_core::OutputKey) {
 /// let mut part = OutputPowerPart::default();
-/// let events = on_set_mode(&mut part, key, OutputPower::Off);
+/// let events = on_set_mode(&mut part, key, OutputPower::Off, Requester::Program);
 /// assert_eq!(events.len(), 1);
 /// # }
 /// ```
@@ -125,6 +126,7 @@ pub fn on_set_mode(
     part: &mut OutputPowerPart,
     output: OutputKey,
     power: OutputPower,
+    by: Requester,
 ) -> Vec<Event> {
     match power {
         OutputPower::Off => part.darkened.insert(output.clone()),
@@ -133,6 +135,7 @@ pub fn on_set_mode(
     vec![Event::OutputRequested {
         output,
         change: OutputChangeSet::none().with_power(power),
+        by,
     }]
 }
 
@@ -146,6 +149,7 @@ pub fn on_released(part: &mut OutputPowerPart, output: &OutputKey) -> Vec<Event>
         true => vec![Event::OutputRequested {
             output: output.clone(),
             change: OutputChangeSet::none().with_power(OutputPower::On),
+            by: Requester::Restore,
         }],
         false => Vec::new(),
     }
@@ -350,7 +354,7 @@ where
     fn request(
         &self,
         state: &mut D,
-        _client: &Client,
+        client: &Client,
         resource: &ZwlrOutputPowerV1,
         request: zwlr_output_power_v1::Request,
         _handle: &DisplayHandle,
@@ -378,7 +382,8 @@ where
                 return;
             }
         };
-        let events = on_set_mode(state.output_power_part(), output.clone(), power);
+        let by = consent::requester_of(client);
+        let events = on_set_mode(state.output_power_part(), output.clone(), power, by);
         state.output_power_events(events);
     }
 

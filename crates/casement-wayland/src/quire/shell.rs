@@ -11,7 +11,7 @@
 use super::shell_permission::{self, SentAsk, UnknownWall, WallSeconds};
 use super::space_shot::SpaceShotPart;
 use super::{Advertised, code_of};
-use super::{shell_overview, shell_space, shell_split};
+use super::{shell_overview, shell_space, shell_split, shell_trial};
 use crate::foreign_toplevel_list::{identifier_of, window_of_identifier};
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
@@ -72,6 +72,8 @@ pub struct QuireShellPart {
     /// The date an answer is stamped with (version 5): the composition root replaces the
     /// placeholder, which stamps every answer with the epoch.
     pub wall: Box<dyn WallSeconds>,
+    /// The display trial the shell was asked about and has not seen end (version 6).
+    pub trial: Option<shell_trial::OpenTrial>,
 }
 
 impl QuireShellPart {
@@ -99,6 +101,7 @@ impl QuireShellPart {
             shots: SpaceShotPart::default(),
             asks: Vec::new(),
             wall: Box::new(UnknownWall),
+            trial: None,
         }
     }
 }
@@ -167,6 +170,8 @@ where
         let shell = data_init.init(resource, ShellData);
         state.quire_shell_part().bound.push(shell.clone());
         let events = shell_permission::on_bind(state.quire_shell_part(), &shell);
+        let now = state.quire_shell_now();
+        shell_trial::on_bind(state.quire_shell_part(), &shell, now);
         state.quire_shell_events(events);
     }
 
@@ -254,6 +259,14 @@ where
             quire_shell_v1::Request::PermissionAnswer { ask, answer } => {
                 let now = state.quire_shell_now();
                 match shell_permission::on_answer(state.quire_shell_part(), ask, answer, now) {
+                    Ok(events) => state.quire_shell_events(events),
+                    Err(fault) => resource
+                        .post_error(quire_shell_v1::Error::AnsweredTooSoon, fault.to_string()),
+                }
+            }
+            quire_shell_v1::Request::DisplaysTrialAnswer { trial, answer } => {
+                let now = state.quire_shell_now();
+                match shell_trial::on_answer(state.quire_shell_part(), trial, answer, now) {
                     Ok(events) => state.quire_shell_events(events),
                     Err(fault) => resource
                         .post_error(quire_shell_v1::Error::AnsweredTooSoon, fault.to_string()),
