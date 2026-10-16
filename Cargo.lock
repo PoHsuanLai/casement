@@ -2376,10 +2376,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "porter-daemon"
+version = "0.1.0"
+dependencies = [
+ "notify",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "porter-dbus"
 version = "0.1.0"
 dependencies = [
  "porter-core",
+ "porter-daemon",
  "serde",
  "serde_json",
  "thiserror 2.0.21",

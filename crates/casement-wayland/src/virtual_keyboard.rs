@@ -308,10 +308,10 @@ where
                     .push(key, keyboard.clone())
             });
             // A client past its cap of keyboards, and one nobody vouches for, gets a dead one.
-            if !matches!(pushed, Some(Pushed::Kept)) {
-                if let Some(data) = keyboard.data::<VirtualKeyboardData>() {
-                    data.gate.close();
-                }
+            if !matches!(pushed, Some(Pushed::Kept))
+                && let Some(data) = keyboard.data::<VirtualKeyboardData>()
+            {
+                data.gate.close();
             }
         }
     }
