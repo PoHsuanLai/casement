@@ -1,10 +1,11 @@
 //! The session lock (ext-session-lock). Once locked the session stays covered until the
-//! locker unlocks: a locker that dies leaves the cover up, and another may take the lock over.
+//! locker unlocks: a locker that dies leaves the cover up, and only the shell (or the client that
+//! held the lock) may take the lock over.
 
 use super::Model;
 use super::moved::Moved;
 use crate::effect::Effect;
-use crate::ids::OutputKey;
+use crate::ids::{ClientKey, OutputKey};
 use crate::lock::{LockEvent, LockReply, LockState, LockSurfaces};
 use crate::time::{Due, TimerKey};
 use std::time::Duration;
@@ -17,14 +18,20 @@ impl Model {
     /// The lock moved.
     pub(super) fn lock_event(self, event: LockEvent) -> Moved {
         match (self.lock.clone(), event) {
-            (LockState::Unlocked, LockEvent::Requested { .. }) => {
-                self.begin_lock().then(|model| model.leave_overview(None))
+            (LockState::Unlocked, LockEvent::Requested { client }) => self
+                .begin_lock(client)
+                .then(|model| model.leave_overview(None)),
+            (LockState::LockedWithoutSurface, LockEvent::Requested { client })
+                if self.may_take_over(client) =>
+            {
+                self.with_lock_by(
+                    LockState::Locked {
+                        surfaces: LockSurfaces::Pending,
+                    },
+                    Some(client),
+                )
+                .with(Effect::Lock(LockReply::SendLocked))
             }
-            (LockState::LockedWithoutSurface, LockEvent::Requested { .. }) => self
-                .with_lock(LockState::Locked {
-                    surfaces: LockSurfaces::Pending,
-                })
-                .with(Effect::Lock(LockReply::SendLocked)),
             (_, LockEvent::Requested { .. }) => {
                 Moved::of(self).with(Effect::Lock(LockReply::Finished))
             }
@@ -33,6 +40,13 @@ impl Model {
             (state, LockEvent::Unlocked) => self.end_lock(&state),
             (state, LockEvent::LockerGone) => self.lose_locker(&state),
         }
+    }
+
+    /// Whether `client` may take over a lock whose locker is gone: the shell may (it is the
+    /// person's own locker), and so may the client that held the lock. Any other client is
+    /// refused, so a program that waits for the locker to die cannot unlock the session.
+    fn may_take_over(&self, client: ClientKey) -> bool {
+        self.is_shell(client) || self.locker == Some(client)
     }
 
     /// The outputs the lock covers with its own cover, because no locker surface does.
@@ -58,15 +72,27 @@ impl Model {
         Moved::of(Model { lock, ..self })
     }
 
+    /// The same with `locker` as the client that holds the lock.
+    fn with_lock_by(self, lock: LockState, locker: Option<ClientKey>) -> Moved {
+        Moved::of(Model {
+            lock,
+            locker,
+            ..self
+        })
+    }
+
     /// A locker asked: every output goes under the cover. With no output there is nothing to
     /// wait for, and the session is locked at once.
-    fn begin_lock(self) -> Moved {
+    fn begin_lock(self, client: ClientKey) -> Moved {
         let outputs: Vec<OutputKey> = self.outputs.0.keys().cloned().collect();
         if outputs.is_empty() {
             return self
-                .with_lock(LockState::Locked {
-                    surfaces: LockSurfaces::Pending,
-                })
+                .with_lock_by(
+                    LockState::Locked {
+                        surfaces: LockSurfaces::Pending,
+                    },
+                    Some(client),
+                )
                 .with(Effect::Lock(LockReply::SendLocked));
         }
         let since = self.now;
@@ -74,7 +100,7 @@ impl Model {
             at: since.after(LOCK_WAIT),
             key: TimerKey::LockWait,
         };
-        self.with_lock(LockState::Locking { since })
+        self.with_lock_by(LockState::Locking { since }, Some(client))
             .with_all(outputs.into_iter().map(show_cover))
             .with(Effect::ArmTimer(wait))
     }
@@ -128,7 +154,7 @@ impl Model {
     /// The locker unlocked: the covers come down and the keyboard goes back to the desktop.
     fn end_lock(self, state: &LockState) -> Moved {
         let covers = self.covers_for(state);
-        self.with_lock(LockState::Unlocked)
+        self.with_lock_by(LockState::Unlocked, None)
             .with_all(covers.into_iter().map(hide_cover))
     }
 

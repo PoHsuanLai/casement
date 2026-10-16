@@ -4131,3 +4131,16 @@ Deferred:
 - CASB-12, the `unwrap`s in smithay's libseat session (`dispatch(0).unwrap()`, `disable().unwrap()`): the fork's code, not casement's.
 - CASB-13, CASB-14: quire's ds-settings (bounded reader, hardened writer): interface ask, not this repo.
 - CASB-20, CASB-21, CASB-28: left, as decided.
+## pa-cassec: production-audit fixes in casement-core, casement-layout, casement-wayland and casement-ipc (2026-10-16)
+
+Rows for the findings CASW-02/03/04/07/11/12/13/15/18/19, CASC-02/05/06/07/09/10/11/13/14/17 and CASB-06 (audit files in
+`~/rs-wt/prod-audit-de/`). Written without a build: the gate run is the first compile.
+
+- **CASW-02 (decided): a lock whose locker is gone is taken over only by the shell or by the client that held it.**
+  The model keeps `shell_clients` (clients that came through the shell connection, learned from `ClientConnected`) and
+  `locker` (the client behind the lock now held). A `Requested` in `LockedWithoutSurface` from any other client is
+  answered `LockReply::Finished`; the refused client's lock object gets `finished`, and because smithay's `unlock_and_destroy`
+  needs the lock to have been confirmed `locked`, it cannot unlock. A first lock from `Unlocked` is still accepted from any
+  client (privileged globals on the public socket are CASW-01/CASC-01, a later wave). Tests: `model_lock.rs`
+  (`only_the_shell_or_the_same_client_takes_a_lock_over`, `a_refused_takeover_does_not_become_the_holder`) and the fixture test
+  `a_lock_whose_locker_died_is_taken_over_only_by_the_shell`.

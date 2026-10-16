@@ -71,6 +71,9 @@ pub struct Model {
     apps: BTreeMap<AppKey, App>,
     /// Each connected client and the app its windows belong to, once it has mapped one.
     clients: BTreeMap<ClientKey, Option<AppKey>>,
+    /// The clients that came through the shell's own connection: the only ones whose lock
+    /// takeover, exclusive keyboard layers and full-size zones are honoured.
+    shell_clients: BTreeSet<ClientKey>,
     /// The clients that hold a `quire_window_manager_v1` bound at version 2 or later: an app
     /// asked to quit is sent `quit` through them instead of having its windows closed.
     quit_listeners: BTreeSet<ClientKey>,
@@ -91,6 +94,9 @@ pub struct Model {
     /// The Split View whose other half is being chosen, if one is (`model/split.rs`).
     split_choice: Option<split::SplitChoice>,
     lock: LockState,
+    /// The client that asked for the lock now held (or lost with its locker): a lock whose
+    /// locker is gone is taken over only by the shell or by this client again.
+    locker: Option<ClientKey>,
     /// Mission Control's life (`model/overview.rs`).
     overview: Overview,
     focus: Focus,
@@ -124,6 +130,7 @@ impl Model {
             windows: BTreeMap::new(),
             apps: BTreeMap::new(),
             clients: BTreeMap::new(),
+            shell_clients: BTreeSet::new(),
             quit_listeners: BTreeSet::new(),
             spaces: SpaceBook::empty(),
             remembered: SpaceFile::empty(),
@@ -134,6 +141,7 @@ impl Model {
             demand: None,
             split_choice: None,
             lock: LockState::Unlocked,
+            locker: None,
             overview: Overview::Closed,
             focus: Focus::none(),
             swipe: swipe::SwipeState::default(),
@@ -186,7 +194,7 @@ impl Model {
     /// Where `event` goes.
     fn route(self, event: Event) -> Moved {
         match event {
-            Event::ClientConnected { client, .. } => self.connect(client),
+            Event::ClientConnected { client, role, .. } => self.connect(client, &role),
             Event::ClientGone { client } => self.disconnect(client),
             Event::ToplevelMapped(mapped) => self.map(mapped),
             Event::ToplevelUnmapped { window } => self.unmap(window),

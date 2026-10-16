@@ -3,14 +3,23 @@
 use super::Model;
 use super::moved::Moved;
 use crate::ids::ClientKey;
+use crate::policy::ConnectionRole;
 use casement_protocols::vocab::Toggle;
 
 impl Model {
-    /// A client connected; it serves no app until it maps a window.
-    pub(super) fn connect(self, client: ClientKey) -> Moved {
+    /// A client connected through a socket of `role`; it serves no app until it maps a window.
+    pub(super) fn connect(self, client: ClientKey, role: &ConnectionRole) -> Moved {
         let mut model = self;
         model.clients.entry(client).or_insert(None);
+        if matches!(role, ConnectionRole::Shell) {
+            model.shell_clients.insert(client);
+        }
         Moved::of(model)
+    }
+
+    /// Whether `client` came through the shell's own connection.
+    pub(super) fn is_shell(&self, client: ClientKey) -> bool {
+        self.shell_clients.contains(&client)
     }
 
     /// A client now holds (or let go of) a manager bound at the version that carries `quit`.
@@ -41,6 +50,7 @@ impl Model {
             .fold(Moved::of(self), |moved, id| moved.then(|m| m.unmap(id)));
         moved.then(|mut model| {
             model.quit_listeners.remove(&client);
+            model.shell_clients.remove(&client);
             let served = model.clients.remove(&client).flatten();
             let orphaned =
                 served.filter(|app| !model.clients.values().any(|c| c.as_ref() == Some(app)));

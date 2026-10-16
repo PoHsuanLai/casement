@@ -3,6 +3,7 @@
 use casement_core::OutputName;
 use casement_core::geometry::PhysicalSize;
 use casement_core::input::{DeviceClass, Edge, KeyCode};
+use casement_core::lock::LockState;
 use casement_core::policy::ConnectionRole;
 use casement_testclient::seat::keyboard::Keyboard;
 use casement_testclient::surface::layer::{
@@ -190,6 +191,52 @@ fn a_dead_locker_leaves_the_lock_cover() {
         .filter(|(_, _, pixel)| pixel.0 != BLACK)
         .count();
     assert_eq!(leaked, 0, "the cover left {leaked} pixels showing");
+}
+
+/// `id` locks the session with a lock surface that shows content on the first output, and the
+/// session is locked when this returns.
+fn lock_with_content(fixture: &mut Fixture, id: casement_testkit::ClientId) -> Locker {
+    let locker = Locker::request(fixture.client(id)).expect("a lock");
+    fixture.pump();
+    let cover = locker.cover(fixture.client(id)).expect("a lock surface");
+    fixture.pump();
+    assert!(cover.ack(fixture.client(id)));
+    let size = PhysicalSize { w: 1920, h: 1080 };
+    let buffer = shm_buffer(fixture.client(id), size, Pattern::Solid(0xff00_0000));
+    cover.show(fixture.client(id), &buffer);
+    fixture.pump();
+    assert!(locker.is_locked(), "the session is locked");
+    locker
+}
+
+/// CASW-02: once the locker is gone, another public client that asks to lock is refused and
+/// the session stays covered; the shell's own locker takes the lock over.
+#[test]
+fn a_lock_whose_locker_died_is_taken_over_only_by_the_shell() {
+    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let owner = fixture.connect(ConnectionRole::Public);
+    let hostile = fixture.connect(ConnectionRole::Public);
+    let shell = fixture.connect(ConnectionRole::Shell);
+    fixture.pump();
+    let _locker = lock_with_content(&mut fixture, owner);
+    fixture.disconnect(owner);
+    fixture.advance(Duration::from_secs(2));
+    assert_eq!(fixture.model().lock(), &LockState::LockedWithoutSurface);
+
+    let grab = Locker::request(fixture.client(hostile)).expect("a lock request");
+    fixture.pump();
+    assert!(grab.is_finished(), "the newcomer is told the lock is over");
+    assert!(!grab.is_locked(), "and does not hold the session");
+    assert_eq!(
+        fixture.model().lock(),
+        &LockState::LockedWithoutSurface,
+        "the session stays covered"
+    );
+
+    let own = Locker::request(fixture.client(shell)).expect("the shell's lock");
+    fixture.pump();
+    assert!(own.is_locked(), "the shell takes the lock over");
+    assert!(!own.is_finished());
 }
 
 /// Locked arrives only after each output shows a lock surface or a cover.

@@ -10,6 +10,7 @@ use casement_core::layer::{
     ShellRoleTag,
 };
 use casement_core::lock::{LockEvent, LockReply, LockState, LockSurfaces};
+use casement_core::policy::ConnectionRole;
 use casement_core::time::TimerKey;
 use casement_core::{ClientKey, Effect, Event, KeyboardTarget, LayerKey, OutputKey, WindowId};
 use support::driver::{Op, assert_same_world, last, map, plug, run, run_from, unplug};
@@ -57,6 +58,22 @@ fn lock(event: LockEvent) -> Op {
 fn requested() -> Op {
     lock(LockEvent::Requested {
         client: ClientKey(7),
+    })
+}
+
+/// Client `n` connecting through a socket of `role`.
+fn connected(n: u64, role: ConnectionRole) -> Op {
+    Op::Event(Event::ClientConnected {
+        client: ClientKey(n),
+        peer: porter_core::PeerIdentity::Unproven,
+        role,
+    })
+}
+
+/// Client `n` asking to lock.
+fn requested_by(n: u64) -> Op {
+    lock(LockEvent::Requested {
+        client: ClientKey(n),
     })
 }
 
@@ -216,6 +233,64 @@ fn a_dead_locker_leaves_the_cover_and_another_locker_takes_over() {
         }
     );
     assert_eq!(last(&taken), [Effect::Lock(LockReply::SendLocked)]);
+}
+
+/// CASW-02: while the locker is gone, only the shell or the client that held the lock may take
+/// it over; any other client is refused and the session stays covered.
+#[test]
+fn only_the_shell_or_the_same_client_takes_a_lock_over() {
+    let orphaned = run(vec![
+        plug("HEADLESS-1"),
+        connected(7, ConnectionRole::Public),
+        connected(8, ConnectionRole::Public),
+        connected(9, ConnectionRole::Shell),
+        requested_by(7),
+        committed("HEADLESS-1"),
+        lock(LockEvent::LockerGone),
+    ]);
+    assert_eq!(orphaned.model.lock(), &LockState::LockedWithoutSurface);
+    let cases = [
+        ("another public client", 8, false),
+        ("a client nobody introduced", 99, false),
+        ("the client that held the lock", 7, true),
+        ("the shell", 9, true),
+    ];
+    for (name, client, taken) in cases {
+        let run = run_from(orphaned.model.clone(), vec![requested_by(client)]);
+        match taken {
+            true => {
+                assert_eq!(
+                    run.model.lock(),
+                    &LockState::Locked {
+                        surfaces: LockSurfaces::Pending
+                    },
+                    "{name}"
+                );
+                assert_eq!(last(&run), [Effect::Lock(LockReply::SendLocked)], "{name}");
+            }
+            false => {
+                assert_same_world(&run.model, &orphaned.model, name);
+                assert_eq!(last(&run), [Effect::Lock(LockReply::Finished)], "{name}");
+            }
+        }
+    }
+}
+
+/// CASW-02: a refused takeover leaves the session covered, and the refused client is not the
+/// holder afterwards either: a later request from it is refused again.
+#[test]
+fn a_refused_takeover_does_not_become_the_holder() {
+    let refused = run(vec![
+        plug("HEADLESS-1"),
+        connected(7, ConnectionRole::Public),
+        connected(8, ConnectionRole::Public),
+        requested_by(7),
+        lock(LockEvent::LockerGone),
+        requested_by(8),
+        requested_by(8),
+    ]);
+    assert_eq!(refused.model.lock(), &LockState::LockedWithoutSurface);
+    assert_eq!(last(&refused), [Effect::Lock(LockReply::Finished)]);
 }
 
 #[test]
