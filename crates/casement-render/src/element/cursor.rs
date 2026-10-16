@@ -3,7 +3,7 @@
 mod face;
 mod raster;
 
-pub use face::{CursorFace, MAX_CLIENT_CURSOR, cursor_face, cursor_pixels, drawn, exceeds_cap};
+pub use face::{CursorFace, MAX_CLIENT_CURSOR, cursor_face, cursor_pixels, drawn};
 
 use super::CasementElement;
 use crate::compositor::Compositor;
