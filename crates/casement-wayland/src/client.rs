@@ -3,6 +3,7 @@
 
 use casement_core::ClientKey;
 use casement_core::policy::ConnectionRole;
+use casement_core::window::WindowOrigin;
 use porter_core::PeerIdentity;
 use smithay::reexports::wayland_server::Client;
 use smithay::reexports::wayland_server::backend::{ClientData, ClientId, DisconnectReason};
@@ -47,6 +48,8 @@ pub struct ClientState {
     pub role: ConnectionRole,
     /// Who its process is, read once where the connection arrived.
     pub peer: PeerIdentity,
+    /// Whether every toplevel it maps is an X11 program's (the satellite's connection).
+    pub origin: WindowOrigin,
     /// smithay's per-client compositor state (client scale, blocker bookkeeping).
     pub compositor: CompositorClientState,
     /// Where this client's disconnect is reported ([`ClientMint::gone_queue`]).
@@ -60,9 +63,15 @@ impl ClientState {
             key,
             role,
             peer,
+            origin: WindowOrigin::Wayland,
             compositor: CompositorClientState::default(),
             gone: GoneQueue::default(),
         }
+    }
+
+    /// The same client, whose toplevels come from `origin`.
+    pub fn with_origin(self, origin: WindowOrigin) -> ClientState {
+        ClientState { origin, ..self }
     }
 
     /// The same client reporting its disconnect to `gone`.

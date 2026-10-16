@@ -1,6 +1,6 @@
 //! One window's record.
 
-use super::{SizeLimits, WindowHints, WindowState, WindowTitle};
+use super::{SizeLimits, WindowHints, WindowOrigin, WindowState, WindowTitle};
 use crate::app::AppKey;
 use crate::ids::{ClientKey, OutputKey, WindowId};
 use casement_protocols::vocab::{Emphasis, Modality, SensitivityLevel, WindowRole};
@@ -15,6 +15,8 @@ pub struct Window {
     pub client: ClientKey,
     /// The app it belongs to.
     pub app: AppKey,
+    /// Whether it is a Wayland client's own window or an X11 program's.
+    pub origin: WindowOrigin,
     /// What kind of window it is.
     pub role: WindowRole,
     /// What it blocks.

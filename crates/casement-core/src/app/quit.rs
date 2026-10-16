@@ -4,7 +4,7 @@
 
 use super::{App, AppKey, AppLife};
 use crate::effect::Held;
-use crate::ids::ClientKey;
+use crate::ids::{ClientKey, WindowId};
 use std::collections::BTreeMap;
 use std::time::Duration;
 
@@ -92,14 +92,26 @@ pub enum StopSignal {
 
 /// An app's processes are to be stopped. `clients` are the connections that serve this app
 /// and no other; the edge reads their processes from their socket credentials, never by name.
+/// An X11 app's windows share the satellite's one connection, which is never in `clients`:
+/// `x11` names the app's windows on it, and the edge asks the X server who owns them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Termination {
     /// The app.
     pub app: AppKey,
     /// The connections whose processes are stopped.
     pub clients: Vec<ClientKey>,
+    /// The app's X11 windows, whose owning processes the X server names. Empty for an app
+    /// with none.
+    pub x11: Vec<WindowId>,
     /// The signal.
     pub signal: StopSignal,
+}
+
+impl Termination {
+    /// Whether it names nothing to stop.
+    pub fn is_empty(&self) -> bool {
+        self.clients.is_empty() && self.x11.is_empty()
+    }
 }
 
 #[cfg(test)]

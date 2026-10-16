@@ -3814,6 +3814,34 @@ Written without a build or a run (rule of the lane).
   should do when an app has no killable process (leave it running and say so in the panel, or
   close its windows).
 
+### cas30-x11quit: force quit with two or more X11 apps (2026-10-16)
+
+Written without a build or a run (rule of the lane).
+
+- **The marker.** `casement_core::window::WindowOrigin` (`Wayland`, `X11`) is carried on
+  `MappedToplevel` and on `Window`. `casement_wayland::ClientState` has the origin of its
+  connection (`with_origin`); `clients::insert_client` sets it from `Processes::origin_of`, which is
+  `X11` for the connection whose peer pid is the running satellite (the same test that already
+  kept the satellite out of the recorded pids). `xdg_shell::commit::mapped_events` copies it to
+  the window. `Processes::carries_x11` is gone (the model knows now).
+- **The model.** `Termination` gained `x11: Vec<WindowId>`, the app's own X11 windows.
+  `Model::sole_clients_of` skips any connection that carries an X11 window, so the satellite's
+  connection is never named in `clients`; `force_quit_app` acts when `clients` or `x11` is
+  non-empty (`Termination::is_empty`). Both the `SIGTERM` and the `SIGKILL` termination are built
+  by `stop_of`. A Wayland app is unchanged.
+- **The edge.** `exec::quit::x11_pids_of` asks the X server (`xres`) only when `x11` is non-empty,
+  and `owners::pids_of_app` keeps the pids of windows whose class names this app, so another
+  X11 app's process is never named (it was already class-matched; the model just never got
+  that far with two apps). An owner the server cannot name leaves the pid set empty: nothing is
+  signalled and the app stays in its `Quitting(Stopping)` state until the grace ends, as for a
+  single X11 app before (the open question in the cas28 entry, what the panel should say for an
+  app with no killable process, is still open).
+- **Tests.** `model_input.rs`: two X11 apps and a Wayland app, force quit of each names only its
+  windows and no connection, the kill names the same, the Wayland app keeps its connection;
+  `owners.rs`: two apps each name one pid and never the satellite, an unknown owner names nothing.
+- **Uncertain.** The satellite is recognised by pid at connect time, so a satellite that connects
+  before its pid is known would be a plain Wayland client again (the old behaviour: no X11 route).
+
 ### cas28-daily: night light per display (2026-10-16)
 
 - **`night_light.skip_outputs`** (list of text, page Appearance, "Displays left as they are"): outputs

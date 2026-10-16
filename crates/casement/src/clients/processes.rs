@@ -6,6 +6,7 @@
 //! for the processes behind the windows (`xwayland::owners`).
 
 use casement_core::ClientKey;
+use casement_core::window::WindowOrigin;
 use rustix::process::RawPid;
 use std::collections::BTreeMap;
 use std::os::unix::net::UnixStream;
@@ -56,11 +57,13 @@ impl Processes {
             })
     }
 
-    /// Whether any of `clients` is the connection xwayland-satellite carries X11 windows on.
-    pub fn carries_x11(&self, clients: &[ClientKey]) -> bool {
-        clients
-            .iter()
-            .any(|client| self.0.get(client) == Some(&Peer::Satellite))
+    /// Where the toplevels of `client` come from: X11 when it is the connection
+    /// xwayland-satellite carries every X11 program's windows on.
+    pub fn origin_of(&self, client: ClientKey) -> WindowOrigin {
+        match self.0.get(&client) {
+            Some(Peer::Satellite) => WindowOrigin::X11,
+            Some(Peer::App(_)) | None => WindowOrigin::Wayland,
+        }
     }
 }
 
@@ -92,13 +95,14 @@ mod tests {
         let mut processes = Processes::default();
         processes.record(ClientKey(1), &ours, Some(own));
         assert_eq!(processes.of(&[ClientKey(1)]).count(), 0, "spared");
-        assert!(processes.carries_x11(&[ClientKey(1)]), "an X11 carrier");
+        assert_eq!(processes.origin_of(ClientKey(1)), WindowOrigin::X11);
         processes.record(ClientKey(2), &ours, Some(own + 1));
         assert_eq!(
             processes.of(&[ClientKey(2)]).count(),
             1,
             "another pid is recorded"
         );
-        assert!(!processes.carries_x11(&[ClientKey(2), ClientKey(3)]));
+        assert_eq!(processes.origin_of(ClientKey(2)), WindowOrigin::Wayland);
+        assert_eq!(processes.origin_of(ClientKey(3)), WindowOrigin::Wayland);
     }
 }

@@ -8,7 +8,7 @@ use casement_core::geometry::LogicalSize;
 use casement_core::input::{DesktopCommand, DeviceClass, Origin};
 use casement_core::settings::CasementSettings;
 use casement_core::space::SpaceSeed;
-use casement_core::window::{MaxSize, Parent, SizeLimits};
+use casement_core::window::{MaxSize, Parent, SizeLimits, WindowOrigin};
 use casement_core::{ClientKey, Effect, Event, MappedToplevel, Model, ToplevelRequest, WindowId};
 use casement_protocols::vocab::{ActorKind, MacMods, Modality, WindowRole};
 
@@ -112,6 +112,7 @@ pub fn mapped(n: u64, app: &AppKey, activation: TokenCheck) -> MappedToplevel {
         window: WindowId(n),
         client: ClientKey(n),
         app: app.clone(),
+        origin: WindowOrigin::Wayland,
         claimed_id: claimed("test"),
         role: WindowRole::Document,
         modality: Modality::None,
