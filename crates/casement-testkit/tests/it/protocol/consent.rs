@@ -18,7 +18,7 @@ use casement_testclient::ClientState;
 use casement_testclient::ime::virtual_keyboard::VirtualBoard;
 use casement_testclient::quire::shell::ShellHandle;
 use casement_testkit::{ASKED_PROGRAM, ClientId, Fixture, FixtureSpec, program_standing};
-use casement_wayland::quire::shell_permission::{ANSWER_NOT_BEFORE, ANSWERED_TOO_SOON};
+use casement_wayland::quire::shell_permission::ANSWER_NOT_BEFORE;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 use wayland_client::{Connection, QueueHandle, WEnum};
@@ -288,7 +288,7 @@ fn an_answer_that_comes_too_soon_cuts_the_shell_only() {
     shell.answer_at_once(&mut fixture, ask, Answer::Allow);
     let error = fixture.client(shell.id).protocol_error().expect("too soon");
     assert_eq!(error.interface, "quire_shell_v1");
-    assert_eq!(error.code, ANSWERED_TOO_SOON);
+    assert_eq!(error.code, wire::Error::AnsweredTooSoon as u32);
     assert_eq!(kept(&fixture, ASKED_PROGRAM, Power::Keys), None);
     assert!(fixture.client(client).protocol_error().is_none());
     assert_eq!(fixture.model().privilege().asks().len(), 1, "still open");

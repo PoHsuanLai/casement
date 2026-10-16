@@ -255,9 +255,8 @@ where
                 let now = state.quire_shell_now();
                 match shell_permission::on_answer(state.quire_shell_part(), ask, answer, now) {
                     Ok(events) => state.quire_shell_events(events),
-                    Err(fault) => {
-                        resource.post_error(shell_permission::ANSWERED_TOO_SOON, fault.to_string())
-                    }
+                    Err(fault) => resource
+                        .post_error(quire_shell_v1::Error::AnsweredTooSoon, fault.to_string()),
                 }
             }
             // The switcher and show-desktop requests arrive with P3-Z; the version 2 requests

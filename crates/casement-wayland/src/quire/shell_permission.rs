@@ -34,11 +34,6 @@ const MAX_SENT: usize = 16;
 /// margin under the sheet's delay is for scheduling and the wire).
 pub const ANSWER_NOT_BEFORE: Duration = Duration::from_millis(500);
 
-/// The code `quire_shell_v1` posts when an answer comes sooner than [`ANSWER_NOT_BEFORE`]. It is
-/// the `answered_too_soon` entry of the protocol's `error` enum that `casement-protocols` has
-/// yet to carry (interface ask in FINDINGS); the value follows the four entries it has.
-pub const ANSWERED_TOO_SOON: u32 = 4;
-
 /// An answer that came sooner than the sheet could have been read: the shell connection that
 /// sent it is at fault.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
