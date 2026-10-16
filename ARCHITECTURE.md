@@ -19,7 +19,7 @@ the binaries and the test kit (P0-Z2). casement-intents joins at P4-Z, casement-
 
 | Crate | Purpose | I/O |
 | --- | --- | --- |
-| `casement-core` | the pure model: ids, geometry, time data (`Mono`, `VblankClock`, `TimerBook`, `VirtualClock`), apps, windows, Spaces, layers, the lock, focus and press routing, input origins, reach and bindings, output facts and policy, connection policy (I7), settings, `Event`, `Effect`, `Model::step`, invariants; from P1-Z the GPU plan (`gpu`), the frame scheduler's maths (`frame`) and the Space ids file's codec (`space::SpaceFile`) and, from P2-Z, the shell's and the desktop manager's requests and notes (`shell`, `desktop`) | none |
+| `casement-core` | the pure model: ids, geometry, time data (`Mono`, `VblankClock`, `TimerBook`, `VirtualClock`), apps, windows, Spaces, layers, the lock, focus and press routing, input origins, reach and bindings, output facts and policy, connection policy (I7), settings, `Event`, `Effect`, `Model::step`, invariants; from P1-Z the GPU plan (`gpu`), the frame scheduler's maths (`frame`) and the Space ids file's codec (`space::SpaceFile`) and, from P2-Z, the shell's and the desktop manager's requests and notes (`shell`, `desktop`) and, from wave 2, per-app consent for the privileged globals (`privilege`, `policy::{power_of, trusted_powers}`) | none |
 | `casement-layout` | the `SceneLayout` seam: `SceneSpec`, `Arrangement`, `RustScene`, `spec_of(&Model)`; taffy only in `crates/casement-layout/src/taffy_bridge/` | none |
 | `casement-motion` | `MotionBook` of ds-motion spring legs, `retarget`, `sample` into an `Eq` `FrameScene` in 1/120 px | none |
 | `casement-render` | the `Compositor` renderer trait, `CasementElement`, `output_elements` (FrameScene to elements), `render_output` (damage-tracked), blur v0, the lock cover, output read-back (`pass::capture_output`, P1-Z), `golden` (feature `testing`); the workspace's one unsafe module `src/gl_raw.rs` (A17) | the GPU through smithay |
@@ -78,7 +78,11 @@ A1: `Instant::now`, `SystemTime::now`, smithay's `Clock::now` and calloop's `Tim
 | first-sight scale, mode choice, output placement | `casement-core::output` |
 | the ramp an output is driven with by night light, and which outputs it leaves alone (`night_light.skip_outputs`: a connector name or an output key) | `casement-core::settings::NightLightSettings::{warming_of, ramp_for}` (pure); driven by `Model` (`model/night_light.rs`) from `Event::NightLightTick(MinuteOfDay)` as `Effect::SetGamma`; a gamma-control client that holds an output with a table of its own wins until it lets go |
 | how strongly the blur behind a layer surface frosts (its shell role picks `BlurStrength`, a surface with none is `Regular`), and Reduce transparency (quire's `appearance.transparency` from `appearance.toml`, live: every blur becomes the scheme's paper at 0.96) | `casement-core::layer::BlurStrength::of` (pure); `casement-layout::reduced_stand_in`; `casement::appearance::{stored_in, blur_finish}`; `casement-render` `BlurLook::of`, `BlurFinish`, `BlurV0Element::with_finish`, `under_finish`; the frame carries both in `LayerDraw::{blur_strengths, finish}` |
-| which connection sees which global (I7) | `casement-core::policy::advertised` |
+| which connection sees which global (I7) | `casement-core::policy::{advertised, advertised_to}`; a public client is not shown the globals of a power it was refused at connect time (`advertised_to` with `Privilege::hidden_for`) |
+| which global needs the person's consent (the seven `Power`s of the shell protocol's vocabulary), and which desktop service roles are trusted without asking | `casement-core::policy::{power_of, trusted_powers}`; `power_of` is exhaustive over `GlobalKind` |
+| whether a program may use a power: the administrator's floor and the person's book, first match wins (floor refusal, book refusal, floor pre-approval, book allow, the floor's default, a question) | `casement-core::privilege::{decide, decide_trusted}` over `Floor` and `Book` (pure; the text codecs `Book::{from_toml, to_toml}` and `Floor::from_toml` cap rows, bytes and strings; the files themselves are the composition root's seam) |
+| the questions to the person: one per program and power, one on screen, at most `OPEN_ASKS` open, a deadline, a pause after a dismissal, a rate limit per client; what a use comes to; what a change in Settings ends | `casement-core::privilege::Privilege`, a field of `Model` (`model/privilege/`), driven by `Event::{ClientStanding, PrivilegeUse, PermissionAnswered, PrivilegeGranted, PrivilegeRevoked, PrivilegeForgotten, ShellReady, ShellGone, BookLoaded, FloorLoaded}` and answering with `Effect::{Resolve, AskPermission, WithdrawAsk, SaveBook}`; its deadline timer is `TimerKey::AskDeadline` |
+| who a public client's program is, as the consent machine needs it (the seam to the caller-identity library) | `casement-core::privilege::ClientStanding` (core's own vocabulary: `Service`, `Program`, `Sandboxed`, `Unverified`); the composition root converts the identity library's standing into it when the connection is accepted. Core depends on no identity library (B1) |
 | typed settings | `casement-core::settings::CasementSettings` (the stored document: `casement::config`) |
 | the closed sets of inputs and outputs of the model | `casement-core::{Event, Effect}` |
 | what the shell asks of the desktop (apps, windows, Spaces) and what the model says back | `casement-core::desktop::{DesktopRequest, AppAsk, WindowAsk, SpaceAsk, DesktopNote, DesktopRef}` (P2-Z) |
@@ -138,6 +142,53 @@ A1: `Instant::now`, `SystemTime::now`, smithay's `Clock::now` and calloop's `Tim
 | the origins a test may mint | `casement-testkit::TestOrigin` |
 | a test client's received events on virtual time | `casement-testclient::Transcript` |
 | the jail's fabricated GPU nodes (A3) | `casement-testkit::gpu::fabricated_nodes` |
+
+### Consent for the privileged globals (casement-core)
+
+A program on the public socket may use seven powers only with the person's consent (the owner's
+"ask per app", like the Mac's privacy prompts): see the screen, type and click for them, help them
+type, read and replace the clipboard, lock the screen, change the displays, see and manage the
+windows. The shell, the portal and the desktop's own services are trusted by identity and never
+asked. The consent machine is pure; this is the contract between it and the composition root and
+the protocol layer (wave 2: `pa2-ccore` is this half, the others follow it).
+
+- **The seam for who is asking.** `Event::ClientStanding { client, standing: ClientStanding }` is
+  sent once per public connection, right after `Event::ClientConnected`. `ClientStanding` is core's
+  own small vocabulary: `Service { role, exe }` (a row of the desktop's callers table), `Program
+  { exe }` (a root-owned image), `Sandboxed { app, engine }` (vouched for by the sandbox, never by a
+  name), `Unverified { exe_name }` (a writable or hidden image, a peer that is gone, a program that
+  changed its image after connecting). The composition root converts the caller-identity library's
+  standing into it; core never reads a process and links no identity library. Until the event
+  arrives a public client is `Unverified` (fail closed). A client that is later reported as someone
+  else loses every power it was given and every question it waited on.
+- **A grant binds to a `Subject`** (`Program(path)` or `Sandboxed { app, engine }`), never to a
+  display name or a claimed app id. `Unverified` clients and interpreters (`python*`, `perl`,
+  `ruby`, `node`, `deno`, `bun`, `java`, `lua*`, `sh`, `bash`, `zsh`, `fish`, `wine*`, plus the
+  floor's `[never_remember]`) are asked with `Memory::ThisTimeOnly` (Allow Once) and nothing about
+  them is written to the book or read from it.
+- **Use.** The protocol layer sends `Event::PrivilegeUse { client, power }` at the first use of a
+  gated power and holds the request (at most `HELD_REQUESTS`) until `Effect::Resolve { client,
+  power, outcome }` says `Allowed` (replay), `Denied` (the protocol's denial) or `Revoked` (end the
+  use at once, mid-capture included). It keeps the latest outcome per client and power. The model
+  resolves at once when the records decide, and later when the person answers.
+- **Asking.** `Effect::AskPermission { ask, power, subject, memory }` goes to the shell as
+  `permission_ask`; `Effect::WithdrawAsk` as `permission_withdraw`; the person's answer comes back
+  as `Event::PermissionAnswered { ask, answer, at }` (`at` is the wall-clock second the root read;
+  core reads no clock). The shell is "ready" after `Event::ShellReady` (it bound the protocol at
+  the version that carries the question) and gone after `Event::ShellGone` or the end of its
+  connection. Questions wait `SHELL_WAIT` for a shell after start, are not shown while the lock is
+  up, time out after `ASK_TTL` (the deadline timer is `TimerKey::AskDeadline`, armed and cancelled
+  through the usual timer effects), and are not asked again for `REASK_AFTER` after a dismissal.
+- **The records.** The root reads `/etc/quire/privacy.toml` (the floor, `Floor::from_toml`, strict:
+  a wrong file is an error) and the person's `privacy.toml` in the state directory
+  (`Book::from_toml`, lenient: an unreadable row is dropped) and sends `Event::FloorLoaded` and
+  `Event::BookLoaded`. `Effect::SaveBook(book)` is the whole book as it now is, to be written
+  atomically. Settings changes arrive as `Event::{PrivilegeGranted, PrivilegeRevoked,
+  PrivilegeForgotten}`. `Privilege::rows()` is what Settings lists.
+- **Hiding.** A refused power's globals are not advertised to a public client that connected
+  under the refusal: `Privilege::hidden_for(role, standing)` gives the `PowerSet`, and
+  `policy::advertised_to` consults it. `policy::advertised(global, role)` is the same with
+  nothing hidden. Nothing is re-announced when an answer changes later.
 
 ## 3. Canonical traits
 
@@ -355,7 +406,9 @@ ones, which is how the test kit's `Fixture` gets its fakes.
 3. `crates/casement/src/handlers/<p>.rs`: `impl <Smithay>Handler for State`, accessors returning
    `&mut self.wl.<p>.state`, callbacks converting and calling `on_*`, then `core_loop::feed`.
    `delegates.rs` needs nothing more: `delegate_dispatch2!` routes every global.
-4. A `GlobalKind` variant and its I7 row (casement-core), a `tests/golden/globals.txt` row
+4. A `GlobalKind` variant and its I7 row (casement-core), its entry in `GlobalKind::ALL`, its
+   `power_of` row (a power, or none, decided on purpose) and its row in casement-core's own
+   `tests/golden/globals.txt`, a `tests/golden/globals.txt` row in the test kit
    (`<interface> <version> <module>`), `crates/casement-testkit/tests/it/protocol/<p>.rs` with its
    `mod` line in `tests/it/protocol/mod.rs` (`scripts/check-protocol-coverage.sh`), a testclient
    helper module, and for a private request a fuzz op.

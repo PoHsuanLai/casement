@@ -4370,3 +4370,54 @@ dropped, never waited for.
 
 Not covered by a test here (no way to reach it without hardware or a second process): the tty VT chord, the `lseek` on a real
 GPU buffer, and the x11 satellite at the toplevel cap.
+
+## pa2-ccore: per-app consent in casement-core (CASW-01, CASC-01, PORTAL-02; 2026-10-16)
+
+Wave 2's core half (design: `~/rs-wt/prod-audit-de/WAVE2-DESIGN.md` section 3). Written without a compile; the gate run is the
+first. The contract with the composition root and the protocol layer is in ARCHITECTURE.md ("Consent for the privileged globals").
+The owner decisions it carries out: per-app consent for seven powers, remembered per program and listed in Settings > Privacy;
+the shell, the portal and our own services trusted by identity; the book written only by casement; the administrator's floor
+read-only; a program whose image the person can write gets Allow Once and is never remembered; no "Rules" system.
+
+- **Decided here (not in the design).**
+  - `trusted_powers`: the `shell` role is trusted with all seven powers, the `portal` role with the screen and the windows, every
+    other role with none (its program is asked like any program, under its image). An explicit refusal in the floor or the book
+    still closes a trusted program (`decide_trusted`).
+  - A `Service` standing without an image is unnamed (Allow Once); with one it is a `Program` for asking and remembering.
+  - `OPEN_ASKS` (4) counts the question on screen too. A question that times out while still queued is not put on the
+    "not asked again" list (the person never saw it); one that was on screen is, for `REASK_AFTER`.
+  - A dismissal, a timeout and a "Don't Allow" that is not remembered all start the pause; a refusal by overflow (too many open,
+    too many powers a minute, the lock is up, no shell in time) does not.
+  - The floor's text is strict (`FloorError`), the book's lenient (rows that do not parse are dropped and counted in
+    `Loaded::dropped`: an answer lost is a question asked again, never a program let in). A book of another version, over 64 KiB or
+    not this shape is an error for the root to set aside.
+  - Eviction: a full book (512) drops its oldest answer for a new one.
+- **Deviations from the design text, with reasons.**
+  - `policy::advertised(global, role)` keeps its two arguments (nothing hidden) and `policy::advertised_to(global, role, &PowerSet)`
+    takes the hide-on-deny decision. Changing `advertised` in place would break `casement-wayland::GlobalFilter` and the test
+    kit's oracle in the same commit; the wayland lane switches `GlobalFilter` to `advertised_to` and may then delete the old name.
+  - More events than the design lists, each with a reason: `PrivilegeGranted` and `PrivilegeForgotten` (the Settings switch on, and
+    "Ask Again"; the design names only `PrivilegeRevoked`), `ShellReady` (without it core cannot tell a shell that can be asked from
+    one that is merely connected), `BookLoaded` and `FloorLoaded` (the two files are read by the root; the floor is read again on
+    reload). `PrivilegeRevoked`, `PrivilegeGranted` and `PermissionAnswered` carry `at: UnixSeconds`, read by the root: core reads no
+    clock.
+  - `Effect::Resolve` has three outcomes (`Allowed`, `Denied`, `Revoked`) so the protocol layer can tell "refuse this request" from
+    "end a use that was allowed".
+  - The globals golden is casement-core's own `tests/golden/globals.txt` (kind, power, public, agent, sandbox), generated from the
+    policy table. The test kit's `tests/golden/globals.txt` (interface, version, module) is untouched: it is the wayland lane's.
+  - The machine lives in `model/privilege/` and is public as `casement_core::privilege` (the design says both).
+- **Property tests** (`tests/it/privilege_decide.rs`, `privilege_step.rs`): precedence over every combination; rows about other
+  programs or powers change nothing; an unnamed program is never let in and never remembered; an interpreter's book rows are not
+  read; the book and floor text round trip and fail as documented; over arbitrary sequences of uses, answers, waits, timer fires,
+  shell coming and going, clients leaving and Settings changes the machine stays in step (`InvariantBreak::PrivilegeOutOfStep`), at
+  most one question is put to the shell per step, the administrator's refusal is never overruled, uses with nobody answering put one
+  question on screen and allow nothing, and a switched-off program is refused on every connection.
+- **Deferred / for other lanes.**
+  - The composition root's `PrivacyStore` (reading the two files with `read_capped`, `write_atomic`, `move_aside` of a damaged
+    book, pruning programs no longer on disk with `Book::retained`) and `ShellAsker` (croot).
+  - Converting the caller-identity library's standing into `ClientStanding`, and the `ImageChanged` re-check at first use (croot).
+  - The use-point gates, the held-request queue (`HELD_REQUESTS`), `Resolve` handling and `GlobalFilter` (cwl).
+  - The Privacy live module (`privacy.<power>.<n>` keys from `Privilege::rows()`; the toggle sends `PrivilegeGranted` or
+    `PrivilegeRevoked`, "Ask Again" `PrivilegeForgotten`) (cipc).
+  - A floor that does not parse: the root decides what to do (the design says "set aside" only for the book). `Floor::from_toml`
+    returns an error and core has no "sealed" floor.
