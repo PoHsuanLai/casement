@@ -7,12 +7,10 @@
 //! as any standing it names ([`Fixture::connect_standing`]).
 
 use super::{ClientId, Fixture};
-use casement::{clients, core_loop};
-use casement_core::Event;
+use casement::clients::{self, Standing};
 use casement_core::policy::ConnectionRole;
 use casement_core::privilege::{ClientStanding, ProgramPath, ServiceRole};
-use casement_wayland::ClientState;
-use casement_wayland::consent::ImageWatch;
+use casement_wayland::consent::{ImageWatch, Unwatched};
 use porter_core::PeerIdentity;
 use smithay::reexports::wayland_server::Client;
 use std::os::unix::net::UnixStream;
@@ -58,10 +56,10 @@ impl Fixture {
         self.connect_standing(program_standing(ASKED_PROGRAM))
     }
 
-    /// Inserts the compositor's end of a new connection. With a standing, the way the
-    /// composition root does it for a public client: the client data carries the standing and
-    /// the globals the person's book hides from it, and the model hears of it right after the
-    /// connection.
+    /// Inserts the compositor's end of a new connection through the composition root's own door
+    /// (`casement::clients::insert_client`). With a standing, the way the root does it for a
+    /// public client: the client data carries the standing and the globals the person's book
+    /// hides from it, and the model hears of it right after the connection.
     pub(super) fn insert(
         &mut self,
         server: UnixStream,
@@ -69,37 +67,20 @@ impl Fixture {
         standing: Option<ClientStanding>,
         watch: Option<Arc<dyn ImageWatch>>,
     ) -> Client {
-        let Some(standing) = standing else {
-            return clients::insert_client(&mut self.state, server, role, PeerIdentity::Unproven)
-                .expect("the compositor takes the client");
+        let arrival = match standing {
+            Some(standing) => Standing::Judged {
+                standing,
+                watch: watch.unwrap_or_else(|| Arc::new(Unwatched)),
+            },
+            None => Standing::Unjudged,
         };
-        let state = &mut self.state;
-        let (mint, key) = state.wl.clients.clone().next();
-        state.wl.clients = mint;
-        let mut data = ClientState::new(key, role.clone(), PeerIdentity::Unproven)
-            .with_standing_under(state.core.model.privilege(), standing.clone())
-            .with_gone(state.wl.clients.gone_queue());
-        if let Some(watch) = watch {
-            data = data.with_image_watch(watch);
-        }
-        let held = state
-            .display
-            .insert_client(server, Arc::new(data))
-            .expect("the display takes the client");
-        core_loop::feed(
-            state,
-            vec![
-                Event::ClientConnected {
-                    client: key,
-                    peer: PeerIdentity::Unproven,
-                    role,
-                },
-                Event::ClientStanding {
-                    client: key,
-                    standing,
-                },
-            ],
-        );
-        held
+        clients::insert_client(
+            &mut self.state,
+            server,
+            role,
+            PeerIdentity::Unproven,
+            arrival,
+        )
+        .expect("the compositor takes the client")
     }
 }

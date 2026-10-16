@@ -127,13 +127,32 @@ fn hints_apply_on_commit_and_are_forgotten_on_destroy() {
     fixture.pump();
     let hints = fixture.model().windows()[&window].hints.clone();
     assert_eq!(hints.edited, ModelEdited::Unsaved, "edited applies at once");
+    // A claimed accessibility root is not adopted as it comes (PORTAL-15): it is queued for the
+    // bus to say the name is the client's own process's, and only then does the window get it.
+    assert_eq!(hints.a11y, A11yRoot::Unknown, "a claim is checked first");
+    let asked = fixture.a11y().asked();
+    assert_eq!(asked.len(), 1);
     assert_eq!(
-        hints.a11y,
-        A11yRoot::At {
-            bus_name: ":1.5".to_owned(),
-            object_path: "/org/a11y/root".to_owned()
-        }
+        (
+            asked[0].window,
+            asked[0].bus_name.as_str(),
+            asked[0].client_pid
+        ),
+        (window, ":1.5", std::process::id()),
+        "queued with the pid casement holds the client by"
     );
+    let verified = A11yRoot::At {
+        bus_name: ":1.5".to_owned(),
+        object_path: "/org/a11y/root".to_owned(),
+    };
+    fixture.a11y_verdict(window, A11yRoot::Unknown);
+    assert_eq!(
+        fixture.model().windows()[&window].hints.a11y,
+        A11yRoot::Unknown,
+        "a root the bus did not vouch for stays unknown"
+    );
+    fixture.a11y_verdict(window, verified.clone());
+    assert_eq!(fixture.model().windows()[&window].hints.a11y, verified);
     assert_eq!(
         hints.frame.mode,
         ModelFrame::Client,

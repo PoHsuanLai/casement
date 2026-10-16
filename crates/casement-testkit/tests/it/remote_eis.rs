@@ -7,7 +7,7 @@ use casement_core::input::{
     Origin, PortalSessionId,
 };
 use casement_ipc::dbus::ConnectRefusal;
-use casement_testkit::fakes::FakeCgroups;
+use casement_testkit::fakes::callers;
 use casement_testkit::{Fixture, FixtureSpec};
 use std::io::Read;
 use std::os::fd::OwnedFd;
@@ -16,25 +16,29 @@ use std::os::unix::net::UnixStream;
 const KEY_LEFTMETA: KeyCode = KeyCode(125);
 const KEY_SPACE: KeyCode = KeyCode(57);
 
-/// Only `transom.service` is handed a remote socket; the shell's unit, a browser and a process
-/// nobody knows are refused with the reason the D-Bus caller is told.
+/// Only the portal is handed a remote socket; the shell and another desktop program are refused
+/// with the reason the D-Bus caller is told. (That the caller is who it says is the bus thread's
+/// proof, tested in `casement-ipc`; a caller nobody could prove never reaches the loop.)
 #[test]
-fn only_the_portals_unit_is_handed_a_remote_socket() {
+fn only_the_portal_is_handed_a_remote_socket() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
-    let cgroups = FakeCgroups::new();
-    cgroups.run_in_service(200, "transom.service");
-    cgroups.run_in_service(201, "sill.service");
-    cgroups.run_in_service(202, "firefox.service");
-    assert!(fixture.connect_remote_eis(&cgroups, 200, 1, 7).is_ok());
-    // (case, the process, what comes back)
+    assert!(fixture.connect_remote_eis(&callers::portal(), 1, 7).is_ok());
+    // (case, the caller, what comes back)
     let refused = [
-        ("the shell's unit", 201, ConnectRefusal::RoleNotAllowed),
-        ("a browser", 202, ConnectRefusal::RoleNotAllowed),
-        ("a process nobody knows", 999, ConnectRefusal::UnknownUnit),
+        (
+            "the shell",
+            callers::shell(),
+            ConnectRefusal::RoleNotAllowed,
+        ),
+        (
+            "another desktop program",
+            callers::companion(),
+            ConnectRefusal::RoleNotAllowed,
+        ),
     ];
-    for (case, pid, why) in refused {
+    for (case, caller, why) in refused {
         assert_eq!(
-            fixture.connect_remote_eis(&cgroups, pid, 1, 7).err(),
+            fixture.connect_remote_eis(&caller, 1, 7).err(),
             Some(why),
             "{case}"
         );
@@ -92,33 +96,20 @@ fn closed_by_the_compositor(fd: OwnedFd) -> bool {
 }
 
 /// PORTAL-05: `EndEis` closes the compositor's end of every socket handed out for the session
-/// and no other, only the portal's unit may ask, and ending a session it does not know (or one
+/// and no other, only the portal may ask, and ending a session it does not know (or one
 /// already ended) is not an error.
 #[test]
 fn ending_a_session_closes_its_sockets_and_only_the_portal_may_ask() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
-    let cgroups = FakeCgroups::new();
-    cgroups.run_in_service(200, "transom.service");
-    cgroups.run_in_service(201, "sill.service");
-    let first = fixture
-        .connect_remote_eis(&cgroups, 200, 1, 7)
-        .expect("granted");
-    let again = fixture
-        .connect_remote_eis(&cgroups, 200, 1, 3)
-        .expect("granted");
-    let other = fixture
-        .connect_remote_eis(&cgroups, 200, 2, 7)
-        .expect("granted");
+    let (portal, shell) = (callers::portal(), callers::shell());
+    let first = fixture.connect_remote_eis(&portal, 1, 7).expect("granted");
+    let again = fixture.connect_remote_eis(&portal, 1, 3).expect("granted");
+    let other = fixture.connect_remote_eis(&portal, 2, 7).expect("granted");
 
     assert_eq!(
-        fixture.end_remote_eis(&cgroups, 201, 1),
+        fixture.end_remote_eis(&shell, 1),
         Err(ConnectRefusal::RoleNotAllowed),
-        "the shell's unit may not end a session"
-    );
-    assert_eq!(
-        fixture.end_remote_eis(&cgroups, 999, 1),
-        Err(ConnectRefusal::UnknownUnit),
-        "nor a process nobody knows"
+        "the shell may not end a session"
     );
     let first = UnixStream::from(first);
     let again = UnixStream::from(again);
@@ -129,7 +120,7 @@ fn ending_a_session_closes_its_sockets_and_only_the_portal_may_ask() {
         "a refused ask closes nothing"
     );
 
-    assert_eq!(fixture.end_remote_eis(&cgroups, 200, 1), Ok(()));
+    assert_eq!(fixture.end_remote_eis(&portal, 1), Ok(()));
     assert!(
         closed_by_the_compositor(OwnedFd::from(first)),
         "the session's first socket"
@@ -142,13 +133,9 @@ fn ending_a_session_closes_its_sockets_and_only_the_portal_may_ask() {
         !closed_by_the_compositor(other),
         "another session's socket stays open"
     );
+    assert_eq!(fixture.end_remote_eis(&portal, 1), Ok(()), "ending twice");
     assert_eq!(
-        fixture.end_remote_eis(&cgroups, 200, 1),
-        Ok(()),
-        "ending twice"
-    );
-    assert_eq!(
-        fixture.end_remote_eis(&cgroups, 200, 77),
+        fixture.end_remote_eis(&portal, 77),
         Ok(()),
         "an unknown session"
     );

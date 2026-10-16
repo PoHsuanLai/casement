@@ -12,6 +12,7 @@ mod color_management;
 mod commit_timing;
 mod compositor;
 mod consent;
+mod consent_store;
 mod content_type;
 mod cursor_shape;
 mod data_device;

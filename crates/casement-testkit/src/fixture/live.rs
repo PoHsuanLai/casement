@@ -5,7 +5,7 @@
 //! ([`Fixture::toplevel_of`]) and where it sits ([`Fixture::place_window`]).
 
 use super::{ClientId, Fixture};
-use casement::clients;
+use casement::clients::{self, Standing};
 use casement::core_loop;
 use casement_core::ToplevelRequest;
 use casement_core::focus::TokenCheck;
@@ -31,8 +31,14 @@ impl Fixture {
         server
             .set_nonblocking(true)
             .expect("a non-blocking server end");
-        let held = clients::insert_client(&mut self.state, server, role, PeerIdentity::Unproven)
-            .expect("the compositor takes the client");
+        let held = clients::insert_client(
+            &mut self.state,
+            server,
+            role,
+            PeerIdentity::Unproven,
+            Standing::Unjudged,
+        )
+        .expect("the compositor takes the client");
         let id = ClientId(self.next_client);
         self.servers.insert(id, held);
         self.next_client += 1;

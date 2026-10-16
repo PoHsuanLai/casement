@@ -2,7 +2,9 @@
 
 use crate::fakes::{MemoryLockMarker, MemorySpaceStore};
 use crate::gpu::GpuTopology;
+use casement::privacy::PrivacyFiles;
 use casement::relax::AckPolicy;
+use casement::time::WallClock;
 use casement_backend::{DmabufMode, RenderCostModel, SoftRenderer, VirtualOutputSpec};
 use casement_core::settings::CasementSettings;
 use std::time::Duration;
@@ -30,6 +32,12 @@ pub struct FixtureSpec {
     /// The session lock's marker the compositor starts from and keeps (CASB-06). A second
     /// fixture started with a clone of the same marker is a restart while locked.
     pub lock_marker: MemoryLockMarker,
+    /// Where the privacy book and the administrator's floor are kept, as real files in a
+    /// scratch folder (none: nothing is read or kept, and answers last the run). A second
+    /// fixture started on the same files is a restart.
+    pub privacy: Option<PrivacyFiles>,
+    /// The date kept answers are stamped with. It never moves.
+    pub wall: WallClock,
 }
 
 impl FixtureSpec {
@@ -49,7 +57,22 @@ impl FixtureSpec {
             ack_policy: AckPolicy::Strict,
             space_store: MemorySpaceStore::empty(),
             lock_marker: MemoryLockMarker::absent(),
+            privacy: None,
+            wall: WallClock::epoch(),
         }
+    }
+
+    /// The same, keeping the privacy book and reading the floor in `files`.
+    pub fn with_privacy(self, files: PrivacyFiles) -> FixtureSpec {
+        FixtureSpec {
+            privacy: Some(files),
+            ..self
+        }
+    }
+
+    /// The same, with the date fixed at `wall`.
+    pub fn with_wall(self, wall: WallClock) -> FixtureSpec {
+        FixtureSpec { wall, ..self }
     }
 
     /// The same, with this dma-buf mode.

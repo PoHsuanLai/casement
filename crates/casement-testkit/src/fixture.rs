@@ -15,7 +15,8 @@ mod standing;
 pub use standing::{ASKED_PROGRAM, program_standing, trusted_standing};
 
 use crate::fakes::{
-    FakePalmrest, FakeSession, FakeShellCalls, FakeSpawner, MemoryLockMarker, MemorySpaceStore,
+    FakeA11y, FakePalmrest, FakeSession, FakeShellCalls, FakeSpawner, MemoryLockMarker,
+    MemorySpaceStore,
 };
 use crate::input::FixtureInput;
 use crate::spec::FixtureSpec;
@@ -24,6 +25,7 @@ use casement::cli::{
 };
 use casement::display::{self, SharedDisplay, attach_display};
 use casement::icons::IconSearch;
+use casement::privacy::{FilePrivacyStore, SystemDir};
 use casement::seams::Seams;
 use casement::space_store::StateHome;
 use casement::time::{ClockSource, SharedClock};
@@ -67,6 +69,8 @@ pub struct Fixture {
     shell_calls: FakeShellCalls,
     /// The programs the compositor started (a clone of the one it holds).
     spawner: FakeSpawner,
+    /// The accessibility roots clients claimed (a clone of the checker the compositor holds).
+    a11y: FakeA11y,
     /// The session the headless backend never opens a device through: the fixture holds it so a
     /// suite can drive a seat change against the same clock (a tty backend takes its own).
     session: FakeSession,
@@ -181,6 +185,7 @@ impl Fixture {
             config_home: ConfigHome::At(scratch_config_home()),
             entropy: Entropy::Fixed(FIXTURE_ENTROPY),
             state_home: StateHome::Ephemeral,
+            system_dir: SystemDir::Etc,
             xwayland: XwaylandConfig::off(),
             xwayland_source: XwaylandSource::Flag,
             tty: TtyMode::Seat,
@@ -190,18 +195,30 @@ impl Fixture {
         let lock_marker = spec.lock_marker.clone();
         let shell_calls = FakeShellCalls::new();
         let spawner = FakeSpawner::new();
+        let a11y = FakeA11y::new();
         let seams = Seams::new(
             Box::new(space_store.clone()),
             Box::new(shell_calls.clone()),
             Box::new(spawner.clone()),
         )
-        .with_lock_marker(Box::new(lock_marker.clone()));
+        .with_lock_marker(Box::new(lock_marker.clone()))
+        .with_wall(spec.wall)
+        .with_a11y(Box::new(a11y.clone()));
+        let kept_privacy = spec.privacy.is_some();
+        let seams = match spec.privacy {
+            Some(files) => seams.with_privacy(Box::new(FilePrivacyStore::new(files))),
+            None => seams,
+        };
         let seams = match tty {
             Some(tty) => seams.with_tty(tty),
             None => seams,
         };
         let mut state = State::with_seams(config, seams, &mut display, &handle)?;
         state.ack_policy = spec.ack_policy;
+        if kept_privacy {
+            // What the root does before it takes the first client in.
+            casement::privacy::start(&mut state);
+        }
         let display = attach_display(display, &handle)?;
         core_loop::announce_outputs(&mut state);
         if *state.settings() != spec.settings {
@@ -221,6 +238,7 @@ impl Fixture {
             lock_marker,
             shell_calls,
             spawner,
+            a11y,
             session: FakeSession::default(),
         };
         fixture.pump();
@@ -247,6 +265,27 @@ impl Fixture {
     /// The programs the compositor started.
     pub fn spawner(&self) -> &FakeSpawner {
         &self.spawner
+    }
+
+    /// The administrator's floor changed on disk and casement was told to read it again
+    /// (`casementctl privacy reload`).
+    pub fn reload_floor(&mut self) {
+        casement::privacy::reload_floor(&mut self.state);
+        self.pump();
+    }
+
+    /// The accessibility roots clients claimed, as queued for checking.
+    pub fn a11y(&self) -> &FakeA11y {
+        &self.a11y
+    }
+
+    /// The bus said what `root` came to for the claim of `window`'s client.
+    pub fn a11y_verdict(&mut self, window: WindowId, root: casement_core::window::A11yRoot) {
+        casement::a11y::adopt(
+            &mut self.state,
+            casement_ipc::a11y::A11yVerdict { window, root },
+        );
+        self.pump();
     }
 
     /// A new client arriving through a socket of `role`. A public client is taken to be a

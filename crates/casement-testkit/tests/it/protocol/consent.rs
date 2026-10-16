@@ -179,7 +179,7 @@ pub(super) fn asked_world() -> (Fixture, ScriptedShell, ClientId) {
 }
 
 /// The client `id` creates a virtual keyboard: its first use of the keys power.
-fn use_keys(fixture: &mut Fixture, id: ClientId) -> VirtualBoard {
+pub(super) fn use_keys(fixture: &mut Fixture, id: ClientId) -> VirtualBoard {
     let board = VirtualBoard::start(fixture.client(id).globals()).expect("a keyboard");
     fixture.pump();
     board
@@ -314,7 +314,7 @@ fn a_program_that_changed_its_image_is_asked_as_unrecognised() {
 }
 
 /// The interfaces the golden lists for `power`.
-fn golden_of(power: Power) -> Vec<String> {
+pub(super) fn golden_of(power: Power) -> Vec<String> {
     let word = match power {
         Power::Screen => "screen",
         Power::Keys => "keys",
@@ -336,7 +336,7 @@ fn golden_of(power: Power) -> Vec<String> {
 }
 
 /// The interfaces `id` is advertised.
-fn advertised(fixture: &mut Fixture, id: ClientId) -> Vec<String> {
+pub(super) fn advertised(fixture: &mut Fixture, id: ClientId) -> Vec<String> {
     fixture
         .client(id)
         .globals()

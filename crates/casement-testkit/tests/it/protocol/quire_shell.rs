@@ -20,7 +20,7 @@ use casement_testclient::surface::layer::{
 };
 use casement_testclient::surface::toplevel::{Toplevel, WmBase};
 use casement_testclient::{Pattern, shm_buffer};
-use casement_testkit::fakes::FakeCgroups;
+use casement_testkit::fakes::callers;
 use casement_testkit::{ClientId, Fixture, FixtureSpec, TestOrigin};
 use casement_wayland::foreign_toplevel_list::identifier_of;
 use ds_core::vocab::Activity;
@@ -93,48 +93,38 @@ pub(super) fn shell_client(fixture: &mut Fixture) -> (ClientId, ShellHandle) {
     (id, shell)
 }
 
-/// A program is given the connection its unit may have (`Connect` over the fake process table):
-/// the shell's unit gets `quire_shell_v1`, the agent tier's does not, and anything else is
-/// refused with the reason the D-Bus caller is told.
+/// A program is given the connection its role may have (`Connect`, with the caller as the bus
+/// thread proved it): the shell gets `quire_shell_v1`, the agent tier does not, and anything else
+/// is refused with the reason the D-Bus caller is told.
 #[test]
-fn the_unit_check_decides_which_connection_a_program_is_handed() {
+fn the_proven_role_decides_which_connection_a_program_is_handed() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
-    let cgroups = FakeCgroups::new();
-    cgroups.run_in_service(100, "sill.service");
-    cgroups.run_in_service(101, "cuad.service");
-    cgroups.run_in_service(102, "firefox.service");
     let shell = fixture
-        .connect_through_handout(&cgroups, 100, ConnectionRole::Shell)
+        .connect_through_handout(&callers::shell(), ConnectionRole::Shell)
         .expect("sill gets the shell");
     let agent = fixture
-        .connect_through_handout(&cgroups, 101, ConnectionRole::Agent)
+        .connect_through_handout(&callers::agent_tier(), ConnectionRole::Agent)
         .expect("cuad gets the agent tier");
     assert!(sees(&mut fixture, shell, INTERFACE), "the shell");
     assert!(!sees(&mut fixture, agent, INTERFACE), "the agent tier");
-    // (case, the process, the role asked, what comes back)
+    // (case, the caller, the role asked, what comes back)
     let refused = [
         (
             "sill asks for the agent tier",
-            100,
+            callers::shell(),
             ConnectionRole::Agent,
             ConnectRefusal::RoleNotAllowed,
         ),
         (
-            "a browser asks for the shell",
-            102,
-            ConnectionRole::Shell,
-            ConnectRefusal::UnknownUnit,
-        ),
-        (
-            "a process nobody knows asks for the shell",
-            999,
+            "another desktop program asks for the shell",
+            callers::companion(),
             ConnectionRole::Shell,
             ConnectRefusal::UnknownUnit,
         ),
     ];
-    for (case, pid, role, why) in refused {
+    for (case, caller, role, why) in refused {
         assert_eq!(
-            fixture.connect_through_handout(&cgroups, pid, role).err(),
+            fixture.connect_through_handout(&caller, role).err(),
             Some(why),
             "{case}"
         );
