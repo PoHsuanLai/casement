@@ -29,7 +29,7 @@ pub struct CommitTimingPart {
 }
 
 /// The mark on a surface that is in [`CommitTimingPart`]'s watch list (`watch_mark`).
-struct Watched;
+enum Watched {}
 
 impl CommitTimingPart {
     /// Creates the global (version 1). Every connection sees it.

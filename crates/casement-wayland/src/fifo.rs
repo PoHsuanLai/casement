@@ -26,7 +26,7 @@ pub struct FifoPart {
 }
 
 /// The mark on a surface that has a barrier in [`FifoPart`]'s list (`watch_mark`).
-struct Watched;
+enum Watched {}
 
 /// A barrier and the surface whose content update set it.
 #[derive(Debug)]
