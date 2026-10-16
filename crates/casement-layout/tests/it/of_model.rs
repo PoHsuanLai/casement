@@ -172,6 +172,7 @@ fn bar(output: &OutputKey, zone: ExclusiveZone) -> LayerSpec {
         namespace: "bar".to_owned(),
         size: casement_core::geometry::LogicalSize::ZERO,
         role: ShellRoleTag::Unassigned,
+        owner: casement_core::layer::LayerOwner::Client,
     }
 }
 

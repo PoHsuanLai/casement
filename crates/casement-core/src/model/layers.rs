@@ -6,23 +6,25 @@ use crate::cause::Cause;
 use crate::effect::Effect;
 use crate::geometry::{LogicalPoint, LogicalSize};
 use crate::ids::{LayerKey, OutputKey};
-use crate::layer::{ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerSpec};
+use crate::layer::{ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerOwner, LayerSpec};
 use crate::lock::LockState;
 use crate::time::Mono;
 use std::collections::BTreeMap;
 
 impl Model {
     /// A layer surface mapped on a plugged output. It is told its size, and the windows are
-    /// laid out again when it reserves room. A panel above the windows that takes the keyboard
-    /// on demand has it from the moment it maps (the person just opened it and expects to type
-    /// or press Escape), unless the session is locked or an exclusive layer holds it; when it
-    /// unmaps the key window has it back. A surface on an output that is not plugged is
-    /// not mapped.
+    /// laid out again when it reserves room. A panel of the shell above the windows that takes
+    /// the keyboard on demand has it from the moment it maps (the person just opened it and
+    /// expects to type or press Escape), unless the session is locked or an exclusive layer
+    /// holds it; when it unmaps the key window has it back. Another client's surface never takes
+    /// the keyboard by mapping: the person has to press it (CASC-02). A surface on an output that
+    /// is not plugged is not mapped.
     pub(super) fn map_layer(self, layer: LayerKey, spec: LayerSpec) -> Moved {
         if !self.outputs.0.contains_key(&spec.output) {
             return Moved::of(self);
         }
         let takes_keyboard = spec.keyboard == KeyboardInteractivity::OnDemand
+            && spec.owner == LayerOwner::Shell
             && matches!(spec.level, LayerLevel::Top | LayerLevel::Overlay)
             && matches!(self.lock, LockState::Unlocked)
             && self.exclusive_layer().is_none();
@@ -45,7 +47,7 @@ impl Model {
             let on_demand = model
                 .layers
                 .get(&layer)
-                .is_some_and(|spec| spec.keyboard == KeyboardInteractivity::OnDemand);
+                .is_some_and(|spec| spec.granted_keyboard() == KeyboardInteractivity::OnDemand);
             match (&model.lock, on_demand) {
                 (LockState::Unlocked, true) => Moved::of(Model {
                     demand: Some(layer),

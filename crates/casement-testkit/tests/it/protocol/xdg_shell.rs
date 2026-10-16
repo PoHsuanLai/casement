@@ -33,8 +33,13 @@ pub(crate) fn golden(name: &str) -> PathBuf {
 
 /// A started desktop and one connected public client, pumped.
 pub(crate) fn boot() -> (Fixture, ClientId) {
+    boot_as(ConnectionRole::Public)
+}
+
+/// A started desktop and one client connected through a socket of `role`, pumped.
+pub(crate) fn boot_as(role: ConnectionRole) -> (Fixture, ClientId) {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
-    let id = fixture.connect(ConnectionRole::Public);
+    let id = fixture.connect(role);
     fixture.pump();
     (fixture, id)
 }

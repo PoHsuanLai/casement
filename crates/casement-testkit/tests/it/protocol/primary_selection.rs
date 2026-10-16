@@ -11,8 +11,8 @@ use casement_testkit::{Fixture, FixtureSpec};
 #[test]
 fn primary_selection_follows_focus() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
-    let a = fixture.connect(ConnectionRole::Public);
-    let b = fixture.connect(ConnectionRole::Public);
+    let a = fixture.connect(ConnectionRole::Shell);
+    let b = fixture.connect(ConnectionRole::Shell);
     fixture.pump();
     let keyboard_a = Keyboard::bind(fixture.client(a)).expect("keyboard");
     let keyboard_b = Keyboard::bind(fixture.client(b)).expect("keyboard");

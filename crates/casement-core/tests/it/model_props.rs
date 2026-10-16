@@ -141,8 +141,12 @@ fn layer_spec() -> impl Strategy<Value = LayerSpec> {
             Just(KeyboardInteractivity::OnDemand),
             Just(KeyboardInteractivity::Exclusive)
         ],
+        prop_oneof![
+            Just(casement_core::layer::LayerOwner::Shell),
+            Just(casement_core::layer::LayerOwner::Client)
+        ],
     )
-        .prop_map(|(output, level, edge, zone, keyboard)| {
+        .prop_map(|(output, level, edge, zone, keyboard, owner)| {
             let held = |on: bool| if on { Anchor::Held } else { Anchor::Free };
             let [top, bottom, left, right] = match edge {
                 0 => [true, false, true, true],
@@ -174,6 +178,7 @@ fn layer_spec() -> impl Strategy<Value = LayerSpec> {
                 namespace: "ns".to_owned(),
                 size: casement_core::geometry::LogicalSize::ZERO,
                 role: ShellRoleTag::Unassigned,
+                owner,
             }
         })
 }

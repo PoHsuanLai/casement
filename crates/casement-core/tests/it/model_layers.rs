@@ -6,8 +6,8 @@ use crate::support;
 use casement_core::focus::TokenCheck;
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize, Transform};
 use casement_core::layer::{
-    Anchor, Anchors, ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerSpec, Margins,
-    ShellRoleTag,
+    Anchor, Anchors, ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerOwner, LayerSpec,
+    Margins, ShellRoleTag,
 };
 
 use casement_core::lock::LockEvent;
@@ -21,6 +21,8 @@ fn key(name: &str) -> OutputKey {
     headless(name).key
 }
 
+/// A bar of the shell's own: the keyboard and zone tables below are about its layers; another
+/// client's are `client(..)`.
 fn bar(output: &str, zone: ExclusiveZone) -> LayerSpec {
     LayerSpec {
         output: key(output),
@@ -42,6 +44,7 @@ fn bar(output: &str, zone: ExclusiveZone) -> LayerSpec {
         namespace: "bar".to_owned(),
         size: casement_core::geometry::LogicalSize::ZERO,
         role: ShellRoleTag::Unassigned,
+        owner: LayerOwner::Shell,
     }
 }
 
@@ -581,5 +584,83 @@ fn an_on_demand_panel_takes_the_keyboard_on_mapping_and_gives_it_back() {
                 }
             });
         assert_eq!(model.keyboard_target(), want, "{name}");
+    }
+}
+
+/// `spec` from another client's connection instead of the shell's.
+fn client(spec: LayerSpec) -> LayerSpec {
+    LayerSpec {
+        owner: LayerOwner::Client,
+        ..spec
+    }
+}
+
+/// CASC-02: a layer surface of another client never takes the keyboard from the key window by
+/// mapping, however it asks and however high it sits; a press on it gives it the keyboard, and
+/// the shell's exclusive layer outranks even a pressed one.
+#[test]
+fn another_clients_layer_takes_the_keyboard_only_when_pressed() {
+    let mail = proven("org.quire.Mail");
+    let window = KeyboardTarget::Window(WindowId(1));
+    let layer = |n| KeyboardTarget::Layer(LayerKey(n));
+    let asks = [
+        (
+            "exclusive overlay",
+            LayerLevel::Overlay,
+            KeyboardInteractivity::Exclusive,
+        ),
+        (
+            "exclusive top",
+            LayerLevel::Top,
+            KeyboardInteractivity::Exclusive,
+        ),
+        (
+            "on demand overlay",
+            LayerLevel::Overlay,
+            KeyboardInteractivity::OnDemand,
+        ),
+        (
+            "on demand top",
+            LayerLevel::Top,
+            KeyboardInteractivity::OnDemand,
+        ),
+    ];
+    for (name, level, keyboard) in asks {
+        let base = run(vec![plug("HEADLESS-1"), map(1, &mail, TokenCheck::Valid)]);
+        let shown = run_from(base.model, vec![mapped(1, client(panel(level, keyboard)))]);
+        assert_eq!(
+            shown.model.keyboard_target(),
+            window,
+            "{name}: mapping takes nothing"
+        );
+        assert!(
+            !last(&shown)
+                .iter()
+                .any(|e| matches!(e, Effect::Keyboard(_))),
+            "{name}: no keyboard effect"
+        );
+        let at = shown.model.now().after(std::time::Duration::from_millis(1));
+        let (pressed, effects) = shown.model.press_layer(LayerKey(1), at);
+        assert_eq!(
+            pressed.keyboard_target(),
+            layer(1),
+            "{name}: a press gives it"
+        );
+        assert!(effects.contains(&Effect::Keyboard(layer(1))), "{name}");
+
+        // The shell's exclusive layer outranks the pressed one, and its unmap gives it back.
+        let at = pressed.now().after(std::time::Duration::from_millis(1));
+        let (outranked, _) = pressed.step(
+            Event::LayerMapped {
+                layer: LayerKey(2),
+                spec: panel(LayerLevel::Top, KeyboardInteractivity::Exclusive),
+            },
+            at,
+        );
+        assert_eq!(
+            outranked.keyboard_target(),
+            layer(2),
+            "{name}: the shell's wins"
+        );
     }
 }

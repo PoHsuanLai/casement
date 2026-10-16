@@ -59,7 +59,7 @@ fn lock_blocks_input_to_windows() {
         TestOrigin::Physical(DeviceClass::Keyboard),
     );
     // One client holds the keyboard through an exclusive layer, as a launcher does.
-    let shell = fixture.connect(ConnectionRole::Public);
+    let shell = fixture.connect(ConnectionRole::Shell);
     let locker_client = fixture.connect(ConnectionRole::Public);
     fixture.pump();
     let _shell_keyboard = Keyboard::bind(fixture.client(shell)).expect("keyboard");

@@ -4212,3 +4212,18 @@ Rows for the findings CASW-02/03/04/07/11/12/13/15/18/19, CASC-02/05/06/07/09/10
   cross-check the peer's cgroup against `app-flatpak-<id>-*.scope` before it returns `Proven`, and decide how far same-UID
   spoofing is in scope (interface ask in the lane report). Test: `a_context_carries_at_most_its_creators_proof` (the
   fixture cannot connect a proven creator, so the table is on the pure function).
+- **CASC-02 (decided): only the shell's layer surfaces outrank the key window.** `LayerSpec` gained `owner: LayerOwner`
+  (`Shell` when the surface's client came through the shell connection, set by the layer-shell handler from
+  `ClientState::role`; `Client` otherwise). `LayerSpec::granted_keyboard` turns another client's `Exclusive` into `OnDemand`,
+  and the model lets only a shell surface take the keyboard by mapping (exclusive, or on demand above the windows); any other
+  surface takes it when the person presses it (`press_layer`). **Departure from the audit's wording, same decision:** the on-map
+  grab of an `OnDemand` Top/Overlay layer (`map_layer`, the second hole the verifier found) is now the shell's only too. A
+  launcher run by hand (rofi, wofi) on the public socket therefore needs a click before it hears keys. Fixture tests that
+  relied on a public client holding the keyboard through an exclusive layer (data_device, primary_selection, the two data
+  control suites, seat modifiers, shortcuts inhibit, layer_shell mapping, bindings, session_lock) now connect that client as
+  the shell. Tests: core `another_clients_layer_takes_the_keyboard_only_when_pressed`, fixture
+  `another_clients_layer_takes_the_keyboard_only_when_pressed` (layer_keyboard.rs).
+- **CASC-10: a client's exclusive zone is capped.** In `LayerBook::arrange`, a surface of another client reserves at most a
+  quarter of the output along its axis (`CLIENT_ZONE_DIVISOR`), and never so much that windows keep less than half of it
+  (`CLIENT_KEEPS_DIVISOR`), however many such surfaces there are; the shell's surfaces reserve what they ask for. Test:
+  `arrange_cap_tests.rs` (a client bar, a zone of `u32::MAX`, stacked bars, four edges).

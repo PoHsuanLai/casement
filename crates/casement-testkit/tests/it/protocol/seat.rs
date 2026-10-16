@@ -201,7 +201,8 @@ fn modifiers_ordering_transcript() {
         DeviceClass::Keyboard,
         TestOrigin::Physical(DeviceClass::Keyboard),
     );
-    let id = fixture.connect(ConnectionRole::Public);
+    // A launcher holds the keyboard exclusively only when it is the shell's (CASC-02).
+    let id = fixture.connect(ConnectionRole::Shell);
     fixture.pump();
     let _keyboard = Keyboard::bind(fixture.client(id)).expect("a keyboard");
     let _launcher = LayerSurface::create(

@@ -98,7 +98,8 @@ fn a_chord_fires_while_an_exclusive_layer_holds_the_keyboard_and_it_hears_the_mo
         DeviceClass::Keyboard,
         TestOrigin::Physical(DeviceClass::Keyboard),
     );
-    let id = fixture.connect(ConnectionRole::Public);
+    // The switcher holds the keyboard exclusively as the shell's own surface (CASC-02).
+    let id = fixture.connect(ConnectionRole::Shell);
     fixture.pump();
     let _keys = Keyboard::bind(fixture.client(id)).expect("a keyboard");
     let _switcher = LayerSurface::create(

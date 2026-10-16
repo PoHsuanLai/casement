@@ -57,8 +57,9 @@ pub(crate) fn saw(client: &TestClient, prefix: &str, event: &str) -> bool {
 #[test]
 fn a_selection_reaches_the_focused_client() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
-    let a = fixture.connect(ConnectionRole::Public);
-    let b = fixture.connect(ConnectionRole::Public);
+    // The shell's own surfaces take the keyboard exclusively; another client's do not (CASC-02).
+    let a = fixture.connect(ConnectionRole::Shell);
+    let b = fixture.connect(ConnectionRole::Shell);
     fixture.pump();
     let keyboard_a = Keyboard::bind(fixture.client(a)).expect("keyboard");
     let _keyboard_b = Keyboard::bind(fixture.client(b)).expect("keyboard");

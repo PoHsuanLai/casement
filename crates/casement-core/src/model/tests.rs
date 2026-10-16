@@ -102,6 +102,7 @@ fn healthy() -> Model {
         namespace: "bar".to_owned(),
         size: crate::geometry::LogicalSize::ZERO,
         role: ShellRoleTag::Unassigned,
+        owner: crate::layer::LayerOwner::Client,
     };
     let events = vec![
         Event::OutputPlugged(facts("HEADLESS-1")),

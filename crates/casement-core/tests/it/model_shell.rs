@@ -36,6 +36,7 @@ fn layer(layer_key: u64, spec_role: ShellRoleTag) -> Op {
         namespace: "dock".to_owned(),
         size: LogicalSize { w: 400, h: 80 },
         role: spec_role,
+        owner: casement_core::layer::LayerOwner::Shell,
     };
     Op::Event(Event::LayerMapped {
         layer: LayerKey(layer_key),

@@ -14,7 +14,7 @@ pub use spec::{anchors_of, exclusive_of, keyboard_of, level_of, margins_of, spec
 
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::geometry::LogicalSize;
-use casement_core::layer::{LayerLevel, LayerSpec};
+use casement_core::layer::{LayerLevel, LayerOwner, LayerSpec};
 use casement_core::policy::GlobalKind;
 use casement_core::{Event, LayerKey, OutputKey};
 use smithay::reexports::wayland_protocols_wlr::layer_shell::v1::server::zwlr_layer_shell_v1::ZwlrLayerShellV1;
@@ -45,6 +45,8 @@ pub struct LayerRecord {
     pub output: Option<OutputKey>,
     /// The namespace its client gave (`"bar"`, `"dock"`).
     pub namespace: LayerNamespace,
+    /// Whose connection it came through.
+    pub owner: LayerOwner,
     /// What the model knows of it.
     pub known: Known,
     /// Whether its last commit carried a buffer.
@@ -104,14 +106,15 @@ impl LayerShellPart {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct LayerNamespace(pub String);
 
-/// A layer surface was created on `output` (the handler picks one when the client named
-/// none) and given the key `layer`; it enters the model on its first commit.
+/// A layer surface of `owner`'s was created on `output` (the handler picks one when the client
+/// named none) and given the key `layer`; it enters the model on its first commit.
 pub fn on_new_layer(
     part: &mut LayerShellPart,
     surface: &LayerSurface,
     output: Option<OutputKey>,
     level: LayerLevel,
     namespace: LayerNamespace,
+    owner: LayerOwner,
     layer: LayerKey,
 ) -> Vec<Event> {
     // The level is also in the committed state, which wins from the first commit on.
@@ -122,6 +125,7 @@ pub fn on_new_layer(
         LayerRecord {
             output,
             namespace,
+            owner,
             known: Known::Nothing,
             content: Content::Empty,
         },
@@ -151,7 +155,7 @@ pub fn on_layer_commit(part: &mut LayerShellPart, surface: &WlSurface) -> Vec<Ev
     let Some(output) = record.output.clone() else {
         return Vec::new();
     };
-    let spec = spec_of(&output, &cached, &record.namespace.0);
+    let spec = spec_of(&output, &cached, &record.namespace.0, record.owner);
     let known = std::mem::replace(&mut record.known, Known::Nothing);
     let (known, events) = after_commit(known, was, content, spec, layer);
     record.known = known;
@@ -263,6 +267,7 @@ mod tests {
             keyboard: KeyboardInteractivity::Exclusive,
             namespace: "bar".to_owned(),
             role: ShellRoleTag::Unassigned,
+            owner: casement_core::layer::LayerOwner::Client,
         }
     }
 

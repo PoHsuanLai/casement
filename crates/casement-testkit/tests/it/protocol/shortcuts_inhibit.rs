@@ -53,7 +53,8 @@ fn count(client: &TestClient, prefix: &str, event: &str) -> usize {
 #[test]
 fn an_active_inhibitor_receives_binding_chords() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
-    let id = fixture.connect(ConnectionRole::Public);
+    // The surface holds the keyboard exclusively only as the shell's (CASC-02).
+    let id = fixture.connect(ConnectionRole::Shell);
     fixture.pump();
     let keyboard = Keyboard::bind(fixture.client(id)).expect("a keyboard");
     let layer = map(

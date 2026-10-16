@@ -1,10 +1,12 @@
-//! `zwlr_layer_surface_v1.set_keyboard_interactivity(on_demand)`: the surface takes the keyboard
-//! when it maps with no window holding it, and when it is pressed; a window that is pressed or
-//! keyed takes it back.
+//! `zwlr_layer_surface_v1.set_keyboard_interactivity`: a surface of the shell's own that asks for
+//! the keyboard on demand takes it when it maps, and any surface takes it when it is pressed; a
+//! window that is pressed or keyed takes it back. Another client's surface never takes the
+//! keyboard by mapping, however it asks (CASC-02).
 
-use super::xdg_shell::{boot, click, map_toplevel, pointer, settle, windows};
+use super::xdg_shell::{boot_as, click, click_at, map_toplevel, pointer, settle, windows};
 use casement_core::geometry::{LogicalPoint, PhysicalSize};
 use casement_core::input::{ButtonCode, Edge};
+use casement_core::policy::ConnectionRole;
 use casement_testclient::seat::keyboard::Keyboard;
 use casement_testclient::surface::layer::{
     Anchor, KeyboardInteractivity, Layer, LayerAsk, LayerSurface,
@@ -66,7 +68,7 @@ fn named(surface: &WlSurface) -> String {
 /// With no window holding the keyboard, an on-demand layer that maps takes it.
 #[test]
 fn an_on_demand_layer_takes_the_keyboard_when_nothing_holds_it() {
-    let (mut fixture, id) = boot();
+    let (mut fixture, id) = boot_as(ConnectionRole::Shell);
     let _keyboard = Keyboard::bind(fixture.client(id)).expect("a keyboard");
     let layer = map(&mut fixture, id, &on_demand());
     assert_eq!(
@@ -79,7 +81,7 @@ fn an_on_demand_layer_takes_the_keyboard_when_nothing_holds_it() {
 /// it); a press on the window gives it back.
 #[test]
 fn an_on_demand_layer_takes_the_keyboard_from_a_window_and_a_press_gives_it_back() {
-    let (mut fixture, id) = boot();
+    let (mut fixture, id) = boot_as(ConnectionRole::Shell);
     let mouse = pointer(&mut fixture);
     let _keyboard = Keyboard::bind(fixture.client(id)).expect("a keyboard");
     let base = WmBase::bind(fixture.client(id), 6);
@@ -119,4 +121,83 @@ fn an_on_demand_layer_takes_the_keyboard_from_a_window_and_a_press_gives_it_back
         Some(named(&top.surface)),
         "a press on the window takes the keyboard back"
     );
+}
+
+/// The point the layers here sit on: the middle of the 1920x1080 output.
+const MIDDLE: LogicalPoint = LogicalPoint { x: 960, y: 540 };
+
+/// When a layer surface takes the keyboard from a window that holds it.
+#[derive(Debug, Clone, Copy)]
+enum Takes {
+    /// On the commit that maps it.
+    AtOnce,
+    /// When the person presses it.
+    OnPress,
+}
+
+/// CASC-02: a window holds the keyboard; a layer surface of another client that asks for it
+/// (exclusively or on demand) does not take it by mapping, however high it sits, and gets it
+/// only when the person presses it. The shell's exclusive layer takes it at once.
+#[test]
+fn another_clients_layer_takes_the_keyboard_only_when_pressed() {
+    let cases = [
+        (
+            "exclusive",
+            KeyboardInteractivity::Exclusive,
+            ConnectionRole::Public,
+            Takes::OnPress,
+        ),
+        (
+            "on demand",
+            KeyboardInteractivity::OnDemand,
+            ConnectionRole::Public,
+            Takes::OnPress,
+        ),
+        (
+            "the shell's exclusive",
+            KeyboardInteractivity::Exclusive,
+            ConnectionRole::Shell,
+            Takes::AtOnce,
+        ),
+    ];
+    for (name, interactivity, role, takes) in cases {
+        let (mut fixture, id) = boot_as(role);
+        let mouse = pointer(&mut fixture);
+        let _keyboard = Keyboard::bind(fixture.client(id)).expect("a keyboard");
+        let base = WmBase::bind(fixture.client(id), 6);
+        let top = map_toplevel(&mut fixture, id, &base, (400, 300));
+        settle(&mut fixture);
+        let window = windows(&fixture)[0];
+        click(&mut fixture, mouse, window);
+        assert_eq!(
+            keyboard_focus(fixture.client(id)),
+            Some(named(&top.surface)),
+            "{name}"
+        );
+
+        let ask = LayerAsk {
+            level: Layer::Overlay,
+            keyboard: interactivity,
+            ..on_demand()
+        };
+        let layer = map(&mut fixture, id, &ask);
+        let held = keyboard_focus(fixture.client(id));
+        match takes {
+            Takes::AtOnce => assert_eq!(held, Some(named(layer.surface())), "{name}: at once"),
+            Takes::OnPress => {
+                assert_eq!(
+                    held,
+                    Some(named(&top.surface)),
+                    "{name}: the window keeps it"
+                );
+                click_at(&mut fixture, mouse, MIDDLE);
+                fixture.pump();
+                assert_eq!(
+                    keyboard_focus(fixture.client(id)),
+                    Some(named(layer.surface())),
+                    "{name}: a press gives it"
+                );
+            }
+        }
+    }
 }

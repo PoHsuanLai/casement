@@ -4,8 +4,8 @@
 use casement_core::OutputKey;
 use casement_core::geometry::LogicalSize;
 use casement_core::layer::{
-    Anchor, Anchors, ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerSpec, Margins,
-    ShellRoleTag,
+    Anchor, Anchors, ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerOwner, LayerSpec,
+    Margins, ShellRoleTag,
 };
 use smithay::wayland::shell::wlr_layer::{
     Anchor as WireAnchor, ExclusiveZone as WireZone, KeyboardInteractivity as WireKeyboard,
@@ -68,8 +68,13 @@ pub fn keyboard_of(keyboard: WireKeyboard) -> KeyboardInteractivity {
     }
 }
 
-/// The spec a surface's committed state describes, on `output`.
-pub fn spec_of(output: &OutputKey, cached: &LayerSurfaceCachedState, namespace: &str) -> LayerSpec {
+/// The spec a surface's committed state describes, on `output`, for a surface of `owner`.
+pub fn spec_of(
+    output: &OutputKey,
+    cached: &LayerSurfaceCachedState,
+    namespace: &str,
+    owner: LayerOwner,
+) -> LayerSpec {
     LayerSpec {
         output: output.clone(),
         level: level_of(cached.layer),
@@ -83,6 +88,7 @@ pub fn spec_of(output: &OutputKey, cached: &LayerSurfaceCachedState, namespace: 
         keyboard: keyboard_of(cached.keyboard_interactivity),
         namespace: namespace.to_owned(),
         role: ShellRoleTag::Unassigned,
+        owner,
     }
 }
 
@@ -107,7 +113,7 @@ mod tests {
             margin,
             ..LayerSurfaceCachedState::default()
         };
-        spec_of(&output_key(), &cached, "bar")
+        spec_of(&output_key(), &cached, "bar", LayerOwner::Client)
     }
 
     const NO_MARGIN: WireMargins = WireMargins {
@@ -140,5 +146,16 @@ mod tests {
         let s = spec(WireAnchor::TOP, NO_MARGIN);
         assert_eq!(s.namespace, "bar");
         assert_eq!(s.role, ShellRoleTag::Unassigned);
+        assert_eq!(s.owner, LayerOwner::Client);
+        assert_eq!(
+            spec_of(
+                &output_key(),
+                &LayerSurfaceCachedState::default(),
+                "bar",
+                LayerOwner::Shell
+            )
+            .owner,
+            LayerOwner::Shell
+        );
     }
 }

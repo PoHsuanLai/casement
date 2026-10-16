@@ -16,7 +16,7 @@ use casement_testkit::{Fixture, FixtureSpec};
 #[test]
 fn a_manager_sees_selection_changes() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
-    let owner = fixture.connect(ConnectionRole::Public);
+    let owner = fixture.connect(ConnectionRole::Shell);
     let manager = fixture.connect(ConnectionRole::Public);
     fixture.pump();
     let keyboard = Keyboard::bind(fixture.client(owner)).expect("keyboard");

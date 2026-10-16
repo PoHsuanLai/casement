@@ -4,8 +4,12 @@ use super::xdg_shell::popups;
 use crate::core_loop;
 use crate::state::State;
 use casement_core::OutputKey;
+use casement_core::layer::LayerOwner;
+use casement_core::policy::ConnectionRole;
+use casement_wayland::ClientState;
 use casement_wayland::layer_shell::{self, LayerNamespace};
 use smithay::output::Output;
+use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::wayland::shell::wlr_layer::{
     Layer, LayerSurface, WlrLayerShellHandler, WlrLayerShellState,
@@ -40,6 +44,19 @@ fn primary_output(state: &State) -> Option<OutputKey> {
         .map(|(key, _)| key.clone())
 }
 
+/// Whose connection `surface` came through: the shell's own, or another client's (a surface
+/// whose client is gone counts as another client's).
+fn owner_of(surface: &LayerSurface) -> LayerOwner {
+    let role = surface
+        .wl_surface()
+        .client()
+        .and_then(|client| ClientState::of(&client).map(|state| state.role.clone()));
+    match role {
+        Some(ConnectionRole::Shell) => LayerOwner::Shell,
+        Some(_) | None => LayerOwner::Client,
+    }
+}
+
 impl WlrLayerShellHandler for State {
     fn shell_state(&mut self) -> &mut WlrLayerShellState {
         &mut self.wl.layer_shell.state
@@ -69,6 +86,7 @@ impl WlrLayerShellHandler for State {
             Some(output),
             layer_shell::level_of(layer),
             LayerNamespace(namespace),
+            owner_of(&surface),
             key,
         );
         core_loop::feed(self, events);

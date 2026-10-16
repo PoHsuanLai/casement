@@ -9,7 +9,7 @@
 //! whose positive zone its anchoring does not make meaningful, is arranged inside what is left
 //! at the end; one that ignores zones (`-1`) inside the whole output.
 
-use super::{Anchor, Anchors, ExclusiveZone, LayerSpec, Margins};
+use super::{Anchor, Anchors, ExclusiveZone, LayerOwner, LayerSpec, Margins};
 use crate::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use crate::ids::{LayerKey, OutputKey};
 use std::cmp::Reverse;
@@ -92,7 +92,9 @@ impl super::LayerBook {
             (full, BTreeMap::new()),
             |(usable, mut slots), (key, spec)| {
                 slots.insert(*key, slot(spec, usable, self.pin(key)));
-                let left = reservation(spec).map_or(usable, |taken| shrink(usable, taken));
+                let left = reservation(spec)
+                    .map(|taken| allowed(spec.owner, taken, usable, full))
+                    .map_or(usable, |taken| shrink(usable, taken));
                 (left, slots)
             },
         );
@@ -176,6 +178,41 @@ fn reservation(spec: &LayerSpec) -> Option<Reservation> {
     };
     let depth = u32::try_from(i64::from(zone) + i64::from(margin).max(0)).unwrap_or(u32::MAX);
     (depth > 0).then_some(Reservation { edge, depth })
+}
+
+/// The share of an output's width or height one client surface may reserve beside its edge, as
+/// a divisor (a quarter): a bar or a dock never needs more, and a surface asking for the whole
+/// axis would leave windows no room (CASC-10).
+const CLIENT_ZONE_DIVISOR: u32 = 4;
+
+/// The share of an axis, as a divisor (a half), that client zones leave to windows however many
+/// of them there are: four client surfaces on the four edges cannot shrink the area to nothing.
+const CLIENT_KEEPS_DIVISOR: u32 = 2;
+
+/// `taken` as `owner` may have it. The shell's surfaces reserve what they ask for. Another
+/// client's reserves at most a quarter of the output along the axis, and nothing that would
+/// leave windows less than half of it (`usable` is what the earlier zones left, `full` the
+/// whole output).
+fn allowed(
+    owner: LayerOwner,
+    taken: Reservation,
+    usable: LogicalRect,
+    full: LogicalRect,
+) -> Reservation {
+    match owner {
+        LayerOwner::Shell => taken,
+        LayerOwner::Client => {
+            let (whole, left) = match taken.edge {
+                Edge::Top | Edge::Bottom => (full.size.h, usable.size.h),
+                Edge::Left | Edge::Right => (full.size.w, usable.size.w),
+            };
+            let depth = taken
+                .depth
+                .min(whole / CLIENT_ZONE_DIVISOR)
+                .min(left.saturating_sub(whole / CLIENT_KEEPS_DIVISOR));
+            Reservation { depth, ..taken }
+        }
+    }
 }
 
 /// The one edge an anchoring reserves beside, if it names one.

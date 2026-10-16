@@ -13,10 +13,12 @@ pub use arrange::{Arranged, place_in};
 pub use blur_strength::BlurStrength;
 pub use book::LayerBook;
 pub use layer::{
-    Anchor, Anchors, ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerSpec, Margins,
-    ShellRoleTag,
+    Anchor, Anchors, ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerOwner, LayerSpec,
+    Margins, ShellRoleTag,
 };
 
+#[cfg(test)]
+mod arrange_cap_tests;
 #[cfg(test)]
 mod arrange_size_tests;
 #[cfg(test)]

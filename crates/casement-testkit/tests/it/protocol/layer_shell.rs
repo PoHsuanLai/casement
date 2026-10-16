@@ -69,7 +69,8 @@ fn an_exclusive_layer_takes_the_keyboard_on_its_mapping_commit() {
     );
     // A person is holding shift when the layer maps.
     fixture.input().key(device, KEY_LEFTSHIFT, Edge::Press);
-    let id = fixture.connect(ConnectionRole::Public);
+    // Exclusive keyboard is the shell's (CASC-02); another client's waits for a press.
+    let id = fixture.connect(ConnectionRole::Shell);
     fixture.pump();
     let _keyboard = Keyboard::bind(fixture.client(id)).expect("a keyboard");
     let launcher = LayerAsk {

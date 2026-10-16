@@ -2,8 +2,8 @@
 //! sizes all read.
 
 use super::{
-    Anchor, Anchors, ExclusiveZone, KeyboardInteractivity, LayerBook, LayerLevel, LayerSpec,
-    Margins, ShellRoleTag,
+    Anchor, Anchors, ExclusiveZone, KeyboardInteractivity, LayerBook, LayerLevel, LayerOwner,
+    LayerSpec, Margins, ShellRoleTag,
 };
 use crate::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use crate::ids::{LayerKey, OutputKey, OutputName};
@@ -37,6 +37,7 @@ pub(super) struct Ask {
     zone: ExclusiveZone,
     margin: Margins,
     committed: (u32, u32),
+    owner: LayerOwner,
 }
 
 pub(super) fn ask(edges: &'static str, zone: ExclusiveZone, committed: (u32, u32)) -> Ask {
@@ -46,10 +47,16 @@ pub(super) fn ask(edges: &'static str, zone: ExclusiveZone, committed: (u32, u32
         zone,
         margin: NONE,
         committed,
+        owner: LayerOwner::Shell,
     }
 }
 
 impl Ask {
+    /// The same layer, from `owner`'s connection (the shell's by default).
+    pub(super) fn owned_by(self, owner: LayerOwner) -> Ask {
+        Ask { owner, ..self }
+    }
+
     pub(super) fn spec(&self) -> LayerSpec {
         let held = |c: char| match self.edges.contains(c) {
             true => Anchor::Held,
@@ -70,6 +77,7 @@ impl Ask {
             namespace: "test".to_owned(),
             size: crate::geometry::LogicalSize::ZERO,
             role: ShellRoleTag::Unassigned,
+            owner: self.owner,
         }
     }
 }
