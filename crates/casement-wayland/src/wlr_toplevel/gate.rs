@@ -30,7 +30,7 @@ pub(super) fn wait<D: WlrToplevelHandler>(
         },
         None => manager,
     };
-    refused.finished();
+    consent::finish_later(consent::Farewell::WindowList(refused));
 }
 
 /// How many managers `client` has waiting for an answer.

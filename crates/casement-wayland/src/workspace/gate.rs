@@ -41,7 +41,7 @@ pub(super) fn wait<D: WorkspaceHandler>(state: &mut D, client: &Client, waiting:
         },
         None => waiting,
     };
-    refused.manager.finished();
+    consent::finish_later(consent::Farewell::Workspaces(refused.manager));
 }
 
 /// The client a manager belongs to, when casement inserted it.

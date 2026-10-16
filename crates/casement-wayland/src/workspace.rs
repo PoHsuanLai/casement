@@ -225,7 +225,7 @@ where
         match consent::admit(state, client, Power::Windows) {
             Admission::Go => attach(state.workspace_part(), manager, pending),
             Admission::Hold => gate::wait(state, client, WaitingManager::new(manager, pending)),
-            Admission::Refuse => manager.finished(),
+            Admission::Refuse => consent::finish_later(consent::Farewell::Workspaces(manager)),
         }
     }
 

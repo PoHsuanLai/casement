@@ -202,7 +202,7 @@ where
                 list_all_on(part, &manager);
             }
             Admission::Hold => gate::wait(state, client, manager),
-            Admission::Refuse => manager.finished(),
+            Admission::Refuse => consent::finish_later(consent::Farewell::WindowList(manager)),
         }
     }
 

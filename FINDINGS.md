@@ -4423,6 +4423,13 @@ read-only; a program whose image the person can write gets Allow Once and is nev
     returns an error and core has no "sealed" floor.
 
 ## pa2-cwl: per-app consent in the protocol layer (CASW-01, CASC-01, PORTAL-02; 2026-10-16)
+- *A destructor event inside a bind is a use-after-free.* `finished` on `zwlr_foreign_toplevel_manager_v1`
+  and `ext_workspace_manager_v1` destroys the object; libwayland-server's bind path (wayland-backend's
+  `global_bind`, system library) writes the new object's data after the handler returns, so a manager
+  refused at bind and finished there crashed the compositor (SIGSEGV, every time, when the test ran in
+  its own process). A refusal at bind now queues the manager (`consent::finish_later`) and the loop sends
+  `finished` after the dispatch (`consent::send_farewells`, beside `limits::cut_queued`). Any future
+  bind-time refusal must do the same.
 
 Wave 2's wayland half (design: `~/rs-wt/prod-audit-de/WAVE2-DESIGN.md` section 3). Written without a compile; the gate run is the
 first. The contract it implements is ARCHITECTURE.md "Consent at the wire". The mechanism is `casement_wayland::consent`

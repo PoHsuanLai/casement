@@ -18,10 +18,12 @@
 //! [`HELD_REQUESTS`](casement_core::privilege::HELD_REQUESTS) per client ([`Held`]); the
 //! composition root's `Effect::Resolve` arm updates the ledger and calls each module's replay.
 
+mod farewell;
 mod held;
 mod ledger;
 mod watch;
 
+pub use farewell::{Farewell, later as finish_later, send_queued as send_farewells};
 pub use held::{Held, Mortal, Pushed};
 pub use ledger::{Admission, Ledger, Word};
 pub use watch::{ImageWatch, Unwatched};

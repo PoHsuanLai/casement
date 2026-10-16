@@ -46,6 +46,8 @@ pub fn attach_display(
                 }
                 // A client that went over a cap during that dispatch is cut now, outside it.
                 casement_wayland::limits::cut_queued(&display.borrow().handle());
+                // A manager refused at bind is finished now, outside the bind.
+                casement_wayland::consent::send_farewells();
                 color_management::send_unsent(state.color_part());
                 Ok(PostAction::Continue)
             },
