@@ -4,7 +4,7 @@
 use crate::state::State;
 use casement_backend::headless::FrameSource;
 use casement_core::Model;
-use casement_core::geometry::{LogicalPoint, SubPx};
+use casement_core::geometry::{LogicalPoint, LogicalRect, SubPx};
 use casement_core::layer::{Arranged, BlurStrength, LayerLevel};
 use casement_core::time::Mono;
 use casement_core::window::WindowState;
@@ -13,8 +13,8 @@ use casement_motion::{
     CommittedSizes, FrameScene, OutputFrame, StripOffset, WindowLook, WindowLooks, sample,
 };
 use casement_render::{
-    CasementElement, ChromeLayer, Compositor, LayerDraw, OutputView, TextureBook, output_elements,
-    popup_surfaces, surface_origin_logical,
+    CasementElement, ChromeLayer, Compositor, LayerDraw, OutputView, RowDraw, TextureBook,
+    output_elements, popup_surfaces, surface_origin_logical,
 };
 use casement_wayland::seat::{Candidate, SurfaceAt, surface_under};
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -49,6 +49,91 @@ pub(crate) fn sample_scene_at(state: &State, now: Mono) -> FrameScene {
             .collect(),
     );
     sample(&state.core.motion, &committed, &looks, now).0
+}
+
+/// The row of Spaces on the output of `frame` at `now`, ready to draw: each window's column and
+/// where the row is. While a swipe moves the row (the fingers down, or the finish after them) it
+/// is the model's position, rubber band and ease-out included; otherwise it is the strip motion
+/// sampled, which rests with the shown Space at the usable origin. None when no window lives on
+/// a Space of the output.
+pub(crate) fn row_of(state: &State, frame: &OutputFrame, now: Mono) -> Option<RowDraw> {
+    let model = &state.core.model;
+    let sampled = frame.strip.0;
+    row_where(state, &frame.output, |usable| {
+        match model.space_strip(now) {
+            Some(strip) if strip.output == frame.output => strip.first_x(usable),
+            _ => sampled,
+        }
+    })
+}
+
+/// The row the pointer meets on the output of `frame` at `now`: only a swipe that is moving the
+/// row (the fingers down, or its finish) shifts it, as drawn. Otherwise the shown Space sits at
+/// the usable origin, where the windows will be, whatever a keyboard or finished slide is
+/// drawing mid-way: the pointer is tested against places, not against a flight.
+fn hit_row_of(state: &State, frame: &OutputFrame, now: Mono) -> Option<RowDraw> {
+    let model = &state.core.model;
+    let output = &frame.output;
+    let shown = model.shown_index(output).unwrap_or(0);
+    row_where(state, output, |usable| match model.space_strip(now) {
+        Some(strip) if strip.output == *output => strip.first_x(usable),
+        _ => {
+            let width = i32::try_from(usable.size.w).unwrap_or(i32::MAX);
+            let behind = i64::from(SubPx::of_logical(width).0) * i64::from(shown);
+            let at = i64::from(SubPx::of_logical(usable.origin.x).0) - behind;
+            SubPx(i32::try_from(at).unwrap_or(i32::MIN))
+        }
+    })
+}
+
+/// The row of `output` with its first Space starting where `first_x` says for the usable area.
+/// None when no window lives on a Space of the output.
+fn row_where(
+    state: &State,
+    output: &OutputKey,
+    first_x: impl FnOnce(LogicalRect) -> SubPx,
+) -> Option<RowDraw> {
+    let model = &state.core.model;
+    let columns = model.row_columns(output);
+    if columns.is_empty() {
+        return None;
+    }
+    let usable = model
+        .layers()
+        .usable_area(output, model.outputs().0.get(output)?.config.logical_rect());
+    let first = first_x(usable);
+    let width = i32::try_from(usable.size.w).unwrap_or(i32::MAX);
+    Some(RowDraw {
+        offset: SubPx(first.0.saturating_sub(SubPx::of_logical(usable.origin.x).0)),
+        page: SubPx::of_logical(width),
+        columns,
+    })
+}
+
+/// [`sample_scene_at`] as the pointer meets it (`hit_row_of`): each window in its Space's column,
+/// the windows that are not on their output's picture left out.
+pub(crate) fn drawn_scene_at(state: &State, now: Mono) -> FrameScene {
+    let outputs = sample_scene_at(state, now)
+        .outputs
+        .into_iter()
+        .map(|frame| {
+            let area = state
+                .core
+                .model
+                .outputs()
+                .0
+                .get(&frame.output)
+                .map(|output| output.config.logical_rect());
+            match (hit_row_of(state, &frame, now), area) {
+                (Some(row), Some(area)) => OutputFrame {
+                    windows: row.touching(&frame.windows, area),
+                    ..frame
+                },
+                _ => frame,
+            }
+        })
+        .collect();
+    FrameScene { outputs }
 }
 
 /// An output's frame with nothing on it (no window moves there).
@@ -202,7 +287,7 @@ pub(super) fn stack(state: &State) -> Vec<(Hit, Candidate)> {
         found.reverse();
         found
     };
-    let windows = sample_scene_at(state, state.clock.now())
+    let windows = drawn_scene_at(state, state.clock.now())
         .outputs
         .into_iter()
         .flat_map(|frame| frame.windows.into_iter().rev())

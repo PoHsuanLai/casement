@@ -12,6 +12,7 @@ mod overview_slot;
 mod report;
 mod space_target;
 mod space_thumb;
+mod spread_at;
 mod window_target;
 
 pub use arrangement::Arrangement;

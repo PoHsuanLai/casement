@@ -5,6 +5,7 @@
 //! motion's and the model's; this is the glue between them and the seat.
 
 use super::deliver::run_model;
+use super::fingers::openness;
 use super::frames;
 use super::overview_drag as drag;
 use crate::exec;
@@ -132,9 +133,12 @@ pub(super) fn leave(state: &mut State, pick: Option<OverviewPick>) {
 }
 
 /// How Mission Control is drawn this frame: not at all while closed, else with the hovered
-/// window's title under it.
+/// window's title under it. While the fingers hold it part-way it is drawn too (the windows are
+/// scaled to where the fingers put them), dimmed as far as it is open, with no ring, label or
+/// icons.
 pub(super) fn draw(state: &mut State, view: &OutputView) -> OverviewDraw {
-    if !takes_input(state) {
+    let fingers = state.core.model.overview_progress();
+    if !takes_input(state) && fingers.is_none() {
         state.render.overview_hover = None;
         state.render.icons.clear();
         return OverviewDraw::Off;
@@ -152,12 +156,19 @@ pub(super) fn draw(state: &mut State, view: &OutputView) -> OverviewDraw {
         Rgba8::from(overview_dim(scheme)),
         Rgba8::from(overview_ring(scheme)),
     );
+    let look = match fingers {
+        Some(progress) => look.opened(openness(progress)),
+        None => look,
+    };
     // The window being dragged is drawn above the others.
     let lift = match &state.render.overview_drag {
         Drag::Dragging { window, .. } => Some(*window),
         _ => None,
     };
-    let icons = icons_of(state, view);
+    let icons = match takes_input(state) {
+        true => icons_of(state, view),
+        false => BTreeMap::new(),
+    };
     OverviewDraw::On {
         hover,
         look,

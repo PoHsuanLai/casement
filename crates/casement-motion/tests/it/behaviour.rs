@@ -7,11 +7,15 @@ use crate::support;
 use casement_core::geometry::{LogicalPoint, LogicalSize, SubPx};
 use casement_core::{Cause, MinimiseTarget, SwipeRelease, WindowId};
 use casement_layout::{Arrangement, SpaceTarget};
-use casement_motion::{CommittedSizes, MotionBook, Settled, WindowLooks, retarget, sample};
+use casement_motion::{
+    CommittedSizes, MotionBook, Settled, WindowLooks, retarget, retarget_driven, sample,
+};
 use casement_protocols::vocab::{Emphasis, FrameMode};
+use ds_core::vocab::Fraction;
 use ds_motion::velocity::Velocity;
 use ds_style::appearance::motion::MotionLevel;
 use porter_core::SpaceId;
+use std::collections::BTreeSet;
 use support::mc_entry::{arrangements, journeys};
 use support::{arranged, at, committed, drawn, look, output, placed, rect};
 
@@ -512,6 +516,112 @@ fn the_space_strip_slides_with_the_cause_and_stops_exactly() {
         (strip(&reduced, 0), reduced.is_moving(at(0))),
         (-1920 * 120, false)
     );
+}
+
+/// A swipe that drives an output's row draws it itself (its finish is the model's): the strip
+/// leg goes to the new target at once, so a commit does not slide a second time. Another output
+/// and the windows keep their own travel.
+#[test]
+fn no_space_slide_while_a_swipe_drives_the_strip() {
+    let (home, next) = (strip_at(0), strip_at(-1920));
+    let driven: BTreeSet<_> = [output("HEADLESS-1")].into();
+    let held = retarget_driven(
+        known(&home, STANDARD),
+        &home,
+        &next,
+        &Cause::SpaceSwitch,
+        STANDARD,
+        at(0),
+        &driven,
+    );
+    assert_eq!(
+        (strip(&held, 0), held.is_moving(at(0))),
+        (-1920 * 120, false)
+    );
+    assert_eq!(strip(&held, 150), -1920 * 120, "it stays there");
+    let elsewhere: BTreeSet<_> = [output("HEADLESS-2")].into();
+    let own = retarget_driven(
+        known(&home, STANDARD),
+        &home,
+        &next,
+        &Cause::SpaceSwitch,
+        STANDARD,
+        at(0),
+        &elsewhere,
+    );
+    assert_eq!(
+        strip(&own, 0),
+        0,
+        "another output's swipe leaves this slide"
+    );
+    assert!(own.is_moving(at(0)));
+    let plain = retarget(
+        known(&home, STANDARD),
+        &home,
+        &next,
+        &Cause::SpaceSwitch,
+        STANDARD,
+        at(0),
+    );
+    assert_eq!(strip(&own, 150), strip(&plain, 150));
+}
+
+/// The fingers hold Mission Control half open (every move is a snap to the mixed arrangement);
+/// a commit then travels from there to the slots with no jump, and a snap-back returns to the
+/// desktop the same way.
+#[test]
+fn a_commit_and_a_snap_back_continue_from_the_followed_progress() {
+    let (desktop, overview) = arrangements();
+    let half = overview.spread_at(Fraction(500));
+    let followed = retarget(
+        known(&desktop, STANDARD),
+        &desktop,
+        &half,
+        &Cause::Configure,
+        STANDARD,
+        at(0),
+    );
+    assert!(!followed.is_moving(at(0)), "the fingers hold it still");
+    let commit = retarget(
+        followed.clone(),
+        &desktop,
+        &overview,
+        &Cause::Overview,
+        STANDARD,
+        at(40),
+    );
+    let back = retarget(
+        followed.clone(),
+        &desktop,
+        &desktop,
+        &Cause::Overview,
+        STANDARD,
+        at(40),
+    );
+    for (n, from, slot) in journeys() {
+        let held = drawn(&followed, n, at(40));
+        assert_eq!(
+            drawn(&commit, n, at(40)),
+            held,
+            "window {n} jumped at the commit"
+        );
+        assert_eq!(
+            drawn(&back, n, at(40)),
+            held,
+            "window {n} jumped at the snap-back"
+        );
+        let on = |book: &MotionBook, to: casement_core::geometry::LogicalRect| {
+            drawn(book, n, at(5_000)).map(|[x, y, w, h, _]| (x, y, w, h))
+                == Some((
+                    i64::from(to.origin.x) * 120,
+                    i64::from(to.origin.y) * 120,
+                    i64::from(to.size.w) * 120,
+                    i64::from(to.size.h) * 120,
+                ))
+        };
+        assert!(on(&commit, slot), "window {n} ends in its slot");
+        assert!(on(&back, from), "window {n} ends on the desktop");
+    }
 }
 
 #[test]

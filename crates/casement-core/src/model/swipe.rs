@@ -15,6 +15,7 @@
 use super::Model;
 use super::moved::Moved;
 use crate::effect::Effect;
+use crate::geometry::{LogicalRect, SubPx};
 use crate::ids::OutputKey;
 use crate::input::gesture_route::{Axis, Drive, Fate, Route, route};
 use crate::input::lift::{Intent, Lift, LiftIn, LiftOut, Verdict};
@@ -46,6 +47,20 @@ pub struct SpaceStrip {
     /// The row's position in thousandths of a page, growing toward later Spaces: Space `k` at
     /// `k * 1000`; the rubber band at the ends is already applied.
     pub position: PageMilli,
+}
+
+impl SpaceStrip {
+    /// Where the row's first Space starts, in global sub-pixels, when each Space is as wide as
+    /// `usable` (the output's usable area): the shown Space sits at `usable`'s left edge when the
+    /// position is its index, and a neighbour is one page further per thousand.
+    pub fn first_x(&self, usable: LogicalRect) -> SubPx {
+        let width = i32::try_from(usable.size.w).unwrap_or(i32::MAX);
+        let page = i64::from(SubPx::of_logical(width).0);
+        let shift = i64::from(self.position.0) * page / 1000;
+        SubPx(clamp(
+            i64::from(SubPx::of_logical(usable.origin.x).0) - shift,
+        ))
+    }
 }
 
 /// Everything the swipes keep between steps.
@@ -146,7 +161,7 @@ impl Model {
     }
 
     /// The index in `output`'s row of the Space it shows.
-    fn shown_index(&self, output: &OutputKey) -> Option<u32> {
+    pub fn shown_index(&self, output: &OutputKey) -> Option<u32> {
         let shown = self.spaces.shown_on(output)?;
         let at = self
             .spaces
@@ -295,15 +310,22 @@ impl Model {
                 Moved::of(model).with_all(frames)
             }
             LiftOut::Done(verdict) => {
+                // Short of nothing and of everything the windows were drawn part-way.
+                let part_way = model
+                    .swipe
+                    .progress
+                    .filter(|open| (1..1000).contains(&open.0));
                 model.swipe.progress = None;
                 let moved = Moved::of(model).with_all(frames);
-                match verdict {
-                    Verdict::Open => moved.then(|m| match m.overview {
+                match (verdict, part_way) {
+                    (Verdict::Open, _) => moved.then(|m| match m.overview {
                         Overview::Closed | Overview::Leaving => m.toggled_overview(),
                         Overview::Entering | Overview::Open => Moved::of(m),
                     }),
-                    Verdict::Close => moved.then(|m| m.leave_overview(None)),
-                    Verdict::Stay => moved,
+                    (Verdict::Close, _) => moved.then(|m| m.leave_overview(None)),
+                    // The windows were drawn where the fingers put them: they return from there.
+                    (Verdict::Stay, Some(_)) => moved.then(Model::fingers_stayed),
+                    (Verdict::Stay, None) => moved,
                 }
             }
         }

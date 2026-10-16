@@ -170,7 +170,7 @@ pub(super) fn under(state: &State, stacked: &[(Hit, Candidate)], at: LogicalPoin
 /// Each window's content rectangle as it is drawn now.
 pub(super) fn contents(state: &State) -> BTreeMap<WindowId, LogicalRect> {
     let book = &state.render.textures;
-    super::scene::sample_scene_at(state, state.clock.now())
+    super::scene::drawn_scene_at(state, state.clock.now())
         .outputs
         .into_iter()
         .flat_map(|frame| frame.windows)

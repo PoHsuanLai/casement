@@ -8,6 +8,7 @@ use crate::scene::OutputView;
 use crate::scene::convert::{on_output, sub_of};
 use crate::texture_book::TextureBook;
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize, PhysicalRect};
+use ds_core::vocab::Fraction;
 use smithay::backend::renderer::element::Id;
 use smithay::backend::renderer::utils::CommitCounter;
 
@@ -36,6 +37,34 @@ impl OverviewLook {
     /// ```
     pub fn new(dim: Rgba8, ring: Rgba8) -> OverviewLook {
         OverviewLook { dim, ring }
+    }
+
+    /// The look with the dimming `openness` of the way in (0 none, 1000 whole; premultiplied
+    /// channels scale together), for Mission Control while the fingers are still opening it.
+    ///
+    /// ```
+    /// use casement_render::{OverviewLook, Rgba8};
+    /// use ds_core::vocab::Fraction;
+    ///
+    /// let black = Rgba8 { r: 0, g: 0, b: 0, a: 56 };
+    /// let blue = Rgba8 { r: 10, g: 96, b: 255, a: 255 };
+    /// let look = OverviewLook::new(black, blue);
+    /// assert_eq!(look.opened(Fraction(500)).dim.a, 28);
+    /// assert_eq!(look.opened(Fraction(0)).dim.a, 0);
+    /// assert_eq!(look.opened(Fraction(1000)), look);
+    /// ```
+    pub fn opened(self, openness: Fraction) -> OverviewLook {
+        let t = u32::from(openness.0.min(1000));
+        let scale = |n: u8| u8::try_from((u32::from(n) * t + 500) / 1000).unwrap_or(u8::MAX);
+        OverviewLook {
+            dim: Rgba8 {
+                r: scale(self.dim.r),
+                g: scale(self.dim.g),
+                b: scale(self.dim.b),
+                a: scale(self.dim.a),
+            },
+            ring: self.ring,
+        }
     }
 }
 

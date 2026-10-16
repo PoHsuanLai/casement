@@ -34,6 +34,8 @@ pub fn insert_client(
         stream,
         Arc::new(
             ClientState::new(key, role.clone(), peer.clone())
+                // The satellite's connection is recognised by now: its windows are X11 ones.
+                .with_origin(state.processes.origin_of(key))
                 .with_gone(state.wl.clients.gone_queue()),
         ),
     )?;

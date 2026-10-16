@@ -210,6 +210,26 @@ fn a_window_that_maps_while_a_full_screen_space_is_shown_goes_to_the_desktop_and
     assert_eq!(run.model.focus().key, Some(WindowId(2)));
 }
 
+/// Each window lives in the column of its Space in the row; the renderer lays the row out by it.
+#[test]
+fn each_window_has_the_column_of_its_space() {
+    let mail = proven("org.quire.Mail");
+    let run = run(vec![
+        plug("HEADLESS-1"),
+        map(1, &mail, TokenCheck::Valid),
+        map(2, &mail, TokenCheck::Valid),
+        full_screen(2),
+        map(3, &mail, TokenCheck::Valid),
+        full_screen(3),
+    ]);
+    let columns = run.model.row_columns(&key("HEADLESS-1"));
+    let mut taken: Vec<u32> = columns.values().copied().collect();
+    taken.sort_unstable();
+    assert_eq!(taken, vec![0, 1, 2], "three Spaces, a window on each");
+    assert_eq!(columns[&WindowId(1)], 0, "the desktop is first");
+    assert!(run.model.row_columns(&key("HEADLESS-2")).is_empty());
+}
+
 #[test]
 fn switching_walks_the_row_and_stops_at_its_ends() {
     let mail = proven("org.quire.Mail");

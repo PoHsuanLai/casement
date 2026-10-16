@@ -15,7 +15,9 @@ use crate::lock::LockEvent;
 use crate::output::{EdidFacts, EdidSerial, Mode, ModePreference, PhysicalMm, VrrCapability};
 use crate::space::{Space, SpaceContent, SpaceIndex, SplitPair};
 use crate::time::Millihertz;
-use crate::window::{MaxSize, Parent, SizeLimits, SpacePlace, StackRank, WindowState};
+use crate::window::{
+    MaxSize, Parent, SizeLimits, SpacePlace, StackRank, WindowOrigin, WindowState,
+};
 use crate::{LayerKey, MappedToplevel};
 use casement_protocols::vocab::{Emphasis, Modality, WindowRole};
 use ds_core::vocab::Fraction;
@@ -63,6 +65,7 @@ fn toplevel(n: u64, app: &AppKey) -> Event {
         window: WindowId(n),
         client: ClientKey(n),
         app: app.clone(),
+        origin: WindowOrigin::Wayland,
         claimed_id: ClaimedId::parse("test").expect("claimed"),
         role: WindowRole::Document,
         modality: Modality::None,

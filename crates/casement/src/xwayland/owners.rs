@@ -191,6 +191,30 @@ mod tests {
     }
 
     #[test]
+    fn with_two_x11_apps_open_each_names_only_its_own_process_never_the_satellite() {
+        let windows = [
+            window("xterm", "XTerm", Some(1001)),
+            window("gimp", "Gimp", Some(1002)),
+            window("gimp", "Gimp", Some(SATELLITE)),
+        ];
+        let table = [("XTerm", vec![1001]), ("Gimp", vec![1002])];
+        for (app, wanted) in table {
+            let pids = pids_of_app(&windows, app, &spared());
+            assert_eq!(pids.into_iter().collect::<Vec<_>>(), wanted, "{app}");
+        }
+    }
+
+    #[test]
+    fn an_app_whose_owner_the_server_cannot_name_leaves_nothing_to_signal() {
+        let windows = [
+            window("xterm", "XTerm", Some(1001)),
+            window("gimp", "Gimp", None),
+        ];
+        assert!(pids_of_app(&windows, "Gimp", &spared()).is_empty());
+        assert!(pids_of_app(&[], "Gimp", &spared()).is_empty());
+    }
+
+    #[test]
     fn a_window_without_a_class_or_a_pid_names_nothing() {
         let windows = [
             XWindow {

@@ -1,6 +1,7 @@
 //! One output's frame as render elements.
 
 pub(crate) mod convert;
+mod row;
 
 use crate::compositor::Compositor;
 use crate::element::{
@@ -24,6 +25,7 @@ use casement_motion::{Flight, OutputFrame, PlacedWindow};
 use convert::{on_output, sub_of};
 use ds_core::geometry::scale::Scale;
 use ds_core::vocab::Fraction;
+pub use row::RowDraw;
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::element::surface::render_elements_from_surface_tree;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -83,6 +85,9 @@ pub struct LayerDraw {
     /// The plate a drag to a screen edge shows where the window would tile: drawn above every
     /// window but the one being dragged.
     pub tile_preview: Option<TilePreview>,
+    /// The row of Spaces: each window is drawn in its Space's column, shifted by the row's
+    /// position. `None` draws every window where the frame has it.
+    pub row: Option<RowDraw>,
 }
 
 /// Mission Control on an output: its windows are drawn scaled to the size they have been sampled
@@ -215,8 +220,15 @@ pub fn output_elements<R: Compositor>(
                 elements.extend(layer_elements(key, area, strength, view, book, renderer));
             }
         };
-    let (covering, mut others): (Vec<&PlacedWindow>, Vec<&PlacedWindow>) = frame
-        .windows
+    let in_row: Vec<PlacedWindow>;
+    let windows: &[PlacedWindow] = match &layers.row {
+        Some(row) => {
+            in_row = row.shifted(&frame.windows, view.area);
+            &in_row
+        }
+        None => &frame.windows,
+    };
+    let (covering, mut others): (Vec<&PlacedWindow>, Vec<&PlacedWindow>) = windows
         .iter()
         .partition(|placed| layers.full_screen.contains(&placed.window));
     // The window being dragged in Mission Control goes last: the front-most (this list is back

@@ -32,6 +32,6 @@ pub use frame_scene::{
     CornerRadius, Flight, FrameScene, OutputFrame, PlacedWindow, ShadowLevel, StripOffset,
 };
 pub use quantise::quantise;
-pub use retarget::retarget;
+pub use retarget::{retarget, retarget_driven};
 pub use sample::{CommittedSizes, WindowLook, WindowLooks, sample};
 pub use settled::Settled;

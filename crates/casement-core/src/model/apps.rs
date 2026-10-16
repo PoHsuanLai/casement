@@ -13,6 +13,7 @@ use crate::focus::FocusIn;
 use crate::ids::{ClientKey, OutputKey, WindowId};
 use crate::shell::ShellNote;
 use crate::time::{Due, Mono, TimerKey};
+use crate::window::WindowOrigin;
 use casement_protocols::vocab::Attention;
 use std::collections::BTreeSet;
 
@@ -115,10 +116,11 @@ impl Model {
 
     /// The app is force quit: its processes get `SIGTERM` now and `SIGKILL` after
     /// [`KILL_GRACE`] if it is still here. Only connections that serve this app and no other
-    /// are named (a connection that carries several apps' windows is left alone).
+    /// are named (a connection that carries several apps' windows is left alone), and for an
+    /// X11 app its own windows (never the satellite's connection, which carries them all).
     pub(super) fn force_quit_app(self, app: &AppKey) -> Moved {
-        let clients = self.sole_clients_of(app);
-        if clients.is_empty() {
+        let stop = self.stop_of(app, StopSignal::Term);
+        if stop.is_empty() {
             return Moved::of(self);
         }
         let since = self.now;
@@ -132,11 +134,7 @@ impl Model {
         };
         model.timers = model.timers.arm(grace.clone());
         Moved::of(model)
-            .with(Effect::Terminate(Termination {
-                app: app.clone(),
-                clients,
-                signal: StopSignal::Term,
-            }))
+            .with(Effect::Terminate(stop))
             .with(Effect::ArmTimer(grace))
     }
 
@@ -157,12 +155,8 @@ impl Model {
                 Moved::of(model)
             }
             AppLife::Quitting(QuitPhase::Stopping) => {
-                let clients = self.sole_clients_of(app);
-                Moved::of(self).with(Effect::Terminate(Termination {
-                    app: app.clone(),
-                    clients,
-                    signal: StopSignal::Kill,
-                }))
+                let stop = self.stop_of(app, StopSignal::Kill);
+                Moved::of(self).with(Effect::Terminate(stop))
             }
             _ => Moved::of(self),
         }
@@ -175,7 +169,19 @@ impl Model {
         Moved::of(self).with(Effect::Shell(ShellNote::ForceQuitPanel(rows)))
     }
 
-    /// The connections whose windows all belong to `app`, and that serve it.
+    /// What stopping `app` names: its own connections and its X11 windows.
+    fn stop_of(&self, app: &AppKey, signal: StopSignal) -> Termination {
+        Termination {
+            app: app.clone(),
+            clients: self.sole_clients_of(app),
+            x11: self.x11_windows_of(app),
+            signal,
+        }
+    }
+
+    /// The connections whose windows all belong to `app`, and that serve it. A connection
+    /// that carries X11 windows is the satellite's, shared by every X11 program, and is never
+    /// one of these.
     fn sole_clients_of(&self, app: &AppKey) -> Vec<ClientKey> {
         self.clients
             .iter()
@@ -184,9 +190,18 @@ impl Model {
                 self.windows
                     .values()
                     .filter(|window| window.client == **client)
-                    .all(|window| window.app == *app)
+                    .all(|window| window.app == *app && window.origin == WindowOrigin::Wayland)
             })
             .map(|(client, _)| *client)
+            .collect()
+    }
+
+    /// The windows of `app` that are X11 programs' own.
+    fn x11_windows_of(&self, app: &AppKey) -> Vec<WindowId> {
+        self.windows
+            .values()
+            .filter(|window| window.app == *app && window.origin == WindowOrigin::X11)
+            .map(|window| window.id)
             .collect()
     }
 

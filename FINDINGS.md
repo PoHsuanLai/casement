@@ -266,7 +266,7 @@ check cover what draws without a client surface; the fixture scenes are P0-shoot
 3. **Windows draw at their committed size.** The closed element set has no rescaling wrapper,
    so a sampled size that differs from the committed one shows once the client commits it;
    P3-Z adds the wrapper with its effect elements.
-4. **`OutputFrame.strip` is not applied.** A `PlacedWindow` does not say which Space it is on,
+4. **`OutputFrame.strip` is not applied.** (Closed by cas33-strip.) A `PlacedWindow` does not say which Space it is on,
    so the renderer cannot shift windows per Space; P3-Z.
 5. **Layer placement has one home (closed by P0-reserve).** `casement_core::layer::LayerBook::arrange`
    (`crates/casement-core/src/layer/arrange.rs`) arranges layer surfaces once (exclusive zones,
@@ -3453,14 +3453,77 @@ Built, uncompiled (wave 6 lanes do not build): `input/gesture_route.rs` (finger-
 | Item | Decision / open |
 | --- | --- |
 | Natural direction | `gestures.natural = off` reverses the Spaces swipe only. Mission Control's up/down is not reversed. Unverified against macOS (assumed: the Spaces follow the scroll-direction setting, Mission Control does not). |
-| Mission Control progress | The swipe drives `Model::overview_progress()` (0..1000 open) but the model's overview is still the time-based flight: a committed swipe starts the normal 350 ms entering/leaving flight from rest, a snap-back never opens it. Following the fingers needs the renderer/layout to draw the spread at the progress. Same numbers as the Space swipe: 400 px for a full travel, commit past half unless a reverse 1.5 flick, or under half on a forward flick. |
+| Mission Control progress | DONE in cas33-strip (below): the windows are laid out at `overview_progress()` while the fingers are down; the lift continues from there. Same numbers as the Space swipe: 400 px for a full travel, commit past half unless a reverse 1.5 flick, or under half on a forward flick. |
 | App Exposé | Not built: the model has no App Exposé (`shell_request` ignores every mode but Mission Control), so a swipe down on a closed Mission Control does nothing. |
-| Space strip drawing | `Model::space_strip(now)` gives the row position (rubber band applied, ease-out-cubic finish sampled); nothing draws it yet. The commit calls `show` at the lift (focus and windows follow at once), which also relayouts with `Cause::SpaceSwitch`; the motion/render lane must suppress its own Space slide while a strip is present, or the slide doubles. |
+| Space strip drawing | DONE in cas33-strip (below): the renderer draws every window in its Space's column at `Model::space_strip(now)`; motion's own Space slide is suppressed while a swipe drives the row. |
 | Reduced motion | casement has no reduced-motion setting, so the machine always runs `Reduced::No`. |
 | Finish timer | The finish reuses `TimerKey::SpaceFinish(output)` (its doc: a Space change animation finishes), which nothing armed before. |
 | Client delivery | The model steps an input event before the loop delivers it; `Model::swipe_owner()` right after says whether the desktop took that swipe step. It holds for one input event per `feed` (what every caller does). A taken swipe is not delivered to clients (`core_loop/deliver.rs`); other finger counts still are. |
 | Origins | Physical, test and trusted-feed swipes count; virtual, agent and remote ones never do (I2: system gestures are physical only). |
 | Not done | palmrest's Magic Mouse part (`Fixture::palmrest`); a horizontal swipe while Mission Control is up (the Mac switches Spaces there); the 2-finger Magic Mouse source. |
+## cas33-strip: finger-tracked Spaces and Mission Control (2026-10-16)
+
+Built, uncompiled (the lane does not build). Closes the cas21 rows "Space strip drawing" and "Mission Control progress", and
+the old renderer departure 4 (`OutputFrame.strip` was not applied).
+
+- **The row is drawn (`casement-render/src/scene/row.rs`, `RowDraw`).** Layout arranges every window as if its Space were
+  shown; `RowDraw { offset, page, columns }` is the one place that moves a window to its Space's column: shift =
+  `offset + column * page`, in sub-pixels. `offset` is the first Space's x minus the usable origin. `LayerDraw.row` carries it;
+  `output_elements` shifts the frame's windows before it draws them, so frames, titles, shadows, popups and icons follow. A
+  window the row moves must reach the output (its body, plus 160 px of shadow) or it is not drawn; a window the row does not
+  move (shift 0, or on every Space) is always drawn as before. **This also fixes a standing fault:** windows of a Space that is
+  not shown used to be drawn over the shown one at their desktop places; they now sit a page aside, out of sight.
+- **Where the row is (`core_loop/scene.rs::row_of`).** While `Model::space_strip(now)` is `Some` for the output (fingers down, or
+  the ease-out finish) the first Space's x is the model's (`SpaceStrip::first_x(usable)`, rubber band and ease-out cubic
+  included); otherwise it is the strip motion sampled (`frame.strip`), which is how a keyboard Space switch now slides on the
+  `SpaceSwitch` spring (it did not show before). Columns are `Model::row_columns(output)` (`model/row.rs`; a window on every
+  Space has none).
+- **No second slide (`casement_motion::retarget_driven`).** `retarget` is `retarget_driven` with no driven output. `relayout`
+  passes the output `space_strip(now)` names: its strip leg snaps to the new target (`Travel::Snap`), so the commit's
+  `show` -> `Relayout(SpaceSwitch)` does not slide the row again; the model's finish draws it, and when it settles the
+  sampled strip is already at the same place (no jump). Windows and other outputs travel as before.
+- **The pointer meets places, except under a live swipe.** `core_loop::scene::drawn_scene_at` (used by `stack` and
+  `frames::contents`) shifts by `hit_row_of`: the model's row position while a swipe moves it (fingers down, or its finish), else
+  the rest row (the shown Space at the usable origin), never the sampled strip, so a keyboard slide or a full-screen Space joining
+  the row mid-flight leaves pointer focus where the windows will be, as on master (the layer_shell full-screen test). It keeps only windows whose body is on their output (`RowDraw::touching`, no shadow margin), so a window of the
+  next Space beside the shown one is not hit, not even where a neighbouring output sits. `sample_scene` (the golden text and
+  the debug dump) is unchanged: unshifted.
+- **Mission Control follows the fingers (`core_loop/fingers.rs`).** While `overview_progress()` is `Some`, `feed` snaps motion
+  to the spread mixed to that progress: `Arrangement::spread_at(Fraction)` (layout; windows' rectangles mixed from desktop to
+  slot, 0 desktop, 1000 slot, no slots left) of the current arrangement when Mission Control is up, else of a spread made on the
+  fly (`SceneSpec::in_mission_control`). `overview::draw` draws Mission Control (windows scaled to their sampled size) while
+  the fingers hold it, with the dim scaled by the progress (`OverviewLook::opened`) and no ring, label or icons.
+- **The lift continues from there.** The book holds the followed poses, so the commit's `Relayout(Cause::Overview)` flies on
+  from them to the slots (or home) on the Move spring; no jump (motion test). A part-way lift that stays
+  (`Verdict::Stay`, progress strictly between 0 and 1000) now relays out too (`Model::fingers_stayed`): up, the windows return
+  to their slots; closed, Mission Control shows as `Leaving` for the usual 350 ms settle, the windows fly home, then it is
+  `Closed` (the shell hears `Closed` at the end, never `Entering`). A swipe that never moved the windows changes nothing.
+  Keyboard and hot-corner opens are untouched: the timed flight.
+- **Departures.** (1) The wallpaper is not in the row: the background layer stays put under the sliding windows (sill owns
+  one wallpaper; per-Space wallpapers need a shell protocol). (2) The release velocity does not feed the overview spring (it
+  starts at rest from the followed pose). (3) The dim is not animated in the timed flight, so it pops to full at the lift. (4)
+  A keyboard Space switch during a swipe's finish snaps its strip leg (the output is driven) and so shows no slide of its own.
+  (5) Windows of a hidden Space still get frame callbacks (`drawn_roots` reads the unshifted frame). (6) Swiping vertically
+  while Mission Control is entering jumps from the flight to the followed pose. (7) The Spaces bar (sill) hears nothing of the
+  progress.
+- **Tests.** casement-core `gestures.rs` (the row's first x, a short swipe up snaps back and ends closed, a swipe that never moved
+  the windows changes nothing, a short swipe down returns them to their slots), `model_spaces.rs` (`row_columns`); casement-layout
+  `spread.rs` (`spread_at` at 0, 500, 1000 and past; the old `mission_control` helper became `SceneSpec::in_mission_control`);
+  casement-motion `behaviour.rs` (no slide while driven, other outputs slide, commit and snap-back continue from the followed
+  progress without a jump); casement-render `scene/row.rs` (rest, half-way, rubber band, a window on every Space; doc tests),
+  `OverviewLook::opened` doc test; casement `core_loop/fingers.rs` (`openness`).
+- **Goldens worth adding (not added; needs a blessed run).** Pixman scenes in `casement-testkit/tests/it/scene/`: (a) two
+  Spaces, a window on each, mid-swipe at position 500 (both windows half on screen, wallpaper static); (b) one Space shown,
+  another with a window: only the shown window is drawn (pins the standing fault above); (c) Mission Control held at 500: windows
+  half-way scaled, half dim; (d) rubber band at -250 past the first Space.
+- **Likeliest compile faults.** `RowDraw` building `PlacedWindow` copies (`*placed`, `Copy`), `scene.rs` `in_row` deferred
+  initialisation (`let in_row; ... &in_row`), `row_of`'s `usable_area` call and `model.outputs().0.get(output)?.config`,
+  `Moved::then(Model::fingers_stayed)`, `drawn_scene_at`'s partial move in `OutputFrame { windows, ..frame }`, the
+  `BTreeSet` literal `[output(..)].into()` in the motion test. Tests likeliest to need a tweak: `gestures.rs`
+  (`a_swipe_that_never_moved...` assumes a 12 px downward first step locks the vertical axis and reports progress 0; the
+  down-swipe test assumes Mission Control opened by the command is `Open` after the settle timer), `model_spaces.rs`
+  (assumes full-screen Spaces join the row after the desktop).
+
 ## cas26-menusheet: global menus for other toolkits, sheets, picture in picture (P3-MN, P3-SH)
 
 - **Global menus: the transport is blocked on a dependency.** The recorded address, the model and the shell path are done and tested:
@@ -3787,6 +3850,34 @@ Written without a build or a run (rule of the lane).
   should do when an app has no killable process (leave it running and say so in the panel, or
   close its windows).
 
+### cas30-x11quit: force quit with two or more X11 apps (2026-10-16)
+
+Written without a build or a run (rule of the lane).
+
+- **The marker.** `casement_core::window::WindowOrigin` (`Wayland`, `X11`) is carried on
+  `MappedToplevel` and on `Window`. `casement_wayland::ClientState` has the origin of its
+  connection (`with_origin`); `clients::insert_client` sets it from `Processes::origin_of`, which is
+  `X11` for the connection whose peer pid is the running satellite (the same test that already
+  kept the satellite out of the recorded pids). `xdg_shell::commit::mapped_events` copies it to
+  the window. `Processes::carries_x11` is gone (the model knows now).
+- **The model.** `Termination` gained `x11: Vec<WindowId>`, the app's own X11 windows.
+  `Model::sole_clients_of` skips any connection that carries an X11 window, so the satellite's
+  connection is never named in `clients`; `force_quit_app` acts when `clients` or `x11` is
+  non-empty (`Termination::is_empty`). Both the `SIGTERM` and the `SIGKILL` termination are built
+  by `stop_of`. A Wayland app is unchanged.
+- **The edge.** `exec::quit::x11_pids_of` asks the X server (`xres`) only when `x11` is non-empty,
+  and `owners::pids_of_app` keeps the pids of windows whose class names this app, so another
+  X11 app's process is never named (it was already class-matched; the model just never got
+  that far with two apps). An owner the server cannot name leaves the pid set empty: nothing is
+  signalled and the app stays in its `Quitting(Stopping)` state until the grace ends, as for a
+  single X11 app before (the open question in the cas28 entry, what the panel should say for an
+  app with no killable process, is still open).
+- **Tests.** `model_input.rs`: two X11 apps and a Wayland app, force quit of each names only its
+  windows and no connection, the kill names the same, the Wayland app keeps its connection;
+  `owners.rs`: two apps each name one pid and never the satellite, an unknown owner names nothing.
+- **Uncertain.** The satellite is recognised by pid at connect time, so a satellite that connects
+  before its pid is known would be a plain Wayland client again (the old behaviour: no X11 route).
+
 ### cas28-daily: night light per display (2026-10-16)
 
 - **`night_light.skip_outputs`** (list of text, page Appearance, "Displays left as they are"): outputs
@@ -3854,3 +3945,30 @@ Written without a build or a run (rule of the lane).
   needs X-Resource 1.2 (Xwayland has it since 1.20); no `XResQueryVersion` is sent first.
   (4) The wait for the X server is a blocked loop turn of at most 750 ms, twice per force quit
   (the `SIGTERM` and the later `SIGKILL`).
+
+## cas32-shadow: shadow rendering follow-ups (2026-10-16)
+
+Written without a build or a run (rule of the lane); the orchestrator's run settles it.
+
+- **The two tracker items are the cas18 symptoms, already fixed in cas27; nothing in the code explains them any more.**
+  "Reads black instead of wallpaper" is `the shadow darkens the probe: 0 against 0` in cas18's `qtest.log`: the bare
+  desktop is black and so is the shadow, so the probe could not move. cas27 put a light wallpaper layer under the
+  window (`Desk::wallpaper`) and made `Desk::close` destroy the decoration first (a closing client lost its wallpaper
+  layer when casement dropped the connection). The "2x seam" was the same log's `the shadow is darker at the edge than
+  away from it` plus the pixman filtering of the one-pixel strips (8413b3a, `STRIP_ACROSS`). The blessed golden
+  `shadow-1600x1000-2x` is smooth along the bottom and right edges (read from its pixels: no step above 1 level on rows
+  4 and 14 logical pixels below the edge, nor on columns beside the right edge); the gradient into the corner tiles is
+  monotone. No `#[ignore]` is left anywhere in `crates` (`grep -rn '#\[ignore' crates`): the two shadow tests, the
+  lights-hover test and both minimise tests all run since c9ee390 / 9480c97. No probe needed changing.
+- **A latent seam fixed at fractional scales** (`element/frame/shadow_place.rs`, `frame.rs::element_at`). The shadow's
+  pieces share their edges in whole logical pixels, but each element was given its corner already rounded to a physical
+  pixel (`on_output`); smithay then rounds the far edge from that rounded corner (`round(corner + size * scale)`), which at
+  1.5x (odd widths: a corner 139 across, a strip 1321 wide) is a different pixel from the next piece's corner: a one pixel
+  gap, or two pieces blended over each other (a 2x band of darker shadow). Integer scales were not affected (every edge is
+  already whole), which is why 1x and 2x goldens do not move. `shadow_elements` now hands smithay the exact physical corner
+  (`shadow_place::exact`, `logical * numerator / 120` as `f64`); smithay rounds it with the same rule `on_output` used, so
+  every corner lands where it did, and the far edge is `round(logical_edge * scale)` for both neighbours. Unit test:
+  `shadow_place.rs` (edges shared at 1, 1.25, 1.5, 2, 2.5x). Titlebar and other elements still use `element` (rounded corner).
+- **Goldens.** None should change at 1x and 2x. At 1.5x the framed goldens (`minimise-scale-1.5x-mid`,
+  `minimise-genie-1.5x-mid`, `one-window-1.5x` if it is framed) may move by a pixel along shadow piece edges, or not at
+  all where every edge was whole: diff them before blessing.

@@ -6,6 +6,7 @@
 
 mod raster;
 mod shadow;
+mod shadow_place;
 mod shadow_set;
 mod shrink;
 mod slices;
@@ -40,7 +41,7 @@ use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::element::memory::{
     MemoryRenderBuffer, MemoryRenderBufferRenderElement,
 };
-use smithay::utils::{Logical, Rectangle, Size, Transform};
+use smithay::utils::{Logical, Physical, Point, Rectangle, Size, Transform};
 
 /// One window's frame as it is drawn this frame.
 #[derive(Debug, Clone, Copy)]
@@ -384,8 +385,8 @@ fn shadow_elements<R: Compositor>(
                     .into(),
             );
             let src = edge_inside(slice.piece, src);
-            element(renderer, view, dest.origin, dest.size, src, faded, buffer)
-                .map(CasementElement::Memory)
+            let at = shadow_place::exact(dest.origin, view);
+            element_at(renderer, at, dest.size, src, faded, buffer).map(CasementElement::Memory)
         })
         .collect()
 }
@@ -417,10 +418,25 @@ pub(super) fn element<R: Compositor>(
     alpha: f32,
     buffer: &MemoryRenderBuffer,
 ) -> Option<MemoryRenderBufferRenderElement<R>> {
+    let at = on_output(sub_of(origin), view).to_f64();
+    element_at(renderer, at, size, src, alpha, buffer)
+}
+
+/// As [`element`], with its top-left at the physical `location` (not yet rounded to a pixel:
+/// smithay rounds the corner, and the far edge from it, so pieces that share an edge in logical
+/// pixels share it in physical ones whatever the scale).
+fn element_at<R: Compositor>(
+    renderer: &mut R,
+    location: Point<f64, Physical>,
+    size: LogicalSize,
+    src: Rectangle<f64, Logical>,
+    alpha: f32,
+    buffer: &MemoryRenderBuffer,
+) -> Option<MemoryRenderBufferRenderElement<R>> {
     let side = |n: u32| i32::try_from(n).unwrap_or(i32::MAX);
     MemoryRenderBufferRenderElement::from_buffer(
         renderer,
-        on_output(sub_of(origin), view).to_f64(),
+        location,
         buffer,
         Some(alpha),
         Some(src),

@@ -28,6 +28,7 @@ mod pip;
 mod published;
 mod query;
 mod requests;
+mod row;
 mod shell_requests;
 mod space_persist;
 mod spaces;
