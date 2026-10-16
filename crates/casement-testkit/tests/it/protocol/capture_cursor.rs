@@ -89,6 +89,54 @@ fn a_cursor_the_client_drew_is_a_frame_of_its_own() {
     );
 }
 
+/// CASW-08: a cursor surface bigger than the cap is not drawn or announced at its own size: the
+/// arrow is, so a client cannot paint a dialog above the trusted surfaces or size a screencast's
+/// buffers by a cursor of 8192 pixels.
+#[test]
+fn a_cursor_surface_over_the_cap_is_the_arrow() {
+    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let mouse = pointer_at(&mut fixture, (10, 10));
+    let id = fixture.connect(ConnectionRole::Public);
+    fixture.pump();
+    let pointer = Pointer::bind(fixture.client(id)).expect("a pointer");
+    let _layer = map(&mut fixture, id, &focused(Layer::Top, "canvas"));
+    fixture.input().pointer_to(
+        mouse,
+        LogicalPoint {
+            x: REST.0,
+            y: REST.1,
+        },
+    );
+    fixture.pump();
+    let serial = pointer
+        .enter_serial()
+        .expect("the pointer entered the layer");
+
+    let surface = fixture.client(id).create_surface().expect("a surface");
+    let side = casement_render::MAX_CLIENT_CURSOR + 44;
+    let art = shm_buffer(
+        fixture.client(id),
+        PhysicalSize { w: side, h: side },
+        Pattern::Solid(0xff33_6699),
+    );
+    surface.attach(Some(art.buffer()), 0, 0);
+    surface.commit();
+    pointer.pointer().set_cursor(serial, Some(&surface), 4, 4);
+    fixture.pump();
+    fixture.frames(&name("HEADLESS-1"), FrameCount(2));
+
+    let mut capture = OutputCapture::start(fixture.client(id).globals()).expect("the managers");
+    settle(&mut fixture, &mut capture);
+    capture.open_cursor("HEADLESS-1").expect("a cursor session");
+    settle(&mut fixture, &mut capture);
+    let session_size = capture.session().and_then(|session| session.size);
+    assert_eq!(
+        session_size,
+        Some(Size::new(24, 24)),
+        "the arrow's size, not the surface's"
+    );
+}
+
 /// Each transform: the events the cursor session sends for a pointer at (100, 50) of a
 /// 640 x 480 output, the hotspot turned inside the 24 x 24 arrow, and where one of the arrow's
 /// pixels (x, y) lands in the turned image.

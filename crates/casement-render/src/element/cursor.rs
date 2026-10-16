@@ -3,7 +3,7 @@
 mod face;
 mod raster;
 
-pub use face::{CursorFace, cursor_face, cursor_pixels};
+pub use face::{CursorFace, MAX_CLIENT_CURSOR, cursor_face, cursor_pixels, drawn, exceeds_cap};
 
 use super::CasementElement;
 use crate::compositor::Compositor;
@@ -28,7 +28,7 @@ pub fn cursor_elements<R: Compositor>(
     book: &TextureBook,
     renderer: &mut R,
 ) -> Vec<CasementElement<R>> {
-    match chrome.cursor {
+    match drawn(chrome.cursor, book) {
         CursorDraw::Hidden => Vec::new(),
         CursorDraw::Named(shape) => named(shape, chrome.cursor_at, view, book, renderer)
             .map(CasementElement::Memory)

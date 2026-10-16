@@ -28,7 +28,9 @@ pub use blur_v0::BlurV0Element;
 pub use clip_strip::ClipStripElement;
 pub use closing::{ClosingFrame, closing_content, closing_elements};
 pub use closing_body::{ClosingBody, Pixels};
-pub use cursor::{CursorFace, cursor_elements, cursor_face, cursor_pixels};
+pub use cursor::{
+    CursorFace, MAX_CLIENT_CURSOR, cursor_elements, cursor_face, cursor_pixels, exceeds_cap,
+};
 pub use flight::{
     FlightDraw, at_rest, choose, drawn_content, rest_place, scale_ratio, scaled_content,
 };
