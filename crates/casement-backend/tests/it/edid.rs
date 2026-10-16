@@ -30,10 +30,12 @@ fn block(name: &[u8], serial: Option<&[u8]>) -> Vec<u8> {
     block
 }
 
+/// A case's name, the model and serial bytes in the EDID, and the model and serial read back.
+type EdidCase<'a> = (&'a str, &'a [u8], &'a [u8], &'a str, &'a str);
+
 #[test]
 fn edid_text_keeps_printable_ascii_only() {
-    // name, model bytes, serial bytes, model, serial
-    let cases: [(&str, &[u8], &[u8], &str, &str); 4] = [
+    let cases: [EdidCase; 4] = [
         ("plain", b"U2723QE\n", b"AB12\n", "U2723QE", "AB12"),
         ("a NUL inside", b"DE\0LL\n", b"7G\0K\n", "DELL", "7GK"),
         (

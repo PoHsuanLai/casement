@@ -130,5 +130,5 @@ fn an_svg_reads_no_file_outside_itself() {
     )
     .expect("write");
     let got = load(&svg, 16).expect("draws, empty");
-    assert!(got.rgba.chunks_exact(4).all(|px| px[3] == 0));
+    assert!(got.rgba.as_chunks::<4>().0.iter().all(|px| px[3] == 0));
 }

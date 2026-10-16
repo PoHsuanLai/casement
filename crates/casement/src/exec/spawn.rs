@@ -2,7 +2,7 @@
 //! `Spawner` seam, in a scope of its own, with the environment its windows need: `DISPLAY` for
 //! X11 clients when satellite runs and `WAYLAND_DISPLAY` for this compositor's socket.
 
-use crate::spawn::{ChildEnv, EnvVar, Home, SpawnSpec};
+use crate::spawn::{ChildEnv, EnvVar, SpawnSpec};
 use crate::state::State;
 use casement_core::input::Argv;
 
@@ -31,6 +31,7 @@ pub(super) fn spawn_program(state: &mut State, argv: Argv) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::spawn::Home;
 
     #[test]
     fn a_binding_program_gets_its_own_scope_and_both_display_names() {
