@@ -1,8 +1,10 @@
 //! What casement keeps per Wayland client: its key, the socket role it came through (I7) and
 //! smithay's per-client compositor state.
 
+use crate::consent::{ImageWatch, Ledger, Unwatched};
 use casement_core::ClientKey;
-use casement_core::policy::ConnectionRole;
+use casement_core::policy::{ConnectionRole, PowerSet};
+use casement_core::privilege::{ClientStanding, Privilege};
 use casement_core::window::WindowOrigin;
 use porter_core::PeerIdentity;
 use smithay::reexports::wayland_server::backend::{ClientData, ClientId, DisconnectReason};
@@ -43,14 +45,28 @@ impl ClearedClients {
 
 /// The clients that disconnected since the loop last looked. smithay announces a disconnect
 /// from `ClientData::disconnected`, which has no access to the state, so the key is queued
-/// here and the loop drains it (`casement::clients::take_gone`) into `Event::ClientGone`.
+/// here and the loop drains it (`casement::clients::take_gone`) into `Event::ClientGone`. The
+/// queue also holds the consent ledger, so a disconnect forgets what was said of the client's
+/// powers at once.
 #[derive(Debug, Clone, Default)]
-pub struct GoneQueue(Arc<Mutex<Vec<ClientKey>>>);
+pub struct GoneQueue {
+    gone: Arc<Mutex<Vec<ClientKey>>>,
+    ledger: Ledger,
+}
 
 impl GoneQueue {
+    /// A queue that forgets a gone client's rows in `ledger`.
+    fn over(ledger: Ledger) -> GoneQueue {
+        GoneQueue {
+            gone: Arc::default(),
+            ledger,
+        }
+    }
+
     /// `client` went away.
     fn push(&self, client: ClientKey) {
-        self.0
+        self.ledger.forget(client);
+        self.gone
             .lock()
             .unwrap_or_else(|poison| poison.into_inner())
             .push(client);
@@ -58,13 +74,18 @@ impl GoneQueue {
 
     /// The clients that went away since the last call, in the order they went.
     pub fn take(&self) -> Vec<ClientKey> {
-        std::mem::take(&mut *self.0.lock().unwrap_or_else(|poison| poison.into_inner()))
+        std::mem::take(
+            &mut *self
+                .gone
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner()),
+        )
     }
 }
 
 impl PartialEq for GoneQueue {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
+        Arc::ptr_eq(&self.gone, &other.gone)
     }
 }
 
@@ -79,6 +100,16 @@ pub struct ClientState {
     pub role: ConnectionRole,
     /// Who its process is, read once where the connection arrived.
     pub peer: PeerIdentity,
+    /// How well the compositor knows its program, as of accept. Unproven until the root says
+    /// more ([`ClientState::with_standing`]); the model holds the same word
+    /// (`Event::ClientStanding`).
+    pub standing: ClientStanding,
+    /// The powers whose globals this client is not shown, decided once at accept from the
+    /// person's and the administrator's refusals: a refusal that arrives later leaves the
+    /// globals advertised and every use gets the protocol's denial.
+    pub hidden: PowerSet,
+    /// Whether the program still runs the image it had at accept (read at a power's first use).
+    pub image: Arc<dyn ImageWatch>,
     /// Whether every toplevel it maps is an X11 program's (the satellite's connection).
     pub origin: WindowOrigin,
     /// smithay's per-client compositor state (client scale, blocker bookkeeping).
@@ -94,6 +125,9 @@ impl ClientState {
             key,
             role,
             peer,
+            standing: ClientStanding::unproven(),
+            hidden: PowerSet::default(),
+            image: Arc::new(Unwatched),
             origin: WindowOrigin::Wayland,
             compositor: CompositorClientState::default(),
             gone: GoneQueue::default(),
@@ -103,6 +137,33 @@ impl ClientState {
     /// The same client, whose toplevels come from `origin`.
     pub fn with_origin(self, origin: WindowOrigin) -> ClientState {
         ClientState { origin, ..self }
+    }
+
+    /// The same client, whose program is known as `standing`, shown every global but those of
+    /// the `hidden` powers.
+    pub fn with_standing(self, standing: ClientStanding, hidden: PowerSet) -> ClientState {
+        ClientState {
+            standing,
+            hidden,
+            ..self
+        }
+    }
+
+    /// The same client, whose program is known as `standing`, shown the globals `privilege`
+    /// does not refuse that standing (the person's book and the administrator's floor at this
+    /// moment).
+    pub fn with_standing_under(
+        self,
+        privilege: &Privilege,
+        standing: ClientStanding,
+    ) -> ClientState {
+        let hidden = privilege.hidden_for(&self.role, &standing);
+        self.with_standing(standing, hidden)
+    }
+
+    /// The same client, whose image `image` watches.
+    pub fn with_image_watch(self, image: Arc<dyn ImageWatch>) -> ClientState {
+        ClientState { image, ..self }
     }
 
     /// The same client reporting its disconnect to `gone`.
@@ -129,15 +190,24 @@ impl ClientData for ClientState {
 pub struct ClientMint {
     next: u64,
     gone: GoneQueue,
+    ledger: Ledger,
 }
 
 impl ClientMint {
     /// A mint whose first key is 1.
     pub fn start() -> ClientMint {
+        let ledger = Ledger::default();
         ClientMint {
             next: 1,
-            gone: GoneQueue::default(),
+            gone: GoneQueue::over(ledger.clone()),
+            ledger,
         }
+    }
+
+    /// The consent ledger: the latest word per client and power, shared with every client
+    /// minted here.
+    pub fn ledger(&self) -> &Ledger {
+        &self.ledger
     }
 
     /// The queue every client minted here reports its disconnect to.
@@ -151,6 +221,7 @@ impl ClientMint {
             ClientMint {
                 next: self.next.saturating_add(1),
                 gone: self.gone,
+                ledger: self.ledger,
             },
             ClientKey(self.next),
         )

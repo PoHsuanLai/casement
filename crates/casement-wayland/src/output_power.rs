@@ -6,11 +6,19 @@
 //! One control per output: a second control on an output, or one on an output that is gone,
 //! says `failed` at once. A control whose output is unplugged says `failed` and lets go. Hidden
 //! from sandboxed clients (I7).
+//!
+//! Changing the displays is a power (`Power::Displays`): a control asked for while the person has
+//! not answered is made but inert (it hears nothing and its requests change nothing) until they
+//! allow; refused, it says `failed`. A power taken back fails the controls in use and lights an
+//! output they left dark.
 
+use crate::consent::{self, Admission, ConsentHandler, Held, Mortal, Pushed};
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::output::{OutputChangeSet, OutputPower};
 use casement_core::policy::GlobalKind;
-use casement_core::{Event, OutputBook, OutputKey};
+use casement_core::privilege::PowerOutcome;
+use casement_core::{ClientKey, Event, OutputBook, OutputKey};
+use casement_protocols::vocab::Power;
 use smithay::reexports::wayland_protocols_wlr::output_power_management::v1::server::{
     zwlr_output_power_manager_v1::{self, ZwlrOutputPowerManagerV1},
     zwlr_output_power_v1::{self, ZwlrOutputPowerV1},
@@ -37,6 +45,21 @@ pub struct OutputPowerPart {
     shown: BTreeMap<OutputKey, OutputPower>,
     /// The outputs a control asked to darken and has not lit again: lit when it goes (CASC-09).
     darkened: BTreeSet<OutputKey>,
+    /// The controls made while the person had not answered, inert until they do.
+    waiting: Held<WaitingControl>,
+}
+
+/// A control that waits for the person's answer about the displays.
+#[derive(Debug)]
+pub struct WaitingControl {
+    control: ZwlrOutputPowerV1,
+    output: OutputKey,
+}
+
+impl Mortal for WaitingControl {
+    fn alive(&self) -> bool {
+        self.control.is_alive()
+    }
 }
 
 impl OutputPowerPart {
@@ -58,7 +81,7 @@ impl OutputPowerPart {
 }
 
 /// What the composition root provides to this protocol's dispatch.
-pub trait OutputPowerHandler: Sized + 'static {
+pub trait OutputPowerHandler: ConsentHandler + Sized {
     /// The part.
     fn output_power_part(&mut self) -> &mut OutputPowerPart;
     /// The output a client's `wl_output` names.
@@ -205,7 +228,7 @@ where
     fn request(
         &self,
         state: &mut D,
-        _client: &Client,
+        client: &Client,
         _resource: &ZwlrOutputPowerManagerV1,
         request: zwlr_output_power_manager_v1::Request,
         _handle: &DisplayHandle,
@@ -223,22 +246,99 @@ where
                 .get(key)
                 .is_some_and(|control| control.is_alive())
         });
-        match (key, power, held) {
-            (Some(key), Some(power), false) => {
-                let control = data_init.init(
-                    id,
-                    PowerData {
-                        output: Some(key.clone()),
-                    },
-                );
+        let Some((key, power)) = key.zip(power).filter(|_| !held) else {
+            data_init.init(id, PowerData { output: None }).failed();
+            return;
+        };
+        let control = data_init.init(
+            id,
+            PowerData {
+                output: Some(key.clone()),
+            },
+        );
+        match consent::admit(state, client, Power::Displays) {
+            Admission::Go => register(state.output_power_part(), control, &key, power),
+            Admission::Hold => wait(state, client, control, key),
+            Admission::Refuse => control.failed(),
+        }
+    }
+}
+
+/// Makes `control` the one that holds `output`, and tells it the output's power.
+fn register(
+    part: &mut OutputPowerPart,
+    control: ZwlrOutputPowerV1,
+    output: &OutputKey,
+    power: OutputPower,
+) {
+    part.objects.insert(output.clone(), control);
+    part.controls.insert(output.clone());
+    if let Err(fault) = apply_mode(part, output, power) {
+        tracing::warn!(%fault, "a power control lost its output at once");
+    }
+}
+
+/// Keeps `control` inert until the answer comes; one past the cap of waiting requests, and one
+/// from a client nobody vouches for, fails.
+fn wait<D: OutputPowerHandler>(
+    state: &mut D,
+    client: &Client,
+    control: ZwlrOutputPowerV1,
+    output: OutputKey,
+) {
+    let kept = WaitingControl { control, output };
+    let refused = match consent::key_of(client) {
+        Some(key) => match state.output_power_part().waiting.push(key, kept) {
+            Pushed::Kept => return,
+            Pushed::Full(full) => full,
+        },
+        None => kept,
+    };
+    refused.control.failed();
+}
+
+/// The answer about `client`'s power over the displays came out. Allowed, the controls that
+/// waited take their outputs (one whose output is gone, or held by another control by now,
+/// fails); refused, they fail; taken back, the controls in use fail too and the outputs they
+/// left dark are lit.
+pub fn on_resolved<D: OutputPowerHandler>(state: &mut D, client: ClientKey, outcome: PowerOutcome) {
+    let waiting = state.output_power_part().waiting.take(client);
+    match outcome {
+        PowerOutcome::Allowed => {
+            for held in waiting {
+                let power = state.output_power_of(&held.output);
                 let part = state.output_power_part();
-                part.objects.insert(key.clone(), control);
-                part.controls.insert(key.clone());
-                if let Err(fault) = apply_mode(part, &key, power) {
-                    tracing::warn!(%fault, "a power control lost its output at once");
+                let free = !part
+                    .objects
+                    .get(&held.output)
+                    .is_some_and(|control| control.is_alive());
+                match power.filter(|_| free) {
+                    Some(power) => register(part, held.control, &held.output, power),
+                    None => held.control.failed(),
                 }
             }
-            _ => data_init.init(id, PowerData { output: None }).failed(),
+        }
+        PowerOutcome::Denied | PowerOutcome::Revoked => {
+            waiting.iter().for_each(|held| held.control.failed());
+            let part = state.output_power_part();
+            let ended: Vec<OutputKey> = part
+                .objects
+                .iter()
+                .filter(|(_, control)| {
+                    control.client().as_ref().and_then(consent::key_of) == Some(client)
+                })
+                .map(|(output, _)| output.clone())
+                .collect();
+            let mut events = Vec::new();
+            for output in ended {
+                if let Some(control) = part.objects.get(&output) {
+                    control.failed();
+                }
+                events.extend(on_released(part, &output));
+            }
+            if !events.is_empty() {
+                state.output_power_events(events);
+            }
         }
     }
 }
@@ -262,6 +362,11 @@ where
         let Some(output) = &self.output else {
             return;
         };
+        // Only the control that holds the output acts: one that waits for the person, or
+        // was failed, changes nothing.
+        if state.output_power_part().objects.get(output) != Some(resource) {
+            return;
+        }
         let power = match mode.into_result() {
             Ok(zwlr_output_power_v1::Mode::On) => OutputPower::On,
             Ok(zwlr_output_power_v1::Mode::Off) => OutputPower::Off,

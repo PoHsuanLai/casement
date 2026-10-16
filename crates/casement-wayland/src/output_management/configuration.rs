@@ -8,10 +8,13 @@ use super::{
     ConfigSerial, Configuration, ConfigurationAnswer, ConfigurationIntent, HeadRequest,
     OutputManagementHandler, on_configuration,
 };
-use casement_core::OutputKey;
+use crate::consent::{self, Admission, Mortal, Pushed};
 use casement_core::geometry::{LogicalPoint, PhysicalSize};
 use casement_core::output::{Mode, ModePreference, OutputChangeSet, OutputFacts, OutputPower};
+use casement_core::privilege::PowerOutcome;
 use casement_core::time::Millihertz;
+use casement_core::{ClientKey, OutputKey};
+use casement_protocols::vocab::Power;
 use ds_core::geometry::scale::Scale;
 use smithay::reexports::wayland_protocols_wlr::output_management::v1::server::{
     zwlr_output_configuration_head_v1::{self, ZwlrOutputConfigurationHeadV1},
@@ -21,6 +24,21 @@ use smithay::reexports::wayland_protocols_wlr::output_management::v1::server::{
 use smithay::reexports::wayland_server::{Client, DataInit, Dispatch, DisplayHandle, Resource};
 use smithay::wayland::Dispatch2;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+
+/// An `apply` or a `test` that waits for the person's answer about the displays
+/// (`Power::Displays`).
+#[derive(Debug)]
+pub struct HeldConclusion {
+    resource: ZwlrOutputConfigurationV1,
+    intent: ConfigurationIntent,
+    configuration: Configuration,
+}
+
+impl Mortal for HeldConclusion {
+    fn alive(&self) -> bool {
+        self.resource.is_alive()
+    }
+}
 
 /// Whether `apply` or `test` has been sent: a configuration is used once.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -133,10 +151,12 @@ impl ConfigData {
         });
     }
 
-    /// `apply` or `test`: every head must be configured; the answer goes back on `resource`.
+    /// `apply` or `test`: every head must be configured; the answer goes back on `resource`,
+    /// once the person has allowed `client` to change the displays.
     fn conclude<D: OutputManagementHandler>(
         &self,
         state: &mut D,
+        client: &Client,
         resource: &ZwlrOutputConfigurationV1,
         intent: ConfigurationIntent,
     ) {
@@ -169,19 +189,73 @@ impl ConfigData {
             .map(|head| HeadRequest::new(head.output, head.change))
             .collect();
         let configuration = Configuration::new(self.serial, requests);
-        let answer = on_configuration(
-            state.output_management_part(),
-            &book,
-            intent,
-            &configuration,
-        );
-        match answer {
-            ConfigurationAnswer::Succeeded(events) => {
-                state.output_management_events(events);
-                resource.succeeded();
+        match consent::admit(state, client, Power::Displays) {
+            Admission::Go => settle(state, resource, intent, &configuration),
+            Admission::Hold => hold(state, client, resource, intent, configuration),
+            Admission::Refuse => resource.failed(),
+        }
+    }
+}
+
+/// Checks `configuration` against the heads as they are now and answers on `resource`.
+fn settle<D: OutputManagementHandler>(
+    state: &mut D,
+    resource: &ZwlrOutputConfigurationV1,
+    intent: ConfigurationIntent,
+    configuration: &Configuration,
+) {
+    let book = state.output_management_outputs().clone();
+    let answer = on_configuration(state.output_management_part(), &book, intent, configuration);
+    match answer {
+        ConfigurationAnswer::Succeeded(events) => {
+            state.output_management_events(events);
+            resource.succeeded();
+        }
+        ConfigurationAnswer::Failed => resource.failed(),
+        ConfigurationAnswer::Cancelled => resource.cancelled(),
+    }
+}
+
+/// Keeps the conclusion until the answer comes; one past the cap of waiting requests, and one
+/// from a client nobody vouches for, fails.
+fn hold<D: OutputManagementHandler>(
+    state: &mut D,
+    client: &Client,
+    resource: &ZwlrOutputConfigurationV1,
+    intent: ConfigurationIntent,
+    configuration: Configuration,
+) {
+    let kept = HeldConclusion {
+        resource: resource.clone(),
+        intent,
+        configuration,
+    };
+    let refused = match consent::key_of(client) {
+        Some(key) => matches!(
+            state.output_management_part().gated.push(key, kept),
+            Pushed::Full(_)
+        ),
+        None => true,
+    };
+    if refused {
+        resource.failed();
+    }
+}
+
+/// The answer about `client`'s power over the displays came out: the conclusions that waited
+/// are checked and answered now (against the heads as they are then, so a stale serial is
+/// `cancelled`), or `failed`.
+pub fn on_resolved<D: OutputManagementHandler>(
+    state: &mut D,
+    client: ClientKey,
+    outcome: PowerOutcome,
+) {
+    for held in state.output_management_part().gated.take(client) {
+        match outcome {
+            PowerOutcome::Allowed => {
+                settle(state, &held.resource, held.intent, &held.configuration);
             }
-            ConfigurationAnswer::Failed => resource.failed(),
-            ConfigurationAnswer::Cancelled => resource.cancelled(),
+            PowerOutcome::Denied | PowerOutcome::Revoked => held.resource.failed(),
         }
     }
 }
@@ -193,7 +267,7 @@ where
     fn request(
         &self,
         state: &mut D,
-        _client: &Client,
+        client: &Client,
         resource: &ZwlrOutputConfigurationV1,
         request: zwlr_output_configuration_v1::Request,
         _handle: &DisplayHandle,
@@ -215,10 +289,10 @@ where
                 self.add(resource, &head, OutputPower::Off);
             }
             zwlr_output_configuration_v1::Request::Apply => {
-                self.conclude(state, resource, ConfigurationIntent::Apply);
+                self.conclude(state, client, resource, ConfigurationIntent::Apply);
             }
             zwlr_output_configuration_v1::Request::Test => {
-                self.conclude(state, resource, ConfigurationIntent::Test);
+                self.conclude(state, client, resource, ConfigurationIntent::Test);
             }
             _ => {}
         }

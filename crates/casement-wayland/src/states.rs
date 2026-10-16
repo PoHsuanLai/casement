@@ -14,7 +14,7 @@ use crate::{
     xdg_dialog, xdg_foreign, xdg_shell, xdg_toplevel_icon, xdg_toplevel_tag,
 };
 use casement_core::WindowId;
-use casement_core::policy::{Advertise, ConnectionRole, GlobalKind};
+use casement_core::policy::{Advertise, ConnectionRole, GlobalKind, PowerSet};
 use smithay::input::SeatHandler;
 use smithay::reexports::wayland_server::Client;
 
@@ -141,23 +141,28 @@ pub struct WaylandStates<D: SeatHandler + 'static> {
     pub quire_shell: quire::shell::QuireShellPart,
 }
 
-/// Which globals a connection sees: wraps `casement_core::policy::advertised` (I7). Copied into
-/// every filtered global's `can_view`.
+/// Which globals a connection sees: the decision function takes the global, the connection's
+/// role and the powers it was refused at connect time (`casement_core::policy::advertised_to`,
+/// I7). Copied into every filtered global's `can_view`.
 #[derive(Debug, Clone, Copy)]
-pub struct GlobalFilter(pub fn(GlobalKind, &ConnectionRole) -> Advertise);
+pub struct GlobalFilter(pub fn(GlobalKind, &ConnectionRole, &PowerSet) -> Advertise);
 
 impl GlobalFilter {
-    /// The filter the compositor runs with: the model's I7 table.
+    /// The filter the compositor runs with: the model's I7 table, with the powers a public
+    /// client was refused at accept hidden from it.
     pub fn policy() -> GlobalFilter {
-        GlobalFilter(casement_core::policy::advertised)
+        GlobalFilter(casement_core::policy::advertised_to)
     }
 
     /// Whether `client` sees `global`. A client casement did not insert (no [`ClientState`])
-    /// is treated as arriving through the public socket.
+    /// is treated as arriving through the public socket, refused nothing: it cannot use a
+    /// power anyway ([`crate::consent::admit`] refuses it).
     pub fn sees(self, global: GlobalKind, client: &Client) -> bool {
-        let role =
-            ClientState::of(client).map_or(ConnectionRole::Public, |state| state.role.clone());
-        (self.0)(global, &role) == Advertise::Yes
+        let seen = match ClientState::of(client) {
+            Some(state) => (self.0)(global, &state.role, &state.hidden),
+            None => (self.0)(global, &ConnectionRole::Public, &PowerSet::default()),
+        };
+        seen == Advertise::Yes
     }
 
     /// `can_view` for one global, as smithay's filtered constructors take it.

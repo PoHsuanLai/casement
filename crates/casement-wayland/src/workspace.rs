@@ -7,12 +7,21 @@
 //! the model together; the model's answer is published by `apply_spaces`, which brings every
 //! bound manager from what it was told to the [`Layout`] of the Spaces now (a pure value, so
 //! what is published is tested without a wire).
+//!
+//! Seeing and managing the Spaces is a power (`Power::Windows`, `gate`): a manager bound while
+//! the person has not answered hears nothing until they allow, and is `finished` if they
+//! refuse.
 
+mod gate;
+
+pub use gate::{WaitingManager, on_resolved};
+
+use crate::consent::{self, Admission, ConsentHandler, Held};
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::policy::GlobalKind;
 use casement_core::space::{SpaceBook, WorkspaceRequest};
 use casement_core::{Event, OutputKey};
-use casement_protocols::vocab::SpaceKind;
+use casement_protocols::vocab::{Power, SpaceKind};
 use porter_core::SpaceId;
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols::ext::workspace::v1::server::{
@@ -47,6 +56,8 @@ pub struct WorkspacePart {
     layout: Layout,
     outputs: BTreeMap<OutputKey, Output>,
     spawn: Option<Spawn>,
+    /// The managers bound while the person had not answered, inert until they do.
+    waiting: Held<WaitingManager>,
 }
 
 /// How to make handles where the state type is known ([`WorkspacePart::new`]).
@@ -137,11 +148,25 @@ impl WorkspacePart {
 }
 
 /// What the composition root provides to this protocol's dispatch.
-pub trait WorkspaceHandler: 'static {
+pub trait WorkspaceHandler: ConsentHandler {
     /// The part.
     fn workspace_part(&mut self) -> &mut WorkspacePart;
     /// Feeds the events a commit produced into the model (`core_loop::feed`).
     fn workspace_events(&mut self, events: Vec<Event>);
+}
+
+/// Adds `manager` to the bound ones and tells it every group and workspace as they are.
+fn attach(part: &mut WorkspacePart, manager: ExtWorkspaceManagerV1, pending: Pending) {
+    let mut bound = Bound {
+        manager,
+        pending,
+        groups: BTreeMap::new(),
+        workspaces: BTreeMap::new(),
+    };
+    if let Some(spawn) = &part.spawn {
+        sync(&mut bound, &part.layout, &part.outputs, spawn);
+    }
+    part.bound.push(bound);
 }
 
 /// The global's data: the filter its `can_view` asks.
@@ -186,7 +211,7 @@ where
         &self,
         state: &mut D,
         _handle: &DisplayHandle,
-        _client: &Client,
+        client: &Client,
         resource: New<ExtWorkspaceManagerV1>,
         data_init: &mut DataInit<'_, D>,
     ) {
@@ -197,17 +222,11 @@ where
                 pending: pending.clone(),
             },
         );
-        let part = state.workspace_part();
-        let mut bound = Bound {
-            manager,
-            pending,
-            groups: BTreeMap::new(),
-            workspaces: BTreeMap::new(),
-        };
-        if let Some(spawn) = &part.spawn {
-            sync(&mut bound, &part.layout, &part.outputs, spawn);
+        match consent::admit(state, client, Power::Windows) {
+            Admission::Go => attach(state.workspace_part(), manager, pending),
+            Admission::Hold => gate::wait(state, client, WaitingManager::new(manager, pending)),
+            Admission::Refuse => manager.finished(),
         }
-        part.bound.push(bound);
     }
 
     fn can_view(&self, client: &Client) -> bool {
@@ -222,7 +241,7 @@ where
     fn request(
         &self,
         state: &mut D,
-        _client: &Client,
+        client: &Client,
         resource: &ExtWorkspaceManagerV1,
         request: ext_workspace_manager_v1::Request,
         _dhandle: &DisplayHandle,
@@ -233,6 +252,11 @@ where
                 let asked: Vec<WorkspaceRequest> = std::mem::take(
                     &mut *self.pending.lock().unwrap_or_else(PoisonError::into_inner),
                 );
+                // A manager acts only while its client may manage the windows: a power taken
+                // back, or not given yet, makes a commit change nothing.
+                if consent::allowed(state, client, Power::Windows) != Admission::Go {
+                    return;
+                }
                 let part = state.workspace_part();
                 let events: Vec<Event> = asked
                     .into_iter()

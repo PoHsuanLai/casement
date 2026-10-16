@@ -152,6 +152,25 @@ fn apply(state: &mut State, effect: Effect) {
         Effect::Shell(note) => shell::note(state, note),
         // P3-QU: force quit stops an app's processes by its connections' credentials.
         Effect::Terminate(stop) => quit::terminate(state, stop),
+        // Per-app consent (`handlers/consent.rs`): the question to the person, taking it back,
+        // and how a use of a power came out (replay, denial or the end of the use).
+        Effect::AskPermission {
+            ask,
+            power,
+            subject,
+            memory,
+        } => crate::handlers::consent::ask(state, ask, power, &subject, memory),
+        Effect::WithdrawAsk { ask } => crate::handlers::consent::withdraw(state, ask),
+        Effect::Resolve {
+            client,
+            power,
+            outcome,
+        } => crate::handlers::consent::resolved(state, client, power, outcome),
+        // The person's book is kept by the composition root's privacy store, which is not
+        // wired yet: until it is, an answer lasts the run.
+        Effect::SaveBook(book) => {
+            tracing::debug!(grants = book.len(), "the privacy book has no store yet");
+        }
         // `Effect` grows in core; one this build does not know is logged, never a panic.
         other => tracing::warn!(?other, "an effect this build does not apply"),
     }

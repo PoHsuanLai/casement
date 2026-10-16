@@ -20,10 +20,10 @@
 
 use crate::image_capture::CaptureFailure;
 use crate::states::{GlobalFilter, WaylandFault};
-use casement_core::WindowId;
 use casement_core::geometry::{LogicalSize, PhysicalSize, buffer_size};
 use casement_core::policy::GlobalKind;
 use casement_core::time::Mono;
+use casement_core::{ClientKey, WindowId};
 use ds_core::geometry::scale::Scale;
 use smithay::reexports::wayland_server::{Client, DisplayHandle};
 use smithay::wayland::image_capture_source::{
@@ -179,6 +179,21 @@ impl ToplevelCapturePart {
         self.book.drop_session(id);
         self.held.remove(&id);
         self.frames.remove(&id);
+    }
+
+    /// Ends every window session of `client` (the person took its screen power back, or never
+    /// gave it): each is dropped, which tells the client `stopped` and fails the frame it was
+    /// held for.
+    pub fn stop_client(&mut self, client: ClientKey) {
+        let ended: Vec<ToplevelSessionId> = self
+            .held
+            .iter()
+            .filter(|(_, session)| crate::image_capture::owner_of(session) == Some(client))
+            .map(|(id, _)| *id)
+            .collect();
+        for id in ended {
+            self.release(id);
+        }
     }
 
     /// `sessions` end: each is dropped, which tells its client `stopped` (and fails the frame

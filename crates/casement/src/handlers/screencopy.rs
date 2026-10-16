@@ -9,7 +9,8 @@
 
 use super::image_capture;
 use crate::state::State;
-use casement_core::OutputKey;
+use casement_core::privilege::PowerOutcome;
+use casement_core::{ClientKey, OutputKey};
 use casement_wayland::image_capture::CaptureFailure;
 use casement_wayland::screencopy::{
     self, Damage, PendingCopy, ScreencopyHandler, ScreencopyOutput, ScreencopyPart,
@@ -44,6 +45,15 @@ impl ScreencopyHandler for State {
 
     fn screencopy_wake(&mut self) {
         serve(self);
+    }
+}
+
+/// The answer about `client`'s screen came out: the copies that waited are answered when it was
+/// allowed, and fail when it was not (the queued ones fail with a power taken back).
+pub(super) fn resolved(state: &mut State, client: ClientKey, outcome: PowerOutcome) {
+    screencopy::on_resolved(&mut state.wl.screencopy, client, outcome);
+    if outcome == PowerOutcome::Allowed {
+        serve(state);
     }
 }
 

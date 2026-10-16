@@ -8,12 +8,20 @@
 //! table size is the backend's ([`GammaHandler::gamma_table_size`]); a ramp of any other
 //! length is `invalid_gamma`, and a ramp is raised to at least an eighth of the identity curve
 //! (`GammaTable::floored`, so a client cannot black the screen out). Hidden from sandboxed clients (I7).
+//!
+//! Changing the displays is a power (`Power::Displays`): a control asked for while the person has
+//! not answered is made but inert (no `gamma_size`, and its ramps change nothing) until they
+//! allow; refused, it says `failed`. A power taken back fails the controls in use and restores
+//! the identity curve.
 
 use crate::client_file;
+use crate::consent::{self, Admission, ConsentHandler, Held, Mortal, Pushed};
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::output::{GammaRamp, GammaTable};
 use casement_core::policy::GlobalKind;
-use casement_core::{Event, OutputBook, OutputKey};
+use casement_core::privilege::PowerOutcome;
+use casement_core::{ClientKey, Event, OutputBook, OutputKey};
+use casement_protocols::vocab::Power;
 use smithay::reexports::wayland_protocols_wlr::gamma_control::v1::server::{
     zwlr_gamma_control_manager_v1::{self, ZwlrGammaControlManagerV1},
     zwlr_gamma_control_v1::{self, ZwlrGammaControlV1},
@@ -44,6 +52,21 @@ pub struct GammaPart {
     /// Our global (none until [`GammaPart::new`]).
     pub global: Option<GlobalId>,
     objects: BTreeMap<OutputKey, ZwlrGammaControlV1>,
+    /// The controls made while the person had not answered, inert until they do.
+    waiting: Held<WaitingControl>,
+}
+
+/// A control that waits for the person's answer about the displays.
+#[derive(Debug)]
+pub struct WaitingControl {
+    control: ZwlrGammaControlV1,
+    output: OutputKey,
+}
+
+impl Mortal for WaitingControl {
+    fn alive(&self) -> bool {
+        self.control.is_alive()
+    }
 }
 
 impl GammaPart {
@@ -65,7 +88,7 @@ impl GammaPart {
 }
 
 /// What the composition root provides to this protocol's dispatch.
-pub trait GammaHandler: Sized + 'static {
+pub trait GammaHandler: ConsentHandler + Sized {
     /// The part.
     fn gamma_part(&mut self) -> &mut GammaPart;
     /// The output a client's `wl_output` names.
@@ -214,7 +237,7 @@ where
     fn request(
         &self,
         state: &mut D,
-        _client: &Client,
+        client: &Client,
         _resource: &ZwlrGammaControlManagerV1,
         request: zwlr_gamma_control_manager_v1::Request,
         _handle: &DisplayHandle,
@@ -232,21 +255,98 @@ where
             let size = state.gamma_table_size(&key);
             size.filter(|_| free).map(|size| (key, size))
         });
-        match granted {
-            Some((key, size)) => {
-                let control = data_init.init(
-                    id,
-                    ControlData {
-                        output: Some(key.clone()),
-                    },
-                );
+        let Some((key, size)) = granted else {
+            data_init.init(id, ControlData { output: None }).failed();
+            return;
+        };
+        let control = data_init.init(
+            id,
+            ControlData {
+                output: Some(key.clone()),
+            },
+        );
+        match consent::admit(state, client, Power::Displays) {
+            Admission::Go => register(state.gamma_part(), control, &key, size),
+            Admission::Hold => wait(state, client, control, key),
+            Admission::Refuse => control.failed(),
+        }
+    }
+}
+
+/// Makes `control` the one that holds `output`, and tells it the table size.
+fn register(
+    part: &mut GammaPart,
+    control: ZwlrGammaControlV1,
+    output: &OutputKey,
+    size: GammaSize,
+) {
+    part.objects.insert(output.clone(), control);
+    if let Err(fault) = apply_size(part, output, size) {
+        tracing::warn!(%fault, "a gamma control lost its output at once");
+    }
+}
+
+/// Keeps `control` inert until the answer comes; one past the cap of waiting requests, and one
+/// from a client nobody vouches for, fails.
+fn wait<D: GammaHandler>(
+    state: &mut D,
+    client: &Client,
+    control: ZwlrGammaControlV1,
+    output: OutputKey,
+) {
+    let kept = WaitingControl { control, output };
+    let refused = match consent::key_of(client) {
+        Some(key) => match state.gamma_part().waiting.push(key, kept) {
+            Pushed::Kept => return,
+            Pushed::Full(full) => full,
+        },
+        None => kept,
+    };
+    refused.control.failed();
+}
+
+/// The answer about `client`'s power over the displays came out. Allowed, the controls that
+/// waited take their outputs (one whose output cannot take a ramp any more, or is held by
+/// another control by now, fails); refused, they fail; taken back, the controls in use fail
+/// too and the identity curve is restored.
+pub fn on_resolved<D: GammaHandler>(state: &mut D, client: ClientKey, outcome: PowerOutcome) {
+    let waiting = state.gamma_part().waiting.take(client);
+    match outcome {
+        PowerOutcome::Allowed => {
+            for held in waiting {
+                let size = state.gamma_table_size(&held.output);
                 let part = state.gamma_part();
-                part.objects.insert(key.clone(), control);
-                if let Err(fault) = apply_size(part, &key, size) {
-                    tracing::warn!(%fault, "a gamma control lost its output at once");
+                let free = !part
+                    .objects
+                    .get(&held.output)
+                    .is_some_and(|control| control.is_alive());
+                match size.filter(|_| free) {
+                    Some(size) => register(part, held.control, &held.output, size),
+                    None => held.control.failed(),
                 }
             }
-            None => data_init.init(id, ControlData { output: None }).failed(),
+        }
+        PowerOutcome::Denied | PowerOutcome::Revoked => {
+            waiting.iter().for_each(|held| held.control.failed());
+            let part = state.gamma_part();
+            let ended: Vec<OutputKey> = part
+                .objects
+                .iter()
+                .filter(|(_, control)| {
+                    control.client().as_ref().and_then(consent::key_of) == Some(client)
+                })
+                .map(|(output, _)| output.clone())
+                .collect();
+            let mut events = Vec::new();
+            for output in ended {
+                if let Some(control) = part.objects.get(&output) {
+                    control.failed();
+                }
+                events.extend(on_released(part, &output));
+            }
+            if !events.is_empty() {
+                state.gamma_events(events);
+            }
         }
     }
 }
@@ -270,6 +370,11 @@ where
         let Some(output) = &self.output else {
             return;
         };
+        // Only the control that holds the output acts: one that waits for the person, or was
+        // failed, changes nothing.
+        if state.gamma_part().objects.get(output) != Some(resource) {
+            return;
+        }
         let Some(size) = state.gamma_part().controlled.get(output).copied() else {
             return;
         };

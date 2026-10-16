@@ -7,9 +7,16 @@
 //! `LockReply::SendLocked`, which [`apply_locked`] carries out. smithay has no callback for a
 //! locker that disconnects, so the part remembers the lock object and [`poll_locker`] notices
 //! it is dead (the handler calls it when a lock surface is destroyed and the loop once a turn).
+//!
+//! Locking is a power (`Power::Lock`): a `lock` asked for while the person has not answered is
+//! kept in [`SessionLockPart::hold`], and dropped (the client is told `finished`) when they
+//! refuse. A lock that already holds the session is never ended because the power is taken
+//! back: the covers stay up, and only the locker can unlock.
 
 use crate::client::ClientState;
+use crate::consent::{Held, Mortal, Pushed};
 use crate::states::{GlobalFilter, WaylandFault};
+use casement_core::ClientKey;
 use casement_core::geometry::LogicalSize;
 use casement_core::lock::LockEvent;
 use casement_core::policy::GlobalKind;
@@ -40,6 +47,14 @@ pub struct SessionLockPart {
     pub held: Option<ExtSessionLockV1>,
     /// The outputs whose lock surface has shown content (reported to the model once each).
     pub shown: BTreeSet<OutputKey>,
+    /// The lockers that asked while the person had not answered (`Power::Lock`).
+    gated: Held<SessionLocker>,
+}
+
+impl Mortal for SessionLocker {
+    fn alive(&self) -> bool {
+        self.ext_session_lock().is_alive()
+    }
 }
 
 impl SessionLockPart {
@@ -61,7 +76,21 @@ impl SessionLockPart {
             surfaces: BTreeMap::new(),
             held: None,
             shown: BTreeSet::new(),
+            gated: Held::default(),
         }
+    }
+
+    /// Keeps `locker`, whose client is `client`, until the answer about its power to lock
+    /// comes out; one past the cap of waiting requests is dropped, which tells it `finished`.
+    pub fn hold(&mut self, client: ClientKey, locker: SessionLocker) {
+        if let Pushed::Full(locker) = self.gated.push(client, locker) {
+            drop(locker);
+        }
+    }
+
+    /// The lockers `client` has waiting, oldest first.
+    pub fn take_gated(&mut self, client: ClientKey) -> Vec<SessionLocker> {
+        self.gated.take(client)
     }
 
     /// The output whose lock surface is `surface`.

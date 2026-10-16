@@ -13,12 +13,18 @@
 //! ([`CursorPaint`]); dma-buf buffers are offered through `linux_dmabuf` when the root names formats
 //! ([`ScreencopyOutput::dmabuf`]). Visible to the same connections as `ext_image_copy_capture` (the I7 table's
 //! `ImageCapture`): the public socket and the shell, not a sandbox.
+//!
+//! Seeing the screen is a power (`Power::Screen`, `gate`): a copy asked for while the person has not
+//! answered waits, and `failed` is the denial.
 
+mod gate;
 mod region;
 mod wire;
 
+pub use gate::{WaitingCopies, on_resolved};
 pub use region::physical_region;
 
+use crate::consent::{self, Admission, ConsentHandler};
 use crate::image_capture::CursorPaint;
 use crate::limits::{self, Limit, Standing};
 use crate::states::GlobalFilter;
@@ -26,6 +32,7 @@ use casement_core::OutputKey;
 use casement_core::geometry::{PhysicalRect, PhysicalSize, Transform};
 use casement_core::policy::GlobalKind;
 use casement_core::time::Mono;
+use casement_protocols::vocab::Power;
 use ds_core::geometry::scale::Scale;
 use smithay::backend::allocator::{Buffer as AllocBuffer, Fourcc};
 use smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::{
@@ -151,6 +158,8 @@ pub struct ScreencopyPart {
     /// Our global (none until [`ScreencopyPart::new`]).
     pub global: Option<GlobalId>,
     pending: Vec<PendingCopy>,
+    /// The copies asked for while the person had not answered (`Power::Screen`).
+    waiting: WaitingCopies,
     delivered: Vec<Delivery>,
 }
 
@@ -230,7 +239,7 @@ impl ScreencopyPart {
 }
 
 /// What the composition root provides to this protocol's dispatch.
-pub trait ScreencopyHandler: Sized + 'static {
+pub trait ScreencopyHandler: ConsentHandler + Sized {
     /// The part.
     fn screencopy_part(&mut self) -> &mut ScreencopyPart;
     /// The output `output` is, if the model has it.
@@ -450,18 +459,27 @@ impl FrameData {
         }
         // A client with copies piled up is cut (CASW-06): each is a full read-back per frame.
         let (client, display) = asked_by;
-        let waiting = state.screencopy_part().pending_of(&client.id());
+        let part = state.screencopy_part();
+        let held = consent::key_of(client).map_or(0, |key| part.held_of(key));
+        let waiting = part.pending_of(&client.id()).saturating_add(held);
         if limits::admit(display, client, Limit::PendingCopies, waiting) == Standing::Over {
             return;
         }
-        state.screencopy_part().keep(PendingCopy {
+        let copy = PendingCopy {
             frame: frame.clone(),
             buffer,
             target,
             damage,
             cursor: self.cursor,
-        });
-        state.screencopy_wake();
+        };
+        match consent::admit(state, client, Power::Screen) {
+            Admission::Go => {
+                state.screencopy_part().keep(copy);
+                state.screencopy_wake();
+            }
+            Admission::Hold => state.screencopy_part().hold(copy),
+            Admission::Refuse => apply_failed(&copy),
+        }
     }
 }
 

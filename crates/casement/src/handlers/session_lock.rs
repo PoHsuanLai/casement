@@ -3,9 +3,13 @@
 use super::layer_shell::output_key_of;
 use crate::core_loop;
 use crate::state::State;
-use casement_core::OutputKey;
 use casement_core::geometry::LogicalSize;
+use casement_core::privilege::PowerOutcome;
+use casement_core::{ClientKey, OutputKey};
+use casement_protocols::vocab::Power;
+use casement_wayland::consent::{self, Admission};
 use casement_wayland::session_lock;
+use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::wayland::compositor;
 use smithay::wayland::session_lock::{
@@ -23,12 +27,45 @@ fn size_of_output(state: &State, output: &OutputKey) -> Option<LogicalSize> {
         .map(|plugged| plugged.config.logical_rect().size)
 }
 
+/// `locker` when its client may lock the session now. Otherwise it is kept until the person
+/// answers (`None`), or dropped, which tells the client `finished`.
+fn pass(state: &mut State, locker: SessionLocker) -> Option<SessionLocker> {
+    let client = locker.ext_session_lock().client()?;
+    match consent::admit(state, &client, Power::Lock) {
+        Admission::Go => Some(locker),
+        Admission::Hold => {
+            if let Some(key) = consent::key_of(&client) {
+                state.wl.session_lock.hold(key, locker);
+            }
+            None
+        }
+        Admission::Refuse => None,
+    }
+}
+
+/// The answer about `client`'s power to lock came out: the lockers that waited ask again and
+/// are let through, or are dropped (`finished`). A lock already held stays.
+pub(super) fn resolved(state: &mut State, client: ClientKey, outcome: PowerOutcome) {
+    let lockers = state.wl.session_lock.take_gated(client);
+    match outcome {
+        PowerOutcome::Allowed => {
+            for locker in lockers {
+                SessionLockHandler::lock(state, locker);
+            }
+        }
+        PowerOutcome::Denied | PowerOutcome::Revoked => drop(lockers),
+    }
+}
+
 impl SessionLockHandler for State {
     fn lock_state(&mut self) -> &mut SessionLockManagerState {
         &mut self.wl.session_lock.state
     }
 
     fn lock(&mut self, confirmation: SessionLocker) {
+        let Some(confirmation) = pass(self, confirmation) else {
+            return;
+        };
         let events = session_lock::on_lock(&mut self.wl.session_lock, confirmation);
         core_loop::feed(self, events);
     }

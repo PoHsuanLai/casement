@@ -15,9 +15,10 @@ mod configuration;
 mod heads;
 mod wire;
 
-pub use configuration::{ConfigData, ConfigHeadData};
+pub use configuration::{ConfigData, ConfigHeadData, HeldConclusion, on_resolved};
 pub use heads::{HeadData, ModeData};
 
+use crate::consent::{ConsentHandler, Held};
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::output::{
     OutputChangeSet, OutputConfig, OutputFacts, keeps_one_lit, resolve_change,
@@ -71,6 +72,8 @@ pub struct OutputManagementPart {
     pub global: Option<GlobalId>,
     managers: Vec<ManagerEntry>,
     known: BTreeMap<OutputKey, Announced>,
+    /// The `apply`s and `test`s that wait for the person's answer (`Power::Displays`).
+    gated: Held<HeldConclusion>,
 }
 
 impl OutputManagementPart {
@@ -102,7 +105,7 @@ impl OutputManagementPart {
 }
 
 /// What the composition root provides to this protocol's dispatch.
-pub trait OutputManagementHandler: Sized + 'static {
+pub trait OutputManagementHandler: ConsentHandler + Sized {
     /// The part.
     fn output_management_part(&mut self) -> &mut OutputManagementPart;
     /// The model's outputs.

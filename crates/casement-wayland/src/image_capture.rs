@@ -5,11 +5,16 @@
 //! smithay owns the wire (buffer validation, the session's constraints, the frame's events);
 //! this module keeps the [`CaptureBook`] (which source shows which output, which session has a
 //! frame asked for) and the smithay [`Session`]s, whose drop is the `stopped` event.
+//!
+//! Seeing the screen is a power (`Power::Screen`, `gate`): a session may be made at once, a frame
+//! request waits for the person's answer, and the denial is `stopped` for the session and `failed`
+//! for the frame.
 
 mod book;
 mod cursor;
 mod damage;
 mod dma;
+mod gate;
 
 pub use book::CaptureBook;
 pub use cursor::{
@@ -18,6 +23,7 @@ pub use cursor::{
 };
 pub use damage::{DamageLog, DamageLogs, Since};
 pub use dma::dma_offer;
+pub use gate::{GatedFrame, GatedFrames, owner_of};
 
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::OutputKey;
@@ -88,6 +94,8 @@ pub struct ImageCapturePart {
     /// The frame requests that found no frame presented yet; dropping one tells its client
     /// `failed`.
     waiting: BTreeMap<CaptureSessionId, Frame>,
+    /// The frame requests that wait for the person's answer (`Power::Screen`).
+    gated: GatedFrames,
 }
 
 impl ImageCapturePart {
@@ -107,6 +115,7 @@ impl ImageCapturePart {
             cursors: CursorBook::default(),
             held: BTreeMap::new(),
             waiting: BTreeMap::new(),
+            gated: GatedFrames::default(),
         }
     }
 

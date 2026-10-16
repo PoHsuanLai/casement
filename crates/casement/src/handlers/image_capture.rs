@@ -13,11 +13,13 @@ mod cursor;
 mod direct;
 mod dma;
 mod frames;
+mod gate;
 
 pub(super) use cursor::sync as sync_cursors;
 pub(super) use direct::{Drawn, window as draw_window_direct};
 pub(super) use dma::{buffer_size, deliver, fourccs, offer as dma_offer_of};
 pub(super) use frames::{last_shown, note_presented, release_waiting, write_output};
+pub(super) use gate::resolved;
 
 use super::{capture_source, space_shot};
 use crate::state::State;
@@ -138,6 +140,9 @@ impl ImageCopyCaptureHandler for State {
     }
 
     fn frame(&mut self, session: &SessionRef, frame: Frame) {
+        let Some(frame) = gate::pass(self, session, frame) else {
+            return;
+        };
         if let Some(id) = session.user_data().get::<ToplevelSessionId>().copied() {
             return capture_source::serve(self, session, frame, id);
         }

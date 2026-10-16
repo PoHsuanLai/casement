@@ -8,6 +8,7 @@
 //! note sends (`apply_note`) are the lane's. The switcher and show-desktop requests are ignored
 //! until P3-Z gives them their machines.
 
+use super::shell_permission::{self, SentAsk, UnknownWall, WallSeconds};
 use super::space_shot::SpaceShotPart;
 use super::{Advertised, code_of};
 use super::{shell_overview, shell_space, shell_split};
@@ -33,7 +34,7 @@ use smithay::wayland::{Dispatch2, GlobalDispatch2};
 use std::collections::BTreeMap;
 
 /// The version casement serves.
-pub const VERSION: u32 = 4;
+pub const VERSION: u32 = 5;
 
 /// Whether the global is created yet (P2-Q2 flipped it).
 pub const GLOBAL: Advertised = Advertised::Yes;
@@ -65,6 +66,11 @@ pub struct QuireShellPart {
     pub space_targets: SpaceTargets,
     /// The Space pictures: sources, sessions and held frames (version 2).
     pub shots: SpaceShotPart,
+    /// The consent questions sent to the shell and not yet settled (version 5).
+    pub asks: Vec<SentAsk>,
+    /// The date an answer is stamped with (version 5): the composition root replaces the
+    /// placeholder, which stamps every answer with the epoch.
+    pub wall: Box<dyn WallSeconds>,
 }
 
 impl QuireShellPart {
@@ -90,6 +96,8 @@ impl QuireShellPart {
             mods: MacMods::NONE,
             space_targets: SpaceTargets::default(),
             shots: SpaceShotPart::default(),
+            asks: Vec::new(),
+            wall: Box::new(UnknownWall),
         }
     }
 }
@@ -154,7 +162,9 @@ where
         data_init: &mut DataInit<'_, D>,
     ) {
         let shell = data_init.init(resource, ShellData);
-        state.quire_shell_part().bound.push(shell);
+        state.quire_shell_part().bound.push(shell.clone());
+        let events = shell_permission::on_bind(state.quire_shell_part(), &shell);
+        state.quire_shell_events(events);
     }
 
     fn can_view(&self, client: &Client) -> bool {
@@ -238,6 +248,10 @@ where
                     code_of(toggle),
                 ));
             }
+            quire_shell_v1::Request::PermissionAnswer { ask, answer } => {
+                let events = shell_permission::on_answer(state.quire_shell_part(), ask, answer);
+                state.quire_shell_events(events);
+            }
             // The switcher and show-desktop requests arrive with P3-Z; the version 2 requests
             // are `shell_space`'s, which ignores the rest.
             other => shell_space::on_request(state, resource, other, data_init),
@@ -246,6 +260,8 @@ where
 
     fn destroyed(&self, state: &mut D, _client: ClientId, resource: &QuireShellV1) {
         on_shell_gone(state.quire_shell_part(), resource);
+        let events = shell_permission::on_unbind(state.quire_shell_part(), resource.version());
+        state.quire_shell_events(events);
     }
 }
 

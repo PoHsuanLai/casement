@@ -10,7 +10,16 @@
 //! handle was last told, so a handle is brought up to date with exactly the events it lacks and
 //! a manager that binds late is sent every window as it now is. What each state means is in
 //! [`states_of`] and [`Diff`], pure; this file is the wire.
+//!
+//! Seeing and managing the windows is a power (`Power::Windows`, `gate`): a manager bound
+//! while the person has not answered hears nothing until they allow, and is `finished` if they
+//! refuse.
 
+mod gate;
+
+pub use gate::on_resolved;
+
+use crate::consent::{self, Admission, ConsentHandler};
 use crate::foreign_toplevel_list::Disclosure;
 use crate::limits::{self, Limit, Standing};
 use crate::states::{GlobalFilter, WaylandFault};
@@ -18,7 +27,7 @@ use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::policy::GlobalKind;
 use casement_core::window::{Window, WindowState, WlrToplevelRequest};
 use casement_core::{Event, OutputKey, WindowId};
-use casement_protocols::vocab::{Emphasis, Toggle};
+use casement_protocols::vocab::{Emphasis, Power, Toggle};
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols_wlr::foreign_toplevel::v1::server::{
     zwlr_foreign_toplevel_handle_v1::{self, ZwlrForeignToplevelHandleV1},
@@ -46,6 +55,8 @@ pub struct WlrToplevelPart {
     /// Every handle of each window, and what it was told.
     handles: BTreeMap<WindowId, Vec<Held>>,
     spawn: Option<Spawn>,
+    /// The managers bound while the person had not answered, inert until they do.
+    waiting: consent::Held<ZwlrForeignToplevelManagerV1>,
 }
 
 /// How to make a handle where the state type is known ([`WlrToplevelPart::new`]).
@@ -93,6 +104,7 @@ impl WlrToplevelPart {
             managers: Vec::new(),
             facts: BTreeMap::new(),
             handles: BTreeMap::new(),
+            waiting: consent::Held::default(),
             spawn: Some(Spawn {
                 display: display.clone(),
                 make: |display, manager, window| {
@@ -131,7 +143,7 @@ impl WlrToplevelPart {
 }
 
 /// What the composition root provides to this protocol's dispatch.
-pub trait WlrToplevelHandler: 'static {
+pub trait WlrToplevelHandler: ConsentHandler {
     /// The part.
     fn wlr_toplevel_part(&mut self) -> &mut WlrToplevelPart;
     /// Feeds the events a request produced into the model (`core_loop::feed`).
@@ -175,13 +187,23 @@ where
         let manager = data_init.init(resource, WlrManagerData);
         let part = state.wlr_toplevel_part();
         // Each bind lists every window again and hears every title change: a client that binds
-        // past its cap is cut (CASW-06) and gets no listing.
-        let held = part.managers_of(&client.id());
+        // past its cap is cut (CASW-06) and gets no listing. Managers that wait for the
+        // person's answer count.
+        let held = part
+            .managers_of(&client.id())
+            .saturating_add(gate::waiting_of(part, client));
         if limits::admit(handle, client, Limit::WindowListManagers, held) == Standing::Over {
             return;
         }
-        part.managers.push(manager.clone());
-        list_all_on(part, &manager);
+        match consent::admit(state, client, Power::Windows) {
+            Admission::Go => {
+                let part = state.wlr_toplevel_part();
+                part.managers.push(manager.clone());
+                list_all_on(part, &manager);
+            }
+            Admission::Hold => gate::wait(state, client, manager),
+            Admission::Refuse => manager.finished(),
+        }
     }
 
     fn can_view(&self, client: &Client) -> bool {
@@ -226,7 +248,7 @@ where
     fn request(
         &self,
         state: &mut D,
-        _client: &Client,
+        client: &Client,
         resource: &ZwlrForeignToplevelHandleV1,
         request: zwlr_foreign_toplevel_handle_v1::Request,
         _dhandle: &DisplayHandle,
@@ -234,7 +256,11 @@ where
     ) {
         use zwlr_foreign_toplevel_handle_v1::Request as Asked;
         let window = self.window;
-        if !state.wlr_toplevel_part().is_listed(window) {
+        // A handle obeys only while its client may manage the windows: a power taken back
+        // silences the handles it had.
+        if consent::allowed(state, client, Power::Windows) != Admission::Go
+            || !state.wlr_toplevel_part().is_listed(window)
+        {
             return;
         }
         let asked = match request {
