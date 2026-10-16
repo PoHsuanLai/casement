@@ -4521,7 +4521,7 @@ Crates `casement-ipc` and `casement-agent`. Written without a compiler (lane rul
     the name requested with `DoNotQueue` and without replacement (zbus' builder cannot take an object that needs the connection).
   - The rate window is a timer task that clears the table, not a sliding window: up to 8 calls can straddle a boundary. The shell
     connects once, the portal once per session, so the loose edge costs nothing.
-  - `Page::Apps` is the interim page of the Privacy keys (ds-settings has no `Privacy` page); see the interface ask below.
+  - `Page::Apps` was the interim page of the Privacy keys (ds-settings had no `Privacy` page); closed in pa2-cwl2: they are on `Page::Privacy`.
   - A person's row shadowed by an administrator's refusal is still listed (core's `rows()` lists both and `decide` lets the person
     switch off an administrator's allow), so a program can show twice, once read-only.
 - **Needed from the root lane (`pa2-croot`, the `casement` crate; the build breaks there until done).**
@@ -4652,7 +4652,281 @@ group/world writable; a user-writable program or an interpreter gets Allow Once 
 - No refusal event here is a destructor (checked in the XML: ext/wlr data control `finished`/`cancelled`, input method `unavailable`,
   `ext_foreign_toplevel_list_v1.finished`), so none needs `consent::finish_later`; smithay sends them inside the bind or request.
 - Not done: a power taken back (`Revoked`) does not end a device, an input method or a list that smithay already registered; the next
-  use asks again and objects made after the revocation are refused. Closing it needs a smithay hook to end registered objects.
+  use asks again and objects made after the revocation are refused. Closing it needs a smithay hook to end registered objects
+  (pa2-cwl2 below has the exact fork change and three ignored tests).
 - QUIRE-12: `quire_desktop_app_v1.subject` (see casement-protocols FINDINGS). The subject is read when an app is published, from the
   standing the model holds for the client of the app's first nameable window; a security-context sandbox connection has no standing in the
   model, so its apps get no subject yet.
+
+## pa2-cwl2: displays confirmed, answers not too fast, the Privacy page and its rows, revoke (CASW-10, CASW-01 follow-ups; 2026-10-17)
+
+Written without a compile (lane rules); the gate run is the first. Branch `cas10` from `origin/master` 8f0a962, one commit per item.
+
+- **CASW-10 (decided: a display change by anyone but the shell is kept only if the person confirms): NOT built, waits for the shell
+  protocol.** The question needs "Keep these display settings?" with Keep and Revert, and `quire_shell_v1` (version 5) has no event or
+  request that fits: `permission_ask` is about a program and a power with Allow and Don't Allow, remembered per program, not a trial of
+  a setup with a countdown. A new event and request are an interface ask on `casement-protocols` (a read-only sibling here), below. Nothing was
+  written against a protocol that does not exist. What exists today and stays: the refusals in `resolve_change`/`keeps_one_lit` (at least one
+  display lit, positions within 100 000 px, a known mode and scale), and the per-app consent for `Displays` (`zwlr_output_manager`
+  `apply`, `zwlr_output_power`, `zwlr_gamma_control` are asked).
+  - *The casement side, for the lane that gets the protocol* (decided here so it is not redesigned): `casement-core::output` gets
+    `DISPLAY_CONFIRM_WITHIN: Duration = 15 s` ("a bad mode can blank the screen: long enough to read the sheet and press a key, short enough
+    that a person staring at a black screen is back in a quarter of a minute"). `Event::OutputRequested` gains `by: Requester` (two-state
+    enum `Shell | Program`; the wire layer knows the connection's `ConnectionRole`, `on_configuration` and `output_power`'s events get it
+    from the handler's `client`). The model keeps `DisplayTrial { id, before: BTreeMap<OutputKey, OutputConfig> }` (the configuration of
+    every output the trial changed, as it was before the first change of the trial). A `Program` request that changes a configuration
+    emits `Effect::ApplyOutput` as now, stores `before` (a second change during a trial keeps the first `before` and restarts the timer),
+    arms `TimerKey::DisplayTrial` for `DISPLAY_CONFIRM_WITHIN` and emits `Effect::AskKeepDisplays { trial, within }`. `Event::DisplaysAnswered
+    { trial, answer: Keep | Revert }` (an unknown trial is ignored) and the timer firing: Keep clears the trial; Revert and the timer emit
+    `Effect::ApplyOutput` with `before` for each output and `configure_output`. A `Shell` request is applied and never asked (it settles a
+    trial in flight as Keep: the person is at the desk). casement's own hotplug (`plug`, `unplug`, `reconfigure` after a mode change from the
+    tty) does not go through `OutputRequested` and is never asked. Power: `Off` by a program is a change like any other (the shell asks;
+    a revert lights the display again). The shell going away mid-trial reverts at the timer, which is the fail-safe. Tests (core, table +
+    timer): a timed-out trial reverts; Keep keeps; a shell's own change is not asked; a second change keeps the first `before`; the testkit
+    does the same through `zwlr_output_manager` with the virtual clock.
+  - *Interface ask 1 (casement-protocols, `protocols/quire-shell-v1.xml`, version 5 to 6, plus the vocab and `desktop-client`):*
+
+    ```diff
+    -  <interface name="quire_shell_v1" version="5">
+    +  <interface name="quire_shell_v1" version="6">
+    @@ enum name="error"
+         <entry name="bad_target" value="3" since="2" summary="a Space target rectangle has no size"/>
+    +    <entry name="answered_too_soon" value="4" since="5" summary="an answer came before the question could have been read"/>
+       </enum>
+    @@ after enum name="answer"
+    +    <enum name="trial_answer">
+    +      <description summary="what the person said about a changed display setup">
+    +        Used by `displays_trial_answer` (version 6).
+    +      </description>
+    +      <entry name="keep" value="0" summary="Keep: the new setup stays"/>
+    +      <entry name="revert" value="1" summary="Revert: the compositor goes back to the previous setup"/>
+    +    </enum>
+    @@ after request name="permission_answer"
+    +    <request name="displays_trial_answer" since="6">
+    +      <description summary="the person answered a question from displays_trial">
+    +        `trial` is the id from `displays_trial`. The first answer settles it; an answer for a trial that is
+    +        unknown, over or withdrawn is ignored. `keep` makes the new setup the one the displays have;
+    +        `revert` puts the previous one back at once. Escape, or the sheet going away, answers `revert`.
+    +        An answer that comes less than half a second after the event is `answered_too_soon`, as for
+    +        `permission_answer`.
+    +      </description>
+    +      <arg name="trial" type="uint" summary="the trial's id"/>
+    +      <arg name="answer" type="uint" enum="trial_answer"/>
+    +    </request>
+    @@ after event name="permission_withdraw"
+    +    <event name="displays_trial" since="6">
+    +      <description summary="ask the person whether to keep a changed display setup">
+    +        A program other than the shell changed the displays (size, scale, position, or turned one on or
+    +        off). The compositor has applied it and goes back to the previous setup after `seconds` unless
+    +        the person keeps it. The shell puts "Keep these display settings?" on screen with Keep and
+    +        Revert and may show the time left. At most one trial is open; a further change by a program
+    +        restarts the time with the same `trial` id and sends this event again. The words are the shell's.
+    +        A shell that bound a version older than 6 is never asked, and the change is reverted when the time
+    +        runs out.
+    +      </description>
+    +      <arg name="trial" type="uint" summary="the trial's id; the answer and the end name it"/>
+    +      <arg name="seconds" type="uint" summary="how long the person has"/>
+    +    </event>
+    +    <event name="displays_trial_end" since="6">
+    +      <description summary="the question is over">
+    +        The trial was settled by the compositor (the time ran out and the change was reverted, or the shell
+    +        itself changed the displays). The shell takes the sheet down without answering.
+    +      </description>
+    +      <arg name="trial" type="uint"/>
+    +    </event>
+    ```
+    The vocab gains `TrialAnswer { Keep, Revert }` and an id newtype beside `AskId`; `desktop-client` gains the event and `AnswerTrial`.
+    Version 6 also carries the `answered_too_soon` entry that item 2 below uses (the error entry may ship alone as version 5 `since="5"` if
+    version 6 is not wanted yet).
+
+- **Answers that come too fast (WAVE2-DESIGN 3.4).** `quire/shell_permission.rs`: `ANSWER_NOT_BEFORE = 500 ms` (sill's sheet is disarmed for
+  `PERMISSION_ARM_AFTER` = 600 ms; the margin is for scheduling and the wire). `SentAsk` carries `sent_at: Mono` from the loop's clock
+  (`QuireShellHandler::quire_shell_now`, implemented by `State` with `clock.now()`; `apply_ask` takes `now`). `on_answer` returns
+  `Err(AnsweredTooSoon)` for a known question answered sooner; the dispatch posts a protocol error on that shell object only
+  (`ANSWERED_TOO_SOON = 4`). The question stays open (the next shell is shown it). A shell that binds later and is shown a question again keeps the
+  question's first stamp (the delay protects a sheet that was on screen; a replay is the lenient direction). The testkit's
+  `ScriptedShell::answer` now waits `ANSWER_NOT_BEFORE` on the virtual clock first, like a person; `answer_at_once` is the fast one. Tests:
+  `an_answer_that_comes_too_soon_cuts_the_shell_only`, `an_answer_at_the_margin_is_taken`.
+  - *Deviation:* the XML's `error` enum has no entry for it yet (FINDINGS in casement-protocols already named `answered_too_soon` as the
+    later addition), so the code is a named constant, `4`, the next free value, and `Connection::error_is_documented` would say `false` for it
+    until interface ask 1 lands (the fuzz oracle "a documented protocol error or nothing" would flag a fuzzed fast answer: the fuzzer does
+    not answer questions, but watch it at the gate). When the entry lands, replace the constant with `quire_shell_v1::Error::AnsweredTooSoon`.
+- **The Privacy page.** `casement-ipc/src/privacy/keys.rs`: `PRIVACY_PAGE` is `Page::Privacy` (quire v0.3.30). Test: `every_key_is_on_the_privacy_page`.
+  The note in pa2-cipc ("interim `Page::Apps`") is closed.
+- **Rows for programs nobody has answered.** `keys::listed` adds, for each program in the rows (the person's first, then the administrator's, at
+  most `MAX_GRANTS` = 512 programs) and each power it has no row for, a `Toggle` switch whose value is the word `ask` (`keys::ASK`), at the same
+  key path the row will have once answered (`privacy.<power>.<hash(person, subject)>`), so Settings is told that key's value moved when the
+  person answers. No "Ask Again" action is listed for it (nothing to forget). `Write::Choose(subject, power)` is the same as for an answered
+  row, so a `Set` of `on`/`off` is a `PrivacyEdit::Allow`/`Deny`, which the model keeps as the person's first answer (`Input::Granted` on a
+  subject and power with no row, `Privilege::keep`); `PrivacyEdit::applied` adds the person's row for the readback. The published size is
+  bounded by seven switches per program, 512 programs (the actions of answered rows come on top, at most the book's own rows). The
+  model's `PrivacyRow` is unchanged: the completion is a pure function in casement-ipc, so `casementctl privacy list` still shows only real answers.
+  Tests: `a_program_has_a_switch_for_every_power_and_the_unanswered_ones_stand_at_ask`, `answering_a_power_gives_the_row_the_path_it_had_while_unanswered`,
+  `the_programs_with_a_switch_for_every_power_are_capped_and_the_persons_come_first`, `the_first_answer_for_a_power_adds_the_persons_row`,
+  `a_power_nobody_answered_can_be_switched_on` (private bus: the key reads `ask`, a `Set` of `on` reaches the model as `Allow`, reads back `on`).
+  - *Interface ask 2 (detent, `detent-model/src/privacy/pane.rs`):* `standing_of` must accept the word `ask` (`PowerStanding::Ask`) and treat a `Toggle`
+    row at `ask` as `CellKind::Remembered { switch, forget: None }` (it is changeable to Allowed/Denied; picking Ask on it is a no-op because it already
+    stands there, and picking Ask on an answered row is the `forget` action as today). Today `standing_of("ask")` is `None`, so detent drops these rows
+    and the page shows no switch for a program that has not asked. The `Asking` cell kind ("the compositor lists no row to change") is then only
+    for a compositor that lists none.
+- **Revoke ends live objects where smithay allows: it does not allow, so the change is an interface ask.** Read at the fork's `6d813694`
+  (`lane/consent-gates`; the checkout at `~/rs-wt/p0-fork/smithay` is on branch `casement`, so use `git show 6d813694:<path>`). The registries of
+  the four objects are private: the data devices live in `SeatData` (`pub(crate)`, seat user data), the input method in `InputMethodHandle.inner`
+  (`pub(crate)` field; public methods are `has_instance` and `keyboard_grabbed` only), the lists in `ForeignToplevelListState.list_instances` (private).
+  No public method sends `finished`/`unavailable` to a registered object, and the compositor never holds the resources (the device and the list are
+  created inside smithay's dispatch and handed to nobody). The one public piece, `ForeignToplevelHandle::resources_for_client` plus `closed()`, would
+  close the existing window entries of one client but leave its list registered, so every new window would be announced to it again: not used.
+  *Interface ask 3 (fork, rev after `6d813694`; not compiled, written from the source at that rev):* one `revoke` per state, each the inverse of the
+  `release` that exists. Ext data control (the wlr one is the same with `Wlr` names in `wlr_data_control/{mod,held,device}.rs`):
+
+  ```diff
+  --- a/src/wayland/selection/ext_data_control/mod.rs
+  +++ b/src/wayland/selection/ext_data_control/mod.rs
+   pub struct DataControlState {
+       ...
+       held: HeldByClient<ClientId, Held>,
+  +    /// Devices registered with a seat, so a revocation can end them for one client.
+  +    live: Vec<ExtDataControlDeviceV1>,
+   }
+  @@ DataControlState::new
+           held: Default::default(),
+  +        live: Vec::new(),
+  @@ handlers, Request::GetDataDevice, Gate::Open arm
+  +                                handler.data_control_state().live.push(device.clone());
+                                   register_device::<D>(dh, &seat, device, self.primary);
+  --- a/src/wayland/selection/ext_data_control/held.rs
+  +++ b/src/wayland/selection/ext_data_control/held.rs
+  -    fn open(self, dh: &DisplayHandle) {
+  +    fn open(self, dh: &DisplayHandle) -> Option<ExtDataControlDeviceV1> {
+           match self {
+               Held::Device { device, open } => {
+                   device_data(&device).standing.set(Standing::Live);
+                   open(dh);
+  +                Some(device)
+               }
+  -            Held::Source(source) => source_data(&source).standing.set(Standing::Live),
+  +            Held::Source(source) => {
+  +                source_data(&source).standing.set(Standing::Live);
+  +                None
+  +            }
+           }
+       }
+  @@ DataControlState::release
+  -                Gate::Open => held.open(dh),
+  +                Gate::Open => self.live.extend(held.open(dh)),
+  @@ new method on DataControlState (same file)
+  +    /// Ends every data device `client` has registered: each is taken off its seat, ignores its
+  +    /// requests from now on and is sent `finished`. A selection it set stays until replaced.
+  +    pub fn revoke<D>(&mut self, client: &ClientId)
+  +    where
+  +        D: DataControlHandler + 'static,
+  +    {
+  +        let (ended, kept): (Vec<_>, Vec<_>) = std::mem::take(&mut self.live)
+  +            .into_iter()
+  +            .filter(|device| device.is_alive())
+  +            .partition(|device| device.client().is_some_and(|owner| owner.id() == *client));
+  +        self.live = kept;
+  +        for device in ended {
+  +            if let Some(data) = device.data::<ExtDataControlDeviceUserData>() {
+  +                data.end::<D>(&device);
+  +            }
+  +            device.finished();
+  +        }
+  +    }
+  --- a/src/wayland/selection/ext_data_control/device.rs
+  +++ b/src/wayland/selection/ext_data_control/device.rs
+  +impl ExtDataControlDeviceUserData {
+  +    /// Stops `device` taking part: its requests are ignored and its seat forgets it.
+  +    pub(super) fn end<D>(&self, device: &ExtDataControlDeviceV1)
+  +    where
+  +        D: DataControlHandler + 'static,
+  +    {
+  +        self.standing.set(Standing::Refused);
+  +        if let Some(seat) = Seat::<D>::from_resource(&self.wl_seat) {
+  +            if let Some(seat_data) = seat.user_data().get::<RefCell<SeatData<D::SelectionUserData>>>() {
+  +                seat_data.borrow_mut().retain_devices(|known| match known {
+  +                    SelectionDevice::ExtDataControl(known) => known != device,
+  +                    _ => true,
+  +                });
+  +            }
+  +        }
+  +    }
+  +}
+  ```
+
+  Foreign toplevel list (`src/wayland/foreign_toplevel_list/mod.rs`):
+
+  ```diff
+   impl ForeignToplevelListState {
+  +    /// Ends every list `client` bound: it is sent `finished`, is announced no more windows, and its
+  +    /// window entries are closed.
+  +    pub fn revoke(&mut self, client: &ClientId) {
+  +        let (ended, kept): (Vec<_>, Vec<_>) = std::mem::take(&mut self.list_instances)
+  +            .into_iter()
+  +            .partition(|list| list.client().is_some_and(|owner| owner.id() == *client));
+  +        self.list_instances = kept;
+  +        for list in &ended {
+  +            list.finished();
+  +        }
+  +        for handle in self.toplevels.iter().filter_map(ForeignToplevelWeakHandle::upgrade) {
+  +            let theirs = handle
+  +                .resources()
+  +                .into_iter()
+  +                .filter(|entry| entry.client().is_some_and(|owner| owner.id() == *client));
+  +            for entry in theirs {
+  +                entry.closed();
+  +                handle.remove_instance(&entry);
+  +            }
+  +        }
+  +    }
+  ```
+
+  Input method (`src/wayland/input_method/input_method_handle.rs`):
+
+  ```diff
+   impl InputMethodHandle {
+  +    /// Ends the seat's input method when `client` owns it: the seat forgets it, any keyboard grab it
+  +    /// holds is released, its requests are ignored from now on and it is sent `unavailable`. Returns
+  +    /// whether there was one to end.
+  +    pub fn revoke<D: SeatHandler + 'static>(&self, state: &mut D, client: &ClientId) -> bool {
+  +        let ended = {
+  +            let mut inner = self.inner.lock().unwrap();
+  +            let ours = inner
+  +                .instance
+  +                .as_ref()
+  +                .is_some_and(|instance| instance.object.client().is_some_and(|owner| owner.id() == *client));
+  +            if !ours {
+  +                return false;
+  +            }
+  +            inner.popup_handle.surface = None;
+  +            inner.instance.take()
+  +        };
+  +        if let Some(instance) = ended {
+  +            if let Some(data) = instance.object.data::<InputMethodUserData<D>>() {
+  +                data.standing.set(Standing::Refused);
+  +                data.keyboard_handle.unset_grab(state);
+  +            }
+  +            instance.object.unavailable();
+  +        }
+  +        true
+  +    }
+  ```
+
+  *Wiring in casement once the fork carries it* (not written: it would not compile): `handlers/consent.rs::settle_served` gains a `PowerOutcome::Revoked`
+  arm per power: `ext_data_control.state.revoke::<State>(&id)` and the wlr twin for `Clipboard`; `foreign_toplevel_list.state.revoke(&id)` for `Windows`;
+  the seat's `input_method().revoke(state, &id)` for `TypingHelp` (clone the handle first: it needs `&mut State`). `settle_served` today returns early
+  when `ledger().parked(client)` is empty, and only a client that waited is parked: the revoke needs the `ClientId` of a client that was allowed at
+  once, so the ledger (or `ClientKey` to `ClientId` through `clients`) has to give it for any client. Then remove `#[ignore]` from
+  `a_manager_the_person_switches_off_is_finished` (ext_data_control.rs), `an_input_method_the_person_switches_off_is_unavailable` (input_method.rs),
+  `a_list_the_person_switches_off_is_finished` (foreign_toplevel_list.rs) and add the wlr twin. Not covered by the diff: a selection the revoked
+  client had already set stays until another client replaces it; sources are not ended.
+- **Not verified by reading (the gate run looks here).**
+  - `Resource::post_error(u32, String)` takes `impl Into<u32>`: a plain `u32` is accepted (wayland-server 0.31.10 `lib.rs:203`).
+  - `casement_core::privilege::MAX_GRANTS` is re-exported (it is: `model/privilege/mod.rs`); `BTreeSet::difference` over `&Subject` items and `.copied()`.
+  - The testkit: `Fixture::advance(500 ms)` before every `ScriptedShell::answer` moves the virtual clock only that far and no existing test relies on the
+    clock standing still between the question and its answer; the second shell in `an_answer_that_comes_too_soon_cuts_the_shell_only` binds after the
+    first was cut (`ShellGone`, the question re-sent by `pump` on `ShellReady`).
+  - `Page::Privacy` is a unit variant usable in a `const` (as `Page::Apps` was).
+  - The ignored tests compile (they use only helpers the neighbouring tests use) but their behaviour is unproven: that `decided(Allow)` before the bind
+    makes the first use `Allowed` in the ledger so the later `Deny` really is a `Revoked` outcome.
+

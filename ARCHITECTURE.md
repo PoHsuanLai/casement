@@ -190,7 +190,9 @@ the protocol layer (wave 2: `pa2-ccore` is this half, the others follow it).
   (`Book::from_toml`, lenient: an unreadable row is dropped) and sends `Event::FloorLoaded` and
   `Event::BookLoaded`. `Effect::SaveBook(book)` is the whole book as it now is, to be written
   atomically. Settings changes arrive as `Event::{PrivilegeGranted, PrivilegeRevoked,
-  PrivilegeForgotten}`. `Privilege::rows()` is what Settings lists.
+  PrivilegeForgotten}`. `Privilege::rows()` is what Settings lists (the answers; `casement_ipc::privacy::listed` adds, for each program they name, a
+  switch standing at `ask` for every power it has no row for, on Settings' Privacy page, at most `MAX_GRANTS` programs; a `Set`
+  on one is the first answer, `PrivacyEdit::Allow`/`Deny`).
 - **Hiding.** A refused power's globals are not advertised to a public client that connected
   under the refusal: `Privilege::hidden_for(role, standing)` gives the `PowerSet`, and
   `policy::advertised_to` consults it. `policy::advertised(global, role)` is the same with
@@ -239,7 +241,10 @@ How the protocol layer carries the contract above (wave 2: `pa2-cwl`).
   smithay at its next hold, and its parked connection is forgotten with its ledger rows. None of the refusal events is a
   destructor, so none needs `consent::finish_later` (the pa2-cwl lesson is about `finished` on the workspace and window-list
   managers, which are destructors). A power taken back (`Revoked`) ends nothing smithay already registered, because smithay has
-  no hook for that: the objects made after it are refused, and the next use asks again.
+  no public way to end a registered device, input method or list for one client (their registries are private to it; read at
+  `6d813694`, FINDINGS pa2-cwl2 has the three-method change that would add one): the objects made after it are refused, and the
+  next use asks again. Until it lands, ignored tests (`a_manager_the_person_switches_off_is_finished`,
+  `an_input_method_the_person_switches_off_is_unavailable`, `a_list_the_person_switches_off_is_finished`) state the wanted behaviour.
 - **The program behind an app (`quire_desktop_app_v1.subject`, version 2; QUIRE-12).** The desktop manager is served at version 2 (the app
   objects take the manager's version; windows and Spaces stay at 1). In an app's burst, right after `identity`, the manager sends
   `subject` to a client that bound it at 2: the text `ClientStanding::subject_text` gives for the first window of the app whose client
@@ -255,12 +260,25 @@ How the protocol layer carries the contract above (wave 2: `pa2-cwl`).
   shown them, `permission_answer` becomes `Event::PermissionAnswered` (an answer for a question not sent is ignored),
   `Event::ShellReady` follows the bind of a version 5 object and `Event::ShellGone` the unbind of the last one. The date an
   answer is stamped with comes from `QuireShellPart::wall` (a `WallSeconds` the root supplies; the placeholder stamps the epoch).
+  An answer that arrives less than `ANSWER_NOT_BEFORE` (500 ms) after its question was first sent is a protocol error for that
+  shell connection only (`quire_shell_v1` error code `ANSWERED_TOO_SOON`): sill's sheet is disarmed for 600 ms, so a faster
+  answer did not come from a person looking at it. The part stamps each `SentAsk` with the loop's clock
+  (`QuireShellHandler::quire_shell_now`, the root's `ClockSource`, so a test with the virtual clock decides the edge); a question
+  shown again to a shell that binds later keeps its first stamp, and an answer that is too soon settles nothing: the question
+  stays open. The code is not yet an entry of the XML's `error` enum (FINDINGS pa2-cwl2: interface ask).
 - **The composition root's half (`pa2-croot`).**
   - *Who is asking.* At accept `run.rs` holds the public client's process (`Pinned::of_stream`), reads its facts (`Prober`) and judges them against the desktop's caller table (`clients::Judge`; the table is `/etc/quire/desktop-callers.toml`, one load at start, a failed load is an empty table and one error log: nobody privileged). `clients::insert_client(state, stream, role, peer, standing)` takes `clients::Standing::{Unjudged, Judged { standing, watch }}`: `Judged` builds `ClientState` with `with_standing_under(model.privilege(), standing)` and `with_image_watch(watch)` and sends `Event::ClientStanding` right after `Event::ClientConnected`; the hand-out, a sandbox and a bare test socket are `Unjudged`. The watch (`PinnedImage`) holds the process by its descriptor and says `Unverified` when `/proc/<pid>/exe` names another image than at accept. The library's standing becomes core's `ClientStanding` in `clients::client_standing`: a service only with `Proof::Exe` or better (a control-group-only service is unverified), a root-owned image a `Program`, a user-writable or hidden one `Unverified`. The porter `PeerIdentity` (the Dock's `AppKey`) is `Proven` from a service's app, a sandbox's app or the launcher's scope name of a root-owned program (`clients::peer_of`); the scope name is a claim that only groups windows, a grant binds to `Subject`.
   - *The files.* `seams.privacy: Box<dyn PrivacyStore>` (real: `FilePrivacyStore` over `$XDG_STATE_HOME/casement/privacy.toml`, from `StartConfig::state_home`; none for an ephemeral run) is read once before the first client (`privacy::start`: `Event::FloorLoaded`, `Event::BookLoaded`), written by `Effect::SaveBook` (`privacy::keep`), and the floor read again on `SIGHUP` (`privacy::reload_floor`). The floor is `/etc/quire/privacy.toml` and `privacy.d/*.toml`, or `--system-dir` (`StartConfig::system_dir`, `RunConfig::with_system_dir`; in a build with `testing` or `debug-inject` the files of an injected folder belong to the running user, anywhere else to the administrator). Never an environment variable.
   - *Settings.* `run.rs` creates `PrivacyLink::new()`, gives the bus thread `CallerSetup::desktop(table).with_privacy(link)` (`.with_test_units(...)` under `debug-inject`), reads the edit channel (`privacy::edited`: `edit.into_event(wall.now())`) and publishes `model.privilege().rows()` to the board at start, after every `SaveBook` and every edit.
   - *The date.* `seams.wall: time::WallClock` (`System` in a real run, `Fixed` in a test; the seam default is the epoch) stamps answers; `QuireShellPart::wall` is a copy of it.
   - *The accessibility root.* `quire_window.set_a11y_root` reaches the model as `A11yRoot::Unknown`; the claim is queued on `seams.a11y` (`A11yChecks`, real: `casement_ipc::a11y::A11yWorker`, fake: `FakeA11y`) with the client's pid from `Processes`, and the verdict becomes `WindowHintChange::A11y` (`a11y::adopt`). A client casement keeps no process for (the hand-outs, a sandbox) never verifies.
+
+- **Displays a program changed (CASW-10; decided, not built).** A change to the displays made by a client other than the shell (mode,
+  scale, position, on or off, through the output-management or output-power protocols) is applied and then kept only if the person
+  confirms: the shell asks "Keep these display settings?" (Keep / Revert) and, with no answer within `DISPLAY_CONFIRM_WITHIN` (15 s: a bad
+  mode can blank the screen), casement puts the previous configuration back. The shell's own changes and casement's own hotplug handling are
+  not asked. The question needs a `quire_shell_v1` event and request that do not exist yet (FINDINGS pa2-cwl2 has the XML ask and the model
+  design); until then the refusals in `output::{resolve_change, keeps_one_lit}` and the `Displays` consent are the protection.
 
 ## 3. Canonical traits
 
