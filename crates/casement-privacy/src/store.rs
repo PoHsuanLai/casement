@@ -1,6 +1,7 @@
 //! The seam the person's book and the administrator's floor are stored through: casement reads
 //! the floor, reads and writes the book, and nothing else touches either file. The real store
-//! is [`FilePrivacyStore`]; a run that keeps nothing between runs has [`NoPrivacyStore`].
+//! is [`FilePrivacyStore`]; a run that keeps nothing between runs has [`FloorOnlyStore`]: no book,
+//! and the floor still read, because what the administrator set holds for every run.
 
 use super::floor_files::FloorFiles;
 use casement_core::privilege::UnixSeconds;
@@ -122,6 +123,45 @@ impl PrivacyStore for NoPrivacyStore {
     }
 }
 
+/// A run that keeps nothing between runs (the headless backend, a session with no home folder):
+/// no book is found and none is written, so the answers last the run, but the administrator's
+/// floor is read like any run's. A run without a book is no way around what the floor refuses.
+#[derive(Debug)]
+pub struct FloorOnlyStore {
+    floor: FloorFiles,
+}
+
+impl FloorOnlyStore {
+    /// The store over `floor`.
+    pub fn new(floor: FloorFiles) -> FloorOnlyStore {
+        FloorOnlyStore { floor }
+    }
+}
+
+impl PrivacyStore for FloorOnlyStore {
+    fn read_book(&mut self) -> Result<Option<String>, StoreError> {
+        Ok(None)
+    }
+
+    fn set_book_aside(&mut self, at: UnixSeconds) -> Result<(), StoreError> {
+        let _ = at;
+        Ok(())
+    }
+
+    fn write_book(&mut self, text: &str) -> Result<(), StoreError> {
+        let _ = text;
+        Ok(())
+    }
+
+    fn read_floor(&mut self) -> Vec<FloorText> {
+        self.floor.read()
+    }
+
+    fn program_exists(&self, path: &str) -> bool {
+        Path::new(path).exists()
+    }
+}
+
 /// Where the two files live.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PrivacyFiles {
@@ -215,7 +255,8 @@ impl PrivacyStore for FilePrivacyStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::load::{load_book, save_book};
+    use crate::floor_files::Owner;
+    use crate::load::{load_book, load_floor, save_book};
     use casement_core::privilege::{Book, Grant, ProgramPath, Subject, Verdict};
     use casement_protocols::vocab::Power;
 
@@ -289,5 +330,27 @@ mod tests {
             assert_eq!(kept, bytes, "{case}: and kept whole");
             std::fs::remove_file(folder.join("privacy.toml.bad-42")).expect("cleaned");
         }
+    }
+
+    #[test]
+    fn a_run_that_keeps_nothing_still_reads_the_floor_and_keeps_no_book() {
+        let scratch = tempfile::tempdir().expect("a scratch folder");
+        let dir = scratch.path().join("floor");
+        std::fs::create_dir(&dir).expect("a folder");
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).expect("closed");
+        std::fs::write(
+            dir.join("privacy.toml"),
+            "[[rule]]\npower = \"screen\"\nsubject = { program = \"/usr/bin/grim\" }\nanswer = \"allow\"\n",
+        )
+        .expect("a floor");
+        let me = rustix::process::getuid().as_raw();
+        let mut store = FloorOnlyStore::new(FloorFiles::in_dir(&dir, Owner::User(me)));
+        assert_eq!(load_floor(&mut store).rules().len(), 1, "the floor's row");
+        save_book(&mut store, &book());
+        assert_eq!(
+            load_book(&mut store, UnixSeconds(5)),
+            Book::empty(),
+            "no book kept"
+        );
     }
 }

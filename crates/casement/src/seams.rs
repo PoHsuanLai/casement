@@ -7,7 +7,9 @@
 use crate::a11y::{A11yChecks, NoA11y};
 use crate::lock_marker::{FileLockMarker, LockMarker, NoLockMarker};
 use crate::notify::{NoNotify, Notify};
-use crate::privacy::{FilePrivacyStore, NoPrivacyStore, PrivacyFiles, PrivacyStore, SystemDir};
+use crate::privacy::{
+    FilePrivacyStore, FloorOnlyStore, NoPrivacyStore, PrivacyFiles, PrivacyStore, SystemDir,
+};
 use crate::space_store::{BackgroundSpaceStore, EphemeralSpaceStore, SpaceStore, StateHome};
 use crate::space_sync::SpaceSync;
 use crate::spawn::{ChildEnv, ProcessSpawner, Spawner};
@@ -117,8 +119,8 @@ impl Seams {
     }
 
     /// The real seams: the Spaces file and the privacy book in `home` (none kept for an
-    /// ephemeral run), the administrator's floor in `system`, the system clock, the session bus
-    /// on first use, child processes.
+    /// ephemeral run), the administrator's floor in `system` (read by every run, ephemeral or
+    /// not), the system clock, the session bus on first use, child processes.
     pub fn real(home: &StateHome, system: &SystemDir) -> Seams {
         let space_store: Box<dyn SpaceStore> = match home {
             StateHome::At(dirs) => Box::new(BackgroundSpaceStore::new(dirs)),
@@ -136,7 +138,7 @@ impl Seams {
                 book: dirs.privacy_file(),
                 floor: crate::privacy::floor_in(system),
             })),
-            StateHome::Ephemeral => Box::new(NoPrivacyStore),
+            StateHome::Ephemeral => Box::new(FloorOnlyStore::new(crate::privacy::floor_in(system))),
         };
         Seams::new(
             space_store,

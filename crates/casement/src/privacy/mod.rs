@@ -11,8 +11,8 @@ mod host;
 mod injected;
 
 pub use casement_privacy::{
-    FilePrivacyStore, FloorFiles, FloorText, Listing, NoPrivacyStore, Owner, PrivacyFiles,
-    PrivacyStore, StoreError, SystemDir, list, load_book, load_floor, save_book,
+    FilePrivacyStore, FloorFiles, FloorOnlyStore, FloorText, Listing, NoPrivacyStore, Owner,
+    PrivacyFiles, PrivacyStore, StoreError, SystemDir, list, load_book, load_floor, save_book,
 };
 pub use host::{edited, keep, publish, reload_floor, start};
 

@@ -24,7 +24,8 @@ pub use floor_files::{DROP_INS_MAX, FloorFiles, Owner};
 pub use listing::{Listing, NOBODY_ASKED, list};
 pub use load::{load_book, load_floor, save_book};
 pub use store::{
-    Distrust, FilePrivacyStore, FloorText, NoPrivacyStore, PrivacyFiles, PrivacyStore, StoreError,
+    Distrust, FilePrivacyStore, FloorOnlyStore, FloorText, NoPrivacyStore, PrivacyFiles,
+    PrivacyStore, StoreError,
 };
 pub use system_dir::SystemDir;
 
