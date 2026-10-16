@@ -7,7 +7,7 @@
 use crate::notify::{NoNotify, Notify};
 use crate::space_store::{EphemeralSpaceStore, FileSpaceStore, SpaceStore, StateHome};
 use crate::space_sync::SpaceSync;
-use crate::spawn::{ProcessSpawner, Spawner};
+use crate::spawn::{ChildEnv, ProcessSpawner, Spawner};
 use casement_backend::tty::TtySeams;
 use casement_ipc::shell_calls::{ShellCalls, ZbusShellCalls};
 
@@ -21,6 +21,9 @@ pub struct Seams {
     pub shell_calls: Box<dyn ShellCalls>,
     /// How a program is started.
     pub spawner: Box<dyn Spawner>,
+    /// The variables every program a binding starts gets (the Wayland socket's name, known once
+    /// `run` has bound it).
+    pub child_env: ChildEnv,
     /// The Spaces registered with the account service (none until `run` is given a bus).
     pub space_sync: SpaceSync,
     /// How the service manager is told casement is ready (nothing until `run` is given a socket).
@@ -40,6 +43,7 @@ impl Seams {
             space_store,
             shell_calls,
             spawner,
+            child_env: ChildEnv::default(),
             space_sync: SpaceSync::none(),
             notify: Box::new(NoNotify),
             tty: None,
@@ -77,7 +81,7 @@ impl Seams {
         Seams::new(
             space_store,
             Box::new(ZbusShellCalls::lazy()),
-            Box::new(ProcessSpawner),
+            Box::new(ProcessSpawner::default()),
         )
     }
 }

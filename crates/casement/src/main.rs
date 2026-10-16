@@ -7,6 +7,7 @@ use casement::cli::{self, Command, StartConfig, XwaylandSource};
 use casement::icons::IconSearch;
 use casement::notify::{NotifySocket, Watchdog};
 use casement::space_store::{StateDirs, StateHome};
+use casement::spawn::Scopes;
 use casement::xwayland::{self, XwaylandConfig, XwaylandMode};
 use casement::{CompositorBus, DebugBus, RunConfig};
 use casement_backend::BackendChoice;
@@ -117,7 +118,14 @@ fn main() -> ExitCode {
                 std::env::var("WATCHDOG_PID").ok().as_deref(),
                 std::process::id(),
             );
+            // A binding's programs get scopes of their own in the person's service manager,
+            // which listens under the runtime folder; a headless run has none.
+            let scopes = match start.backend {
+                BackendChoice::Headless => Scopes::Off,
+                _ => Scopes::under(std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from)),
+            };
             let config = RunConfig::new(*start)
+                .with_scopes(scopes)
                 .with_notify(notify)
                 .with_watchdog(watchdog)
                 .with_debug_bus(debug_bus)

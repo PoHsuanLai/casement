@@ -15,6 +15,8 @@
 //! assert_eq!(config.mode, XwaylandMode::Satellite);
 //! ```
 
+#[cfg(test)]
+mod exit_tests;
 mod guard;
 mod listen;
 pub mod owners;
@@ -27,6 +29,7 @@ pub use resolve::{SATELLITE, from_file, on_path};
 
 use crate::spawn::{EnvVar, SpawnError, SpawnSpec, Spawned, Spawner};
 use crate::state::State;
+use casement_core::Pid;
 use casement_core::input::Argv;
 use casement_core::time::Mono;
 use rustix::process::RawPid;
@@ -300,23 +303,15 @@ impl XwaylandState {
         }
     }
 
-    /// Whether the running satellite has exited; if so the sockets are listening again. Only a
-    /// child of this process is seen (`waitpid`); a pid that is not ours (a test double's) is
-    /// never reported as exited.
-    pub fn reap(&mut self) {
+    /// Notices the running satellite among `exited`, the programs the spawner reaped since the
+    /// last turn; if it is there the sockets are listening again and the next X11 client starts
+    /// a new one. The spawner that started satellite is the only one that can wait for it, so
+    /// the exit is read from its report and never by waiting on the pid here.
+    pub fn reap(&mut self, exited: &[Pid]) {
         let XwaylandState::Running(running) = &*self else {
             return;
         };
-        let pid = i32::try_from(running.process.pid.0)
-            .ok()
-            .and_then(rustix::process::Pid::from_raw);
-        let exited = pid.is_some_and(|pid| {
-            matches!(
-                rustix::process::waitpid(Some(pid), rustix::process::WaitOptions::NOHANG),
-                Ok(Some(_))
-            )
-        });
-        if exited {
+        if exited.contains(&running.process.pid) {
             tracing::warn!("xwayland-satellite exited; it starts again with the next X11 client");
             self.satellite_exited();
         }
@@ -342,7 +337,6 @@ pub fn attach(state: &mut State, config: &XwaylandConfig) {
 
 /// One loop turn of X11: notices a satellite that exited, and starts one when a client waits.
 pub fn turn(state: &mut State, config: &XwaylandConfig, wayland: &WaylandSocket) {
-    state.xwayland.reap();
     let State {
         xwayland,
         seams,
@@ -350,6 +344,7 @@ pub fn turn(state: &mut State, config: &XwaylandConfig, wayland: &WaylandSocket)
         ..
     } = state;
     let now = clock.now();
+    xwayland.reap(&seams.spawner.exited(now));
     match xwayland.serve(config, seams.spawner.as_mut(), wayland, now) {
         Ok(ServeStep::Started(process)) => {
             tracing::info!(pid = process.pid.0, "xwayland-satellite started");

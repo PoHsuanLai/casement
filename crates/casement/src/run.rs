@@ -7,6 +7,7 @@ use crate::debug;
 use crate::display::{self, attach_display};
 use crate::notify::{Notice, NotifySocket, SocketNotify, Watchdog};
 use crate::space_sync::SpaceSync;
+use crate::spawn::{ProcessSpawner, Scopes};
 use crate::test_mode::{HookError, TestHooks};
 use crate::{StartError, State, cli, clients, core_loop};
 use casement_ipc::IpcError;
@@ -59,6 +60,9 @@ pub struct RunConfig {
     pub notify: NotifySocket,
     /// How often the service manager wants a ping.
     pub watchdog: Watchdog,
+    /// Whether the programs a binding starts get a scope of their own in the person's service
+    /// manager.
+    pub scopes: Scopes,
     /// Test overrides of which unit a bus peer runs in (feature `debug-inject` only).
     #[cfg(feature = "debug-inject")]
     pub debug_peer_units: casement_ipc::dbus::PeerUnitTable,
@@ -74,6 +78,7 @@ impl RunConfig {
             compositor_bus: CompositorBus::Unset,
             notify: NotifySocket::Unset,
             watchdog: Watchdog::Off,
+            scopes: Scopes::Off,
             #[cfg(feature = "debug-inject")]
             debug_peer_units: casement_ipc::dbus::PeerUnitTable::default(),
         }
@@ -118,6 +123,12 @@ impl RunConfig {
     #[must_use]
     pub fn with_watchdog(self, watchdog: Watchdog) -> RunConfig {
         RunConfig { watchdog, ..self }
+    }
+
+    /// The same run starting a binding's programs in scopes as `scopes` says.
+    #[must_use]
+    pub fn with_scopes(self, scopes: Scopes) -> RunConfig {
+        RunConfig { scopes, ..self }
     }
 
     /// The same run hearing login1 on `sleep_bus`.
@@ -252,6 +263,7 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
         compositor_bus,
         notify,
         watchdog,
+        scopes,
         #[cfg(feature = "debug-inject")]
         debug_peer_units,
     } = config;
@@ -263,6 +275,10 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
     let xwayland_config = start.xwayland.clone();
     let mut state = State::new(start, &mut display, &handle)?;
     state.seams.notify = Box::new(SocketNotify::new(notify));
+    // The run's own spawner is the one that may use scopes; a seam a test injected is kept.
+    if matches!(scopes, Scopes::Under(_)) {
+        state.seams.spawner = Box::new(ProcessSpawner::new(scopes));
+    }
     if let CompositorBus::At(address) = &compositor_bus {
         let registry = ZbusSpaceRegistry::at(address.clone());
         state.seams.space_sync = SpaceSync::new(Box::new(registry));
@@ -274,6 +290,8 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
         socket.socket_name().to_string_lossy()
     );
     let socket_name = socket.socket_name().to_string_lossy().into_owned();
+    state.seams.child_env =
+        std::mem::take(&mut state.seams.child_env).with("WAYLAND_DISPLAY", &socket_name);
     let status = format!("listening on {socket_name}");
     handle
         .insert_source(socket, |stream, (), state: &mut State| {

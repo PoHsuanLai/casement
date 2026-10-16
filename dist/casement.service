@@ -15,8 +15,9 @@
 #   - graphical-session-pre.target is reached (or started by the session) before this unit.
 # What casement reads itself: $NOTIFY_SOCKET and $WATCHDOG_USEC / $WATCHDOG_PID (set by systemd
 # for Type=notify), $XDG_STATE_HOME or $HOME (spaces.toml), $CASEMENT_LOG (log filter, default
-# info). It sets nothing for its clients: the Wayland socket name is announced on stderr and
-# in the unit's STATUS= (`systemctl --user status casement`).
+# info). It starts no one's session for them: the Wayland socket name is announced on stderr and
+# in the unit's STATUS= (`systemctl --user status casement`), and every program one of its key
+# bindings starts gets it as WAYLAND_DISPLAY (and no NOTIFY_SOCKET, WATCHDOG_* or LISTEN_*).
 #
 # Expected ExecStart: the installed binary, the real backend, no other arguments:
 #   /usr/bin/casement            (the `tty` backend on a seat; add `--backend winit` to nest
@@ -38,7 +39,9 @@ Documentation=https://github.com/PoHsuanLai/casement
 PartOf=graphical-session.target
 After=graphical-session-pre.target
 Before=graphical-session.target
-# A crash loop stops here instead of restarting forever (the session then ends cleanly).
+# A crash loop stops here instead of restarting forever (the session then ends cleanly). Under
+# the desktop session this limit is not what runs: desktop-session restarts casement itself
+# (its drop-in sets Restart=no), counts quick exits and starts `casement --safe` after three.
 StartLimitIntervalSec=60
 StartLimitBurst=4
 
@@ -55,6 +58,10 @@ WatchdogSec=30
 TimeoutStartSec=30
 TimeoutStopSec=10
 # The whole cgroup goes with the compositor: its clients cannot outlive their display server.
+# The programs its key bindings start are not in it: each runs in a transient scope of the user
+# manager (`systemd-run --user --scope`), so a restart of the compositor leaves a terminal's
+# tmux server or a long build alone. Without a user manager they are plain children of this
+# unit and end with it.
 KillMode=control-group
 # The compositor's own log goes to the journal.
 StandardOutput=journal
