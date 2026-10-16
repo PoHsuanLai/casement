@@ -2,6 +2,7 @@
 
 use super::Model;
 use super::moved::Moved;
+use super::privilege::Input;
 use crate::ids::ClientKey;
 use crate::policy::ConnectionRole;
 use casement_protocols::vocab::Toggle;
@@ -14,7 +15,7 @@ impl Model {
         if matches!(role, ConnectionRole::Shell) {
             model.shell_clients.insert(client);
         }
-        Moved::of(model)
+        model.privilege_connected(client, role)
     }
 
     /// Whether `client` came through the shell's own connection.
@@ -51,15 +52,21 @@ impl Model {
             .fold(Moved::of(self), |moved, id| moved.then(|m| m.unmap(id)));
         moved.then(|mut model| {
             model.quit_listeners.remove(&client);
-            model.shell_clients.remove(&client);
+            let was_shell = model.shell_clients.remove(&client);
             let served = model.clients.remove(&client).unwrap_or_default();
             let orphaned: Vec<_> = served
                 .into_iter()
                 .filter(|app| !model.clients.values().any(|others| others.contains(app)))
                 .collect();
-            orphaned.into_iter().fold(Moved::of(model), |moved, app| {
+            let moved = orphaned.into_iter().fold(Moved::of(model), |moved, app| {
                 moved.then(|model| model.drop_app(&app))
-            })
+            });
+            moved
+                .then(|model| model.privileged(Input::Gone { client }))
+                .then(|model| match (was_shell, model.shell_clients.is_empty()) {
+                    (true, true) => model.privileged(Input::ShellGone),
+                    (true, false) | (false, _) => Moved::of(model),
+                })
         })
     }
 }

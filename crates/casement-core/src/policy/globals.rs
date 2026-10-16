@@ -1,6 +1,9 @@
-//! Which globals a connection sees, as one table (I7: no privileged global on the public
-//! socket; a sandboxed client sees less than a native one).
+//! Which globals a connection sees, as one table (I7: no ungated privileged global; the
+//! globals that need the person's consent are advertised to a public client and gated where
+//! they are used, unless the person already refused them; a sandboxed client sees less than a
+//! native one).
 
+use super::power::{PowerSet, power_of};
 use porter_core::SandboxFacts;
 
 /// What kind of connection a client arrived on.
@@ -132,6 +135,66 @@ pub enum GlobalKind {
     QuireShell,
 }
 
+impl GlobalKind {
+    /// Every global, in declaration order. The golden table in the tests lists one row per
+    /// entry, so a global added here is a row to review.
+    pub const ALL: &'static [GlobalKind] = &[
+        GlobalKind::Compositor,
+        GlobalKind::Subcompositor,
+        GlobalKind::Shm,
+        GlobalKind::Output,
+        GlobalKind::Viewporter,
+        GlobalKind::SinglePixel,
+        GlobalKind::AlphaModifier,
+        GlobalKind::Presentation,
+        GlobalKind::FractionalScale,
+        GlobalKind::Fifo,
+        GlobalKind::CommitTiming,
+        GlobalKind::ContentType,
+        GlobalKind::ColorManagement,
+        GlobalKind::XdgShell,
+        GlobalKind::XdgDecoration,
+        GlobalKind::XdgActivation,
+        GlobalKind::XdgDialog,
+        GlobalKind::XdgToplevelIcon,
+        GlobalKind::XdgToplevelTag,
+        GlobalKind::XdgForeign,
+        GlobalKind::SystemBell,
+        GlobalKind::QuireWindow,
+        GlobalKind::LayerShell,
+        GlobalKind::SessionLock,
+        GlobalKind::Seat,
+        GlobalKind::CursorShape,
+        GlobalKind::PointerConstraints,
+        GlobalKind::RelativePointer,
+        GlobalKind::PointerGestures,
+        GlobalKind::ShortcutsInhibit,
+        GlobalKind::Tablet,
+        GlobalKind::DataDevice,
+        GlobalKind::PrimarySelection,
+        GlobalKind::ExtDataControl,
+        GlobalKind::WlrDataControl,
+        GlobalKind::Dmabuf,
+        GlobalKind::TextInput,
+        GlobalKind::InputMethod,
+        GlobalKind::VirtualKeyboard,
+        GlobalKind::IdleNotify,
+        GlobalKind::IdleInhibit,
+        GlobalKind::ForeignToplevelList,
+        GlobalKind::SecurityContext,
+        GlobalKind::BackgroundEffect,
+        GlobalKind::OutputManagement,
+        GlobalKind::OutputPower,
+        GlobalKind::Gamma,
+        GlobalKind::WlrToplevel,
+        GlobalKind::Workspace,
+        GlobalKind::ImageCapture,
+        GlobalKind::ToplevelCapture,
+        GlobalKind::QuireDesktop,
+        GlobalKind::QuireShell,
+    ];
+}
+
 /// Whether a connection sees a global.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Advertise {
@@ -141,8 +204,9 @@ pub enum Advertise {
     No,
 }
 
-/// Whether a connection of `role` sees `global`. A sandboxed client sees none of the
-/// clipboard managers, the toplevel list, the input-method and virtual-keyboard managers, the
+/// Whether a connection of `role` sees `global` when nothing is hidden from it by consent:
+/// [`advertised_to`] with no refused powers. A sandboxed client sees none of the clipboard
+/// managers, the toplevel list, the input-method and virtual-keyboard managers, the
 /// security-context manager, layer shell, the session lock, output and window management,
 /// workspaces, capture and the desktop and shell protocols. The shell connection sees
 /// everything. The agent connection sees everything but `quire_shell_v1`; the public socket
@@ -150,8 +214,31 @@ pub enum Advertise {
 ///
 /// The match on `global` in `sandbox_sees` is exhaustive on purpose: a new global fails to
 /// compile until someone decides whether a sandbox sees it (I7). Whoever adds a privileged
-/// global also gives it a tier in `tier_of`.
+/// global also gives it a tier in `tier_of` and a power (or none) in
+/// [`power_of`](super::power_of).
 pub fn advertised(global: GlobalKind, role: &ConnectionRole) -> Advertise {
+    advertised_to(global, role, &PowerSet::default())
+}
+
+/// Whether a connection of `role` sees `global`, given the powers its program was refused at
+/// connect time (`hidden`: the person's or the administrator's no). A public client is not
+/// shown a global of a refused power, so a tool says "not supported" instead of waiting for an
+/// answer that will not come. Every other connection ignores `hidden`: the shell and the agent
+/// are trusted, and a sandbox already sees only what its table says.
+///
+/// A global that needs consent but was not refused is advertised and gated where it is used
+/// (I7: there is no ungated privileged global).
+pub fn advertised_to(global: GlobalKind, role: &ConnectionRole, hidden: &PowerSet) -> Advertise {
+    match (by_role(global, role), role, power_of(global)) {
+        (Advertise::Yes, ConnectionRole::Public, Some(power)) if hidden.contains(power) => {
+            Advertise::No
+        }
+        (seen, _, _) => seen,
+    }
+}
+
+/// What the connection's role alone allows.
+fn by_role(global: GlobalKind, role: &ConnectionRole) -> Advertise {
     match role {
         ConnectionRole::Shell => Advertise::Yes,
         ConnectionRole::Agent => match tier_of(global) {

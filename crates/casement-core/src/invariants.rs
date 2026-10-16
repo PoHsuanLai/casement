@@ -53,12 +53,14 @@ pub enum InvariantBreak {
     LayerOnMissingOutput(LayerKey),
     /// The lock says a surface covers an output that is not plugged.
     LockCoversMissingOutput(OutputKey),
+    /// The consent machine's questions, clients and book disagree (`Privilege::in_step`).
+    PrivilegeOutOfStep,
 }
 
 /// The first invariant `model` breaks, checking places, then Spaces, then apps, then focus,
 /// then layers and the lock.
 pub(crate) fn check(model: &Model) -> Result<(), InvariantBreak> {
-    let checks: [fn(&Model) -> Option<InvariantBreak>; 15] = [
+    let checks: [fn(&Model) -> Option<InvariantBreak>; 16] = [
         windows_have_places,
         spaces_have_outputs,
         space_rows_are_numbered_once,
@@ -74,11 +76,16 @@ pub(crate) fn check(model: &Model) -> Result<(), InvariantBreak> {
         layers_have_outputs,
         lock_covers_plugged_outputs,
         active_app_is_shown,
+        privilege_is_in_step,
     ];
     checks
         .into_iter()
         .find_map(|check| check(model))
         .map_or(Ok(()), Err)
+}
+
+fn privilege_is_in_step(model: &Model) -> Option<InvariantBreak> {
+    (!model.privilege().in_step()).then_some(InvariantBreak::PrivilegeOutOfStep)
 }
 
 fn windows_have_places(model: &Model) -> Option<InvariantBreak> {

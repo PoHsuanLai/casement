@@ -10,6 +10,7 @@ use crate::layer::LayerSpec;
 use crate::lock::LockEvent;
 use crate::output::{GammaRamp, MinuteOfDay, OutputChangeSet, OutputConfig, OutputFacts};
 use crate::policy::ConnectionRole;
+use crate::privilege::{Book, ClientStanding, Floor, Subject, UnixSeconds};
 use crate::settings::CasementSettings;
 use crate::shell::ShellRequest;
 use crate::space::{SpaceFile, WorkspaceRequest};
@@ -18,7 +19,9 @@ use crate::window::{
     A11yRoot, FirstMouse, FrameHint, Parent, SizeLimits, WindowOrigin, WindowTitle,
     WlrToplevelRequest,
 };
-use casement_protocols::vocab::{Edited, Modality, PlaceTarget, Toggle, WindowRole};
+use casement_protocols::vocab::{
+    Answer, AskId, Edited, Modality, PlaceTarget, Power, Toggle, WindowRole,
+};
 use porter_core::{ClaimedId, PeerIdentity};
 
 /// Something that happened, as the edge (a protocol handler, the backend, the clock) reports
@@ -204,6 +207,71 @@ pub enum Event {
     Desktop(DesktopRequest),
     /// The shell told the compositor something (`quire_shell_v1`; P2-Z).
     Shell(ShellRequest),
+    /// The composition root says who a public client's program is, once it has looked at the
+    /// connection. Until it does, a public client is unproven and can only be asked for
+    /// Allow Once. A standing for a connection that is not public is ignored.
+    ClientStanding {
+        /// The client.
+        client: ClientKey,
+        /// Who its program is.
+        standing: ClientStanding,
+    },
+    /// A client used a power that needs the person's consent, for the first time or after a
+    /// refusal. The model answers with [`Effect::Resolve`](crate::Effect::Resolve), at once or
+    /// after the person has answered.
+    PrivilegeUse {
+        /// The client.
+        client: ClientKey,
+        /// The power.
+        power: Power,
+    },
+    /// The person answered a question on the shell's screen (`permission_answer`). `at` is the
+    /// wall-clock second the root read; it only stamps the book.
+    PermissionAnswered {
+        /// The question.
+        ask: AskId,
+        /// What the person said.
+        answer: Answer,
+        /// When.
+        at: UnixSeconds,
+    },
+    /// Settings switched a program's power on.
+    PrivilegeGranted {
+        /// The program or app.
+        subject: Subject,
+        /// The power.
+        power: Power,
+        /// When.
+        at: UnixSeconds,
+    },
+    /// Settings switched a program's power off: every connected client of it loses the power
+    /// at once.
+    PrivilegeRevoked {
+        /// The program or app.
+        subject: Subject,
+        /// The power.
+        power: Power,
+        /// When.
+        at: UnixSeconds,
+    },
+    /// Settings forgot a program's answer ("Ask Again"): it is asked at its next use, and a
+    /// connected client of it loses the power now.
+    PrivilegeForgotten {
+        /// The program or app.
+        subject: Subject,
+        /// The power.
+        power: Power,
+    },
+    /// The shell can be asked a question: it bound `quire_shell_v1` at the version that
+    /// carries `permission_ask`.
+    ShellReady,
+    /// The shell cannot be asked any more (its connection or its protocol object ended).
+    /// Questions that were on its screen wait for the next shell.
+    ShellGone,
+    /// The person's book was read at start.
+    BookLoaded(Box<Book>),
+    /// The administrator's floor was read at start, or read again.
+    FloorLoaded(Box<Floor>),
 }
 
 /// A toplevel that just mapped.

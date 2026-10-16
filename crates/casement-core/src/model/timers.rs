@@ -2,6 +2,7 @@
 
 use super::Model;
 use super::moved::Moved;
+use super::privilege::Input;
 use crate::app::{AppKey, AppLife, PING_DEADLINE, PING_GAP, Pinging, ping_plan};
 use crate::cause::Cause;
 use crate::effect::{CoreNote, Effect, Held};
@@ -25,6 +26,7 @@ impl Model {
             (Gone::No, TimerKey::QuitGrace(app)) => model.quit_grace_over(app),
             (Gone::No, TimerKey::LockWait) => model.lock_wait_over(),
             (Gone::No, TimerKey::OverviewSettle) => model.overview_settled(),
+            (Gone::No, TimerKey::AskDeadline) => model.privileged(Input::Tick),
             (Gone::No, TimerKey::SpaceFinish(_)) => model.space_swipe(SwipeIn::Elapsed),
             (Gone::No, _) => Moved::of(model),
         }
@@ -49,7 +51,7 @@ impl Model {
             | TimerKey::LightDwell
             | TimerKey::TrustedArm(_)
             | TimerKey::LeaseYield(_) => None,
-            TimerKey::LockWait | TimerKey::OverviewSettle => Some(Gone::No),
+            TimerKey::LockWait | TimerKey::OverviewSettle | TimerKey::AskDeadline => Some(Gone::No),
         }
     }
 

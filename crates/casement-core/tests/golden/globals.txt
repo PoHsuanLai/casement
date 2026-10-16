@@ -1,0 +1,59 @@
+# Every global, the power that gates its use (- for none), and whether a public client, the
+# agent tier and a sandboxed client are shown it (the shell is shown all). A public client is
+# shown a global of a power unless the person or the administrator refused that power at
+# connect time; the "public" column is the answer when nothing is refused. Format:
+# <GlobalKind> <power> <public> <agent> <sandbox>, in GlobalKind::ALL order. A new global is a
+# row to review: add it to GlobalKind::ALL and decide its power in policy/power.rs.
+Compositor - yes yes yes
+Subcompositor - yes yes yes
+Shm - yes yes yes
+Output - yes yes yes
+Viewporter - yes yes yes
+SinglePixel - yes yes yes
+AlphaModifier - yes yes yes
+Presentation - yes yes yes
+FractionalScale - yes yes yes
+Fifo - yes yes yes
+CommitTiming - yes yes yes
+ContentType - yes yes yes
+ColorManagement - yes yes yes
+XdgShell - yes yes yes
+XdgDecoration - yes yes yes
+XdgActivation - yes yes yes
+XdgDialog - yes yes yes
+XdgToplevelIcon - yes yes yes
+XdgToplevelTag - yes yes yes
+XdgForeign - yes yes yes
+SystemBell - yes yes yes
+QuireWindow - yes yes yes
+LayerShell - yes yes no
+SessionLock Lock yes yes no
+Seat - yes yes yes
+CursorShape - yes yes yes
+PointerConstraints - yes yes yes
+RelativePointer - yes yes yes
+PointerGestures - yes yes yes
+ShortcutsInhibit - yes yes yes
+Tablet - yes yes yes
+DataDevice - yes yes yes
+PrimarySelection - yes yes yes
+ExtDataControl Clipboard yes yes no
+WlrDataControl Clipboard yes yes no
+Dmabuf - yes yes yes
+TextInput - yes yes yes
+InputMethod TypingHelp yes yes no
+VirtualKeyboard Keys yes yes no
+IdleNotify - yes yes yes
+IdleInhibit - yes yes yes
+ForeignToplevelList Windows yes yes no
+SecurityContext - yes yes no
+BackgroundEffect - yes yes yes
+OutputManagement Displays yes yes no
+OutputPower Displays yes yes no
+Gamma Displays yes yes no
+WlrToplevel Windows yes yes no
+Workspace Windows yes yes no
+ImageCapture Screen yes yes no
+ToplevelCapture Screen yes yes no
+QuireDesktop - no yes no
+QuireShell - no no no

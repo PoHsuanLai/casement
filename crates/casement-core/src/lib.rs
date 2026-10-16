@@ -62,6 +62,7 @@ pub use ids::{
     PopupKey, WindowId,
 };
 pub use invariants::InvariantBreak;
+pub use model::privilege;
 pub use model::{
     MAX_DESKTOPS_PER_OUTPUT, Model, OpeningRoom, OutputBook, OutputState, OverviewPick, SpaceStrip,
     SwipeOwner,

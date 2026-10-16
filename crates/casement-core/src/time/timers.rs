@@ -48,6 +48,9 @@ pub enum TimerKey {
     LockWait,
     /// Mission Control's windows have had their time to fly in or out.
     OverviewSettle,
+    /// The next question to the person is due to time out, or the wait for a shell to ask it
+    /// is over.
+    AskDeadline,
 }
 
 /// A timer: when, and what for.

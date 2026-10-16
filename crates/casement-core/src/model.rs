@@ -25,6 +25,7 @@ mod outputs;
 mod overview;
 mod picture;
 mod pip;
+pub mod privilege;
 mod published;
 mod query;
 mod requests;
@@ -61,6 +62,7 @@ use crate::space::{SpaceBook, SpaceFile, SpaceSeed};
 use crate::time::{Mono, TimerBook};
 use moved::Moved;
 pub use overview::OverviewPick;
+use privilege::{Input, Privilege};
 pub use query::OpeningRoom;
 pub use spaces::MAX_DESKTOPS_PER_OUTPUT;
 use std::collections::{BTreeMap, BTreeSet};
@@ -119,6 +121,8 @@ pub struct Model {
     settings: CasementSettings,
     /// The night light's ramps and holds (`model/night_light.rs`).
     night: night_light::NightDrive,
+    /// Which programs may use the powers that need the person's consent (`model/privilege`).
+    privilege: Privilege,
     seed: SpaceSeed,
     now: Mono,
 }
@@ -161,6 +165,7 @@ impl Model {
             timers: TimerBook::empty(),
             settings,
             night: night_light::NightDrive::default(),
+            privilege: Privilege::new(epoch),
             seed,
             now: epoch,
         }
@@ -178,6 +183,17 @@ impl Model {
         // they were the cost a client with thousands of windows could stall the loop with.
         let watch = match &event {
             Event::Input(input) if !matches!(input.kind, InputKind::Swipe(_)) => Watch::Nothing,
+            // Consent changes nothing a window-list or desktop client is shown.
+            Event::ClientStanding { .. }
+            | Event::PrivilegeUse { .. }
+            | Event::PermissionAnswered { .. }
+            | Event::PrivilegeGranted { .. }
+            | Event::PrivilegeRevoked { .. }
+            | Event::PrivilegeForgotten { .. }
+            | Event::ShellReady
+            | Event::ShellGone
+            | Event::BookLoaded(_)
+            | Event::FloorLoaded(_) => Watch::Nothing,
             _ => Watch::Published,
         };
         self.run_watching(now, watch, |model| model.route(event))
@@ -268,6 +284,26 @@ impl Model {
             Event::SpacesLoaded(file) => self.restore_spaces(*file),
             Event::Desktop(request) => self.unless_locked(|model| model.desktop_request(request)),
             Event::Shell(request) => self.shell_request(request),
+            Event::ClientStanding { client, standing } => {
+                self.privileged(Input::Standing { client, standing })
+            }
+            Event::PrivilegeUse { client, power } => self.privileged(Input::Use { client, power }),
+            Event::PermissionAnswered { ask, answer, at } => {
+                self.privileged(Input::Answered { ask, answer, at })
+            }
+            Event::PrivilegeGranted { subject, power, at } => {
+                self.privileged(Input::Granted { subject, power, at })
+            }
+            Event::PrivilegeRevoked { subject, power, at } => {
+                self.privileged(Input::Revoked { subject, power, at })
+            }
+            Event::PrivilegeForgotten { subject, power } => {
+                self.privileged(Input::Forgotten { subject, power })
+            }
+            Event::ShellReady => self.privileged(Input::ShellReady),
+            Event::ShellGone => self.privileged(Input::ShellGone),
+            Event::BookLoaded(book) => self.privileged(Input::BookLoaded(*book)),
+            Event::FloorLoaded(floor) => self.privileged(Input::FloorLoaded(*floor)),
         }
     }
 

@@ -11,9 +11,10 @@ use crate::ids::{ClientKey, InputSerial, LayerKey, OutputKey, WindowId};
 use crate::input::{Argv, DbusCall};
 use crate::lock::LockReply;
 use crate::output::{GammaRamp, OutputConfig};
+use crate::privilege::{AskSubject, Book, PowerOutcome};
 use crate::shell::ShellNote;
 use crate::time::{Due, TimerKey};
-use casement_protocols::vocab::{Attention, Emphasis};
+use casement_protocols::vocab::{AskId, Attention, Emphasis, Memory, Power};
 
 /// Something the model wants done.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -122,6 +123,38 @@ pub enum Effect {
     Shell(ShellNote),
     /// Stop an app's processes with a signal (force quit; P3-QU).
     Terminate(Termination),
+    /// Ask the person whether a program may use a power: the shell shows the question
+    /// (`quire_shell_v1.permission_ask`) and answers with `Event::PermissionAnswered`.
+    AskPermission {
+        /// The question's id on the wire, never reused in a run.
+        ask: AskId,
+        /// The power.
+        power: Power,
+        /// What the shell is told of the program.
+        subject: AskSubject,
+        /// Whether the answer is kept (the sheet offers Allow, or Allow Once).
+        memory: Memory,
+    },
+    /// Take a question away from the shell's screen (`permission_withdraw`): it timed out, or
+    /// something else answered it.
+    WithdrawAsk {
+        /// The question.
+        ask: AskId,
+    },
+    /// Write the person's book: it is the whole book as it now is.
+    SaveBook(Box<Book>),
+    /// A client's use of a power came out: replay what was held, give the protocol's denial,
+    /// or end the use. The protocol layer keeps the latest outcome per client and power and
+    /// does not ask again until it is [`PowerOutcome::Denied`] or `Revoked` and the client
+    /// tries again.
+    Resolve {
+        /// The client.
+        client: ClientKey,
+        /// The power.
+        power: Power,
+        /// How it came out.
+        outcome: PowerOutcome,
+    },
 }
 
 /// A toplevel configure.
