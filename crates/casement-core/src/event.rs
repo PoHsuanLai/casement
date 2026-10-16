@@ -15,7 +15,8 @@ use crate::shell::ShellRequest;
 use crate::space::{SpaceFile, WorkspaceRequest};
 use crate::time::TimerKey;
 use crate::window::{
-    A11yRoot, FirstMouse, FrameHint, Parent, SizeLimits, WindowTitle, WlrToplevelRequest,
+    A11yRoot, FirstMouse, FrameHint, Parent, SizeLimits, WindowOrigin, WindowTitle,
+    WlrToplevelRequest,
 };
 use casement_protocols::vocab::{Edited, Modality, PlaceTarget, Toggle, WindowRole};
 use porter_core::{ClaimedId, PeerIdentity};
@@ -206,6 +207,8 @@ pub struct MappedToplevel {
     pub client: ClientKey,
     /// Its app.
     pub app: AppKey,
+    /// Whether its client is a Wayland program or the X11 satellite.
+    pub origin: WindowOrigin,
     /// The app id it declared.
     pub claimed_id: ClaimedId,
     /// Its role.

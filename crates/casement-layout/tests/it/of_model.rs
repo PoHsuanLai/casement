@@ -13,7 +13,7 @@ use casement_core::output::{
 use casement_core::settings::CasementSettings;
 use casement_core::space::SpaceSeed;
 use casement_core::time::{Millihertz, Mono};
-use casement_core::window::{MaxSize, Parent, SizeLimits};
+use casement_core::window::{MaxSize, Parent, SizeLimits, WindowOrigin};
 use casement_core::{ClientKey, Event, MappedToplevel, Model, OutputKey, OutputName, WindowId};
 use casement_core::{LayerKey, ToplevelRequest};
 use casement_layout::{
@@ -61,6 +61,7 @@ fn one_output_one_space_one_window() {
             window: WindowId(1),
             client: ClientKey(1),
             app: AppKey::Claimed(claimed.clone()),
+            origin: WindowOrigin::Wayland,
             claimed_id: claimed,
             role: WindowRole::Document,
             modality: Modality::None,
@@ -115,6 +116,7 @@ fn mapped(n: u64, app: &AppKey, token: TokenCheck) -> Event {
         window: WindowId(n),
         client: ClientKey(n),
         app: app.clone(),
+        origin: WindowOrigin::Wayland,
         claimed_id: ClaimedId::parse("foot").expect("claimed"),
         role: WindowRole::Document,
         modality: Modality::None,

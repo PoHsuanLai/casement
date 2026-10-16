@@ -28,8 +28,8 @@ pub(super) fn terminate(state: &mut State, stop: Termination) {
 /// The processes behind the connections of `stop`: those that came through the public socket,
 /// as recorded when they connected, except xwayland-satellite's (its one connection carries
 /// every X11 program's windows, so signalling it would end all of them and X11 for the
-/// session), plus the processes the X server names for the app's X11 windows when the
-/// connections include the satellite's.
+/// session), plus the processes the X server names for the app's X11 windows when the model
+/// names some.
 fn pids_of(state: &State, stop: &Termination) -> BTreeSet<RawPid> {
     let satellite = state.xwayland.satellite_pid();
     let wayland = state
@@ -39,13 +39,11 @@ fn pids_of(state: &State, stop: &Termination) -> BTreeSet<RawPid> {
     wayland.chain(x11_pids_of(state, stop, satellite)).collect()
 }
 
-/// The processes that own the X11 windows of `stop`'s app, when one of its connections is the
-/// satellite's and X11 is being served. Never the satellite, this process or init.
+/// The processes that own the X11 windows of `stop`'s app, when it has some and X11 is being
+/// served. Only the processes whose windows name this app, so another X11 program is never
+/// named; never the satellite, this process or init.
 fn x11_pids_of(state: &State, stop: &Termination, satellite: Option<RawPid>) -> BTreeSet<RawPid> {
-    let display = state
-        .xwayland
-        .display()
-        .filter(|_| state.processes.carries_x11(&stop.clients));
+    let display = state.xwayland.display().filter(|_| !stop.x11.is_empty());
     let Some(display) = display else {
         return BTreeSet::new();
     };
