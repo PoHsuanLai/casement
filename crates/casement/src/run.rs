@@ -349,6 +349,21 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
         crate::time::tick_every_minute(&handle);
     }
     let stop = event_loop.get_signal();
+    match crate::stop::watch() {
+        Ok(requests) => {
+            let stopper = stop.clone();
+            let inserted = handle.insert_source(requests, move |event, (), _: &mut State| {
+                if let smithay::reexports::calloop::channel::Event::Msg(_) = event {
+                    tracing::info!("asked to stop; closing down");
+                    stopper.stop();
+                }
+            });
+            if let Err(error) = inserted {
+                tracing::warn!(%error, "SIGTERM is not heard");
+            }
+        }
+        Err(error) => tracing::warn!(%error, "SIGTERM is not heard"),
+    }
     #[cfg(feature = "debug-inject")]
     let wake = Some(debug::WAITING_TURN);
     #[cfg(not(feature = "debug-inject"))]

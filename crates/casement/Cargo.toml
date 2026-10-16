@@ -53,6 +53,7 @@ calloop = { workspace = true }
 jiff = { workspace = true }
 x11rb = { workspace = true }
 rustix = { workspace = true }
+tokio = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }

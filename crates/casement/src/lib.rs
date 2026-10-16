@@ -61,6 +61,7 @@ pub mod space_store;
 pub mod space_sync;
 pub mod spawn;
 mod state;
+pub mod stop;
 pub mod suspend;
 pub mod test_mode;
 pub mod time;
