@@ -144,8 +144,9 @@ step "3/4 the user unit ($destdir$prefix/lib/systemd/user)"
 rendered=$(mktemp)
 # Kept when its install needs root: the printed command names it.
 trap '[ ${#MANUAL[@]} -gt 0 ] || rm -f "$rendered"' EXIT
-sed "s|^ExecStart=.*|ExecStart=$prefix/bin/casement|" "$UNIT" >"$rendered"
-grep -q "^ExecStart=$prefix/bin/casement\$" "$rendered" || die "$UNIT has no ExecStart= line to point at $prefix/bin/casement"
+# Only the program path is replaced: the rest of the line (the session's arguments, $CASEMENT_SESSION_ARGS) stays.
+sed 's|^ExecStart=[^ ]*|ExecStart='"$prefix"'/bin/casement|' "$UNIT" >"$rendered"
+grep -q "^ExecStart=$prefix/bin/casement\( \|\$\)" "$rendered" || die "$UNIT has no ExecStart= line to point at $prefix/bin/casement"
 put 644 "$rendered" "$prefix/lib/systemd/user/casement.service"
 
 step "4/4 SELinux labels and the user manager"

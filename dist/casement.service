@@ -5,13 +5,20 @@
 # exactly `casement.service`. Until casement runs as this unit it is an ordinary app to accountd,
 # Register is refused (logged once, the session carries on) and Spaces stay local to the machine.
 #
-# Install as ~/.config/systemd/user/casement.service or /usr/lib/systemd/user/casement.service.
+# Installed root-held under /usr/lib/systemd/user (or /usr/local/lib/systemd/user, /etc/systemd/user),
+# never under ~/.config: accountd trusts the unit only when its file, and every drop-in of it, sit in
+# those root-held places, so a copy in the person's own folder is not trusted. The session does not
+# use a drop-in either (not even one under $XDG_RUNTIME_DIR): it passes its arguments through the
+# user manager's environment, as $CASEMENT_SESSION_ARGS (see ExecStart below).
 #
 # What the session (desktop-session) provides before it starts this unit:
 #   - the user manager has the login session's environment imported (`systemctl --user
 #     import-environment`): XDG_RUNTIME_DIR, DBUS_SESSION_BUS_ADDRESS (the session bus; casement
 #     serves org.quire.Compositor1 and registers Spaces there), XDG_SEAT / XDG_SESSION_ID for the
 #     tty backend's logind session;
+#   - CASEMENT_SESSION_ARGS is set in the user manager (`systemctl --user set-environment`): the
+#     per-session arguments, such as `--backend tty` or `--safe`. It is unset again when the
+#     session ends;
 #   - graphical-session-pre.target is reached (or started by the session) before this unit.
 # What casement reads itself: $NOTIFY_SOCKET and $WATCHDOG_USEC / $WATCHDOG_PID (set by systemd
 # for Type=notify), $XDG_STATE_HOME or $HOME (spaces.toml), $CASEMENT_LOG (log filter, default
@@ -19,9 +26,11 @@
 # in the unit's STATUS= (`systemctl --user status casement`), and every program one of its key
 # bindings starts gets it as WAYLAND_DISPLAY (and no NOTIFY_SOCKET, WATCHDOG_* or LISTEN_*).
 #
-# Expected ExecStart: the installed binary, the real backend, no other arguments:
-#   /usr/bin/casement            (the `tty` backend on a seat; add `--backend winit` to nest
-#                                 under another compositor when developing)
+# Expected ExecStart: the installed binary and the session's arguments. systemd splits the unbraced
+# $CASEMENT_SESSION_ARGS on white space, and it is empty when the variable is not set:
+#   /usr/bin/casement $CASEMENT_SESSION_ARGS
+#   (no arguments: the `tty` backend on a seat; CASEMENT_SESSION_ARGS="--backend winit" nests
+#    under another compositor when developing, "--backend tty --safe" is the safe mode)
 #
 # Type=notify: casement says READY=1 once its Wayland socket listens and the first outputs are
 # announced, STOPPING=1 when it leaves, and WATCHDOG=1 at half of WatchdogSec while its loop
@@ -40,15 +49,20 @@ PartOf=graphical-session.target
 After=graphical-session-pre.target
 Before=graphical-session.target
 # A crash loop stops here instead of restarting forever (the session then ends cleanly). Under
-# the desktop session this limit is not what runs: desktop-session restarts casement itself
-# (its drop-in sets Restart=no), counts quick exits and starts `casement --safe` after three.
+# the desktop session this limit is not what runs: desktop-session sees the unit leave the running
+# state, stops it before the restart below fires, counts quick exits itself and starts
+# `casement --safe` after three.
 StartLimitIntervalSec=60
 StartLimitBurst=4
 
 [Service]
 Type=notify
 NotifyAccess=main
-ExecStart=/usr/bin/casement
+ExecStart=/usr/bin/casement $CASEMENT_SESSION_ARGS
+# A loader variable from the person's environment (a library to preload, a folder of plug-ins or
+# drivers to load) must not load code into this trusted process: accountd gives this unit a fixed
+# role only when the unit clears them, so none of them comes in through the user manager.
+UnsetEnvironment=LD_PRELOAD LD_LIBRARY_PATH LD_AUDIT GCONV_PATH GIO_EXTRA_MODULES GTK_MODULES GTK_PATH GST_PLUGIN_PATH GST_PLUGIN_SYSTEM_PATH LIBGL_DRIVERS_PATH MESA_LOADER_DRIVER_OVERRIDE __EGL_VENDOR_LIBRARY_DIRS __EGL_VENDOR_LIBRARY_FILENAMES GBM_BACKENDS_PATH LIBVA_DRIVERS_PATH VK_ICD_FILENAMES VK_DRIVER_FILES VK_ADD_DRIVER_FILES VK_LAYER_PATH VK_ADD_LAYER_PATH VK_INSTANCE_LAYERS VK_LOADER_LAYERS_ENABLE
 # The tty backend takes the seat through logind; a clean exit (the person logged out) is not a
 # failure and is not restarted.
 Restart=on-failure
