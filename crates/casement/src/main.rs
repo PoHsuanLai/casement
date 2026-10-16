@@ -3,7 +3,7 @@
 #[cfg(feature = "debug-inject")]
 mod debug_peer_units;
 
-use casement::cli::{self, Command, StartConfig, XwaylandSource};
+use casement::cli::{self, Command, StartConfig, StartMode, XwaylandSource};
 use casement::icons::IconSearch;
 use casement::notify::{NotifySocket, Watchdog};
 use casement::space_store::{StateDirs, StateHome};
@@ -49,9 +49,9 @@ fn state_home(flag: StateHome, backend: BackendChoice, env: &StateEnv) -> StateH
 }
 
 /// Where app icons are looked for: nowhere on the headless backend (its runs are throwaway), else
-/// the XDG data folders.
-fn icon_search(backend: BackendChoice) -> IconSearch {
-    if backend == BackendChoice::Headless {
+/// the XDG data folders. `--safe` looks for none.
+fn icon_search(backend: BackendChoice, mode: StartMode) -> IconSearch {
+    if backend == BackendChoice::Headless || mode == StartMode::Safe {
         return IconSearch::Off;
     }
     IconSearch::xdg(
@@ -66,6 +66,9 @@ fn icon_search(backend: BackendChoice) -> IconSearch {
 /// installed (`PATH`) and off when it is not. The headless backend (throwaway runs) keeps what
 /// the flags said, which is off without them.
 fn x11_setup(start: &StartConfig) -> XwaylandConfig {
+    if start.mode == StartMode::Safe {
+        return XwaylandConfig::off();
+    }
     if start.xwayland_source == XwaylandSource::Flag || start.backend == BackendChoice::Headless {
         return start.xwayland.clone();
     }
@@ -97,7 +100,7 @@ fn main() -> ExitCode {
         Ok(Command::Run(mut start)) => {
             start.state_home =
                 state_home(start.state_home.clone(), start.backend, &StateEnv::read());
-            start.icons = icon_search(start.backend);
+            start.icons = icon_search(start.backend, start.mode);
             start.xwayland = x11_setup(&start);
             match start.xwayland.mode {
                 XwaylandMode::Off => tracing::info!("older X11 apps: off"),
@@ -166,6 +169,17 @@ mod tests {
             xdg_state_home: xdg.map(PathBuf::from),
             home: home.map(PathBuf::from),
         }
+    }
+
+    #[test]
+    fn a_safe_start_uses_no_icons_and_no_x11_whatever_the_files_say() {
+        let args = ["--backend", "tty", "--safe"].map(str::to_owned);
+        let Ok(Command::Run(start)) = cli::parse_args(&args) else {
+            panic!("the arguments parse to a run");
+        };
+        assert_eq!(start.mode, StartMode::Safe);
+        assert_eq!(icon_search(start.backend, start.mode), IconSearch::Off);
+        assert_eq!(x11_setup(&start).mode, XwaylandMode::Off);
     }
 
     #[test]

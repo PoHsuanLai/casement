@@ -1,7 +1,7 @@
 //! The composition root's state (FROZEN: lanes never edit it; a change is an interface ask).
 
-use crate::cli::{DirectTty, StartConfig, TtyMode};
-use crate::config::{self, ConfigError};
+use crate::cli::{DirectTty, StartConfig, StartMode, TtyMode};
+use crate::config::{self, CasementDoc, ConfigError};
 use crate::seams::Seams;
 use crate::time::ClockSource;
 use crate::xwayland::XwaylandState;
@@ -59,6 +59,8 @@ pub struct State {
     pub seams: Seams,
     /// X11 clients through xwayland-satellite (P1-X1 starts it; off until then).
     pub xwayland: XwaylandState,
+    /// Whether this run is the crash guard's `--safe` run.
+    pub start_mode: StartMode,
     /// The process behind each public connection, for force quit.
     pub processes: crate::clients::Processes,
     /// The display, for creating globals, inserting clients and sending events. (Not in the
@@ -210,7 +212,13 @@ impl State {
         event_loop: &LoopHandle<'static, State>,
     ) -> Result<State, StartError> {
         let dh = display.handle();
-        let settings = config::to_core(&config::load(&config.config_home)?);
+        // `--safe` ignores the settings file altogether: a start that keeps failing must not
+        // depend on what a person or another program wrote there.
+        let doc = match config.mode {
+            StartMode::Safe => CasementDoc::default(),
+            StartMode::Normal => config::load(&config.config_home)?,
+        };
+        let settings = safe_settings(config.mode, config::to_core(&doc));
         let filter = GlobalFilter::policy();
         let primary = primary_selection::PrimarySelectionPart::new::<State>(&dh, filter);
         let mut wl = WaylandStates {
@@ -350,7 +358,10 @@ impl State {
             light_arm: casement_core::window::LightArm::default(),
             light_dwell: casement_core::window::Dwell::default(),
             scheme: casement_layout::Scheme::default(),
-            transparency: casement_layout::Transparency::default(),
+            transparency: match config.mode {
+                StartMode::Safe => casement_layout::Transparency::Reduced,
+                StartMode::Normal => casement_layout::Transparency::default(),
+            },
             titles: None,
             overview_hover: None,
             overview_drag: casement_core::overview_drag::Drag::Idle,
@@ -369,6 +380,7 @@ impl State {
             clock,
             seams,
             xwayland: XwaylandState::Off,
+            start_mode: config.mode,
             processes: crate::clients::Processes::default(),
             display: dh,
             event_loop: event_loop.clone(),
@@ -380,6 +392,21 @@ impl State {
     /// The settings the model runs with.
     pub fn settings(&self) -> &CasementSettings {
         self.core.model.settings()
+    }
+}
+
+/// `settings` as a run in `mode` uses them: unchanged, or for `--safe` with the cheapest minimise
+/// animation (the settings are the defaults already, so nothing a person chose is in them).
+fn safe_settings(mode: StartMode, settings: CasementSettings) -> CasementSettings {
+    match mode {
+        StartMode::Normal => settings,
+        StartMode::Safe => CasementSettings {
+            windows: casement_core::settings::WindowSettings {
+                minimise_effect: casement_core::settings::MinimiseEffect::Scale,
+                ..settings.windows
+            },
+            ..settings
+        },
     }
 }
 
@@ -469,4 +496,21 @@ fn real_tty_seams(
     Err(StartError::NotYet(
         "this build has no tty backend (feature `tty`)",
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use casement_core::settings::MinimiseEffect;
+
+    #[test]
+    fn a_safe_run_minimises_the_plainest_way_and_a_normal_run_keeps_the_settings() {
+        let normal = CasementSettings::defaults();
+        assert_eq!(normal.windows.minimise_effect, MinimiseEffect::Genie);
+        let kept = safe_settings(StartMode::Normal, normal.clone());
+        assert_eq!(kept, normal);
+        let safe = safe_settings(StartMode::Safe, normal.clone());
+        assert_eq!(safe.windows.minimise_effect, MinimiseEffect::Scale);
+        assert_eq!(safe.pointer, normal.pointer, "nothing else is touched");
+    }
 }

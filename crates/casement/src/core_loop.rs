@@ -6,6 +6,7 @@
 //! too; input the backend queued is drained into the model by [`drain_input`].
 
 use self::scene::{SceneSource, empty_frame, layers_on, row_of, sample_scene_at};
+use crate::cli::StartMode;
 use crate::exec;
 use crate::state::State;
 use casement_backend::headless::Shown;
@@ -481,6 +482,15 @@ pub fn configure_output(state: &mut State, output: &OutputKey, config: OutputCon
 /// then overrides it.
 fn connector(state: &mut State, event: ConnectorEvent) {
     match event {
+        ConnectorEvent::Plugged(facts)
+            if state.start_mode == StartMode::Safe && !state.core.model.outputs().0.is_empty() =>
+        {
+            // `--safe` drives the first display only: the others stay dark.
+            tracing::warn!(
+                output = facts.name.as_str(),
+                "safe mode: only the first display is used"
+            );
+        }
         ConnectorEvent::Plugged(facts) => {
             let (key, name) = (facts.key.clone(), facts.name.clone());
             // Read before the model's choice is applied: applying it rewrites the backend's spec.

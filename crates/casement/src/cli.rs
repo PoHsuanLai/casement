@@ -125,7 +125,9 @@ pub enum ClockChoice {
 pub enum StartMode {
     /// As configured.
     Normal,
-    /// `--safe`: pixman, no effects, one output.
+    /// `--safe`: the settings file ignored (defaults, the render GPU chosen automatically), no
+    /// effects (materials opaque, the plainest minimise), no X11 apps, no icons, one display;
+    /// on the headless backend also the pixman renderer.
     Safe,
 }
 

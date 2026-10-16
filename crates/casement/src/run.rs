@@ -2,6 +2,7 @@
 //! loop until it is asked to stop. The binary is only arguments, the environment and an exit
 //! code around this; a test harness or a second binary embeds the compositor the same way.
 
+use crate::cli::StartMode;
 #[cfg(feature = "debug-inject")]
 use crate::debug;
 use crate::display::{self, attach_display};
@@ -271,6 +272,7 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
     let handle = event_loop.handle();
     let mut display: Display<State> = Display::new()?;
     let config_home = start.config_home.clone();
+    let start_mode = start.mode;
     let tty_mode = start.tty.clone();
     let xwayland_config = start.xwayland.clone();
     let mut state = State::new(start, &mut display, &handle)?;
@@ -324,8 +326,15 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
     let mut hooks = TestHooks::attach(&mut state, &tty_mode)?;
     core_loop::announce_outputs(&mut state);
     crate::keymap::attach(&mut state, &config_home)?;
-    crate::appearance::attach(&mut state, &config_home)?;
-    crate::settings_live::attach(&mut state, &config_home)?;
+    match start_mode {
+        StartMode::Normal => {
+            crate::appearance::attach(&mut state, &config_home)?;
+            crate::settings_live::attach(&mut state, &config_home)?;
+        }
+        StartMode::Safe => tracing::warn!(
+            "safe mode: the settings files are ignored, there are no effects, no X11 apps, no icons and one display"
+        ),
+    }
     // The Spaces are loaded and the outputs announced: register them (queued, not waited for),
     // then tell the service manager the compositor is ready.
     state.seams.space_sync.sync(state.core.model.spaces());
