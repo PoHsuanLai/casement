@@ -1,7 +1,9 @@
 //! `wp_fifo_v1`: a surface's commits wait for the previous one to be presented.
 
+use crate::client::ClearedClients;
 use crate::presentation::Presented;
 use crate::states::{GlobalFilter, WaylandFault};
+use crate::watch_mark;
 use casement_core::{Event, OutputKey};
 use smithay::reexports::wayland_protocols::wp::fifo::v1::server::wp_fifo_manager_v1::WpFifoManagerV1;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -20,8 +22,11 @@ pub struct FifoPart {
     waiting: Vec<Waiting>,
     /// Clients whose blocked commits a signalled barrier may have released
     /// ([`take_cleared`]).
-    cleared: Vec<Client>,
+    cleared: ClearedClients,
 }
+
+/// The mark on a surface that has a barrier in [`FifoPart`]'s list (`watch_mark`).
+struct Watched;
 
 /// A barrier and the surface whose content update set it.
 #[derive(Debug)]
@@ -42,7 +47,7 @@ impl FifoPart {
         FifoPart {
             state: FifoManagerState::new::<D>(display),
             waiting: Vec::new(),
-            cleared: Vec::new(),
+            cleared: ClearedClients::default(),
         }
     }
 }
@@ -59,12 +64,9 @@ pub fn on_barrier(part: &mut FifoPart, surface: &WlSurface) -> Vec<Event> {
             .barrier
             .take()
     });
-    if let Some(barrier) = barrier
-        && !part
-            .waiting
-            .iter()
-            .any(|waiting| waiting.barrier == barrier)
-    {
+    // The barrier was taken from the surface's state, so it cannot be here already: no search.
+    if let Some(barrier) = barrier {
+        watch_mark::set::<Watched>(surface);
         part.waiting.push(Waiting {
             surface: surface.downgrade(),
             barrier,
@@ -84,15 +86,12 @@ pub fn apply_presented(
     let _ = (output, presented);
     for waiting in std::mem::take(&mut part.waiting) {
         waiting.barrier.signal();
-        let owner = waiting
-            .surface
-            .upgrade()
-            .ok()
-            .and_then(|surface| surface.client());
-        if let Some(client) = owner
-            && !part.cleared.iter().any(|known| known.id() == client.id())
-        {
-            part.cleared.push(client);
+        let surface = waiting.surface.upgrade().ok();
+        if let Some(surface) = &surface {
+            watch_mark::clear::<Watched>(surface);
+        }
+        if let Some(client) = surface.and_then(|surface| surface.client()) {
+            part.cleared.note(client);
         }
     }
     Ok(())
@@ -101,11 +100,15 @@ pub fn apply_presented(
 /// The clients whose held-back commits a barrier signalled since the last call may have
 /// released: the caller tells each one's smithay compositor state (`blocker_cleared`).
 pub fn take_cleared(part: &mut FifoPart) -> Vec<Client> {
-    std::mem::take(&mut part.cleared)
+    part.cleared.take()
 }
 
 /// `surface` was destroyed: its barriers go with it.
 pub fn forget_surface(part: &mut FifoPart, surface: &WlSurface) {
+    // Only a surface with a barrier in the list is searched for (CASW-20).
+    if !watch_mark::is_set::<Watched>(surface) {
+        return;
+    }
     part.waiting
         .retain(|waiting| waiting.surface != surface.downgrade());
 }

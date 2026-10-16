@@ -9,6 +9,7 @@ use smithay::reexports::wayland_server::backend::{ClientData, ClientId, Disconne
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Client, Resource};
 use smithay::wayland::compositor::CompositorClientState;
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 /// The key of the client that owns `surface`, when casement inserted that client.
@@ -18,6 +19,26 @@ pub fn key_of_surface(surface: &WlSurface) -> Option<ClientKey> {
         .as_ref()
         .and_then(ClientState::of)
         .map(|data| data.key)
+}
+
+/// Clients to tell that a commit they had held back may go on, each once, in key order
+/// (`blocker_cleared`). Kept by key so noting a client costs a lookup, not a scan of the list
+/// (CASW-20).
+#[derive(Debug, Default)]
+pub struct ClearedClients(BTreeMap<ClientKey, Client>);
+
+impl ClearedClients {
+    /// Notes `client`; one casement did not insert is not noted (it has no commits of ours).
+    pub fn note(&mut self, client: Client) {
+        if let Some(key) = ClientState::of(&client).map(|data| data.key) {
+            self.0.entry(key).or_insert(client);
+        }
+    }
+
+    /// The clients noted since the last call, in key order.
+    pub fn take(&mut self) -> Vec<Client> {
+        std::mem::take(&mut self.0).into_values().collect()
+    }
 }
 
 /// The clients that disconnected since the loop last looked. smithay announces a disconnect

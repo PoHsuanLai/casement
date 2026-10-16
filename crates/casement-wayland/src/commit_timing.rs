@@ -1,8 +1,10 @@
 //! `wp_commit_timing_v1`: a commit carries the instant it should be presented at; the clock is
 //! the session's `Mono` (virtual in tests).
 
+use crate::client::ClearedClients;
 use crate::presentation::Presented;
 use crate::states::{GlobalFilter, WaylandFault};
+use crate::watch_mark::{self, Marked};
 use casement_core::{Event, OutputKey};
 use smithay::reexports::wayland_protocols::wp::commit_timing::v1::server::wp_commit_timing_manager_v1::WpCommitTimingManagerV1;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -23,8 +25,11 @@ pub struct CommitTimingPart {
     watched: Vec<Weak<WlSurface>>,
     /// Clients whose blocked commits a signalled barrier may have released
     /// ([`take_cleared`]).
-    cleared: Vec<Client>,
+    cleared: ClearedClients,
 }
+
+/// The mark on a surface that is in [`CommitTimingPart`]'s watch list (`watch_mark`).
+struct Watched;
 
 impl CommitTimingPart {
     /// Creates the global (version 1). Every connection sees it.
@@ -36,7 +41,7 @@ impl CommitTimingPart {
         CommitTimingPart {
             state: CommitTimingManagerState::new::<D>(display),
             watched: Vec::new(),
-            cleared: Vec::new(),
+            cleared: ClearedClients::default(),
         }
     }
 }
@@ -67,11 +72,8 @@ fn is_timed(surface: &WlSurface) -> bool {
 /// by smithay before `CompositorHandler::commit` runs, so the handler calls this from a
 /// pre-commit hook, and the surface is watched until its barriers are signalled.
 pub fn on_barrier(part: &mut CommitTimingPart, surface: &WlSurface) -> Vec<Event> {
-    let known = part
-        .watched
-        .iter()
-        .any(|watched| *watched == surface.downgrade());
-    if !known && is_timed(surface) {
+    // The mark says the surface is in the list already: no search (CASW-20).
+    if is_timed(surface) && watch_mark::set::<Watched>(surface) == Marked::Now {
         part.watched.push(surface.downgrade());
     }
     Vec::new()
@@ -106,14 +108,12 @@ pub fn apply_presented(
                 })
                 .unwrap_or((false, false))
         });
-        if signalled
-            && let Some(client) = surface.client()
-            && !part.cleared.iter().any(|known| known.id() == client.id())
-        {
-            part.cleared.push(client);
+        if signalled && let Some(client) = surface.client() {
+            part.cleared.note(client);
         }
-        if remaining {
-            still.push(watched);
+        match remaining {
+            true => still.push(watched),
+            false => watch_mark::clear::<Watched>(&surface),
         }
     }
     part.watched = still;
@@ -123,11 +123,15 @@ pub fn apply_presented(
 /// The clients whose held-back commits a barrier signalled since the last call may have
 /// released: the caller tells each one's smithay compositor state (`blocker_cleared`).
 pub fn take_cleared(part: &mut CommitTimingPart) -> Vec<Client> {
-    std::mem::take(&mut part.cleared)
+    part.cleared.take()
 }
 
 /// `surface` was destroyed: it is no longer watched.
 pub fn forget_surface(part: &mut CommitTimingPart, surface: &WlSurface) {
+    // Only a watched surface is searched for (CASW-20).
+    if !watch_mark::is_set::<Watched>(surface) {
+        return;
+    }
     part.watched
         .retain(|watched| *watched != surface.downgrade());
 }

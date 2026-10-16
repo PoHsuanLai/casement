@@ -27,6 +27,7 @@ pub mod convert;
 pub mod limits;
 pub mod serial;
 pub mod states;
+mod watch_mark;
 
 pub mod alpha_modifier;
 pub mod appmenu;
