@@ -198,3 +198,38 @@ fn unmapping_beyond_the_table() {
     ];
     rows.into_iter().for_each(run);
 }
+
+/// CASC-14: a window with a modal sheet open is never keyed behind it, whether a token
+/// activates it or the key window closes and its app picks the next one.
+#[test]
+fn a_window_with_an_open_sheet_is_keyed_through_the_sheet() {
+    use casement_core::focus::{FocusView, step};
+    let before = focus(Some(a()), Some(2), Some(2), vec![a(), b()], &[2, 1, 3]);
+    let cases = [
+        (
+            "a valid token for the parent",
+            FocusIn::Token {
+                window: WindowId(1),
+                token: TokenCheck::Valid,
+            },
+            windows(&[], vec![sheet(6, 1)]),
+        ),
+        (
+            "the key window closing",
+            FocusIn::Unmapped(WindowId(2)),
+            windows(&[2], vec![sheet(6, 1)]),
+        ),
+    ];
+    for (name, input, table) in cases {
+        let apps = fixture::apps(&table);
+        let spaces = rows::three_spaces("s-1");
+        let view = FocusView {
+            windows: &table,
+            spaces: &spaces,
+            apps: &apps,
+        };
+        let (got, _) = step(before.clone(), input, &view);
+        assert_eq!(got.key, Some(WindowId(6)), "{name}: the sheet is key");
+        assert_eq!(got.main, Some(WindowId(1)), "{name}: its window stays main");
+    }
+}

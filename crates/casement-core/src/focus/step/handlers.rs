@@ -14,6 +14,12 @@ fn attention(app: &AppKey) -> FocusOut {
     FocusOut::Attention(app.clone(), Attention::Informational)
 }
 
+/// The window that takes the key when `window` is to: its modal sheet while one is open (a
+/// window with a sheet open is not keyed behind it, whatever asked for it).
+fn through_sheet<'v>(window: &'v Window, view: &'v FocusView) -> &'v Window {
+    view.sheet_of(window.id).unwrap_or(window)
+}
+
 /// A press: the route is the table's (`route_press`); an activating route moves focus to the
 /// window (rows 1, 2 and the sheet row).
 pub(super) fn press(focus: Focus, press: &Press, view: &FocusView) -> Outcome {
@@ -48,7 +54,9 @@ pub(super) fn token(
         return Outcome::of(focus);
     };
     match token {
-        TokenCheck::Valid => Outcome::of(focus.keyed(window, view)).raising(vec![window.id]),
+        TokenCheck::Valid => {
+            Outcome::of(focus.keyed(through_sheet(window, view), view)).raising(vec![window.id])
+        }
         TokenCheck::Stale | TokenCheck::Missing => {
             Outcome::asking(focus, vec![attention(&window.app)])
         }
@@ -108,7 +116,7 @@ fn rekeyed(focus: Focus, lost: WindowId, view: &FocusView) -> Focus {
         focus.latest(&visible)
     });
     match next {
-        Some(next) => focus.keyed(next, view),
+        Some(next) => focus.keyed(through_sheet(next, view), view),
         None => Focus {
             key: None,
             main: None,
@@ -134,7 +142,9 @@ pub(super) fn activate_app(focus: Focus, app: AppKey, by: ActorKind, view: &Focu
         .into_iter()
         .filter(|w| view.is_shown(w))
         .collect();
-    let key = focus.latest(&shown);
+    let key = focus
+        .latest(&shown)
+        .map(|window| through_sheet(window, view));
     let raise = shown.iter().map(|w| w.id).collect();
     Outcome::of(focus.activated(&app, key, view)).raising(raise)
 }

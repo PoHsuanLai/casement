@@ -4241,3 +4241,6 @@ Rows for the findings CASW-02/03/04/07/11/12/13/15/18/19, CASC-02/05/06/07/09/10
   where the ramp is read (`gamma::read_ramp`); the night-light drive's own ramps do not go through it. Tests:
   `a_ramp_is_floored_at_an_eighth_of_the_identity_curve` (core), `an_all_zero_ramp_is_raised_to_the_floor` (fixture); the
   existing ramp test expects the floored table.
+- **CASC-14: a window with a modal sheet open is keyed through the sheet.** The focus machine's token, rekey-after-unmap and
+  activate-app paths redirect to `view.sheet_of(window)` (the press path already did). Test:
+  `a_window_with_an_open_sheet_is_keyed_through_the_sheet`.
