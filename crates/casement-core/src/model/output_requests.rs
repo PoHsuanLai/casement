@@ -6,7 +6,8 @@ use super::moved::Moved;
 use crate::effect::{CoreNote, Effect};
 use crate::ids::OutputKey;
 use crate::output::{
-    GammaRamp, OutputChangeSet, OutputRefusal, Requester, keeps_one_lit, resolve_change,
+    GammaRamp, OutputChangeSet, OutputConfig, OutputRefusal, Requester, keeps_one_lit,
+    resolve_change,
 };
 
 impl Model {
@@ -38,7 +39,13 @@ impl Model {
                     config,
                 })
                 .then(|model| model.configure_output(&output, config))
-                .then(|model| model.display_changed(by, output, plugged.config)),
+                .then(|model| {
+                    model.display_changed(
+                        trial_of(by, &plugged.config, &config),
+                        output,
+                        plugged.config,
+                    )
+                }),
         }
     }
 
@@ -51,5 +58,20 @@ impl Model {
                 .then(Model::night_drive),
             false => Moved::of(self),
         }
+    }
+}
+
+/// Who a change counts as for the display trial. A program that only lights or darkens a display
+/// (an idle daemon blanking the screen, a power key) changes no setting the person could lose:
+/// any input lights it again, so it is applied like the compositor's own restoring and never
+/// asked. Every other change by a program is a trial.
+fn trial_of(by: Requester, before: &OutputConfig, after: &OutputConfig) -> Requester {
+    let only_power = OutputConfig {
+        power: before.power,
+        ..*after
+    } == *before;
+    match (by, only_power) {
+        (Requester::Program, true) => Requester::Restore,
+        (by, _) => by,
     }
 }

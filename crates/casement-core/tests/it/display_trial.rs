@@ -4,7 +4,9 @@
 
 use crate::support::driver::{Op, plug, run, run_from};
 use crate::support::headless;
-use casement_core::output::{DISPLAY_CONFIRM_WITHIN, OutputChangeSet, OutputConfig, Requester};
+use casement_core::output::{
+    DISPLAY_CONFIRM_WITHIN, OutputChangeSet, OutputConfig, OutputPower, Requester,
+};
 use casement_core::time::{Mono, TimerKey};
 use casement_core::{Effect, Event, Model, OutputKey};
 use casement_protocols::vocab::{TrialAnswer, TrialId};
@@ -241,4 +243,22 @@ fn an_answer_for_a_trial_that_is_not_open_is_ignored() {
     assert!(step.model.timers().is_armed(&TimerKey::DisplayTrial));
     let none = run(vec![plug("HEADLESS-1"), answer(other, TrialAnswer::Keep)]);
     assert!(none.effects[1].is_empty());
+}
+
+#[test]
+fn a_program_that_only_darkens_a_display_is_never_asked() {
+    let plugged = run(vec![plug("HEADLESS-1"), plug("HEADLESS-2")]);
+    let mut change = OutputChangeSet::none();
+    change.power = Some(OutputPower::Off);
+    let darkened = run_from(
+        plugged.model,
+        vec![Op::Event(Event::OutputRequested {
+            output: key(),
+            change,
+            by: Requester::Program,
+        })],
+    );
+    assert_eq!(config(&darkened.model).power, OutputPower::Off);
+    assert!(asked(&darkened.effects[0]).is_none());
+    assert!(!darkened.model.timers().is_armed(&TimerKey::DisplayTrial));
 }

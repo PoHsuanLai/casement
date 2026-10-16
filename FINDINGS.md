@@ -4949,11 +4949,12 @@ foreign toplevel list state); `casement-protocols` is a path dependency (no rev 
     object is told, with `ends - now` rounded up to whole seconds, and not at all when none is left.
   - A trial is opened per `OutputRequested` event, so an `apply` of a configuration that changes two heads sends the shell `displays_trial`
     twice with the same id (the second restarts the time); the shell treats an id it shows as the same question.
-  - **Needs a decision.** Every power change by a program is a trial, as decided in pa2-cwl2, which includes an idle daemon turning a display
-    off (`zwlr_output_power`). Built that way, an idle blank is reverted when the 15 s run out unless the person presses Keep, which defeats
-    idle blanking (the display lights again by itself, and with one display the sheet is on the very screen that went dark). The change
-    that would fix it is "a power change is not a trial" (or "Off by a program is a trial only while another display stays lit"): one
-    arm in `Model::display_changed`. Not changed here because the decision text says power is a change like any other.
+  - **Decided (orchestrator, 2026-10-17): a change by a program that only lights or darkens a display is not a trial.** It is applied
+    like the compositor's own restoring (`output_requests.rs::trial_of` maps it to `Requester::Restore`): no setting is lost, any input
+    lights the display again, and an idle daemon's blank must not come back after 15 s. Mode, scale, transform and position changes stay
+    trials. Test `a_program_that_only_darkens_a_display_is_never_asked`. Unchanged: `keeps_one_lit` still refuses a program darkening
+    the last lit display, so an outside idle daemon cannot blank a single-display desktop through `zwlr_output_power` (casement's own
+    idle policy does that).
   - The model is told nothing about a shell being able to carry the question; a shell older than 6, or none, simply never answers and
     the timer reverts.
   - A locked session: the trial still runs and the previous setup comes back at the timer (the shell's sheet is not shown under the lock).
