@@ -5,7 +5,8 @@
 use super::Standing;
 use super::image::PinnedImage;
 use super::standing::{client_standing, peer_of};
-use casement_core::privilege::ClientStanding;
+use crate::privacy::{SystemDir, writable_image};
+use casement_core::privilege::{ClientStanding, Floor};
 use casement_ipc::dbus::peer::{Pinned, Prober, Table, judge};
 use casement_ipc::dbus::{RealProc, TableFiles};
 use casement_wayland::consent::Unwatched;
@@ -57,24 +58,28 @@ pub fn desktop_table() -> Table {
 pub struct Judge {
     prober: Prober<RealProc>,
     table: Table,
+    /// Where the administrator's floor is read from, for [`writable_image`].
+    system: SystemDir,
 }
 
 impl Judge {
-    /// A judge over `table`, reading the system's `/proc`.
-    pub fn new(table: Table) -> Judge {
+    /// A judge over `table`, reading the system's `/proc`, for a run whose floor is in `system`.
+    pub fn new(table: Table, system: SystemDir) -> Judge {
         Judge {
             prober: Prober::system(),
             table,
+            system,
         }
     }
 
     /// A judge over the desktop's own table ([`desktop_table`]).
-    pub fn desktop() -> Judge {
-        Judge::new(desktop_table())
+    pub fn desktop(system: SystemDir) -> Judge {
+        Judge::new(desktop_table(), system)
     }
 
-    /// Who the program on the other end of `stream` is.
-    pub fn arrival(&self, stream: &UnixStream) -> Arrival {
+    /// Who the program on the other end of `stream` is, under the administrator's `floor` as the
+    /// model holds it.
+    pub fn arrival(&self, stream: &UnixStream, floor: &Floor) -> Arrival {
         let Ok(pinned) = Pinned::of_stream(stream) else {
             return Arrival::unknown();
         };
@@ -82,7 +87,13 @@ impl Judge {
             return Arrival::unknown();
         };
         let found = judge(&facts, &self.table);
-        let standing = client_standing(&found, &facts.exe);
+        let standing = writable_image(
+            &self.system,
+            floor,
+            &found,
+            &facts.exe,
+            client_standing(&found, &facts.exe),
+        );
         Arrival {
             peer: peer_of(&found),
             standing: Standing::Judged {
@@ -96,11 +107,13 @@ impl Judge {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(any(feature = "testing", feature = "debug-inject"))]
+    use casement_core::privilege::ProgramPath;
 
     #[test]
     fn a_program_is_held_looked_at_and_judged_when_it_connects() {
         let (ours, _theirs) = UnixStream::pair().expect("a socket pair");
-        let arrival = Judge::new(Table::empty()).arrival(&ours);
+        let arrival = Judge::new(Table::empty(), SystemDir::Etc).arrival(&ours, &Floor::empty());
         let Standing::Judged { standing, watch } = arrival.standing else {
             panic!("a public client is always judged");
         };
@@ -115,5 +128,43 @@ mod tests {
         );
         assert!(matches!(arrival.peer, PeerIdentity::Unproven));
         assert!(watch.moved().is_none(), "it still runs the image it had");
+    }
+
+    /// What a judge made of this test binary (a program the person can write, in the build
+    /// folder), under a floor that names the binary.
+    #[cfg(any(feature = "testing", feature = "debug-inject"))]
+    fn standing_under(system: SystemDir) -> (ClientStanding, ProgramPath) {
+        use casement_core::privilege::{FloorRule, Subject, Verdict};
+        let me = std::env::current_exe().expect("this binary");
+        let me = ProgramPath::parse(&me.to_string_lossy()).expect("a plain path");
+        let floor = Floor::empty().with_rule(FloorRule {
+            power: casement_protocols::vocab::Power::Screen,
+            subject: Subject::Program(me.clone()),
+            verdict: Verdict::Allow,
+        });
+        let (ours, _theirs) = UnixStream::pair().expect("a socket pair");
+        let arrival = Judge::new(Table::empty(), system).arrival(&ours, &floor);
+        let Standing::Judged { standing, .. } = arrival.standing else {
+            panic!("a public client is always judged");
+        };
+        (standing, me)
+    }
+
+    #[test]
+    #[cfg(any(feature = "testing", feature = "debug-inject"))]
+    fn a_floor_in_an_injected_folder_names_the_binary_that_connects_and_no_other_floor_does() {
+        let (named, me) = standing_under(SystemDir::At("/scratch/floor".into()));
+        assert_eq!(named, ClientStanding::Program { exe: me });
+        let (etc, _) = standing_under(SystemDir::Etc);
+        let (ours, _theirs) = UnixStream::pair().expect("a socket pair");
+        let Standing::Judged {
+            standing: plain, ..
+        } = Judge::new(Table::empty(), SystemDir::Etc)
+            .arrival(&ours, &Floor::empty())
+            .standing
+        else {
+            panic!("a public client is always judged");
+        };
+        assert_eq!(etc, plain, "the floor changed nothing");
     }
 }

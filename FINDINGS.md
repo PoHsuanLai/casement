@@ -4977,3 +4977,26 @@ foreign toplevel list state); `casement-protocols` is a path dependency (no rev 
   - Existing tests that darken a display or change a mode through a public client now open a trial; none advances the virtual clock by
     15 s or more, so none should see a revert (`output_management.rs` and `output_power.rs` advance 100 ms at most).
 
+## cas12: a floor row may name a program run from a build folder, in test builds only (2026-10-17)
+
+- **What.** The desktop harness starts casement with `--system-dir` and a floor of `allow` rows, but the programs it runs from `build/`
+  (transom's screenshot and screencast, `casement-probe workspaces`, shell-host's `demo_lock`) are judged `Unverified` (`ImageWritable`) and
+  are asked every time, so those steps waited on a question. Now, under `cfg(any(feature = "testing", feature = "debug-inject"))` only,
+  `privacy::writable_image` (`privacy/injected.rs`, next to `injected_owner`, the floor's other test-only exception) turns that judgement
+  into `ClientStanding::Program { exe }` when the run's `SystemDir` is `At(..)` and a row of the model's floor (read from that folder) names
+  the image. The model then gives it the floor's verdict like any `Program`. `clients::Judge` takes the `SystemDir` at `new` and the floor at
+  `arrival`; `run.rs` passes `state.core.model.privilege().floor()`.
+- **What stays.** The owner rule for real builds: a release build compiles `injected.rs` out and `writable_image` returns its argument, so a
+  user-writable image is asked every time and no record names it. In a test build a floor in `/etc/quire` (`SystemDir::Etc`), a book row, or
+  a row about another program names nothing. Tests: `privacy/injected.rs` (a row decides; the three non-cases), `privacy/mod.rs` (the build
+  shape: the result is `Program` iff `cfg!(any(testing, debug-inject))`), `clients/judge.rs` (this test binary, a real writable image, is
+  named by an injected floor and by none other).
+- **Known limit, test builds only.** Once vouched the program is a plain `Program`: an answer a person gives about a power the floor does
+  not mention is remembered in the book like any program's, and a book row for another power of that image then applies. Making these
+  `Memory::ThisTimeOnly` needs the floor's `never` list to learn the image at load, which is not worth a second exception.
+- **Desktop harness.** `harness/lib/casement-floor.sh` can now list build-folder programs in `floor_powers` and `floor_rows` (the
+  `readlink -f` path of the image, as for installed tools); the header comment saying a floor cannot name them is out of date once this lands
+  and the harness pins a casement with it.
+- **Not verified by reading (the gate run looks here).** That `peer::WhyNot::ImageWritable` and `Standing::Unverified { why, .. }` match
+  as written in `injected.rs` (non-exhaustive peephole v0.1.1 types); that `Exe::Read` path from `/proc/<pid>/exe` is the same text a
+  `readlink -f` floor row has; the `judge.rs` test's use of `std::env::current_exe` as the connecting image.

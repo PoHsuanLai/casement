@@ -322,6 +322,7 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
     let mut display: Display<State> = Display::new()?;
     let config_home = start.config_home.clone();
     let start_mode = start.mode;
+    let system_dir = start.system_dir.clone();
     let tty_mode = start.tty.clone();
     let xwayland_config = start.xwayland.clone();
     let mut state = State::new(start, &mut display, &handle)?;
@@ -347,11 +348,11 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
     // The desktop's own list of its programs is read once; each program that connects is held,
     // looked at and judged against it, so who it is is known before it asks for anything.
     let table = clients::desktop_table();
-    let judge = clients::Judge::new(table.clone());
+    let judge = clients::Judge::new(table.clone(), system_dir);
     handle
         .insert_source(socket, move |stream, (), state: &mut State| {
             let role = casement_core::policy::ConnectionRole::Public;
-            let arrival = judge.arrival(&stream);
+            let arrival = judge.arrival(&stream, state.core.model.privilege().floor());
             if let Err(error) =
                 clients::insert_client(state, stream, role, arrival.peer, arrival.standing)
             {
