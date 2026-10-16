@@ -127,6 +127,44 @@ async fn the_administrators_rows_are_read_only() {
     assert_eq!(get(&module, &evil.path.0).await, "off");
 }
 
+/// A program that has not asked about a power yet still has its switch, standing at Ask, and
+/// Settings switching it on is the person's first answer: it reaches the model as a grant, and
+/// reads back at once.
+#[tokio::test]
+async fn a_power_nobody_answered_can_be_switched_on() {
+    let (served, channel) = served();
+    let settings = served.caller(service("settings", Proof::Full)).await;
+    let module = module(&settings).await;
+    let schema = describe(&module).await.expect("Settings may read");
+    let keys_title = Power::Keys.title();
+    let grim_keys = schema
+        .key
+        .iter()
+        .find(|key| key.label.0 == "/usr/bin/grim" && key.section.0 == keys_title)
+        .expect("grim has a Keys switch before it ever asked")
+        .path
+        .0
+        .clone();
+    assert_eq!(get(&module, &grim_keys).await, "ask");
+
+    assert_eq!(set(&module, &grim_keys, Value::from("on")).await, "granted");
+    assert_eq!(
+        channel.try_recv().ok(),
+        Some(PrivacyEdit::Allow {
+            subject: program("/usr/bin/grim"),
+            power: Power::Keys
+        })
+    );
+    assert_eq!(get(&module, &grim_keys).await, "on");
+    // The administrator's program has the other powers to switch too.
+    assert!(
+        schema
+            .key
+            .iter()
+            .any(|key| key.label.0 == "/usr/bin/evil" && key.section.0 == keys_title)
+    );
+}
+
 /// Only the Settings app writes, proven all the way: the shell may read and not write, a program
 /// no row names may not read, and Settings at less than full proof is refused too. Settings'
 /// own change reaches the model's queue and reads back at once.

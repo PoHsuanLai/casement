@@ -44,13 +44,24 @@ impl PrivacyEdit {
     }
 
     /// The list `rows` becomes when this edit is made: the person's row for the program and
-    /// power changes its answer, or goes. The administrator's rows are never touched. The model
-    /// publishes the real list a moment later; this one lets Settings read its own change back.
+    /// power changes its answer, or goes; a program that had no answer for the power gets one
+    /// (its first). The administrator's rows are never touched. The model publishes the real
+    /// list a moment later; this one lets Settings read its own change back.
     pub fn applied(&self, rows: &[PrivacyRow]) -> Vec<PrivacyRow> {
         let (subject, power) = self.target();
         let ours = |row: &PrivacyRow| {
             row.source == Source::Person && row.power == power && row.subject == *subject
         };
+        let first = (!rows.iter().any(ours))
+            .then(|| self.verdict())
+            .flatten()
+            .map(|verdict| PrivacyRow {
+                power,
+                subject: subject.clone(),
+                verdict,
+                source: Source::Person,
+                at: None,
+            });
         rows.iter()
             .filter(|row| !(ours(row) && matches!(self, PrivacyEdit::Forget { .. })))
             .map(|row| match (ours(row), self.verdict()) {
@@ -60,6 +71,7 @@ impl PrivacyEdit {
                 },
                 _ => row.clone(),
             })
+            .chain(first)
             .collect()
     }
 
@@ -140,6 +152,32 @@ mod tests {
         for (edit, want) in cases {
             assert_eq!(edit.clone().into_event(at), want, "{edit:?}");
         }
+    }
+
+    #[test]
+    fn the_first_answer_for_a_power_adds_the_persons_row() {
+        let rows = vec![row(
+            "/usr/bin/grim",
+            Power::Screen,
+            Verdict::Allow,
+            Source::Person,
+        )];
+        let allow = PrivacyEdit::Allow {
+            subject: subject("/usr/bin/grim"),
+            power: Power::Keys,
+        };
+        let after = allow.applied(&rows);
+        assert_eq!(after.len(), 2);
+        assert_eq!(after[0], rows[0]);
+        assert_eq!(after[1].power, Power::Keys);
+        assert_eq!(after[1].verdict, Verdict::Allow);
+        assert_eq!(after[1].source, Source::Person);
+        // Asking again about a power nobody answered has nothing to forget.
+        let forget = PrivacyEdit::Forget {
+            subject: subject("/usr/bin/grim"),
+            power: Power::Keys,
+        };
+        assert_eq!(forget.applied(&rows), rows);
     }
 
     #[test]

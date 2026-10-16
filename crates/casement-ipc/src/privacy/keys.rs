@@ -2,10 +2,15 @@
 //! and under it a switch for each program that has been answered (`privacy.<power>.<n>`) with an
 //! "Ask Again" action beside it (`privacy.<power>.<n>.forget`). A row the administrator set is a
 //! read-out that says so; a section nobody has asked in says that.
+//!
+//! Every program the rows name also has a switch for each power it has no answer for, standing at
+//! [`ASK`]: Settings can only change a row the module lists, and a program that has not asked
+//! yet would otherwise have nothing to switch on. Setting such a row makes the person's first
+//! answer, the same as answering the question would.
 
 use super::write::{Why, Write};
 use casement_core::policy::Power;
-use casement_core::privilege::{Engine, PrivacyRow, Source, Subject, Verdict};
+use casement_core::privilege::{Engine, MAX_GRANTS, PrivacyRow, Source, Subject, Verdict};
 use casement_protocols::vocab::{SubjectKind, WireCode};
 use ds_settings::schema::{
     ActionLabel, ActionWeight, AgentSetting, Exposure, Help, KeyKind, KeyPath, KeySpec, Label,
@@ -21,6 +26,15 @@ pub const ON: &str = "on";
 
 /// The word of a switch that is off.
 pub const OFF: &str = "off";
+
+/// The word of a switch nobody has answered: the program is asked at its next use. It is a third
+/// resting place of a two-position switch, never one Settings sets (that is "Ask Again").
+pub const ASK: &str = "ask";
+
+/// The most programs that get a switch for every power: the book's own cap on answers, so the
+/// list is at most seven switches (and the answered programs' actions) per program the person's
+/// book can hold, and an administrator's long floor cannot make it longer.
+const FILLED_PROGRAMS: usize = MAX_GRANTS;
 
 /// What a section says when nobody has asked.
 pub const NOBODY_ASKED: &str = "No program has asked yet.";
@@ -109,6 +123,7 @@ fn spec(path: String, power: Power, label: &str, kind: KeyKind, default: toml::V
             [
                 (ON.to_owned(), "Allowed".to_owned()),
                 (OFF.to_owned(), "Not allowed".to_owned()),
+                (ASK.to_owned(), "Ask".to_owned()),
             ]
             .into_iter()
             .collect(),
@@ -121,21 +136,36 @@ fn spec(path: String, power: Power, label: &str, kind: KeyKind, default: toml::V
     }
 }
 
-fn switch(base: &str, row: &PrivacyRow) -> Listed {
-    let on = word(row.verdict);
+/// The switch of `subject` for `power`, standing at `standing`; `default` is where "reset"
+/// would put it.
+fn switch_at(
+    base: &str,
+    (power, subject): (Power, &Subject),
+    standing: &str,
+    default: &str,
+) -> Listed {
     Listed {
         spec: spec(
             base.to_owned(),
-            row.power,
-            row.subject.text(),
+            power,
+            subject.text(),
             KeyKind::Toggle {
                 variants: [ON.to_owned(), OFF.to_owned()],
             },
-            toml::Value::String(OFF.to_owned()),
+            toml::Value::String(default.to_owned()),
         ),
-        value: toml::Value::String(on.to_owned()),
-        write: Write::Choose(row.subject.clone(), row.power),
+        value: toml::Value::String(standing.to_owned()),
+        write: Write::Choose(subject.clone(), power),
     }
+}
+
+fn switch(base: &str, row: &PrivacyRow) -> Listed {
+    switch_at(base, (row.power, &row.subject), word(row.verdict), OFF)
+}
+
+/// The switch of a program nobody has answered for `power`: it stands at [`ASK`].
+fn unanswered(base: &str, power: Power, subject: &Subject) -> Listed {
+    switch_at(base, (power, subject), ASK, ASK)
 }
 
 fn read_out(base: &str, row: &PrivacyRow) -> Listed {
@@ -192,15 +222,37 @@ fn nobody(power: Power) -> Listed {
     }
 }
 
+/// The programs that get a switch for every power: those the person answered first, then the
+/// administrator's, at most [`FILLED_PROGRAMS`].
+fn filled(rows: &[PrivacyRow]) -> BTreeSet<&Subject> {
+    [Source::Person, Source::Administrator]
+        .into_iter()
+        .flat_map(|source| rows.iter().filter(move |row| row.source == source))
+        .map(|row| &row.subject)
+        .fold(BTreeSet::new(), |mut chosen, subject| {
+            if chosen.len() < FILLED_PROGRAMS {
+                chosen.insert(subject);
+            }
+            chosen
+        })
+}
+
 /// The keys of the module for `rows`: for each power, in the vocabulary's order, its rows (the
-/// person's with a switch and "Ask Again", the administrator's as read-outs), or the line that
-/// says nobody has asked. Two rows that would share a name (a hash collision, which needs
-/// 2^24 programs) list the first only, so the schema never repeats a key.
+/// person's with a switch and "Ask Again", the administrator's as read-outs), then a switch at
+/// [`ASK`] for each program in [`filled`] that has no row for it, or the line that says nobody
+/// has asked. Two rows that would share a name (a hash collision, which needs 2^24 programs)
+/// list the first only, so the schema never repeats a key.
 pub fn listed(rows: &[PrivacyRow]) -> Vec<Listed> {
     let mut seen = BTreeSet::new();
     let mut out = Vec::new();
+    let programs = filled(rows);
     for &power in <Power as WireCode>::ALL {
         let before = out.len();
+        let answered: BTreeSet<&Subject> = rows
+            .iter()
+            .filter(|row| row.power == power)
+            .map(|row| &row.subject)
+            .collect();
         for row in rows.iter().filter(|row| row.power == power) {
             let base = format!(
                 "privacy.{}.{}",
@@ -216,6 +268,12 @@ pub fn listed(rows: &[PrivacyRow]) -> Vec<Listed> {
                     out.push(forget(&base, row));
                 }
                 Source::Administrator => out.push(read_out(&base, row)),
+            }
+        }
+        for subject in programs.difference(&answered).copied() {
+            let base = format!("privacy.{}.{}", slug(power), short(Source::Person, subject));
+            if seen.insert(base.clone()) {
+                out.push(unanswered(&base, power, subject));
             }
         }
         if out.len() == before {
@@ -295,6 +353,124 @@ mod tests {
         let keys = listed(&rows);
         assert!(keys.len() > rows.len());
         assert!(keys.iter().all(|key| key.spec.page == Page::Privacy));
+    }
+
+    /// The switches of `power` as (program, word) pairs.
+    fn standing_of(keys: &[Listed], power: Power) -> Vec<(String, String)> {
+        keys.iter()
+            .filter(|key| key.spec.section.0 == power.title())
+            .filter(|key| matches!(key.spec.kind, KeyKind::Toggle { .. }))
+            .map(|key| {
+                let word = match &key.value {
+                    toml::Value::String(word) => word.clone(),
+                    other => panic!("a word: {other:?}"),
+                };
+                (key.spec.label.0.clone(), word)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_program_has_a_switch_for_every_power_and_the_unanswered_ones_stand_at_ask() {
+        let grim = program("/usr/bin/grim");
+        let rows = [row(
+            grim.clone(),
+            Power::Screen,
+            Verdict::Allow,
+            Source::Person,
+        )];
+        let keys = listed(&rows);
+        for &power in <Power as WireCode>::ALL {
+            let want = match power {
+                Power::Screen => ON,
+                _ => ASK,
+            };
+            assert_eq!(
+                standing_of(&keys, power),
+                [("/usr/bin/grim".to_owned(), want.to_owned())],
+                "{power:?}"
+            );
+        }
+        // Only the answered one has an "Ask Again" action; no section says nobody asked.
+        let forgets = keys
+            .iter()
+            .filter(|key| key.spec.path.0.ends_with(".forget"));
+        assert_eq!(forgets.count(), 1);
+        assert!(keys.iter().all(|key| key.spec.label.0 != NOBODY_ASKED));
+        // A Set on an unanswered row is the person's first answer for that power.
+        let keys_row = keys
+            .iter()
+            .find(|key| key.spec.section.0 == Power::Keys.title())
+            .expect("a Keys switch");
+        assert_eq!(keys_row.write, Write::Choose(grim, Power::Keys));
+        assert_eq!(keys_row.spec.default, toml::Value::String(ASK.to_owned()));
+        let paths: BTreeSet<&str> = keys.iter().map(|key| key.spec.path.0.as_str()).collect();
+        assert_eq!(paths.len(), keys.len(), "no key twice");
+    }
+
+    #[test]
+    fn answering_a_power_gives_the_row_the_path_it_had_while_unanswered() {
+        let grim = program("/usr/bin/grim");
+        let base = [row(
+            grim.clone(),
+            Power::Screen,
+            Verdict::Allow,
+            Source::Person,
+        )];
+        let before = listed(&base);
+        let mut after_rows = base.to_vec();
+        after_rows.push(row(grim, Power::Keys, Verdict::Deny, Source::Person));
+        let after = listed(&after_rows);
+        let path_in = |keys: &[Listed]| {
+            keys.iter()
+                .find(|key| key.spec.section.0 == Power::Keys.title())
+                .map(|key| (key.spec.path.clone(), key.value.clone()))
+                .expect("a Keys switch")
+        };
+        let (was, asking) = path_in(&before);
+        let (is, answered) = path_in(&after);
+        assert_eq!(was, is, "the same key, so Settings is told its value moved");
+        assert_eq!(asking, toml::Value::String(ASK.to_owned()));
+        assert_eq!(answered, toml::Value::String(OFF.to_owned()));
+        assert_eq!(
+            changes(&base, &after_rows).len(),
+            2,
+            "the value and the new action"
+        );
+    }
+
+    #[test]
+    fn the_programs_with_a_switch_for_every_power_are_capped_and_the_persons_come_first() {
+        let many = FILLED_PROGRAMS + 40;
+        let mut rows: Vec<PrivacyRow> = (0..many)
+            .map(|n| {
+                row(
+                    program(&format!("/opt/admin/p{n:04}")),
+                    Power::Screen,
+                    Verdict::Deny,
+                    Source::Administrator,
+                )
+            })
+            .collect();
+        // Sorts after every administrator program, so only "persons first" keeps it.
+        let theirs = program("/usr/bin/zzz");
+        rows.push(row(
+            theirs.clone(),
+            Power::Windows,
+            Verdict::Allow,
+            Source::Person,
+        ));
+        let keys = listed(&rows);
+        let asking = standing_of(&keys, Power::Keys);
+        assert_eq!(asking.len(), FILLED_PROGRAMS);
+        assert!(asking.iter().any(|(program, _)| program == "/usr/bin/zzz"));
+        // The answered rows are never dropped by the cap.
+        let read_outs = keys
+            .iter()
+            .filter(|key| key.spec.section.0 == Power::Screen.title())
+            .filter(|key| matches!(key.spec.kind, KeyKind::Fixed { .. }))
+            .count();
+        assert_eq!(read_outs, many);
     }
 
     #[test]
