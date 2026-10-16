@@ -37,6 +37,14 @@ impl Origin {
             Origin::Physical(_) | Origin::Virtual(_) | Origin::Test
         )
     }
+
+    /// Whether a key from this origin may switch the virtual terminal (CASW-13, decided
+    /// 2026-10-16): only a kernel keyboard casement opened itself. A virtual keyboard, a remote
+    /// session, the agent seat and a feed never do, so no client can send the compositor to a
+    /// text console, the lock included.
+    pub fn switches_vt(&self) -> bool {
+        matches!(self, Origin::Physical(_))
+    }
 }
 
 /// What kind of device an event came from.

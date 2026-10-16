@@ -145,6 +145,11 @@ proptest! {
     }
 
     #[test]
+    fn only_a_kernel_keyboard_switches_the_vt(origin in origin()) {
+        prop_assert_eq!(origin.switches_vt(), matches!(origin, Origin::Physical(_)));
+    }
+
+    #[test]
     fn every_keysym_reads_back_from_its_name(code in any::<u32>()) {
         let keysym = Keysym(code);
         prop_assert_eq!(Keysym::named(&keysym.name()), Some(keysym));
