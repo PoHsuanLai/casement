@@ -3482,8 +3482,10 @@ the old renderer departure 4 (`OutputFrame.strip` was not applied).
   passes the output `space_strip(now)` names: its strip leg snaps to the new target (`Travel::Snap`), so the commit's
   `show` -> `Relayout(SpaceSwitch)` does not slide the row again; the model's finish draws it, and when it settles the
   sampled strip is already at the same place (no jump). Windows and other outputs travel as before.
-- **The pointer meets what is drawn.** `core_loop::scene::drawn_scene_at` (used by `stack` and `frames::contents`) shifts the
-  same way and keeps only windows whose body is on their output (`RowDraw::touching`, no shadow margin), so a window of the
+- **The pointer meets places, except under a live swipe.** `core_loop::scene::drawn_scene_at` (used by `stack` and
+  `frames::contents`) shifts by `hit_row_of`: the model's row position while a swipe moves it (fingers down, or its finish), else
+  the rest row (the shown Space at the usable origin), never the sampled strip, so a keyboard slide or a full-screen Space joining
+  the row mid-flight leaves pointer focus where the windows will be, as on master (the layer_shell full-screen test). It keeps only windows whose body is on their output (`RowDraw::touching`, no shadow margin), so a window of the
   next Space beside the shown one is not hit, not even where a neighbouring output sits. `sample_scene` (the golden text and
   the debug dump) is unchanged: unshifted.
 - **Mission Control follows the fingers (`core_loop/fingers.rs`).** While `overview_progress()` is `Some`, `feed` snaps motion

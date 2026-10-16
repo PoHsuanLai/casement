@@ -161,7 +161,7 @@ impl Model {
     }
 
     /// The index in `output`'s row of the Space it shows.
-    fn shown_index(&self, output: &OutputKey) -> Option<u32> {
+    pub fn shown_index(&self, output: &OutputKey) -> Option<u32> {
         let shown = self.spaces.shown_on(output)?;
         let at = self
             .spaces
