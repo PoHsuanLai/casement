@@ -190,6 +190,43 @@ the protocol layer (wave 2: `pa2-ccore` is this half, the others follow it).
   `policy::advertised_to` consults it. `policy::advertised(global, role)` is the same with
   nothing hidden. Nothing is re-announced when an answer changes later.
 
+### Consent at the wire (casement-wayland, `casement/src/handlers/consent.rs`)
+
+How the protocol layer carries the contract above (wave 2: `pa2-cwl`).
+
+- **One mechanism.** `casement_wayland::consent::admit(state, client, power)` is called at the first request that uses a power
+  and answers `Go`, `Hold` or `Refuse` from the `Ledger` (the latest word per client and power, shared through `ClientMint` and
+  forgotten when the client disconnects). A client with no word, or a refusal, is asked of the model: `admit` sends
+  `Event::PrivilegeUse` (after `Event::ClientStanding` when `ClientState::image` says the program executed another image since
+  accept) and reads the ledger again, because the model usually answers inside the same `feed`. `Effect::Resolve` writes the
+  ledger and then calls each protocol's `on_resolved`: replay what was held on `Allowed`, give the protocol's own denial on
+  `Denied`, end the use on `Revoked`. A client casement did not insert is refused.
+- **Held requests.** `consent::Held<T>` keeps at most `HELD_REQUESTS` per client (`Pushed::Full` hands the item back to be
+  refused) and drops what belongs to a gone client at the next push. What is held is the request that creates something: the
+  `copy`, the frame request, the `lock`, the `apply`/`test`, the manager bind; for objects that cannot wait (a control, a manager)
+  the object is made inert and registered when the person allows. A virtual keyboard keeps its own requests (`virtual_keyboard/gate.rs`).
+- **Per protocol.** `Screen`: `zwlr_screencopy` (`copy`; `failed`), `ext_image_copy_capture` for outputs and windows (`frame`;
+  the frame `failed`, the session `stopped`; every session of the client is stopped on revoke). `Keys`: a virtual keyboard
+  (dead when refused, its held keys released on revoke). `Lock`: `ext_session_lock.lock` (`finished`; a lock already held is not
+  ended by a revocation: only its locker can unlock). `Displays`: `zwlr_output_manager` `apply`/`test` (`failed`, checked
+  against the heads as they are when allowed), `zwlr_output_power` and `zwlr_gamma_control` (`failed`; revoke fails the control
+  and lights the output or restores the identity curve). `Windows`: `zwlr_foreign_toplevel_manager` and `ext_workspace_manager`
+  (`finished`; a handle or a `commit` of a client without the power changes nothing).
+- **Not gated yet (smithay owns the dispatch).** `ext_data_control` and `zwlr_data_control` (Clipboard), `zwp_input_method`
+  (TypingHelp) and `ext_foreign_toplevel_list` (Windows) are served entirely by smithay, which has no place to hold or refuse a
+  request: they are advertised to a public client unless the power was refused at connect, and used without asking. FINDINGS
+  (pa2-cwl) has the exact smithay change that closes this; `handlers::consent::resolved` already keeps their ledger word.
+- **The global filter.** `GlobalFilter` takes the decision function as a field (`advertised_to`); `ClientState` carries the
+  `hidden: PowerSet` decided at accept (`ClientState::with_standing_under(&Privilege, standing)`), so a power refused before
+  the client connected is not advertised to it, and a refusal that comes later changes no registry.
+- **The shell's side.** `quire_shell_v1` is version 5: `permission_ask`/`permission_withdraw` go to every bound object of
+  version 5 or later (`quire/shell_permission.rs`), the part remembers the questions it sent so an object that binds later is
+  shown them, `permission_answer` becomes `Event::PermissionAnswered` (an answer for a question not sent is ignored),
+  `Event::ShellReady` follows the bind of a version 5 object and `Event::ShellGone` the unbind of the last one. The date an
+  answer is stamped with comes from `QuireShellPart::wall` (a `WallSeconds` the root supplies; the placeholder stamps the epoch).
+- **Seams for the composition root.** `insert_client` builds `ClientState` with `with_standing_under` (the model's privilege and
+  the standing) and `with_image_watch`; `QuireShellPart::wall`; the `Effect::SaveBook` arm only logs until the privacy store exists.
+
 ## 3. Canonical traits
 
 ```rust

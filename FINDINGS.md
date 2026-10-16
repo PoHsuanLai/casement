@@ -4421,3 +4421,56 @@ read-only; a program whose image the person can write gets Allow Once and is nev
     `PrivilegeRevoked`, "Ask Again" `PrivilegeForgotten`) (cipc).
   - A floor that does not parse: the root decides what to do (the design says "set aside" only for the book). `Floor::from_toml`
     returns an error and core has no "sealed" floor.
+
+## pa2-cwl: per-app consent in the protocol layer (CASW-01, CASC-01, PORTAL-02; 2026-10-16)
+
+Wave 2's wayland half (design: `~/rs-wt/prod-audit-de/WAVE2-DESIGN.md` section 3). Written without a compile; the gate run is the
+first. The contract it implements is ARCHITECTURE.md "Consent at the wire". The mechanism is `casement_wayland::consent`
+(`admit`, `Ledger`, `Held`); the effect arms are in `exec.rs` and `handlers/consent.rs`.
+
+- **Decided here (not in the design).**
+  - What is held is the request that creates something, and an object that cannot wait is made inert: a control or a manager made
+    while the answer is out hears nothing and its requests change nothing; on Allow it is registered and told the current state,
+    on Deny it gets the protocol's denial (`failed`, `finished`). Later requests on an inert object are dropped, not queued
+    (only a virtual keyboard queues its own requests: its keys are the use).
+  - The ledger lives in `ClientMint` (`ClientMint::ledger()`), shared with each client's `GoneQueue` so a disconnect forgets its
+    rows. The design put per-client state in `ClientState`; `State`'s construction belongs to the root lane, and the `Effect::Resolve`
+    arm only has a `ClientKey`.
+  - A lock that already holds the session is not ended when the lock power is taken back: the covers stay and only the locker can
+    unlock, so a revocation must not strand the session. It stops a lock still waiting.
+  - A screencopy copy waiting for the person's answer counts like a queued one for `MAX_PENDING_COPIES`, so a program cannot
+    pile copies up behind an unanswered question (it is cut at the cap).
+  - A virtual keyboard past `HELD_REQUESTS` live keyboards of one client is dead from the start.
+  - `Disclosure`, the lock and the sandbox are untouched: consent only narrows what the I7 table already allows.
+- **Deviations from the design text, with reasons.**
+  - `GlobalFilter` takes `advertised_to` (the decision with the powers refused at accept) and `ClientState` carries the
+    `hidden: PowerSet`; the design's "GlobalFilter consults the client's Standing and the book" would need the model inside
+    `can_view`, which runs without the state.
+  - `quire_shell_v1` sends one question at a time and re-sends the open ones to a shell that binds late from the part's own list;
+    the design's "sends every open ask again" is what core's `pump` does one by one after `ShellReady`.
+  - The date stamped on an answer is a `WallSeconds` field of `QuireShellPart` (placeholder: the epoch) because `State` and
+    `src/time/` are the root lane's.
+  - `ext_image_copy_capture` cursor sessions (`cursor_frame`) are not gated: they carry the cursor image and position over the
+    capture source, not the screen's contents. The shell's own Space pictures are gated like any frame; the shell is trusted, so the
+    model answers them at once.
+- **Not done: the globals smithay serves entirely.** `ext_data_control_manager_v1`, `zwlr_data_control_manager_v1` (Clipboard),
+  `zwp_input_method_manager_v2` (TypingHelp) and `ext_foreign_toplevel_list_v1` (Windows) have no place to hold, refuse or
+  delay a request: their `Dispatch2` impls are smithay's, and so are the user-data types (private fields), so the dispatch cannot
+  be wrapped from here. They are advertised to a public client unless the power was refused at connect, and are used without
+  asking; the model's answer for them is kept in the ledger (`handlers::consent::resolved`) and nothing waits on it. This leaves
+  CASW-01 open for the clipboard and the input method. The smithay change that closes it (the fork `PoHsuanLai/smithay`):
+  a `Gate { Open, Hold, Refuse }` in `smithay::wayland`; a defaulted handler method per protocol that returns it for the client
+  (`DataControlHandler::data_control_gate`, both flavours; `InputMethodHandler::input_method_gate`;
+  `ForeignToplevelListHandler::foreign_toplevel_list_gate`), asked in `get_data_device` and `create_data_source`, in
+  `get_input_method` and in the list's `bind`; on `Refuse` the object is made and told the protocol's denial (`finished`,
+  `cancelled`, `unavailable`, `finished`) without being registered (no `SeatData` device, no `list_instances` entry, no toplevel
+  sent); on `Hold` it is made inert and remembered with its client; and a `release(&mut self, display, &Client, Gate)` on each
+  state that registers what was held (the selection is sent to a new device, the toplevels listed) or refuses it. Then
+  `ConsentHandler` gives the handlers the answer the same way the other protocols get it.
+- **Deferred / for other lanes.**
+  - The composition root fills `ClientState` (`with_standing_under`, `with_image_watch` with the pinned peer's image check),
+    `QuireShellPart::wall`, and the privacy store behind `Effect::SaveBook` (`exec.rs` logs it) (croot).
+  - The testkit's `connect` takes a public client as a trusted service and has its own insertion helper
+    (`fixture/standing.rs`) that mirrors `insert_client` with a standing; once `insert_client` takes a standing, the helper
+    should call it (croot).
+  - The scenario harness's floor file for `grim`/`wl-copy` (design 3.8) (croot).
