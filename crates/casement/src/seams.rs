@@ -4,11 +4,14 @@
 //! kit's `Fixture` builds the fakes and calls `State::with_seams`. Nothing in the loop opens a
 //! file, calls a bus or starts a process any other way.
 
+use crate::a11y::{A11yChecks, NoA11y};
 use crate::lock_marker::{FileLockMarker, LockMarker, NoLockMarker};
 use crate::notify::{NoNotify, Notify};
+use crate::privacy::{FilePrivacyStore, NoPrivacyStore, PrivacyFiles, PrivacyStore, SystemDir};
 use crate::space_store::{BackgroundSpaceStore, EphemeralSpaceStore, SpaceStore, StateHome};
 use crate::space_sync::SpaceSync;
 use crate::spawn::{ChildEnv, ProcessSpawner, Spawner};
+use crate::time::WallClock;
 use casement_backend::tty::TtySeams;
 use casement_ipc::shell_calls::{ShellCalls, ZbusShellCalls};
 
@@ -33,6 +36,14 @@ pub struct Seams {
     pub tty: Option<TtySeams>,
     /// The session lock's marker (none kept until a runtime directory is given).
     pub lock_marker: Box<dyn LockMarker>,
+    /// The person's privacy book and the administrator's floor (nothing kept until a state
+    /// directory is given).
+    pub privacy: Box<dyn PrivacyStore>,
+    /// The date a kept answer is stamped with (the epoch until the run gives it the system's).
+    pub wall: WallClock,
+    /// Who checks that a window's accessibility root belongs to the window's own program
+    /// (nobody until `run` is given a bus: a root stays unknown).
+    pub a11y: Box<dyn A11yChecks>,
 }
 
 impl Seams {
@@ -51,7 +62,28 @@ impl Seams {
             notify: Box::new(NoNotify),
             tty: None,
             lock_marker: Box::new(NoLockMarker),
+            privacy: Box::new(NoPrivacyStore),
+            wall: WallClock::epoch(),
+            a11y: Box::new(NoA11y),
         }
+    }
+
+    /// The same with the privacy book and floor kept in `privacy`.
+    #[must_use]
+    pub fn with_privacy(self, privacy: Box<dyn PrivacyStore>) -> Seams {
+        Seams { privacy, ..self }
+    }
+
+    /// The same with kept answers stamped from `wall`.
+    #[must_use]
+    pub fn with_wall(self, wall: WallClock) -> Seams {
+        Seams { wall, ..self }
+    }
+
+    /// The same with accessibility roots checked by `a11y`.
+    #[must_use]
+    pub fn with_a11y(self, a11y: Box<dyn A11yChecks>) -> Seams {
+        Seams { a11y, ..self }
     }
 
     /// The same with the session lock's marker kept in `lock_marker`.
@@ -84,9 +116,10 @@ impl Seams {
         }
     }
 
-    /// The real seams: the Spaces file in `home` (none kept for an ephemeral run), the session
-    /// bus on first use, child processes.
-    pub fn real(home: &StateHome) -> Seams {
+    /// The real seams: the Spaces file and the privacy book in `home` (none kept for an
+    /// ephemeral run), the administrator's floor in `system`, the system clock, the session bus
+    /// on first use, child processes.
+    pub fn real(home: &StateHome, system: &SystemDir) -> Seams {
         let space_store: Box<dyn SpaceStore> = match home {
             StateHome::At(dirs) => Box::new(BackgroundSpaceStore::new(dirs)),
             StateHome::Ephemeral => Box::new(EphemeralSpaceStore),
@@ -98,11 +131,20 @@ impl Seams {
             },
             StateHome::Ephemeral => Box::new(NoLockMarker),
         };
+        let privacy: Box<dyn PrivacyStore> = match home {
+            StateHome::At(dirs) => Box::new(FilePrivacyStore::new(PrivacyFiles {
+                book: dirs.privacy_file(),
+                floor: crate::privacy::floor_in(system),
+            })),
+            StateHome::Ephemeral => Box::new(NoPrivacyStore),
+        };
         Seams::new(
             space_store,
             Box::new(ZbusShellCalls::lazy()),
             Box::new(ProcessSpawner::default()),
         )
         .with_lock_marker(lock_marker)
+        .with_privacy(privacy)
+        .with_wall(WallClock::System)
     }
 }

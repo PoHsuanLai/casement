@@ -1,17 +1,18 @@
-//! `org.quire.Compositor1.Connect` in the event loop (P2-Z): the D-Bus object forwards every
-//! call down a calloop channel and [`answer`] decides it with the `State` in hand: the caller's
-//! unit against the role it asked for (`casement_agent::hand_out`), and the server end of the
-//! new socket inserted into the display as a client of that role.
+//! `org.quire.Compositor1.Connect` in the event loop (P2-Z): the D-Bus object proves each caller
+//! on the bus thread and forwards the call down a calloop channel, and [`answer`] decides it with
+//! the `State` in hand: the role the caller proved against the role it asked for
+//! (`casement_agent::hand_out`), and the server end of the new socket inserted into the display
+//! as a client of that role.
 //!
 //! `casement-agent` makes the socket pair and the decision; only this crate can build a
 //! client's data (its key, its gone queue), so the insertion is here. Frozen at P2-Z; filled
 //! by P2-Q2.
 
 use crate::State;
-use crate::clients::insert_client;
+use crate::clients::{Standing, insert_client};
 use crate::core_loop::{feed, tty::desktop_extent};
 use casement_agent::{
-    CallerUnit, HandOut, RefuseWhy, RemoteEvent, RemoteKinds, hand_out, open_remote_eis,
+    HandOut, RefuseWhy, RemoteEvent, RemoteKinds, RoleName, hand_out, open_remote_eis,
     portal_may_connect,
 };
 use casement_core::Event;
@@ -41,25 +42,29 @@ pub fn attach(
     Ok(())
 }
 
-/// Decides one `Connect`: the unit in `ask.caller_cgroup` against `ask.role`; on a grant the
+/// Decides one `Connect`: the role `ask.caller` proved against `ask.role`; on a grant the
 /// server end of a new socket pair is inserted as a client with that role (the model hears
 /// `ClientConnected`), and the client end is the reply.
 pub fn answer(state: &mut State, ask: ConnectAsk) -> ConnectReply {
     if let Some(remote) = ask.remote {
-        return answer_remote(state, remote, &ask.caller_cgroup);
+        return answer_remote(state, remote, &ask.caller.role);
     }
     if let Some(end) = ask.end {
-        return answer_end(state, end, &ask.caller_cgroup);
+        return answer_end(state, end, &ask.caller.role);
     }
-    let Some(unit) = CallerUnit::of_cgroup(&ask.caller_cgroup) else {
-        return ConnectReply::Refused(ConnectRefusal::UnknownUnit);
-    };
-    let handed = match hand_out(&ask.role, &unit) {
+    let handed = match hand_out(&ask.role, &ask.caller.role) {
         HandOut::Granted(handed) => handed,
         HandOut::Refused(why) => return ConnectReply::Refused(refusal_of(why)),
     };
-    // The peer stays unproven until porter can prove a service (accountd's unit check).
-    let client = match insert_client(state, handed.server, handed.role, PeerIdentity::Unproven) {
+    // A handed-out connection is the shell's or the agent tier's, trusted by how it was
+    // obtained; its peer stays unproven (the app it belongs to is `ask.caller.app`, kept below).
+    let client = match insert_client(
+        state,
+        handed.server,
+        handed.role,
+        PeerIdentity::Unproven,
+        Standing::Unjudged,
+    ) {
         Ok(client) => client,
         Err(error) => {
             tracing::warn!(%error, "a handed-out connection could not be inserted");
@@ -67,7 +72,7 @@ pub fn answer(state: &mut State, ask: ConnectAsk) -> ConnectReply {
         }
     };
     if let Some(data) = ClientState::of(&client) {
-        state.agent.handed.insert(data.key, unit);
+        state.agent.handed.insert(data.key, ask.caller.app.clone());
     }
     ConnectReply::Granted(handed.client)
 }
@@ -85,22 +90,21 @@ fn refusal_of(why: RefuseWhy) -> ConnectRefusal {
     }
 }
 
-/// Whether the caller's control group is the portal's unit: the one caller that may open or end
-/// a remote EIS socket.
-fn portal_only(caller_cgroup: &str) -> Result<(), ConnectRefusal> {
-    match CallerUnit::of_cgroup(caller_cgroup) {
-        None => Err(ConnectRefusal::UnknownUnit),
-        Some(unit) if !portal_may_connect(&unit) => Err(ConnectRefusal::RoleNotAllowed),
-        Some(_) => Ok(()),
+/// Whether the caller holds the portal's role: the one caller that may open or end a remote EIS
+/// socket (the bus thread proved the role; this is the second line).
+fn portal_only(caller: &RoleName) -> Result<(), ConnectRefusal> {
+    match portal_may_connect(caller) {
+        true => Ok(()),
+        false => Err(ConnectRefusal::RoleNotAllowed),
     }
 }
 
-/// Decides one `ConnectEis`: only the portal's unit may have a remote EIS socket. On a grant
+/// Decides one `ConnectEis`: only the portal may have a remote EIS socket. On a grant
 /// the server end becomes an event-loop source whose input is fed to the model tagged as the
 /// remote origin of portal session `remote.session`, with a device slot of its own (minted
 /// here, one per connection: CASW-19); the client end is the reply.
-pub fn answer_remote(state: &mut State, remote: RemoteAsk, caller_cgroup: &str) -> ConnectReply {
-    if let Err(why) = portal_only(caller_cgroup) {
+pub fn answer_remote(state: &mut State, remote: RemoteAsk, caller: &RoleName) -> ConnectReply {
+    if let Err(why) = portal_only(caller) {
         return ConnectReply::Refused(why);
     }
     let Some(slot) = state.agent.remote.mint() else {
@@ -143,12 +147,12 @@ pub fn answer_remote(state: &mut State, remote: RemoteAsk, caller_cgroup: &str) 
     }
 }
 
-/// Decides one `EndEis`: only the portal's unit may end a session. Every socket handed out for
+/// Decides one `EndEis`: only the portal may end a session. Every socket handed out for
 /// `end.session` is taken out of the loop (its server end closes, so the app is disconnected and
 /// sends nothing more), and the keys and buttons it still held are released. A session with no
 /// open socket is not an error: the portal may end one that already hung up.
-pub fn answer_end(state: &mut State, end: EndAsk, caller_cgroup: &str) -> ConnectReply {
-    if let Err(why) = portal_only(caller_cgroup) {
+pub fn answer_end(state: &mut State, end: EndAsk, caller: &RoleName) -> ConnectReply {
+    if let Err(why) = portal_only(caller) {
         return ConnectReply::Refused(why);
     }
     for (handle, token) in state.agent.remote.end(PortalSessionId(end.session)) {

@@ -65,6 +65,11 @@ impl StateDirs {
     pub fn spaces_file(&self) -> PathBuf {
         self.casement.join("spaces.toml")
     }
+
+    /// The person's privacy book: which program may use which power (`casement::privacy`).
+    pub fn privacy_file(&self) -> PathBuf {
+        casement_privacy::book_in(&self.casement)
+    }
 }
 
 /// Where casement keeps state: nowhere (tests, the headless jail), or in a directory.

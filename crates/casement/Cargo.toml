@@ -29,6 +29,7 @@ casement-wayland = { workspace = true, features = ["quire"] }
 casement-backend = { workspace = true }
 casement-agent = { workspace = true }
 casement-ipc = { workspace = true }
+casement-privacy = { workspace = true }
 casement-protocols = { workspace = true, features = ["server"] }
 porter-core = { workspace = true }
 ds-core = { workspace = true }

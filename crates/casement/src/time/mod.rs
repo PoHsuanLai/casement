@@ -10,10 +10,12 @@ mod calloop;
 mod local_minute;
 mod source;
 mod virtual_clock;
+mod wall;
 mod watchdog;
 
 pub use calloop::arm;
 pub use local_minute::{minute_of, tick_every_minute, until_next_minute};
 pub use source::ClockSource;
 pub use virtual_clock::{SharedClock, VirtualTimerSource};
+pub use wall::WallClock;
 pub use watchdog::ping_every;

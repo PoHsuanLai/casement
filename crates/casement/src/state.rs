@@ -154,9 +154,10 @@ pub enum PointerStart {
 /// the leases and the kill chord).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct AgentState {
-    /// The unit each privileged client was handed its connection as (`connect::answer`), so a
-    /// later phase can say who holds the shell's and the agent tier's connections.
-    pub handed: BTreeMap<casement_core::ClientKey, casement_agent::CallerUnit>,
+    /// The app each privileged client was handed its connection as (`connect::answer`; the
+    /// caller proved it on the bus), so a later phase can say who holds the shell's and the agent
+    /// tier's connections.
+    pub handed: BTreeMap<casement_core::ClientKey, casement_agent::AppKey>,
     /// The remote EIS connections that are open, one device slot each (`connect::answer_remote`),
     /// so `EndEis` can end a portal session's sockets.
     pub remote: crate::remote_sessions::RemoteSessions,
@@ -167,6 +168,9 @@ pub struct AgentState {
 pub struct IpcState {
     /// The handles.
     pub handles: casement_ipc::IpcHandles,
+    /// The Privacy list Settings reads, when `org.quire.Compositor1` is served: the model's
+    /// answers are published to it (`privacy::publish`).
+    pub board: Option<casement_ipc::privacy::PrivacyBoard>,
 }
 
 /// Why casement could not start.
@@ -203,7 +207,7 @@ impl State {
         display: &mut Display<State>,
         event_loop: &LoopHandle<'static, State>,
     ) -> Result<State, StartError> {
-        let seams = Seams::real(&config.state_home);
+        let seams = Seams::real(&config.state_home, &config.system_dir);
         State::with_seams(config, seams, display, event_loop)
     }
 
@@ -328,6 +332,7 @@ impl State {
             .entropy
             .bytes()
             .map_err(|error| StartError::Entropy(error.to_string()))?;
+        wl.quire_shell.wall = Box::new(seams.wall);
         let model = Model::new(
             settings.clone(),
             clock.now(),
@@ -379,6 +384,7 @@ impl State {
             agent: AgentState::default(),
             ipc: IpcState {
                 handles: casement_ipc::IpcHandles::none(),
+                board: None,
             },
             clock,
             seams,

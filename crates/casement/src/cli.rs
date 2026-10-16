@@ -3,7 +3,7 @@
 //! ```text
 //! casement [--backend headless|winit|tty] [--clock wall|stepped] [--outputs SPEC[;SPEC...]]...
 //!          [--renderer pixman|llvmpipe] [--dmabuf none|soft] [--safe] [--config-home DIR]
-//!          [--state-home DIR] [--xwayland satellite|off] [--xwayland-satellite PATH]
+//!          [--state-home DIR] [--system-dir DIR] [--xwayland satellite|off] [--xwayland-satellite PATH]
 //!          [--drm-node PATH [--kms-report FILE] [--writeback-raw PATH]]
 //! casement --write-schema PATH
 //! ```
@@ -18,6 +18,7 @@
 //! `--drm-node`).
 
 use crate::icons::IconSearch;
+use crate::privacy::SystemDir;
 use crate::space_store::{StateDirs, StateHome};
 use crate::xwayland::{SatellitePath, XwaylandConfig, XwaylandMode};
 use casement_backend::{
@@ -53,6 +54,9 @@ pub struct StartConfig {
     /// Where state files (the Spaces file) live: `At` when `--state-home DIR` named one, else
     /// `Ephemeral` and `main` resolves it from the backend and the environment.
     pub state_home: StateHome,
+    /// Where the administrator's files are looked for (`--system-dir`; `/etc/quire` unless a
+    /// jailed run or a test names its own).
+    pub system_dir: SystemDir,
     /// How X11 clients are served (A5).
     pub xwayland: XwaylandConfig,
     /// Whether `xwayland` came from a flag, or is the default `main` replaces with what the
@@ -222,6 +226,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, CliError> {
         config_home: ConfigHome::Xdg,
         entropy: Entropy::System,
         state_home: StateHome::Ephemeral,
+        system_dir: SystemDir::Etc,
         xwayland: XwaylandConfig::off(),
         xwayland_source: XwaylandSource::Default,
         tty: TtyMode::Seat,
@@ -283,6 +288,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, CliError> {
             "--state-home" => {
                 config.state_home = StateHome::At(StateDirs::at(PathBuf::from(value()?)))
             }
+            "--system-dir" => config.system_dir = SystemDir::At(PathBuf::from(value()?)),
             "--xwayland" => {
                 config.xwayland_source = XwaylandSource::Flag;
                 config.xwayland.mode = word(
@@ -375,9 +381,12 @@ fn word<T: Copy>(flag: &str, value: &str, words: &[(&str, T)]) -> Result<T, CliE
 pub const USAGE: &str = concat!(
     "usage: casement [--backend headless|winit|tty] [--clock wall|stepped] ",
     "[--outputs SPEC[;SPEC...]] [--renderer pixman|llvmpipe] [--dmabuf none|soft] [--safe] ",
-    "[--config-home DIR] [--state-home DIR] [--xwayland satellite|off] ",
+    "[--config-home DIR] [--state-home DIR] [--system-dir DIR] [--xwayland satellite|off] ",
     "[--xwayland-satellite PATH]\n",
     "       casement --write-schema DIR\n",
+    "\n",
+    "The administrator's privacy settings are read from /etc/quire; --system-dir DIR reads them\n",
+    "from DIR instead (privacy.toml and privacy.d/), for a jailed run or a test.\n",
     "\n",
     "Without --xwayland, older X11 apps follow xwayland.mode in settings.toml (auto, satellite\n",
     "or off; auto runs them when xwayland-satellite is installed). Headless runs stay off.\n",

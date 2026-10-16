@@ -19,6 +19,8 @@ impl QuireWindowHandler for State {
     }
 
     fn quire_window_events(&mut self, events: Vec<Event>) {
+        // A root a client claims is checked before the model adopts it (PORTAL-15).
+        let events = crate::a11y::claimed(self, events);
         core_loop::feed(self, events);
     }
 

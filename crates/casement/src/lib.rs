@@ -34,6 +34,7 @@
 //! let _serve = move || casement::run(config);
 //! ```
 
+pub mod a11y;
 pub mod appearance;
 pub mod cli;
 pub mod clients;
@@ -46,6 +47,7 @@ mod delegates;
 pub mod display;
 pub mod exec;
 mod handlers;
+pub mod hangup;
 pub mod icons;
 #[cfg(any(feature = "testing", feature = "debug-inject"))]
 pub mod jail_check;
@@ -53,6 +55,7 @@ pub mod keymap;
 pub mod lock_marker;
 pub mod log;
 pub mod notify;
+pub mod privacy;
 #[cfg(feature = "testing")]
 pub mod relax;
 pub mod remote_sessions;

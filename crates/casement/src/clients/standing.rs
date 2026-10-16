@@ -1,0 +1,208 @@
+//! What the caller-identity library says of a connection's program, in the words the model and
+//! the Dock use: [`ClientStanding`] for consent, [`PeerIdentity`] for the app a window belongs
+//! to. Pure; `judge.rs` does the looking.
+
+use casement_core::privilege::{ClientStanding, Engine, ProgramPath, SandboxAppId, ServiceRole};
+use casement_ipc::dbus::peer::{self, Exe, Proof, Standing};
+use porter_core::{AppId, AppName, Isolation, PeerIdentity};
+
+/// The path of the image a process runs, when it could be read.
+fn image_path(exe: &Exe) -> Option<ProgramPath> {
+    match exe {
+        Exe::Read { path, .. } => ProgramPath::parse(&path.to_text()).ok(),
+        _ => None,
+    }
+}
+
+/// The file name of the image, when it could be read.
+pub(super) fn image_name(exe: &Exe) -> Option<String> {
+    match exe {
+        Exe::Read { path, .. } => path.file_name().map(str::to_owned),
+        _ => None,
+    }
+}
+
+/// How the model takes the program `standing` describes, whose image is `exe`.
+///
+/// A desktop service counts as one only when its image was shown to be the one the table names
+/// (`Proof::Exe` or better); a service known by its control group alone, which a same-user
+/// process can move itself into, is nobody in particular. Anything the library could not
+/// vouch for is unverified, and unverified programs are asked every time.
+pub fn client_standing(standing: &Standing, exe: &Exe) -> ClientStanding {
+    match standing {
+        Standing::Service { role, proof, .. } if *proof >= Proof::Exe => {
+            match ServiceRole::parse(role.as_str()) {
+                Ok(role) => ClientStanding::Service {
+                    role,
+                    exe: image_path(exe),
+                },
+                Err(_) => unverified(exe),
+            }
+        }
+        Standing::Program { exe: path, .. } => match ProgramPath::parse(&path.to_text()) {
+            Ok(exe) => ClientStanding::Program { exe },
+            Err(_) => unverified(exe),
+        },
+        Standing::Sandboxed { app, engine } => {
+            match (SandboxAppId::parse(app.as_str()), engine_of(*engine)) {
+                (Ok(app), Some(engine)) => ClientStanding::Sandboxed { app, engine },
+                _ => ClientStanding::Unverified { exe_name: None },
+            }
+        }
+        Standing::Unverified { exe_name, .. } => ClientStanding::Unverified {
+            exe_name: exe_name.clone(),
+        },
+        _ => unverified(exe),
+    }
+}
+
+fn unverified(exe: &Exe) -> ClientStanding {
+    ClientStanding::Unverified {
+        exe_name: image_name(exe),
+    }
+}
+
+fn engine_of(engine: peer::Engine) -> Option<Engine> {
+    match engine {
+        peer::Engine::Flatpak => Some(Engine::Flatpak),
+        peer::Engine::Snap => Some(Engine::Snap),
+        _ => None,
+    }
+}
+
+/// The app a window of this program belongs to, for the Dock and the window list: the app a
+/// desktop service is, the app a sandbox attests, or the app the launcher's scope names for a
+/// program whose image the system owns. The scope name is a claim (anyone can start a scope
+/// under any name), so it only groups windows; consent never follows it (it binds to the
+/// image, `Subject`). A program the library could not vouch for belongs to no proven app.
+pub fn peer_of(standing: &Standing) -> PeerIdentity {
+    let proven = match standing {
+        Standing::Service { app, proof, .. } if *proof >= Proof::Exe => {
+            named(app.as_str(), Isolation::Unsandboxed)
+        }
+        Standing::Program {
+            scope_app: Some(app),
+            ..
+        } => named(app.as_str(), Isolation::Unsandboxed),
+        Standing::Sandboxed {
+            app,
+            engine: peer::Engine::Flatpak,
+        } => named(app.as_str(), Isolation::Flatpak),
+        _ => None,
+    };
+    proven.map_or(PeerIdentity::Unproven, PeerIdentity::Proven)
+}
+
+fn named(app: &str, isolation: Isolation) -> Option<AppId> {
+    AppName::parse(app)
+        .ok()
+        .map(|name| AppId { name, isolation })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use casement_ipc::dbus::peer::{AppKey, ExePath, RoleName, WhyNot};
+
+    fn exe(path: &str) -> Exe {
+        Exe::Read {
+            path: ExePath::new(path).expect("a path"),
+            trust: peer::FileTrust::RootOnly,
+        }
+    }
+
+    fn program(path: &str, scope: Option<&str>) -> Standing {
+        Standing::Program {
+            exe: ExePath::new(path).expect("a path"),
+            scope_app: scope.map(|app| AppKey::new(app).expect("an app")),
+        }
+    }
+
+    fn service(role: &str, proof: Proof) -> Standing {
+        Standing::Service {
+            app: AppKey::new("org.quire.Portal").expect("an app"),
+            role: RoleName::new(role).expect("a role"),
+            proof,
+            pin: peer::Pin::Reopened,
+        }
+    }
+
+    /// (case, the library's standing, the image, what the model is told)
+    #[test]
+    fn the_model_is_told_only_what_the_library_vouched_for() {
+        let grim = exe("/usr/bin/grim");
+        let cases = [
+            (
+                "a system program",
+                program("/usr/bin/grim", None),
+                ClientStanding::Program {
+                    exe: ProgramPath::parse("/usr/bin/grim").expect("a path"),
+                },
+            ),
+            (
+                "a service shown by its image",
+                service("portal", Proof::Exe),
+                ClientStanding::Service {
+                    role: ServiceRole::parse("portal").expect("a role"),
+                    exe: ProgramPath::parse("/usr/bin/grim").ok(),
+                },
+            ),
+            (
+                "a service known by its control group alone",
+                service("portal", Proof::Cgroup),
+                ClientStanding::Unverified {
+                    exe_name: Some("grim".to_owned()),
+                },
+            ),
+            (
+                "a program the person can write",
+                Standing::Unverified {
+                    exe_name: Some("payload".to_owned()),
+                    why: WhyNot::ImageWritable,
+                },
+                ClientStanding::Unverified {
+                    exe_name: Some("payload".to_owned()),
+                },
+            ),
+            (
+                "a process that left",
+                Standing::Unverified {
+                    exe_name: None,
+                    why: WhyNot::PeerGone,
+                },
+                ClientStanding::Unverified { exe_name: None },
+            ),
+            (
+                "a sandboxed app",
+                Standing::Sandboxed {
+                    app: AppKey::new("org.gnome.Loupe").expect("an app"),
+                    engine: peer::Engine::Flatpak,
+                },
+                ClientStanding::Sandboxed {
+                    app: SandboxAppId::parse("org.gnome.Loupe").expect("an app"),
+                    engine: Engine::Flatpak,
+                },
+            ),
+        ];
+        for (case, standing, want) in cases {
+            assert_eq!(client_standing(&standing, &grim), want, "{case}");
+        }
+    }
+
+    #[test]
+    fn a_scope_name_groups_windows_but_only_for_a_program_the_system_owns() {
+        let proven = |standing: &Standing| matches!(peer_of(standing), PeerIdentity::Proven(_));
+        assert!(proven(&program(
+            "/usr/bin/foot",
+            Some("org.codeberg.dnkl.foot")
+        )));
+        assert!(!proven(&program("/usr/bin/foot", None)));
+        assert!(proven(&service("portal", Proof::Exe)));
+        assert!(!proven(&service("portal", Proof::Cgroup)));
+        let writable = Standing::Unverified {
+            exe_name: None,
+            why: WhyNot::ImageWritable,
+        };
+        assert!(!proven(&writable));
+    }
+}

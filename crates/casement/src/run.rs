@@ -7,14 +7,16 @@ use crate::cli::StartMode;
 use crate::debug;
 use crate::display::{self, attach_display};
 use crate::notify::{Notice, NotifySocket, SocketNotify, Watchdog};
+use crate::privacy::SystemDir;
 use crate::space_sync::SpaceSync;
 use crate::spawn::{ProcessSpawner, Scopes};
 use crate::test_mode::{HookError, TestHooks};
 use crate::{StartError, State, cli, clients, core_loop};
 use casement_ipc::IpcError;
+use casement_ipc::dbus::{CallerSetup, CallerTable};
+use casement_ipc::privacy::{PrivacyEdit, PrivacyLink};
 use casement_ipc::sleep::SleepBus;
 use casement_ipc::space_registry::ZbusSpaceRegistry;
-use porter_core::PeerIdentity;
 use smithay::reexports::calloop::{Error as LoopError, EventLoop};
 use smithay::reexports::wayland_server::backend::InitError;
 use smithay::reexports::wayland_server::{BindError, Display};
@@ -95,6 +97,19 @@ impl RunConfig {
     ) -> RunConfig {
         RunConfig {
             debug_peer_units,
+            ..self
+        }
+    }
+
+    /// The same run reading the administrator's privacy settings from `system_dir` instead of
+    /// `/etc/quire` (a jailed run or a test).
+    #[must_use]
+    pub fn with_system_dir(self, system_dir: SystemDir) -> RunConfig {
+        RunConfig {
+            start: cli::StartConfig {
+                system_dir,
+                ..self.start
+            },
             ..self
         }
     }
@@ -205,52 +220,86 @@ fn attach_debug(
     Ok(debug::attach(handle, calls)?)
 }
 
-/// `cgroups` with the test unit overrides in front of it; an empty table changes nothing and
-/// logs nothing, a non-empty one is announced once, plainly.
+/// Announces the test unit overrides once, plainly, when there are any (feature `debug-inject`).
 #[cfg(feature = "debug-inject")]
-fn with_debug_units(
-    cgroups: std::sync::Arc<dyn casement_ipc::dbus::PeerCgroups>,
-    table: casement_ipc::dbus::PeerUnitTable,
-) -> std::sync::Arc<dyn casement_ipc::dbus::PeerCgroups> {
-    if table.rules().is_empty() {
-        return cgroups;
+fn announce_test_units(table: &casement_ipc::dbus::PeerUnitTable) {
+    if !table.rules().is_empty() {
+        tracing::warn!(
+            overrides = table.rules().len(),
+            "TEST ONLY: test unit overrides are active, so some programs are taken to run in units they do not"
+        );
     }
-    tracing::warn!(
-        overrides = table.rules().len(),
-        "TEST ONLY: test unit overrides are active, so some programs are taken to run in units they do not"
-    );
-    let names = std::sync::Arc::new(casement_ipc::dbus::ProcComm);
-    std::sync::Arc::new(casement_ipc::dbus::DebugPeerUnits::new(
-        table, names, cgroups,
-    ))
 }
 
-/// Starts serving `org.quire.Compositor1` on the session bus. A bus that cannot be reached, or a
-/// name another casement holds, is logged and the compositor runs without a hand-out: the shell
-/// then has no way to get its connection, and nothing else is lost.
+/// Starts serving `org.quire.Compositor1` on the session bus, with the Privacy list for Settings
+/// on the same connection, and checking the accessibility roots clients claim. A bus that cannot
+/// be reached, or a name another casement holds, is logged and the compositor runs without a
+/// hand-out: the shell then has no way to get its connection, and nothing else is lost.
 fn attach_compositor(
     state: &mut State,
     handle: &smithay::reexports::calloop::LoopHandle<'static, State>,
     bus: &CompositorBus,
+    table: CallerTable,
     #[cfg(feature = "debug-inject")] peer_units: casement_ipc::dbus::PeerUnitTable,
 ) -> Result<(), RunError> {
     let CompositorBus::At(address) = bus else {
         return Ok(());
     };
-    let cgroups: std::sync::Arc<dyn casement_ipc::dbus::PeerCgroups> =
-        std::sync::Arc::new(casement_ipc::dbus::ProcCgroups);
+    let (link, edits) = PrivacyLink::new();
+    let board = link.board();
+    let setup = CallerSetup::desktop(table).with_privacy(link);
     #[cfg(feature = "debug-inject")]
-    let cgroups = with_debug_units(cgroups, peer_units);
-    match casement_ipc::dbus::serve_compositor_at(address, cgroups) {
+    let setup = {
+        announce_test_units(&peer_units);
+        setup.with_test_units(peer_units)
+    };
+    match casement_ipc::dbus::serve_compositor_at(address, setup) {
         Ok((calls, connection)) => {
             state.ipc.handles.compositor = Some(connection);
+            state.ipc.board = Some(board);
             crate::connect::attach(handle, calls)?;
+            attach_edits(handle, edits)?;
+            crate::a11y::attach(state, handle, address)?;
         }
         Err(error) => {
             tracing::warn!(%error, "org.quire.Compositor1 is not served: no connection can be handed out");
         }
     }
     Ok(())
+}
+
+/// Settings' changes to the Privacy list reach the model as they are made.
+fn attach_edits(
+    handle: &smithay::reexports::calloop::LoopHandle<'static, State>,
+    edits: smithay::reexports::calloop::channel::Channel<PrivacyEdit>,
+) -> Result<(), LoopError> {
+    handle
+        .insert_source(edits, |event, (), state: &mut State| {
+            if let smithay::reexports::calloop::channel::Event::Msg(edit) = event {
+                crate::privacy::edited(state, edit);
+            }
+        })
+        .map_err(LoopError::from)?;
+    Ok(())
+}
+
+/// `SIGHUP` reads the administrator's privacy settings again.
+fn attach_reload(handle: &smithay::reexports::calloop::LoopHandle<'static, State>) {
+    let requests = match crate::hangup::watch() {
+        Ok(requests) => requests,
+        Err(error) => {
+            tracing::warn!(%error, "SIGHUP is not heard, so the administrator's privacy settings are read at start only");
+            return;
+        }
+    };
+    let inserted = handle.insert_source(requests, |event, (), state: &mut State| {
+        if let smithay::reexports::calloop::channel::Event::Msg(_) = event {
+            crate::privacy::reload_floor(state);
+        }
+    });
+    if let Err(error) = inserted {
+        tracing::warn!(%error, "SIGHUP is not heard, so the administrator's privacy settings are read at start only");
+    }
 }
 
 /// Starts the compositor, listens for clients, and runs the event loop: a turn dispatches
@@ -295,10 +344,16 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
     state.seams.child_env =
         std::mem::take(&mut state.seams.child_env).with("WAYLAND_DISPLAY", &socket_name);
     let status = format!("listening on {socket_name}");
+    // The desktop's own list of its programs is read once; each program that connects is held,
+    // looked at and judged against it, so who it is is known before it asks for anything.
+    let table = clients::desktop_table();
+    let judge = clients::Judge::new(table.clone());
     handle
-        .insert_source(socket, |stream, (), state: &mut State| {
+        .insert_source(socket, move |stream, (), state: &mut State| {
             let role = casement_core::policy::ConnectionRole::Public;
-            if let Err(error) = clients::insert_client(state, stream, role, PeerIdentity::Unproven)
+            let arrival = judge.arrival(&stream);
+            if let Err(error) =
+                clients::insert_client(state, stream, role, arrival.peer, arrival.standing)
             {
                 tracing::warn!(%error, "a client could not be inserted");
             }
@@ -312,9 +367,17 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
         &mut state,
         &handle,
         &compositor_bus,
+        table,
         #[cfg(feature = "debug-inject")]
         debug_peer_units,
     )?;
+    // The person's book and the administrator's floor are read before the first client is
+    // taken in (the loop has not run yet), then the list is published for Settings.
+    crate::privacy::start(&mut state);
+    if !matches!(tty_mode, cli::TtyMode::Direct(_)) {
+        // The vkms test mode uses SIGHUP for something else.
+        attach_reload(&handle);
+    }
     let wayland = crate::xwayland::WaylandSocket(socket_name);
     crate::xwayland::attach(&mut state, &xwayland_config);
     // Held for the run: dropping it stops the thread that hears the machine go to sleep.
