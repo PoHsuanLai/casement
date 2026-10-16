@@ -12,11 +12,12 @@ mod spec;
 
 pub use spec::{anchors_of, exclusive_of, keyboard_of, level_of, margins_of, spec_of};
 
+use crate::client::key_of_surface;
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::geometry::LogicalSize;
 use casement_core::layer::{LayerLevel, LayerOwner, LayerSpec};
 use casement_core::policy::GlobalKind;
-use casement_core::{Event, LayerKey, OutputKey};
+use casement_core::{ClientKey, Event, LayerKey, OutputKey};
 use smithay::reexports::wayland_protocols_wlr::layer_shell::v1::server::zwlr_layer_shell_v1::ZwlrLayerShellV1;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{DisplayHandle, GlobalDispatch};
@@ -85,6 +86,14 @@ impl LayerShellPart {
             layers: BTreeMap::new(),
             records: BTreeMap::new(),
         }
+    }
+
+    /// How many layer surfaces `client` holds.
+    pub fn held_by(&self, client: ClientKey) -> usize {
+        self.layers
+            .values()
+            .filter(|layer| key_of_surface(layer.wl_surface()) == Some(client))
+            .count()
     }
 
     /// The key of the layer whose `wl_surface` is `surface`.

@@ -6,6 +6,9 @@ use super::spread::{Entry, Fit, spread};
 use crate::{
     Arrangement, LayoutKnobs, LayoutReport, OutputSpec, OverviewKind, SceneMode, SpaceArrangement,
 };
+use casement_core::WindowId;
+use casement_core::geometry::LogicalRect;
+use std::collections::BTreeMap;
 
 /// Adds the overview slots of `output` to `into`, after its desktop targets are there. An
 /// output that is not in Mission Control, or whose shown Space is not a desktop, adds none.
@@ -23,14 +26,20 @@ pub(super) fn arrange_overview(output: &OutputSpec, knobs: &LayoutKnobs, into: &
     if !matches!(space.kind, SpaceArrangement::Desktop) {
         return;
     }
+    // One pass over the targets, the first of a window winning: a linear search per window made
+    // this quadratic in the windows of a Space.
+    let mut targets: BTreeMap<WindowId, LogicalRect> = BTreeMap::new();
+    for target in &into.windows {
+        targets.entry(target.window).or_insert(target.rect);
+    }
     let entries: Vec<Entry> = space
         .windows
         .iter()
         .filter_map(|window| {
-            let target = into.windows.iter().find(|t| t.window == window.window)?;
+            let rect = *targets.get(&window.window)?;
             Some(Entry {
                 window: window.window,
-                rect: target.rect,
+                rect,
                 reserve: window.reserve_top,
             })
         })

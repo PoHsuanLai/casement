@@ -523,3 +523,28 @@ fn a_panels_shadow_margin_takes_no_input_and_still_draws() {
         "the margin is drawn over the window"
     );
 }
+
+/// CASC-03: a client may hold `MAX_LAYERS` layer surfaces; the next one cuts it with
+/// `wl_display.no_memory` (code 2).
+#[test]
+fn a_client_that_makes_layer_surfaces_without_end_is_cut() {
+    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let id = fixture.connect(ConnectionRole::Public);
+    fixture.pump();
+    let mut made = Vec::new();
+    for _ in 0..casement_wayland::limits::MAX_LAYERS {
+        made.push(LayerSurface::create(fixture.client(id), &wallpaper()).expect("a layer"));
+    }
+    fixture.pump();
+    assert!(
+        fixture.client(id).protocol_error().is_none(),
+        "up to the cap is allowed"
+    );
+    made.push(LayerSurface::create(fixture.client(id), &wallpaper()).expect("a layer"));
+    fixture.pump();
+    let error = fixture
+        .client(id)
+        .protocol_error()
+        .expect("the client past the cap is cut");
+    assert_eq!((error.interface.as_str(), error.code), ("wl_display", 2));
+}

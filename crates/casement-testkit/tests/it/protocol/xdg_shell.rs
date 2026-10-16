@@ -641,3 +641,31 @@ fn a_client_that_answers_pings_stays_responding() {
     assert_eq!(fixture.model().apps()[&app].life, AppLife::Running);
     assert!(!base.pings.with(|seen| seen.is_empty()), "it was pinged");
 }
+
+/// CASC-03: a client may hold `MAX_TOPLEVELS` toplevels; the next one cuts it with
+/// `wl_display.no_memory` (code 2), so a loop of `get_toplevel` cannot grow the model without
+/// end. Another client is not affected.
+#[test]
+fn a_client_that_makes_toplevels_without_end_is_cut() {
+    let (mut fixture, id) = boot();
+    let base = WmBase::bind(fixture.client(id), 7);
+    let mut made = Vec::new();
+    for _ in 0..casement_wayland::limits::MAX_TOPLEVELS {
+        made.push(base.toplevel(fixture.client(id)));
+    }
+    fixture.pump();
+    assert!(
+        fixture.client(id).protocol_error().is_none(),
+        "up to the cap is allowed"
+    );
+    made.push(base.toplevel(fixture.client(id)));
+    fixture.pump();
+    let error = fixture
+        .client(id)
+        .protocol_error()
+        .expect("the client past the cap is cut");
+    assert_eq!((error.interface.as_str(), error.code), ("wl_display", 2));
+    let other = fixture.connect(ConnectionRole::Public);
+    fixture.pump();
+    assert!(fixture.client(other).protocol_error().is_none());
+}

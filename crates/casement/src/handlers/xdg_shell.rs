@@ -10,6 +10,7 @@ use crate::state::State;
 use casement_core::{ClientKey, InputSerial, OutputKey, WindowId};
 use casement_protocols::vocab::Toggle;
 use casement_wayland::convert::{point_of, serial_of};
+use casement_wayland::limits::{self, Limit, Standing};
 use casement_wayland::serial::PressRecord;
 use casement_wayland::xdg_shell::{
     self, GrabUse, edges_of, grab_proven, on_app_id, on_full_screen, on_maximise, on_minimise,
@@ -104,6 +105,14 @@ impl XdgShellHandler for State {
     }
 
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
+        // A client past its cap is cut (CASC-03); nothing is made for the toplevel it asked for.
+        if let Some(client) = surface.wl_surface().client() {
+            let held =
+                ClientState::of(&client).map_or(0, |data| self.wl.xdg_shell.toplevels_of(data.key));
+            if limits::admit(&self.display, &client, Limit::Toplevels, held) == Standing::Over {
+                return;
+            }
+        }
         // No configure here: the initial configure goes out with the first commit.
         let window = self.mint_window();
         let events = on_new_toplevel(&mut self.wl.xdg_shell, &surface, window);

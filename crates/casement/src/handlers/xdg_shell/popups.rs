@@ -7,6 +7,7 @@ use casement_core::geometry::{LogicalPoint, LogicalSize};
 use casement_core::policy::ConnectionRole;
 use casement_wayland::ClientState;
 use casement_wayland::convert::{point_of, serial_of};
+use casement_wayland::limits::{self, Limit, Standing};
 use casement_wayland::xdg_shell::{
     PopupBounds, on_new_popup, on_popup_acked, on_popup_grab, on_reposition, on_room_changed,
     popups_of,
@@ -89,6 +90,14 @@ fn layer_bounds(state: &State, kind: &PopupKind, root: &WlSurface) -> PopupBound
 
 /// A popup was created: it gets a key and is placed.
 pub(crate) fn new_popup(state: &mut State, surface: PopupSurface, positioner: PositionerState) {
+    // A client past its cap is cut (CASC-03); no popup is made for the one it asked for.
+    if let Some(client) = surface.wl_surface().client() {
+        let held =
+            ClientState::of(&client).map_or(0, |data| state.wl.xdg_shell.popups_held_by(data.key));
+        if limits::admit(&state.display, &client, Limit::Popups, held) == Standing::Over {
+            return;
+        }
+    }
     let key = state.wl.xdg_shell.mint_popup();
     let bounds = bounds_of(state, &surface);
     let events = on_new_popup(&mut state.wl.xdg_shell, &surface, &positioner, key, bounds);

@@ -76,6 +76,15 @@ impl DeskSnapshot {
     /// The state of `model` now.
     pub(super) fn of(model: &Model) -> DeskSnapshot {
         let focus = model.focus();
+        // Each app's place in the most-recently-active list, found once (the first place when an
+        // app is listed twice) instead of a scan of the list per app.
+        let ranks: BTreeMap<&AppKey, usize> = focus
+            .app_mru
+            .iter()
+            .enumerate()
+            .rev()
+            .map(|(place, held)| (held, place))
+            .collect();
         let apps: BTreeMap<AppKey, AppDesk> = model
             .apps()
             .iter()
@@ -84,11 +93,7 @@ impl DeskSnapshot {
                     AppVisibility::Shown => Visibility::Shown,
                     AppVisibility::Hidden { .. } => Visibility::Hidden,
                 };
-                let rank = focus
-                    .app_mru
-                    .iter()
-                    .position(|held| held == key)
-                    .unwrap_or(focus.app_mru.len());
+                let rank = ranks.get(&key).copied().unwrap_or(focus.app_mru.len());
                 let desk = AppDesk {
                     life: app.life.kind(),
                     visibility,

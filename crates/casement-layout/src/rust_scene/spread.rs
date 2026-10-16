@@ -26,6 +26,12 @@ const NEAR_WHOLE: i64 = 800_000;
 /// Each failed trial scales by 85 percent.
 const FAILED_TRIAL: i64 = 85;
 
+/// The most windows the pushing trials run for. The trials cost up to 24 passes of every pair
+/// at about fourteen scales, so a Space with thousands of windows (a client that opens them in
+/// a loop) would stall the compositor for seconds; above this the spread goes straight to the
+/// shelf pack at the floor scale, which is linear after one sort.
+const MAX_PUSHED: usize = 96;
+
 /// The strip the Spaces bar takes at the top, in logical pixels (at most a quarter of the area).
 const STRIP: u32 = 112;
 
@@ -73,8 +79,11 @@ pub(super) fn spread(
     });
     let centres: Vec<(i64, i64)> = entries.iter().map(centre).collect();
     let floor = ruler.floor;
-    let mut at_floor = Vec::new();
-    for scale in ruler.trials(area) {
+    let (trials, mut at_floor) = match entries.len() > MAX_PUSHED {
+        true => (Vec::new(), start(&centres, &ruler.sizes(floor), area)),
+        false => (ruler.trials(area), Vec::new()),
+    };
+    for scale in trials {
         let sizes = ruler.sizes(scale);
         let mut cells = start(&centres, &sizes, area);
         if push_apart(&mut cells, area, &order) {
@@ -249,6 +258,28 @@ mod tests {
         origin: LogicalPoint { x: 0, y: 24 },
         size: LogicalSize { w: 1872, h: 860 },
     };
+
+    /// CASC-03: a Space with far more windows than the pushing trials can afford is still given
+    /// a slot for every window, inside the usable area, without running the trials.
+    #[test]
+    fn a_crowd_of_windows_is_packed_without_the_trials() {
+        let offset = |n: u64, modulo: u64, step: i32| i32::try_from(n % modulo).unwrap_or(0) * step;
+        let entries: Vec<Entry> = (0..3000)
+            .map(|n| {
+                entry(
+                    n,
+                    rect(10 + offset(n, 50, 20), 30 + offset(n, 40, 15), 640, 400),
+                )
+            })
+            .collect();
+        let (slots, _) = spread(&entries, USABLE, &knobs());
+        assert_eq!(slots.len(), entries.len());
+        assert!(
+            slots
+                .iter()
+                .all(|slot| USABLE.intersection(&slot.rect) == Some(slot.rect))
+        );
+    }
 
     #[test]
     fn nothing_to_spread_is_nothing() {

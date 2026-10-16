@@ -11,9 +11,11 @@ use crate::{
     Arrangement, LayoutKnobs, OutputSpec, SceneMode, SpaceArrangement, SpaceSpec, SpaceTarget,
     WindowPlacement,
 };
+use casement_core::WindowId;
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::window::attach_rect;
 use porter_core::SpaceId;
+use std::collections::BTreeMap;
 
 /// Adds `output`'s Space origins and window targets to `into`.
 pub(super) fn arrange_output(output: &OutputSpec, knobs: &LayoutKnobs, into: &mut Arrangement) {
@@ -126,13 +128,15 @@ fn arrange_space(
         into.windows.push(target);
         into.reports.extend(report);
     }
+    // Where each window already is, the first of a window winning (one pass, not a search per
+    // sheet); a sheet placed below is a parent for the next.
+    let mut places: BTreeMap<WindowId, LogicalRect> = BTreeMap::new();
+    for target in &into.windows {
+        places.entry(target.window).or_insert(target.rect);
+    }
     for (window, parent, asked) in sheets {
         let usable = below_chrome(output.usable, window.reserve_top);
-        let hung = into
-            .windows
-            .iter()
-            .find(|target| target.window == parent)
-            .map(|target| attach_rect(target.rect, asked));
+        let hung = places.get(&parent).map(|rect| attach_rect(*rect, asked));
         let (target, report) = match hung {
             Some(rect) => placed(window.window, &output.output, asked, rect, window.limits),
             None => {
@@ -142,6 +146,7 @@ fn arrange_space(
                 placed(window.window, &output.output, asked, rect, window.limits)
             }
         };
+        places.entry(target.window).or_insert(target.rect);
         into.windows.push(target);
         into.reports.extend(report);
     }

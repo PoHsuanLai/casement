@@ -8,6 +8,7 @@ use casement_core::layer::LayerOwner;
 use casement_core::policy::ConnectionRole;
 use casement_wayland::ClientState;
 use casement_wayland::layer_shell::{self, LayerNamespace};
+use casement_wayland::limits::{self, Limit, Standing};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
@@ -69,6 +70,14 @@ impl WlrLayerShellHandler for State {
         layer: Layer,
         namespace: String,
     ) {
+        // A client past its cap is cut (CASC-03); no layer is made for the one it asked for.
+        if let Some(client) = surface.wl_surface().client() {
+            let held =
+                ClientState::of(&client).map_or(0, |data| self.wl.layer_shell.held_by(data.key));
+            if limits::admit(&self.display, &client, Limit::Layers, held) == Standing::Over {
+                return;
+            }
+        }
         let Some(output) = output
             .as_ref()
             .and_then(|wl_output| output_key_of(self, wl_output))

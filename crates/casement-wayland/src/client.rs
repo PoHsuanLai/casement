@@ -5,10 +5,20 @@ use casement_core::ClientKey;
 use casement_core::policy::ConnectionRole;
 use casement_core::window::WindowOrigin;
 use porter_core::PeerIdentity;
-use smithay::reexports::wayland_server::Client;
 use smithay::reexports::wayland_server::backend::{ClientData, ClientId, DisconnectReason};
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::reexports::wayland_server::{Client, Resource};
 use smithay::wayland::compositor::CompositorClientState;
 use std::sync::{Arc, Mutex};
+
+/// The key of the client that owns `surface`, when casement inserted that client.
+pub fn key_of_surface(surface: &WlSurface) -> Option<ClientKey> {
+    surface
+        .client()
+        .as_ref()
+        .and_then(ClientState::of)
+        .map(|data| data.key)
+}
 
 /// The clients that disconnected since the loop last looked. smithay announces a disconnect
 /// from `ClientData::disconnected`, which has no access to the state, so the key is queued

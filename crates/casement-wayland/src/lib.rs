@@ -23,6 +23,7 @@
 
 pub mod client;
 pub mod convert;
+pub mod limits;
 pub mod serial;
 pub mod states;
 

@@ -39,6 +39,7 @@ pub use requests::{
     on_resize, on_window_menu,
 };
 
+use crate::client::key_of_surface;
 use crate::states::GlobalFilter;
 use casement_core::focus::TokenCheck;
 use casement_core::{ClientKey, PopupKey, WindowId};
@@ -94,6 +95,22 @@ impl XdgShellPart {
         let key = PopupKey(self.next_popup);
         self.next_popup = self.next_popup.saturating_add(1);
         key
+    }
+
+    /// How many toplevels `client` holds, mapped or not.
+    pub fn toplevels_of(&self, client: ClientKey) -> usize {
+        self.records
+            .values()
+            .filter(|record| record.client == client)
+            .count()
+    }
+
+    /// How many popups `client` holds.
+    pub fn popups_held_by(&self, client: ClientKey) -> usize {
+        self.popup_surfaces
+            .values()
+            .filter(|popup| key_of_surface(popup.wl_surface()) == Some(client))
+            .count()
     }
 
     /// The window whose root surface is `surface`.

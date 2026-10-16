@@ -50,6 +50,7 @@ use crate::effect::Effect;
 use crate::event::Event;
 use crate::focus::Focus;
 use crate::ids::{ClientKey, LayerKey, OutputKey, WindowId};
+use crate::input::InputKind;
 use crate::invariants::{self, InvariantBreak};
 use crate::layer::LayerBook;
 use crate::lock::{LockHolder, LockState};
@@ -64,6 +65,15 @@ pub use query::OpeningRoom;
 pub use spaces::MAX_DESKTOPS_PER_OUTPUT;
 use std::collections::{BTreeMap, BTreeSet};
 pub use swipe::{SpaceStrip, SwipeOwner};
+
+/// Whether a step compares what clients are shown before and after it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Watch {
+    /// It may change the window lists, the Spaces or the desktop's notes.
+    Published,
+    /// It cannot (an input event that is not a swipe).
+    Nothing,
+}
 
 /// Everything casement knows, as one value.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -163,7 +173,14 @@ impl Model {
     /// Mission Control (`model/swipe.rs`). What a key or a press means is decided where the target
     /// is known ([`Model::reach`], [`Model::press`], [`Model::command`]).
     pub fn step(self, event: Event, now: Mono) -> (Model, Vec<Effect>) {
-        self.run(now, |model| model.route(event))
+        // An input event that is not a swipe changes nothing a window-list or desktop client
+        // is shown, so it skips the two snapshots (each clones every window): at input rate
+        // they were the cost a client with thousands of windows could stall the loop with.
+        let watch = match &event {
+            Event::Input(input) if !matches!(input.kind, InputKind::Swipe(_)) => Watch::Nothing,
+            _ => Watch::Published,
+        };
+        self.run_watching(now, watch, |model| model.route(event))
     }
 
     /// Whether every invariant holds.
@@ -171,11 +188,26 @@ impl Model {
         invariants::check(self)
     }
 
-    /// `f` on this model at `now`, then the keyboard effect if who holds the keyboard moved.
+    /// `f` on this model at `now`, then the keyboard effect if who holds the keyboard moved,
+    /// and the publishing effects for what `f` changed.
     fn run(self, now: Mono, f: impl FnOnce(Model) -> Moved) -> (Model, Vec<Effect>) {
+        self.run_watching(now, Watch::Published, f)
+    }
+
+    /// [`Model::run`], publishing only when `watch` says the step can change what clients are
+    /// shown.
+    fn run_watching(
+        self,
+        now: Mono,
+        watch: Watch,
+        f: impl FnOnce(Model) -> Moved,
+    ) -> (Model, Vec<Effect>) {
         let before = self.keyboard_target();
         let keyed = self.focus.key;
-        let shown = published::Published::of(&self);
+        let shown = match watch {
+            Watch::Published => Some(published::Published::of(&self)),
+            Watch::Nothing => None,
+        };
         let mut moved = f(Model { now, ..self });
         moved.model.forget_gone_minimise_rects();
         moved.model.forget_gone_placements();
@@ -189,7 +221,7 @@ impl Model {
         } else {
             moved.with(Effect::Keyboard(after))
         };
-        let publish = shown.changes_to(&moved.model);
+        let publish = shown.map_or_else(Vec::new, |shown| shown.changes_to(&moved.model));
         let moved = moved.with_all(publish);
         (moved.model, moved.effects)
     }
