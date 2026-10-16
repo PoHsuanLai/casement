@@ -5,7 +5,7 @@
 //! file, calls a bus or starts a process any other way.
 
 use crate::notify::{NoNotify, Notify};
-use crate::space_store::{EphemeralSpaceStore, FileSpaceStore, SpaceStore, StateHome};
+use crate::space_store::{BackgroundSpaceStore, EphemeralSpaceStore, SpaceStore, StateHome};
 use crate::space_sync::SpaceSync;
 use crate::spawn::{ChildEnv, ProcessSpawner, Spawner};
 use casement_backend::tty::TtySeams;
@@ -75,7 +75,7 @@ impl Seams {
     /// bus on first use, child processes.
     pub fn real(home: &StateHome) -> Seams {
         let space_store: Box<dyn SpaceStore> = match home {
-            StateHome::At(dirs) => Box::new(FileSpaceStore::new(dirs)),
+            StateHome::At(dirs) => Box::new(BackgroundSpaceStore::new(dirs)),
             StateHome::Ephemeral => Box::new(EphemeralSpaceStore),
         };
         Seams::new(

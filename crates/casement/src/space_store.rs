@@ -16,6 +16,10 @@
 //! assert!(file.spaces.is_empty());
 //! ```
 
+mod writer;
+
+pub use writer::BackgroundSpaceStore;
+
 use casement_core::space::{SpaceFile, SpaceFileError};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -109,27 +113,38 @@ impl SpaceStore for FileSpaceStore {
     }
 
     fn write(&mut self, text: &str) -> Result<(), SpaceStoreError> {
-        let io = |path: &Path| {
-            let path = path.to_path_buf();
-            move |source| SpaceStoreError::Io { path, source }
-        };
-        let dir = self.path.parent().unwrap_or(Path::new("."));
-        std::fs::create_dir_all(dir).map_err(io(dir))?;
-        let temporary = self.path.with_extension("toml.tmp");
-        let written = (|| {
-            let mut file = std::fs::File::create(&temporary)?;
-            file.write_all(text.as_bytes())?;
-            file.sync_all()
-        })();
-        written.map_err(io(&temporary))?;
-        std::fs::rename(&temporary, &self.path).map_err(|source| {
-            let _ = std::fs::remove_file(&temporary);
-            SpaceStoreError::Io {
-                path: self.path.clone(),
-                source,
-            }
-        })
+        write_atomic(&self.path, text)
     }
+}
+
+/// Writes `text` to `path` atomically and durably: a temporary file in the same folder, synced,
+/// renamed over `path`, and the folder synced, so a crash or a power cut leaves the old file or
+/// the new one and never half of either.
+pub(crate) fn write_atomic(path: &Path, text: &str) -> Result<(), SpaceStoreError> {
+    let io = |at: &Path| {
+        let path = at.to_path_buf();
+        move |source| SpaceStoreError::Io { path, source }
+    };
+    let dir = path.parent().unwrap_or(Path::new("."));
+    std::fs::create_dir_all(dir).map_err(io(dir))?;
+    let temporary = path.with_extension("toml.tmp");
+    let written = (|| {
+        let mut file = std::fs::File::create(&temporary)?;
+        file.write_all(text.as_bytes())?;
+        file.sync_all()
+    })();
+    written.map_err(io(&temporary))?;
+    std::fs::rename(&temporary, path).map_err(|source| {
+        let _ = std::fs::remove_file(&temporary);
+        SpaceStoreError::Io {
+            path: path.to_path_buf(),
+            source,
+        }
+    })?;
+    // The rename is in the folder's entry: sync the folder so it survives a power cut.
+    std::fs::File::open(dir)
+        .and_then(|folder| folder.sync_all())
+        .map_err(io(dir))
 }
 
 /// A store that keeps nothing: reads find no file, writes are dropped.
