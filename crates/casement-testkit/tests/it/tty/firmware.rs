@@ -144,3 +144,17 @@ fn a_framebuffer_or_virtual_display_added_beside_an_open_gpu_is_ignored() {
     let _ = backend.dispatch();
     assert_eq!(open(&backend), [card(2)]);
 }
+
+#[test]
+fn a_framebuffer_opened_before_a_gpu_arrived_is_closed_once_the_gpu_is_added() {
+    let (_dir, root) = machine();
+    let udev = FakeUdev::scripted(vec![DeviceEvent::Added(card(1))]);
+    let mut backend = backend(root, vec![card(0)], udev);
+    assert_eq!(
+        open(&backend),
+        [card(0)],
+        "alone, the framebuffer is driven"
+    );
+    let _ = backend.dispatch();
+    assert_eq!(open(&backend), [card(1)]);
+}

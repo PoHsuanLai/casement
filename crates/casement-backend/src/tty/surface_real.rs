@@ -57,6 +57,12 @@ impl Flips {
         *count = count.saturating_add(1);
     }
 
+    /// Forgets the flips done on `crtc` that no frame took: after a reset the flip that was in
+    /// flight is lost, and a count left over would be taken for the next frame's.
+    fn clear(&mut self, crtc: crtc::Handle) {
+        self.done.remove(&crtc);
+    }
+
     /// Takes one flip done on `crtc`, if there is one.
     fn take(&mut self, crtc: crtc::Handle) -> Option<()> {
         let count = self.done.get_mut(&crtc).filter(|count| **count > 0)?;
@@ -243,7 +249,7 @@ impl ScanoutSurface for RealScanout {
                 self.compositor
                     .render_frame(&mut *renderer, &elements, CLEAR, FrameFlags::DEFAULT)
                     .map(|result| result.is_empty)
-                    .map_err(refused)
+                    .map_err(refused_by)
             }
             Draw::Copy(bridge) => bridge
                 .draw(&mut self.compositor, source)
@@ -252,7 +258,7 @@ impl ScanoutSurface for RealScanout {
         // A frame with no change is not queued: `queue_frame` refuses it as empty.
         let queued = match rendered {
             Ok(true) => return QueueOutcome::Unchanged,
-            Ok(false) => self.compositor.queue_frame(()).map_err(refused),
+            Ok(false) => self.compositor.queue_frame(()).map_err(refused_by),
             Err(error) => Err(error),
         };
         match queued {
@@ -281,12 +287,14 @@ impl ScanoutSurface for RealScanout {
 
     fn blank(&mut self) -> Result<(), KmsError> {
         self.pending = None;
+        self.flips.borrow_mut().clear(self.crtc);
         self.forget_picture();
         self.compositor.clear().map_err(refused)
     }
 
     fn reset(&mut self) {
         self.pending = None;
+        self.flips.borrow_mut().clear(self.crtc);
         self.forget_picture();
         if let Err(error) = self.compositor.reset_state() {
             tracing::warn!(%error, "the compositor did not reset after the seat came back");
@@ -307,6 +315,21 @@ impl Draw {
 /// A compositor failure as the seam's error (the typed sources stay in the log).
 pub(super) fn refused(error: impl std::fmt::Display) -> KmsError {
     KmsError::Io(std::io::Error::other(error.to_string()))
+}
+
+/// The same for a failure that may have an I/O error underneath: its kind is kept, so a device
+/// that is no longer the display master (the kernel's "permission denied") can be told from a
+/// frame that merely failed.
+pub(super) fn refused_by(error: impl std::error::Error + 'static) -> KmsError {
+    let kind = io_kind(&error).unwrap_or(std::io::ErrorKind::Other);
+    KmsError::Io(std::io::Error::new(kind, error.to_string()))
+}
+
+/// The kind of the first I/O error in `error`'s chain of causes.
+fn io_kind(error: &(dyn std::error::Error + 'static)) -> Option<std::io::ErrorKind> {
+    std::iter::successors(Some(error), |cause| cause.source())
+        .find_map(|cause| cause.downcast_ref::<std::io::Error>())
+        .map(std::io::Error::kind)
 }
 
 impl std::fmt::Debug for RealScanout {

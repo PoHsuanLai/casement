@@ -12,7 +12,7 @@ use casement_backend::input::{
     Applied, FedDevice, FedInput, PollContext, device_settings, scaled_scroll,
 };
 use casement_backend::tty::{
-    PresentOutcome, SessionNote, TtyBackend, TtyNote, VtHeld, VtNumber, Watch, vt_of_chord,
+    Health, PresentOutcome, SessionNote, TtyBackend, TtyNote, VtHeld, VtNumber, Watch, vt_of_chord,
 };
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::input::{DeviceClass, Edge, InputEvent, Keysym, Origin};
@@ -40,10 +40,36 @@ pub(super) fn drain(state: &mut State) -> usize {
         match note {
             TtyNote::Connector(event) => connector(state, event),
             TtyNote::Session(SessionNote::Activated) => remodeset(state),
+            TtyNote::Reinit(name) => reapply(state, &name),
             _ => {}
         }
     }
     count + input(state)
+}
+
+/// Lights `name` again from the model's configuration: its frames stopped for good, and the
+/// backend dropped its surface.
+fn reapply(state: &mut State, name: &OutputName) {
+    let found = state
+        .core
+        .model
+        .outputs()
+        .0
+        .iter()
+        .find(|(_, plugged)| plugged.facts.name == *name)
+        .map(|(output, plugged)| (output.clone(), plugged.config));
+    if let Some((output, config)) = found {
+        exec::exec(state, vec![Effect::ApplyOutput { output, config }]);
+    }
+}
+
+/// Whether the display shows the session: frozen when every output that should show frames has
+/// shown none for long (the watchdog is then not fed). Any other backend is taken as alive.
+pub(crate) fn display_health(state: &State) -> Health {
+    match &state.backend {
+        BackendKind::Tty(tty) => tty.health(state.clock.now()),
+        _ => Health::Alive,
+    }
 }
 
 /// Puts the model's configuration of every output back on the backend.

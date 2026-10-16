@@ -4,6 +4,7 @@
 
 use super::TtyBackend;
 use super::connector::vrr_state;
+use super::fallback::mode_ladder;
 use super::kms::{
     ConnectorFacts, ConnectorId, CrtcId, KmsCommit, KmsError, KmsRefusal, ModesetPolicy,
     OutputCommit,
@@ -12,8 +13,13 @@ use super::scanouts::Scanout;
 use super::udev::DevicePath;
 use crate::backend::BackendError;
 use casement_core::OutputName;
-use casement_core::output::{OutputConfig, OutputPower};
+use casement_core::output::{Mode, OutputConfig, OutputPower};
 use casement_core::time::{Mono, VblankClock};
+use std::time::Duration;
+
+/// How long a mode that was lit and then showed nothing (two recoveries in a row) is left out of
+/// the modes tried for the output. A person who asks for it again later is obeyed.
+pub(super) const DISTRUST_FOR: Duration = Duration::from_secs(60);
 
 /// Where an output is lit, and with what.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,6 +53,10 @@ pub enum Lighting {
     /// The output was dark and is lit again (DPMS On): the caller queues a frame now, which is
     /// what lights a real CRTC.
     Relit,
+    /// The display refused the mode asked for and is lit at this one instead (the mode it was
+    /// showing, its preferred mode or its smallest): the caller tells the model the real
+    /// configuration. A frame is queued now, as for [`Lighting::Relit`].
+    Fallback(Mode),
     /// The seat is lent away: nothing was touched. The return re-applies every output.
     Deferred,
 }
@@ -120,8 +130,47 @@ impl TtyBackend {
         Ok(Lighting::Dark)
     }
 
-    /// Commits `config` and attaches a surface where the output has none for this mode.
+    /// Lights `name` as `config` says, or as near to it as the display takes: a mode it refuses
+    /// (the cable cannot carry it, the link is short of bandwidth) is followed by the mode it was
+    /// showing, then its preferred mode, then its smallest, and the answer says which one it is
+    /// lit at ([`Lighting::Fallback`]). Only when none works is it an error.
     fn light(
+        &mut self,
+        name: &OutputName,
+        path: &DevicePath,
+        connector: &ConnectorFacts,
+        config: &OutputConfig,
+        now: Mono,
+    ) -> Result<Lighting, BackendError> {
+        let previous = self.lit.get(name).map(|lit| lit.config.mode);
+        let avoid = self
+            .distrust
+            .get(name)
+            .filter(|(_, at)| now.since(*at) < DISTRUST_FOR)
+            .map(|(mode, _)| *mode);
+        let mut refusal = None;
+        for mode in mode_ladder(config.mode, previous, &connector.modes, avoid) {
+            let attempt = OutputConfig { mode, ..*config };
+            match self.light_at(name, path, connector, &attempt, now) {
+                Ok(lighting) if mode == config.mode => return Ok(lighting),
+                Ok(_) => {
+                    tracing::warn!(
+                        output = name.as_str(),
+                        "the display refused the mode asked for; it is lit at another"
+                    );
+                    return Ok(Lighting::Fallback(mode));
+                }
+                Err(error) => {
+                    tracing::warn!(output = name.as_str(), %error, "the display refused a mode");
+                    refusal = Some(error);
+                }
+            }
+        }
+        Err(refusal.unwrap_or_else(|| KmsError::Refused(KmsRefusal::Mode).into()))
+    }
+
+    /// Commits `config` and attaches a surface where the output has none for this mode.
+    fn light_at(
         &mut self,
         name: &OutputName,
         path: &DevicePath,
@@ -163,8 +212,12 @@ impl TtyBackend {
         if remade || self.scanouts.get(name).is_none() {
             let surface = device.kms.scanout(connector.id, config)?;
             let clock = VblankClock::new(config.mode.refresh, now);
-            self.scanouts
-                .attach(name.clone(), Scanout::new(surface, clock));
+            let scanout = Scanout::new(surface, clock);
+            let scanout = match self.carried.remove(name) {
+                Some(watch) => scanout.carrying(watch),
+                None => scanout,
+            };
+            self.scanouts.attach(name.clone(), scanout);
         }
         self.lit.insert(
             name.clone(),
@@ -240,6 +293,8 @@ impl TtyBackend {
             self.lit.remove(&name);
             let _ = self.scanouts.detach(&name);
             self.readback.forget(&name);
+            self.carried.remove(&name);
+            self.distrust.remove(&name);
         }
     }
 }

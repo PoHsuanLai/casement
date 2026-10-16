@@ -22,16 +22,25 @@ use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags};
 use smithay::backend::allocator::{Allocator, Format, Fourcc, Modifier};
 use smithay::backend::drm::DrmDeviceFd;
 use smithay::backend::drm::compositor::FrameFlags;
+use smithay::backend::egl::fence::EGLFence;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::element::texture::{TextureRenderBuffer, TextureRenderElement};
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
+use smithay::backend::renderer::sync::SyncPoint;
 use smithay::backend::renderer::{Bind, ImportDma};
 use smithay::reexports::gbm::Device as GbmDevice;
 use smithay::utils::{Buffer, Physical, Rectangle, Size, Transform};
 use std::cell::RefCell;
 use std::convert::Infallible;
 use std::rc::Rc;
+use std::time::Duration;
+
+/// How long the render GPU gets to finish a frame before the CPU stops waiting for it. A frame
+/// takes a few milliseconds; a GPU that hung or reset and never signals its fence would
+/// otherwise stop the whole compositor (the wait has no end of its own). A frame that misses it
+/// fails like any other, and a run of them sets the output up again.
+const FENCE_DEADLINE: Duration = Duration::from_millis(500);
 
 /// The formats the picture may take, best first: opaque, so the scanout GPU blends nothing.
 const WANTED: [CoreFourcc; 2] = [CoreFourcc(0x3432_5258), CoreFourcc(0x3432_5241)];
@@ -167,10 +176,7 @@ impl Bridge {
             .render_output(&mut *render, &mut framebuffer, age, &elements, CLEAR)
             .map_err(refused)?;
         let changed = rendered.damage.is_some();
-        rendered
-            .sync
-            .wait()
-            .map_err(|_| refused("the render GPU was interrupted"))?;
+        wait_bounded(&rendered.sync)?;
         self.held = Held::LastFrame;
         Ok(match changed {
             true => Drawn::Frame,
@@ -196,6 +202,21 @@ impl Bridge {
     fn picture_size(&self) -> Size<i32, Buffer> {
         use smithay::backend::allocator::Buffer as _;
         self.picture.size()
+    }
+}
+
+/// Waits for the render GPU's fence, at most [`FENCE_DEADLINE`]. A fence of a kind this does not
+/// know is waited for as smithay does.
+fn wait_bounded(sync: &SyncPoint) -> Result<(), KmsError> {
+    match sync.get::<EGLFence>() {
+        Some(fence) => match fence.client_wait(Some(FENCE_DEADLINE), false) {
+            Ok(true) => Ok(()),
+            Ok(false) => Err(refused("the render GPU did not finish a frame in time")),
+            Err(error) => Err(refused(error)),
+        },
+        None => sync
+            .wait()
+            .map_err(|_| refused("the render GPU was interrupted")),
     }
 }
 

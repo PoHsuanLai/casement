@@ -21,7 +21,7 @@ use crate::state::State;
 use casement_backend::tty::Lighting;
 use casement_core::output::OutputConfig;
 use casement_core::shell::ShellNote;
-use casement_core::{Cause, CoreNote, Effect, KeyboardTarget, LayerKey, OutputKey};
+use casement_core::{Cause, CoreNote, Effect, Event, KeyboardTarget, LayerKey, OutputKey};
 use casement_core::{InputSerial, geometry::LogicalSize, lock::LockReply};
 use casement_wayland::output::OutputWire;
 use casement_wayland::{
@@ -280,6 +280,13 @@ fn apply_output(state: &mut State, output: &OutputKey, config: &OutputConfig) {
         casement_backend::BackendKind::Tty(tty) => lit_on_tty(tty, &facts.name, config, now),
         _ => None,
     };
+    // A display that refused the mode asked for is lit at another: everything below, and the
+    // model after it, go by the mode it is really at.
+    let actual = match lighting {
+        Some(Lighting::Fallback(mode)) => OutputConfig { mode, ..*config },
+        _ => *config,
+    };
+    let config = &actual;
     state
         .clock
         .plug_output(&state.event_loop, output.clone(), config.mode.refresh);
@@ -303,8 +310,17 @@ fn apply_output(state: &mut State, output: &OutputKey, config: &OutputConfig) {
     if let Some(global) = state.wl.output.outputs.get(output) {
         presentation::learn_output(&mut state.wl.presentation, output.clone(), global.clone());
     }
+    if matches!(lighting, Some(Lighting::Fallback(_))) {
+        core_loop::feed(
+            state,
+            vec![Event::OutputConfigured {
+                output: output.clone(),
+                config: actual,
+            }],
+        );
+    }
     // DPMS On: a real CRTC is lit by the next frame queued, so one is queued now (P1-T).
-    if lighting == Some(Lighting::Relit) {
+    if matches!(lighting, Some(Lighting::Relit | Lighting::Fallback(_))) {
         core_loop::frame(state, output);
     }
 }

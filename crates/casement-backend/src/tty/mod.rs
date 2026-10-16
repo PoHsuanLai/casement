@@ -21,12 +21,14 @@ mod capture_gpu;
 mod connector;
 mod device;
 mod direct;
+mod fallback;
 mod firmware;
 mod flip;
 mod hotplug;
 mod judge;
 mod kms;
 mod lit;
+mod master;
 mod offer;
 mod readback;
 mod report;
@@ -36,6 +38,7 @@ mod sleep;
 mod surface;
 mod udev;
 mod vt;
+mod watch;
 mod writeback;
 
 #[cfg(feature = "tty")]
@@ -72,6 +75,7 @@ pub use device::{Announced, OpenDevice, TtyDevices};
 pub use direct::{
     DirectSession, DriverRefusal, FixedNode, NoGpus, POLL_EVERY, VKMS_DRIVER, require_vkms,
 };
+pub use fallback::mode_ladder;
 pub use firmware::{DeviceKinds, SysDeviceKinds};
 pub use flip::FlipTracker;
 pub use hotplug::{KnownConnectors, reconcile};
@@ -82,15 +86,20 @@ pub use kms::{
     ModesetPolicy, OutputCommit, PlaneFacts, PlaneId, PlaneKind, VrrState,
 };
 pub use lit::{Lighting, LitOutput};
+pub use master::{Master, MasterWatch, RETRY_EVERY};
 pub use offer::scanout_formats;
 pub use readback::{Readback, Residence, Watch};
 pub use report::{Due, KmsReport, REPORT_EVERY, ReportPacer, ReportedOutput};
 pub use scanouts::{Flow, FrameTally, PresentOutcome, Scanout, ScanoutSet};
-pub use session::{SeatState, SessionNote, TtySession};
+pub use session::{SeatCauses, SeatSource, SeatState, SessionNote, TtySession};
 pub use sleep::{SleepInbox, SleepLink, SleepSettled, sleep_channel};
 pub use surface::{DirectCandidate, Presented, QueueOutcome, QueuedFrame, ScanoutSurface};
 pub use udev::{DeviceEvent, DevicePath, DeviceSource};
 pub use vt::{VtHeld, VtNumber, vt_of_chord, vt_of_keysym};
+pub use watch::{
+    FAILURES_ALLOWED, FLIP_DEADLINE, Failing, FailureRun, Flip, FlipWatch, Health, Level,
+    RECOVERY_WINDOW, Recoveries, STARVED_AFTER, Starved,
+};
 pub use writeback::{FLIPS_TO_WAIT, RawCapture, Writeback, WritebackError, WritebackMode};
 
 #[cfg(feature = "tty")]
@@ -116,7 +125,7 @@ use casement_core::gpu::{
     DisplayKind, GpuChoice, OutputRoute, RenderPlan, keep_displays, plan_for,
 };
 use casement_core::input::Keysym;
-use casement_core::output::{OutputConfig, OutputPower};
+use casement_core::output::{Mode, OutputConfig, OutputPower};
 use casement_core::settings::PointerSettings;
 use casement_core::time::Mono;
 use casement_core::{DeviceId, OutputName};
@@ -217,6 +226,9 @@ pub enum TtyNote {
     Connector(ConnectorEvent),
     /// The seat changed hands.
     Session(SessionNote),
+    /// An output's frames stopped and resetting its surface did not help: its scanout and its
+    /// lighting are gone, and the loop applies its configuration again.
+    Reinit(OutputName),
 }
 
 /// The running tty backend.
@@ -246,6 +258,29 @@ pub struct TtyBackend {
     kinds: BTreeMap<DevicePath, DisplayKind>,
     /// The input devices the seat has, and what each was configured with.
     present: PresentDevices,
+    /// Which cause has the seat lent: another session, the machine asleep, or both.
+    causes: SeatCauses,
+    /// The devices that could not take master back, asked again as time passes.
+    master: MasterWatch,
+    /// Whether a device took master back since the loop was told the seat returned.
+    revived: Revived,
+    /// The outputs to set up again at the next `dispatch`.
+    reinit: Vec<OutputName>,
+    /// What an output set up again had waited for a frame for, so the wait goes on counting.
+    carried: BTreeMap<OutputName, FlipWatch>,
+    /// The mode an output was lit at when its frames stopped for good, and when: left out of the
+    /// modes tried for it for a while, so setting it up again does not light the same mode.
+    distrust: BTreeMap<OutputName, (Mode, Mono)>,
+}
+
+/// Whether the loop still has to be told a device took master back.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum Revived {
+    /// Nothing to tell.
+    #[default]
+    No,
+    /// A device took master back after failing to: the loop applies every output again.
+    Yes,
 }
 
 impl TtyBackend {
@@ -301,6 +336,12 @@ impl TtyBackend {
             writeback_job: writeback::WritebackJob::default(),
             kinds,
             present: PresentDevices::default(),
+            causes: SeatCauses::default(),
+            master: MasterWatch::default(),
+            revived: Revived::No,
+            reinit: Vec::new(),
+            carried: BTreeMap::new(),
+            distrust: BTreeMap::new(),
         })
     }
 
@@ -312,24 +353,49 @@ impl TtyBackend {
     /// Reads the seat and device events that arrived, in order: a VT switch pauses, a return
     /// re-reads every open device, hotplug reconciles. While the seat is lent no device is
     /// touched: the device events stay queued and are read after the return.
+    ///
+    /// The seat is lent while any cause lends it (another session, the machine asleep): the
+    /// notes returned say when this session lost the seat and when it got it back, once each,
+    /// whatever order the causes came and went in.
     pub fn dispatch(&mut self) -> Vec<TtyNote> {
         let mut notes = Vec::new();
         let mut returned = false;
-        for note in self.seams.session.notes() {
-            self.seat = self.seat.after(note);
-            match note {
-                SessionNote::Activated => {
-                    returned = true;
-                    self.resumed();
-                }
-                SessionNote::Paused => {
+        let heard = self
+            .seams
+            .session
+            .notes()
+            .into_iter()
+            .map(|note| (SeatSource::Session, note))
+            .chain(
+                self.seams
+                    .session
+                    .sleep_notes()
+                    .into_iter()
+                    .map(|note| (SeatSource::Sleep, note)),
+            )
+            .collect::<Vec<_>>();
+        for (source, note) in heard {
+            let before = self.seat;
+            self.causes = self.causes.after(source, note);
+            self.seat = self.causes.seat();
+            match (before, self.seat) {
+                (SeatState::Held, SeatState::Lent) => {
                     returned = false;
                     self.paused();
+                    notes.push(TtyNote::Session(SessionNote::Paused));
                 }
-                SessionNote::VtSwitch(vt) => self.ask_for_vt(VtNumber(vt)),
+                (SeatState::Lent, SeatState::Held) => {
+                    returned = true;
+                    self.resumed();
+                    notes.push(TtyNote::Session(SessionNote::Activated));
+                }
+                _ => {}
+            }
+            if let SessionNote::VtSwitch(vt) = note {
+                self.ask_for_vt(VtNumber(vt));
+                notes.push(TtyNote::Session(note));
             }
             self.seams.session.settled(note);
-            notes.push(TtyNote::Session(note));
         }
         if self.seat == SeatState::Held {
             if returned {
@@ -337,6 +403,26 @@ impl TtyBackend {
             }
             notes.extend(self.read_device_events());
             self.prune();
+            notes.extend(self.set_up_again());
+        }
+        notes
+    }
+
+    /// The outputs whose frames stopped for good are dropped, and the loop is told to light them
+    /// again; a device that took master back after failing to is told as a seat that returned.
+    fn set_up_again(&mut self) -> Vec<TtyNote> {
+        let mut notes: Vec<TtyNote> = std::mem::take(&mut self.reinit)
+            .into_iter()
+            .map(|name| {
+                if let Some(scanout) = self.scanouts.detach(&name) {
+                    self.carried.insert(name.clone(), scanout.watch());
+                }
+                self.lit.remove(&name);
+                TtyNote::Reinit(name)
+            })
+            .collect();
+        if std::mem::take(&mut self.revived) == Revived::Yes {
+            notes.push(TtyNote::Session(SessionNote::Activated));
         }
         notes
     }
@@ -354,17 +440,43 @@ impl TtyBackend {
     }
 
     /// The seat is back: the devices take master, every surface forgets the screen, frames
-    /// flow, input reads again. The loop commits every output again (`Effect::ApplyOutput`).
+    /// flow, input reads again. The loop commits every output again (`Effect::ApplyOutput`). A
+    /// device that cannot take master is asked again as time passes ([`MasterWatch`]), and
+    /// nothing is drawn on it meanwhile.
     fn resumed(&mut self) {
         for (path, device) in &mut self.devices.devices {
             if let Err(error) = device.kms.resume() {
-                tracing::warn!(path = %path.as_path().display(), %error, "a device did not resume");
+                tracing::warn!(path = %path.as_path().display(), %error, "a device did not resume; it is asked again");
+                self.master.lose(path.clone());
             }
         }
         self.scanouts.reset();
         self.scanouts.flow(Flow::Running);
         if let Some(input) = &mut self.seams.input {
             input.resume();
+        }
+    }
+
+    /// Asks the devices that could not take master again, when their time has come. One that
+    /// can now makes the loop apply every output again.
+    fn retry_master(&mut self, now: Mono) {
+        for path in self.master.due(now) {
+            let Some(device) = self.devices.devices.get_mut(&path) else {
+                self.master.regain(&path);
+                continue;
+            };
+            match device.kms.resume() {
+                Ok(()) => {
+                    tracing::info!(path = %path.as_path().display(), "a device took master back");
+                    self.master.regain(&path);
+                    self.scanouts.reset();
+                    self.revived = Revived::Yes;
+                }
+                Err(error) if self.master.attempts() % 30 == 1 => {
+                    tracing::warn!(path = %path.as_path().display(), %error, "a device still cannot take master");
+                }
+                Err(_) => {}
+            }
         }
     }
 
@@ -416,6 +528,7 @@ impl TtyBackend {
                         continue;
                     }
                     let result = self.devices.added(path.clone(), &mut *self.seams.opener);
+                    notes.extend(self.retire_unkept());
                     (path, result)
                 }
                 DeviceEvent::Changed(path) => {
@@ -430,6 +543,37 @@ impl TtyBackend {
             notes.extend(connector_notes(&path, result));
         }
         notes
+    }
+
+    /// Closes the open devices that are no longer to be driven now that a real GPU is among
+    /// them (a firmware framebuffer opened before the GPU driver loaded): their connectors are
+    /// unplugged.
+    fn retire_unkept(&mut self) -> Vec<TtyNote> {
+        let found: Vec<(DevicePath, DisplayKind)> = self
+            .devices
+            .devices
+            .keys()
+            .map(|open| {
+                (
+                    open.clone(),
+                    self.kinds.get(open).copied().unwrap_or(DisplayKind::Gpu),
+                )
+            })
+            .collect();
+        let keep = keep_displays(&found);
+        let retire: Vec<DevicePath> = found
+            .into_iter()
+            .map(|(path, _)| path)
+            .filter(|path| !keep.contains(path))
+            .collect();
+        retire
+            .into_iter()
+            .flat_map(|path| {
+                tracing::info!(path = %path.as_path().display(), "a firmware framebuffer is closed now that a GPU is here");
+                let events = self.devices.removed(&path);
+                connector_notes(&path, Ok(events))
+            })
+            .collect()
     }
 
     /// Whether an added device is driven: not a firmware framebuffer while any device is open.
@@ -468,7 +612,29 @@ impl TtyBackend {
         if self.seat == SeatState::Lent || dark {
             return Ok(PresentOutcome::Waiting);
         }
+        self.retry_master(now);
+        if self.master_lost_on(output) == Master::Lost {
+            return Ok(PresentOutcome::Waiting);
+        }
         let shown = self.scanouts.present(output, source, now)?;
+        match shown {
+            PresentOutcome::Stalled => {
+                if let Some(lit) = self.lit.get(output) {
+                    self.distrust.insert(output.clone(), (lit.config.mode, now));
+                }
+                self.reinit.push(output.clone());
+            }
+            PresentOutcome::MasterLost => {
+                if let Some(lit) = self.lit.get(output) {
+                    tracing::warn!(
+                        output = output.as_str(),
+                        "the display master was lost; taking it back"
+                    );
+                    self.master.lose(lit.device.clone());
+                }
+            }
+            _ => {}
+        }
         match shown {
             PresentOutcome::Flipped(seq) => {
                 self.queued = self.queued.saturating_add(1);
@@ -479,6 +645,23 @@ impl TtyBackend {
             _ => {}
         }
         Ok(shown)
+    }
+
+    /// Whether the device that drives `output` has the display master.
+    fn master_lost_on(&self, output: &OutputName) -> Master {
+        self.lit
+            .get(output)
+            .map_or(Master::Held, |lit| self.master.of(&lit.device))
+    }
+
+    /// Whether the display shows the session at `now`. Every output that asked for frames
+    /// having shown none for long means the display is frozen whatever the loop does: the
+    /// caller then stops telling the service manager the compositor is alive.
+    pub fn health(&self, now: Mono) -> Health {
+        match self.seat {
+            SeatState::Held => self.scanouts.health(now),
+            SeatState::Lent => Health::Alive,
+        }
     }
 
     /// The route `output`'s frames take between GPUs; none without a plan or for a connector it

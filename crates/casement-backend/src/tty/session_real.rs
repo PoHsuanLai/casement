@@ -124,9 +124,11 @@ impl TtySession for RealSession {
     }
 
     fn notes(&mut self) -> Vec<SessionNote> {
-        let mut notes = std::mem::take(&mut *self.pending.borrow_mut());
-        notes.extend(self.sleep.take());
-        notes
+        std::mem::take(&mut *self.pending.borrow_mut())
+    }
+
+    fn sleep_notes(&mut self) -> Vec<SessionNote> {
+        self.sleep.take()
     }
 
     fn settled(&mut self, note: SessionNote) {

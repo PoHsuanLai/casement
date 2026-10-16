@@ -4,6 +4,7 @@
 use super::flip::FlipTracker;
 use super::kms::KmsError;
 use super::surface::{Presented, QueueOutcome, QueuedFrame, ScanoutSurface};
+use super::watch::{Failing, FailureRun, Flip, FlipWatch, Health, Level, Recoveries, Starved};
 use crate::backend::BackendError;
 use crate::headless::FrameSource;
 use casement_core::OutputName;
@@ -33,6 +34,15 @@ pub enum PresentOutcome {
     Unchanged,
     /// Nothing was drawn: a flip is pending, the seat is lent, the output is dark or unlit.
     Waiting,
+    /// A flip never landed, or frames kept failing, and the surface was made to forget the
+    /// screen: the next frame draws everything again. Nothing was queued now.
+    Recovered,
+    /// The same went on after a recovery: the output must be set up again from its
+    /// configuration (`TtyNote::Reinit`). Nothing was queued.
+    Stalled,
+    /// The device refused a frame because it is no longer the display master (the seat was
+    /// taken back without a word): it must take master again before anything is drawn on it.
+    MasterLost,
 }
 
 impl From<Option<VblankSeq>> for PresentOutcome {
@@ -49,6 +59,12 @@ pub struct Scanout {
     flip: FlipTracker,
     history: RenderHistory,
     tally: FrameTally,
+    /// When the flip in flight was queued, and for how long nothing has landed.
+    watch: FlipWatch,
+    /// Frames that failed one after another.
+    failures: FailureRun,
+    /// How lately the output was set going again.
+    recoveries: Recoveries,
 }
 
 impl Scanout {
@@ -60,7 +76,26 @@ impl Scanout {
             flip: FlipTracker::new(),
             history: RenderHistory::empty(),
             tally: FrameTally::default(),
+            watch: FlipWatch::default(),
+            failures: FailureRun::default(),
+            recoveries: Recoveries::default(),
         }
+    }
+
+    /// The same scanout, remembering how long the output it replaces had shown nothing.
+    #[must_use]
+    pub fn carrying(self, watch: FlipWatch) -> Scanout {
+        Scanout { watch, ..self }
+    }
+
+    /// How long this output has been waiting for a frame to land.
+    pub fn watch(&self) -> FlipWatch {
+        self.watch
+    }
+
+    /// Whether this output has shown nothing for too long at `now`.
+    pub fn starved(&self, now: Mono) -> Starved {
+        self.watch.starved(now)
     }
 
     /// Takes in what reached the glass since the last call (`now` is this look's instant on the
@@ -70,6 +105,7 @@ impl Scanout {
             .map(|presented| {
                 let (flip, outcome) = self.flip.presented(presented);
                 self.flip = flip;
+                self.watch = self.watch.landed();
                 self.tally.presented = self.tally.presented.saturating_add(1);
                 if matches!(outcome, FrameOutcome::Missed { .. }) {
                     self.tally.missed = self.tally.missed.saturating_add(1);
@@ -88,22 +124,65 @@ impl Scanout {
     ) -> Result<PresentOutcome, BackendError> {
         let _ = self.settle(now);
         if self.flip.wanted.is_some() {
-            return Ok(PresentOutcome::Waiting);
+            return Ok(match self.watch.flip(now) {
+                Flip::OnTime => PresentOutcome::Waiting,
+                Flip::Lost => {
+                    tracing::warn!("a page flip never landed; the output draws its picture again");
+                    self.recover(now)
+                }
+            });
         }
         match self.surface.queue(QueuedFrame::Draw(source)) {
             QueueOutcome::Queued(wanted) => {
                 self.flip = self.flip.queued(wanted);
+                self.watch = self.watch.queued(now);
+                self.failures = self.failures.succeeded();
                 Ok(PresentOutcome::Flipped(wanted))
             }
             QueueOutcome::Busy => Ok(PresentOutcome::Waiting),
-            QueueOutcome::Unchanged => Ok(PresentOutcome::Unchanged),
-            QueueOutcome::Failed(error) => Err(error.into()),
+            QueueOutcome::Unchanged => {
+                self.failures = self.failures.succeeded();
+                Ok(PresentOutcome::Unchanged)
+            }
+            QueueOutcome::Failed(error) if lost_master(&error) => {
+                self.surface.reset();
+                self.flip = FlipTracker::new();
+                self.watch = self.watch.given_up();
+                Ok(PresentOutcome::MasterLost)
+            }
+            QueueOutcome::Failed(error) => {
+                let (run, verdict) = self.failures.failed();
+                self.failures = run;
+                match verdict {
+                    Failing::Carry => Err(error.into()),
+                    Failing::Reinit => {
+                        tracing::warn!(%error, "frames keep failing; the output draws its picture again");
+                        Ok(self.recover(now))
+                    }
+                }
+            }
+        }
+    }
+
+    /// The flip in flight (or the run of failures) is given up: the surface forgets the screen,
+    /// and the output is reset, or after a recent reset set up again.
+    fn recover(&mut self, now: Mono) -> PresentOutcome {
+        self.surface.reset();
+        self.flip = FlipTracker::new();
+        self.watch = self.watch.given_up();
+        self.failures = FailureRun::default();
+        let (recoveries, level) = self.recoveries.next(now);
+        self.recoveries = recoveries;
+        match level {
+            Level::Reset => PresentOutcome::Recovered,
+            Level::Reinit => PresentOutcome::Stalled,
         }
     }
 
     /// The output goes dark: the surface stops scanning out until the next frame.
     pub fn blank(&mut self) -> Result<(), KmsError> {
         self.flip = FlipTracker::new();
+        self.watch = self.watch.idle();
         self.surface.blank()
     }
 
@@ -111,6 +190,7 @@ impl Scanout {
     pub fn reset(&mut self) {
         self.surface.reset();
         self.flip = FlipTracker::new();
+        self.watch = self.watch.idle();
     }
 
     /// Records what the frame just drawn cost, for the next prediction.
@@ -127,6 +207,12 @@ impl Scanout {
     pub fn tally(&self) -> FrameTally {
         self.tally
     }
+}
+
+/// Whether a refused frame means the device lost the display master: the kernel answers a
+/// device that is no longer master with "permission denied".
+fn lost_master(error: &KmsError) -> bool {
+    matches!(error, KmsError::Io(io) if io.kind() == std::io::ErrorKind::PermissionDenied)
 }
 
 /// Whether frames flow.
@@ -214,6 +300,20 @@ impl ScanoutSet {
     /// The seat came back: every scanout forgets the screen.
     pub fn reset(&mut self) {
         self.outputs.values_mut().for_each(Scanout::reset);
+    }
+
+    /// Whether the display shows the session at `now`: frozen when at least one output is set
+    /// up and every one of them has asked for frames for too long and shown none.
+    pub fn health(&self, now: Mono) -> Health {
+        match !self.outputs.is_empty()
+            && self
+                .outputs
+                .values()
+                .all(|scanout| scanout.starved(now) == Starved::Yes)
+        {
+            true => Health::Frozen,
+            false => Health::Alive,
+        }
     }
 
     /// The outputs that scan out now.

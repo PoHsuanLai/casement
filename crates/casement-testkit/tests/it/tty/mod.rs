@@ -6,5 +6,6 @@ mod direct;
 mod firmware;
 mod integration;
 mod kms;
+mod recovery;
 mod scanout;
 mod session;
