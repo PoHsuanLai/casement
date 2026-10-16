@@ -125,9 +125,7 @@ impl Model {
     fn quit_listeners_of(&self, app: &AppKey) -> Vec<ClientKey> {
         self.clients
             .iter()
-            .filter(|(client, served)| {
-                served.as_ref() == Some(app) && self.quit_listeners.contains(client)
-            })
+            .filter(|(client, served)| served.contains(app) && self.quit_listeners.contains(client))
             .map(|(client, _)| *client)
             .collect()
     }
@@ -203,7 +201,7 @@ impl Model {
     fn sole_clients_of(&self, app: &AppKey) -> Vec<ClientKey> {
         self.clients
             .iter()
-            .filter(|(_, served)| served.as_ref() == Some(app))
+            .filter(|(_, served)| served.contains(app))
             .filter(|(client, _)| {
                 self.windows
                     .values()

@@ -10,7 +10,7 @@ impl Model {
     /// A client connected through a socket of `role`; it serves no app until it maps a window.
     pub(super) fn connect(self, client: ClientKey, role: &ConnectionRole) -> Moved {
         let mut model = self;
-        model.clients.entry(client).or_insert(None);
+        model.clients.entry(client).or_default();
         if matches!(role, ConnectionRole::Shell) {
             model.shell_clients.insert(client);
         }
@@ -37,7 +37,8 @@ impl Model {
         Moved::of(model)
     }
 
-    /// A client went: its windows unmap, and its app goes with its last client.
+    /// A client went: its windows unmap, and each app it served goes with that app's last client
+    /// (CASC-04: a connection that carried several apps leaves none of them behind).
     pub(super) fn disconnect(self, client: ClientKey) -> Moved {
         let owned: Vec<_> = self
             .windows
@@ -51,13 +52,14 @@ impl Model {
         moved.then(|mut model| {
             model.quit_listeners.remove(&client);
             model.shell_clients.remove(&client);
-            let served = model.clients.remove(&client).flatten();
-            let orphaned =
-                served.filter(|app| !model.clients.values().any(|c| c.as_ref() == Some(app)));
-            match orphaned {
-                Some(app) => model.drop_app(&app),
-                None => Moved::of(model),
-            }
+            let served = model.clients.remove(&client).unwrap_or_default();
+            let orphaned: Vec<_> = served
+                .into_iter()
+                .filter(|app| !model.clients.values().any(|others| others.contains(app)))
+                .collect();
+            orphaned.into_iter().fold(Moved::of(model), |moved, app| {
+                moved.then(|model| model.drop_app(&app))
+            })
         })
     }
 }

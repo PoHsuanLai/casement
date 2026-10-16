@@ -56,26 +56,22 @@ impl Model {
     /// Input arrived: the client of the key window is pinged, unless a ping is out or one went
     /// a moment ago. A client that does not answer within [`PING_DEADLINE`] is not responding.
     pub(super) fn input_seen(self) -> Moved {
-        let client = self
+        let keyed = self
             .focus
             .key
             .and_then(|id| self.windows.get(&id))
-            .map(|window| window.client);
-        match client {
-            Some(client) => self.pinged(client),
+            .map(|window| (window.client, window.app.clone()));
+        match keyed {
+            Some((client, app)) => self.pinged(client, &app),
             None => Moved::of(self),
         }
     }
 
-    /// `client` is pinged when [`ping_plan`] says one is due; the deadline and the gap are
-    /// armed here and in the book, so the next input sees them.
-    fn pinged(self, client: ClientKey) -> Moved {
-        let life = self
-            .clients
-            .get(&client)
-            .and_then(|app| app.as_ref())
-            .and_then(|app| self.apps.get(app))
-            .map(|record| record.life.clone());
+    /// `client` is pinged when [`ping_plan`] says one is due, by the life of `app` (the key
+    /// window's); the deadline and the gap are armed here and in the book, so the next input
+    /// sees them.
+    fn pinged(self, client: ClientKey, app: &AppKey) -> Moved {
+        let life = self.apps.get(app).map(|record| record.life.clone());
         let held = |key: TimerKey| match self.timers.is_armed(&key) {
             true => Held::Yes,
             false => Held::No,
@@ -106,34 +102,41 @@ impl Model {
         }
     }
 
-    /// The client's app stopped answering.
+    /// The client's apps stopped answering: it is one connection, so they all did.
     fn not_responding(self, client: ClientKey) -> Moved {
         let since = self.now;
-        let app = self.clients.get(&client).cloned().flatten();
-        self.with_life(app.as_ref(), |life| match life {
-            AppLife::Running | AppLife::Windowless => AppLife::NotResponding { since },
-            other => other.clone(),
+        let apps = self.clients.get(&client).cloned().unwrap_or_default();
+        apps.into_iter().fold(Moved::of(self), |moved, app| {
+            moved.then(|model| {
+                model.with_life(Some(&app), |life| match life {
+                    AppLife::Running | AppLife::Windowless => AppLife::NotResponding { since },
+                    other => other.clone(),
+                })
+            })
         })
     }
 
-    /// A client answered a ping: the timer is cancelled, and its app responds again.
+    /// A client answered a ping: the timer is cancelled, and its apps respond again.
     pub(super) fn pong(self, client: ClientKey) -> Moved {
-        let app = self.clients.get(&client).cloned().flatten();
+        let apps = self.clients.get(&client).cloned().unwrap_or_default();
         let mut model = self;
         model.timers = model.timers.cancel(&TimerKey::Ping(client));
-        let windows = app
-            .as_ref()
-            .and_then(|app| model.apps.get(app))
-            .map_or(0, |record| record.windows.len());
-        Moved::of(model)
-            .with(Effect::CancelTimer(TimerKey::Ping(client)))
-            .then(|model| {
-                model.with_life(app.as_ref(), |life| match (life, windows) {
-                    (AppLife::NotResponding { .. }, 0) => AppLife::Windowless,
-                    (AppLife::NotResponding { .. }, _) => AppLife::Running,
-                    (other, _) => other.clone(),
+        apps.into_iter().fold(
+            Moved::of(model).with(Effect::CancelTimer(TimerKey::Ping(client))),
+            |moved, app| {
+                moved.then(|model| {
+                    let windows = model
+                        .apps
+                        .get(&app)
+                        .map_or(0, |record| record.windows.len());
+                    model.with_life(Some(&app), |life| match (life, windows) {
+                        (AppLife::NotResponding { .. }, 0) => AppLife::Windowless,
+                        (AppLife::NotResponding { .. }, _) => AppLife::Running,
+                        (other, _) => other.clone(),
+                    })
                 })
-            })
+            },
+        )
     }
 
     /// The app's life becomes what `next` says of its current one.

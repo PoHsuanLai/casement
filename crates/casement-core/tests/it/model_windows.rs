@@ -218,6 +218,46 @@ fn a_client_that_serves_two_windows_unmaps_both() {
     assert_eq!(run.model.focus().active, None);
 }
 
+/// CASC-04: a connection that carries windows of several apps (the X11 satellite; a peer that
+/// claims a different app id for each toplevel) leaves none of them behind, and an app another
+/// connection still serves stays.
+#[test]
+fn a_client_that_carried_several_apps_leaves_none_of_them_behind() {
+    let (mail, web, notes) = (
+        proven("org.quire.Mail"),
+        proven("org.example.Web"),
+        proven("org.example.Notes"),
+    );
+    let on_client = |n: u64, client: u64, app: &casement_core::app::AppKey| {
+        Op::Event(Event::ToplevelMapped(casement_core::MappedToplevel {
+            client: ClientKey(client),
+            ..support::driver::mapped(n, app, TokenCheck::Missing)
+        }))
+    };
+    let gone = |client: u64| {
+        Op::Event(Event::ClientGone {
+            client: ClientKey(client),
+        })
+    };
+    let carried = run(vec![
+        plug("HEADLESS-1"),
+        on_client(1, 1, &mail),
+        on_client(2, 1, &web),
+        on_client(3, 1, &notes),
+        on_client(4, 2, &mail),
+    ]);
+    assert_eq!(carried.model.apps().len(), 3);
+    let left = support::driver::run_from(carried.model, vec![gone(1)]);
+    assert_eq!(
+        left.model.apps().keys().cloned().collect::<Vec<_>>(),
+        vec![mail.clone()],
+        "web and notes went with their only connection; mail is still served by client 2"
+    );
+    assert_eq!(left.model.windows().len(), 1);
+    let empty = support::driver::run_from(left.model, vec![gone(2)]);
+    assert!(empty.model.apps().is_empty());
+}
+
 #[test]
 fn committed_sizes_update_unplaced_and_floating_windows_only() {
     let mail = proven("org.quire.Mail");

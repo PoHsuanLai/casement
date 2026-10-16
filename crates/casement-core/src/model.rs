@@ -70,8 +70,10 @@ pub use swipe::{SpaceStrip, SwipeOwner};
 pub struct Model {
     windows: BTreeMap<WindowId, crate::window::Window>,
     apps: BTreeMap<AppKey, App>,
-    /// Each connected client and the app its windows belong to, once it has mapped one.
-    clients: BTreeMap<ClientKey, Option<AppKey>>,
+    /// Each connected client and the apps its windows belong to: none until it maps one, several
+    /// for a connection that carries more than one app (the X11 satellite; a peer that claims a
+    /// different app id for each toplevel).
+    clients: BTreeMap<ClientKey, BTreeSet<AppKey>>,
     /// The clients that came through the shell's own connection: the only ones whose lock
     /// takeover, exclusive keyboard layers and full-size zones are honoured.
     shell_clients: BTreeSet<ClientKey>,

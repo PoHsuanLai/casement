@@ -49,7 +49,11 @@ impl Model {
         };
         let window_app = mapped.app.clone();
         let mut model = self.with_app_window(&mapped.app, id);
-        model.clients.insert(mapped.client, Some(mapped.app));
+        model
+            .clients
+            .entry(mapped.client)
+            .or_default()
+            .insert(mapped.app);
         model.windows.insert(id, window);
         let outputs = model.outputs_of(&[id]);
         let token = mapped.activation;
