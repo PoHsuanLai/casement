@@ -76,6 +76,28 @@ pub fn split_backdrop() -> FrameColour {
     colour(ColourToken::Paper.value(Scheme::Dark))
 }
 
+/// How much of the ground a blur's stand-in keeps under Reduce transparency, out of 255: quire's
+/// solid fallback floor, "alpha at least .94" (design/03 section 17.1), at 0.96.
+const REDUCED_ALPHA: u8 = 245;
+
+/// What a blur is drawn as when transparency is reduced: the Window material's ground, paper
+/// (the Window material has no tint; its solid fallback is the page, design/20 and 21-SPACES
+/// section 7), at 0.96 so a translucent tint over it reads as mostly solid. Light paper in a light
+/// scheme, dark in a dark one.
+///
+/// ```
+/// use casement_layout::{Scheme, reduced_stand_in};
+///
+/// assert_eq!(reduced_stand_in(Scheme::Dark).a, 245);
+/// assert!(reduced_stand_in(Scheme::Light).r > reduced_stand_in(Scheme::Dark).r);
+/// ```
+pub fn reduced_stand_in(scheme: Scheme) -> FrameColour {
+    FrameColour {
+        a: REDUCED_ALPHA,
+        ..colour(ColourToken::Paper.value(scheme))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -87,6 +109,16 @@ mod tests {
         // The scrim is .22 over nothing: 220 thousandths of 255.
         assert_eq!(overview_dim(Scheme::Light).a, 56);
         assert_eq!(overview_dim(Scheme::Light), overview_dim(Scheme::Dark));
+        let (light, dark) = (
+            reduced_stand_in(Scheme::Light),
+            reduced_stand_in(Scheme::Dark),
+        );
+        assert_eq!((light.a, dark.a), (245, 245), "mostly opaque, not opaque");
+        assert_eq!(
+            (dark.r, dark.g, dark.b),
+            (0x1E, 0x1E, 0x1E),
+            "the dark paper"
+        );
         for scheme in [Scheme::Light, Scheme::Dark] {
             let ring = overview_ring(scheme);
             assert_eq!(ring.a, 255, "{scheme:?}");

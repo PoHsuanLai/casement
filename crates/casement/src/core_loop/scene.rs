@@ -5,7 +5,7 @@ use crate::state::State;
 use casement_backend::headless::FrameSource;
 use casement_core::Model;
 use casement_core::geometry::{LogicalPoint, LogicalRect, SubPx};
-use casement_core::layer::{Arranged, LayerLevel};
+use casement_core::layer::{Arranged, BlurStrength, LayerLevel};
 use casement_core::time::Mono;
 use casement_core::window::WindowState;
 use casement_core::{LayerKey, OutputKey, WindowId};
@@ -179,6 +179,8 @@ pub(crate) fn layers_on(model: &Model, output: &OutputKey) -> LayerDraw {
                 LayerLevel::Overlay => &mut draw.overlay,
             };
             level.push(*key);
+            draw.blur_strengths
+                .insert(*key, BlurStrength::of(spec.role));
             draw
         })
 }

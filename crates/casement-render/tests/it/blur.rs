@@ -2,8 +2,9 @@
 //! the goldens in `scenes.rs`.
 
 use casement_core::geometry::PhysicalRect;
+use casement_core::layer::BlurStrength;
 use casement_render::pass::{BlurLook, KawasePlan, level_size};
-use casement_render::{BlurV0Element, Rgba8};
+use casement_render::{BlurFinish, BlurV0Element, Rgba8};
 use smithay::backend::renderer::element::{Element, Id};
 use smithay::utils::Scale;
 
@@ -183,4 +184,73 @@ fn the_finish_shader_has_no_sin_of_the_pixel_position() {
     let up = include_str!("../../src/shaders/kawase_up.frag");
     assert!(!up.contains("sin("), "no sin() in the finish shader");
     assert!(up.contains("if (grain > 0.0)"), "grain only when asked");
+}
+
+/// Each strength's look: the lighter the strength, the smaller the sigma; `Regular` is the one
+/// look every blur had before, and the plan it makes is monotone in the strength.
+#[test]
+fn a_strength_picks_its_look_and_a_stronger_one_blurs_wider() {
+    let table = [
+        (BlurStrength::Light, 12.0, 1.6),
+        (BlurStrength::Regular, 22.0, 1.8),
+        (BlurStrength::Strong, 32.0, 1.8),
+    ];
+    for (strength, sigma, saturation) in table {
+        let picked = BlurLook::of(strength);
+        assert_eq!(
+            (picked.sigma, picked.saturation),
+            (sigma, saturation),
+            "{strength:?}"
+        );
+        assert_eq!((picked.tint, picked.noise), (BlurLook::MATERIAL.tint, 0.0));
+    }
+    assert_eq!(BlurLook::of(BlurStrength::default()), BlurLook::MATERIAL);
+    let reach = |strength| BlurLook::of(strength).plan(1.0).reach();
+    assert!(reach(BlurStrength::Light) < reach(BlurStrength::Regular));
+    assert!(reach(BlurStrength::Regular) < reach(BlurStrength::Strong));
+}
+
+/// Reduce transparency: the blur stops being a framebuffer effect, draws the solid colour it was
+/// given whatever it was made with, and is a new commit (so the frame repaints at once).
+#[test]
+fn a_solid_blur_is_its_colour_and_a_new_commit() {
+    let region = vec![PhysicalRect {
+        x: 0,
+        y: 0,
+        w: 10,
+        h: 10,
+    }];
+    let paper = Rgba8 {
+        r: 30,
+        g: 30,
+        b: 30,
+        a: 245,
+    };
+    let frosted = BlurV0Element::new(Id::new(), region, STAND_IN);
+    let solid = frosted.clone().with_finish(BlurFinish::Solid(paper));
+    assert_eq!(frosted.finish(), BlurFinish::Frosted);
+    assert_eq!(solid.finish(), BlurFinish::Solid(paper));
+    assert!(frosted.is_framebuffer_effect() && !solid.is_framebuffer_effect());
+    assert_eq!((frosted.stand_in(), solid.stand_in()), (STAND_IN, paper));
+    assert!(frosted.current_commit() != solid.current_commit());
+    let other = Rgba8 { r: 236, ..paper };
+    assert!(
+        solid.current_commit()
+            != solid
+                .clone()
+                .with_finish(BlurFinish::Solid(other))
+                .current_commit(),
+        "a new colour (the scheme changed) repaints"
+    );
+    let kept = solid.remapped(|rect| [rect]);
+    assert_eq!(
+        kept.finish(),
+        BlurFinish::Solid(paper),
+        "kept through a remap"
+    );
+    assert_eq!(
+        kept.with_finish(BlurFinish::Frosted).current_commit(),
+        frosted.current_commit(),
+        "switching back is the blur again"
+    );
 }
