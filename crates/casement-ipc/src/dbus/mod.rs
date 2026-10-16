@@ -31,7 +31,7 @@ pub use peephole_bus::peephole_core::Table as CallerTable;
 pub mod peer {
     pub use peephole_bus::peephole::{Alive, PinError, Pinned, ProbeError, Prober};
     pub use peephole_bus::peephole_core::{
-        AppKey, Engine, Exe, ExePath, Facts, FileTrust, Pin, Proof, RoleName, Standing, Table,
+        AppKey, Engine, Exe, ExePath, Facts, FileTrust, Pin, Proof, RoleName, Standing, Table, Uid,
         WhyNot, judge, roles,
     };
 }

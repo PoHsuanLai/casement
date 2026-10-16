@@ -22,6 +22,26 @@ pub(super) fn image_name(exe: &Exe) -> Option<String> {
     }
 }
 
+/// Whether a service's image was shown to be the one the table names (`Proof::Exe` or better).
+/// A test build (`testing`, `debug-inject`) also takes `Proof::Dev`, the proof of a row from the
+/// test caller file (`dev_callers`), which shows nothing about the image but is the point of that
+/// file; every other build has no such proof.
+fn shown(proof: Proof) -> bool {
+    proof >= Proof::Exe || is_test_row(proof)
+}
+
+/// Whether `proof` is the proof of a test caller row.
+#[cfg(any(feature = "testing", feature = "debug-inject"))]
+fn is_test_row(proof: Proof) -> bool {
+    proof == Proof::Dev
+}
+
+/// No test caller rows in this build: no proof is theirs.
+#[cfg(not(any(feature = "testing", feature = "debug-inject")))]
+fn is_test_row(_proof: Proof) -> bool {
+    false
+}
+
 /// How the model takes the program `standing` describes, whose image is `exe`.
 ///
 /// A desktop service counts as one only when its image was shown to be the one the table names
@@ -30,7 +50,7 @@ pub(super) fn image_name(exe: &Exe) -> Option<String> {
 /// vouch for is unverified, and unverified programs are asked every time.
 pub fn client_standing(standing: &Standing, exe: &Exe) -> ClientStanding {
     match standing {
-        Standing::Service { role, proof, .. } if *proof >= Proof::Exe => {
+        Standing::Service { role, proof, .. } if shown(*proof) => {
             match ServiceRole::parse(role.as_str()) {
                 Ok(role) => ClientStanding::Service {
                     role,
@@ -77,7 +97,7 @@ fn engine_of(engine: peer::Engine) -> Option<Engine> {
 /// image, `Subject`). A program the library could not vouch for belongs to no proven app.
 pub fn peer_of(standing: &Standing) -> PeerIdentity {
     let proven = match standing {
-        Standing::Service { app, proof, .. } if *proof >= Proof::Exe => {
+        Standing::Service { app, proof, .. } if shown(*proof) => {
             named(app.as_str(), Isolation::Unsandboxed)
         }
         Standing::Program {
@@ -158,6 +178,7 @@ mod tests {
                 "a program the person can write",
                 Standing::Unverified {
                     exe_name: Some("payload".to_owned()),
+                    scope_app: None,
                     why: WhyNot::ImageWritable,
                 },
                 ClientStanding::Unverified {
@@ -168,6 +189,7 @@ mod tests {
                 "a process that left",
                 Standing::Unverified {
                     exe_name: None,
+                    scope_app: None,
                     why: WhyNot::PeerGone,
                 },
                 ClientStanding::Unverified { exe_name: None },
@@ -201,6 +223,7 @@ mod tests {
         assert!(!proven(&service("portal", Proof::Cgroup)));
         let writable = Standing::Unverified {
             exe_name: None,
+            scope_app: None,
             why: WhyNot::ImageWritable,
         };
         assert!(!proven(&writable));

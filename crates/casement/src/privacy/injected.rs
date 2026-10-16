@@ -63,6 +63,7 @@ mod tests {
         };
         let found = Standing::Unverified {
             exe_name: Some("transom".to_owned()),
+            scope_app: None,
             why: WhyNot::ImageWritable,
         };
         (found, exe)
@@ -140,6 +141,7 @@ mod tests {
         let (_, exe) = writable();
         let gone = Standing::Unverified {
             exe_name: None,
+            scope_app: None,
             why: WhyNot::PeerGone,
         };
         let floor = floor_naming(built());

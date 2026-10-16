@@ -14,6 +14,8 @@ use smithay::reexports::wayland_server::Client;
 use std::os::unix::net::UnixStream;
 use std::sync::Arc;
 
+#[cfg(any(feature = "testing", feature = "debug-inject"))]
+mod dev_callers;
 mod image;
 mod judge;
 mod processes;

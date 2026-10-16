@@ -72,10 +72,11 @@ default = ["tty", "libinput"]
 tty = ["casement-backend/tty"]
 libinput = ["casement-backend/libinput"]
 # Headless tests only (B10): the test kit builds casement with it. A binary with it refuses
-# every backend but headless and refuses to start outside the jail (jail_check.rs).
-testing = ["casement-render/testing", "casement-backend/testing"]
+# every backend but headless and refuses to start outside the jail (jail_check.rs). It also reads
+# test caller rows from the injected folder (`clients/dev_callers.rs`), hence `dev-rows`.
+testing = ["casement-render/testing", "casement-backend/testing", "casement-ipc/dev-rows"]
 # casementctl's Debug1 on the private bus (B10); the same refusals as `testing`.
-debug-inject = ["casement-ipc/debug-inject", "casement-backend/debug-inject"]
+debug-inject = ["casement-ipc/debug-inject", "casement-backend/debug-inject", "casement-ipc/dev-rows"]
 
 [lints]
 workspace = true

@@ -36,11 +36,19 @@ impl Arrival {
     }
 }
 
-/// The desktop's own list of its programs, `/etc/quire/desktop-callers.toml` and its drop-ins. A
-/// table that cannot be loaded (missing, or not owned by the administrator alone) is an empty
-/// one, where no program is one of the desktop's services: it is logged once and the compositor
-/// runs, with nobody privileged and the shell unable to connect.
-pub fn desktop_table() -> Table {
+/// The desktop's own list of its programs: `/etc/quire/desktop-callers.toml` and its drop-ins,
+/// and, in a build for the jail (`testing`, `debug-inject`) whose run has an injected folder
+/// (`--system-dir`), the test rows of `desktop-callers.toml` there, after them (`dev_callers`).
+/// This is the one place the table is made. A table that cannot be loaded (missing, or not owned
+/// by the administrator alone) is an empty one, where no program is one of the desktop's
+/// services: it is logged once and the compositor runs, with nobody privileged and the shell
+/// unable to connect.
+pub fn desktop_table(system: &SystemDir) -> Table {
+    with_test_rows(system_table(), system)
+}
+
+/// The administrator's table, or the empty one when it cannot be used.
+fn system_table() -> Table {
     match TableFiles::desktop().load(&RealProc::system()) {
         Ok(table) => table,
         Err(error) => {
@@ -50,6 +58,20 @@ pub fn desktop_table() -> Table {
             );
             Table::empty()
         }
+    }
+}
+
+/// `shipped` with the test rows of an injected folder after it; only a build for the jail has
+/// them, every other build returns `shipped` as it is.
+fn with_test_rows(shipped: Table, system: &SystemDir) -> Table {
+    #[cfg(any(feature = "testing", feature = "debug-inject"))]
+    {
+        super::dev_callers::merged(shipped, system)
+    }
+    #[cfg(not(any(feature = "testing", feature = "debug-inject")))]
+    {
+        let _ = system;
+        shipped
     }
 }
 
@@ -74,7 +96,7 @@ impl Judge {
 
     /// A judge over the desktop's own table ([`desktop_table`]).
     pub fn desktop(system: SystemDir) -> Judge {
-        Judge::new(desktop_table(), system)
+        Judge::new(desktop_table(&system), system)
     }
 
     /// Who the program on the other end of `stream` is, under the administrator's `floor` as the
@@ -109,6 +131,7 @@ mod tests {
     use super::*;
     #[cfg(any(feature = "testing", feature = "debug-inject"))]
     use casement_core::privilege::ProgramPath;
+    use std::os::unix::fs::PermissionsExt;
 
     #[test]
     fn a_program_is_held_looked_at_and_judged_when_it_connects() {
@@ -166,5 +189,25 @@ mod tests {
             panic!("a public client is always judged");
         };
         assert_eq!(etc, plain, "the floor changed nothing");
+    }
+
+    /// The build's shape decides whether the injected folder's test rows are read at all: a
+    /// build without `testing` and `debug-inject` returns the system's table whatever the folder
+    /// holds, so no file can make a program a service there.
+    #[test]
+    fn only_a_build_for_the_jail_reads_test_rows_from_the_injected_folder() {
+        let dir = tempfile::tempdir().expect("a scratch folder");
+        let rows = "[[peer]]\napp = \"org.quire.Shell\"\nrole = \"shell\"\nexe = [\"/scratch/bin/sill\"]\n";
+        let file = dir.path().join("desktop-callers.toml");
+        std::fs::write(&file, rows).expect("the rows file");
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600)).expect("its mode");
+        let at = SystemDir::At(dir.path().to_path_buf());
+        let want = usize::from(cfg!(any(feature = "testing", feature = "debug-inject")));
+        assert_eq!(with_test_rows(Table::empty(), &at).rows().len(), want);
+        assert!(
+            with_test_rows(Table::empty(), &SystemDir::Etc)
+                .rows()
+                .is_empty()
+        );
     }
 }

@@ -43,6 +43,11 @@ peephole-bus = { workspace = true, features = ["fake"] }
 [features]
 # org.quire.Casement.Debug1 on the private bus (B10): never in a release build.
 debug-inject = ["dep:casement-backend", "casement-backend/debug-inject"]
+# Developer rows (peephole's `dev-rows`): a program named in a file the person owns is a desktop
+# service at `Proof::Dev`, and `dbus::require` lets exactly that proof in. Only casement's
+# `testing` and `debug-inject` turn it on; a shipped build never has it (the desktop gate greps
+# `cargo tree -e features` for `dev-rows`).
+dev-rows = ["peephole-bus/dev-rows"]
 
 [lints]
 workspace = true

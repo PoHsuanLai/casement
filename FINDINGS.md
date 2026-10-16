@@ -5000,3 +5000,39 @@ foreign toplevel list state); `casement-protocols` is a path dependency (no rev 
 - **Not verified by reading (the gate run looks here).** That `peer::WhyNot::ImageWritable` and `Standing::Unverified { why, .. }` match
   as written in `injected.rs` (non-exhaustive peephole v0.1.1 types); that `Exe::Read` path from `/proc/<pid>/exe` is the same text a
   `readlink -f` floor row has; the `judge.rs` test's use of `std::env::current_exe` as the connecting image.
+
+## cas13: test caller rows in the injected folder, test builds only (2026-10-17)
+
+- **What.** The desktop harness runs casement in a jail with no `/etc/quire/desktop-callers.toml`, so `clients::desktop_table` was an empty
+  table, nobody was a desktop service, and the shell (sill), Settings (detent) and the portal (transom) could not connect. Now, in a build
+  with `testing` or `debug-inject` and a run with `SystemDir::At(dir)`, casement also reads `dir/desktop-callers.toml` (`clients/dev_callers.rs`)
+  as developer rows of peephole v0.1.4 (`TableFiles::load_dev`, `Table::from_toml_dev`; `Proof::Dev`, `RowOrigin::Dev`) and merges them after
+  the system table (the system table still wins where both name a program: the library judges an image a shipped row claims by shipped rows
+  alone). `desktop_table` takes the `SystemDir` and is the one place the table is made; `Judge::desktop` and `run.rs` pass it.
+- **The proof.** `Proof::Dev` sorts below `Cgroup`, so no real requirement is met by it. `dbus::require` (Compositor1 and the Privacy list)
+  lets in `Proof::Full` as before and, with feature `dev-rows`, a `Proof::Dev` service of the role asked. It does not use
+  `Requirement::dev(role)`: that one means "this role at any proof", which would also admit a service known by its image or control group
+  alone in a test build, and the existing refusal tests (`Proof::Exe`, `Proof::Cgroup` are denied) run with `--all-features`. The Wayland side
+  (`clients::client_standing`, `peer_of`) takes `Proof::Dev` as shown, in `testing`/`debug-inject` builds only.
+- **Feature chain.** `casement/testing` and `casement/debug-inject` -> `casement-ipc/dev-rows` -> `peephole-bus/dev-rows` (-> `peephole`,
+  `peephole-core`). Off by default; no other feature turns it on. Pins of `peephole-bus` and `peephole-core` moved to tag v0.1.4 (needed for
+  `dev-rows`); this brought `Standing::Unverified { scope_app }` (v0.1.2), so the test constructions of it say `scope_app: None`.
+- **The file.** `desktop-callers.toml` in the folder given to `--system-dir`; peephole's row format: `[[peer]]` with `app`, `role` (`shell`,
+  `settings`, `portal`, `agent_tier`, ...) and `exe = ["/abs/path"]` (one `*` per segment at most; no `unit`: a build-folder program has no
+  real unit). A plain file (a link is refused) owned by the person or root and not writable by group or others; a missing file adds nothing and
+  says nothing; any other fault adds nothing and logs one `TEST ONLY` warning line. The unit manager is not a developer row: the
+  `ManagerCheck` still needs the table's `manager` row at `Proof::Exe`.
+- **Tests.** `clients/dev_callers.rs` (a row makes this test binary a shell service and a proven app; no file changes nothing; group/world
+  writable, linked and malformed files add nothing; `SystemDir::Etc` adds nothing), `clients/judge.rs` (release shape: rows are read iff
+  `cfg!(any(testing, debug-inject))`), `dbus/callers.rs` (Full admitted, Exe/Cgroup refused, Dev admitted only for its own role, and only with
+  `dev-rows`).
+- **Harness lane.** Write `desktop-callers.toml` next to `privacy.toml` in the folder passed as `--system-dir`, mode 0600, one `[[peer]]` per
+  stand-in with `exe` the `readlink -f` path of its build-folder image (sill: `shell`; detent: `settings`; transom: `portal`; cuad:
+  `agent_tier`). `desktop/gate/check-no-fake.sh` must still see no `dev-rows` in a shipped build.
+- **Known limit, test builds only.** A developer row makes any program the person can write a service of its role at `Proof::Dev`, and
+  `client_standing` then gives it the role's powers; that is the point of the file and why a release build compiles it out.
+- **Not verified by reading (the gate run looks here).** That `Proof::Dev`, `TableFiles::load_dev` and `peer::Uid` resolve through
+  `casement_ipc::dbus` as written (`casement-ipc` re-exports `Uid`; `Proof` already); that `LoadError::Unreadable { source, .. }` in
+  `dev_callers.rs` matches as a pattern (non-exhaustive enum, struct variant); that the Cargo.lock refresh to v0.1.4 brings no
+  other API change into casement-agent/casement-ipc; the `dev_callers.rs` tests under the jail check (a test binary that pins its own
+  socket peer); that `--all-features` workspace tests still deny `Proof::Exe`/`Cgroup` callers.

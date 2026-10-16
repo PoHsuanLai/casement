@@ -347,7 +347,7 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
     let status = format!("listening on {socket_name}");
     // The desktop's own list of its programs is read once; each program that connects is held,
     // looked at and judged against it, so who it is is known before it asks for anything.
-    let table = clients::desktop_table();
+    let table = clients::desktop_table(&system_dir);
     let judge = clients::Judge::new(table.clone(), system_dir);
     handle
         .insert_source(socket, move |stream, (), state: &mut State| {

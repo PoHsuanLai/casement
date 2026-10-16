@@ -79,17 +79,47 @@ pub async fn require(
             return Err(not_the_caller());
         }
     };
-    let need: Vec<Requirement> = roles
-        .iter()
-        .map(|role| Requirement::new(role.clone(), Proof::Full))
-        .collect();
-    match standing.holds(&need) {
-        Ok(_) => Proven::of(&standing).ok_or_else(not_the_caller),
+    match admitted(&standing, roles) {
+        Ok(()) => Proven::of(&standing).ok_or_else(not_the_caller),
         Err(refused) => {
             log_refusal(roles, &found(&standing, refused));
             Err(not_the_caller())
         }
     }
+}
+
+/// Whether `standing` holds one of `roles` all the way (`Proof::Full`) and, only in a build with
+/// feature `dev-rows`, as a developer row (`Proof::Dev`) of one of them. The developer step is
+/// exactly that proof, so a service known by its image or its control group alone is refused
+/// there as it is everywhere.
+fn admitted(standing: &Standing, roles: &[RoleName]) -> Result<(), Refused> {
+    let need: Vec<Requirement> = roles
+        .iter()
+        .map(|role| Requirement::new(role.clone(), Proof::Full))
+        .collect();
+    let refused = match standing.holds(&need) {
+        Ok(_) => return Ok(()),
+        Err(refused) => refused,
+    };
+    match dev_row_of(standing, roles) {
+        true => Ok(()),
+        false => Err(refused),
+    }
+}
+
+/// Whether `standing` is a developer row's service of one of `roles`.
+#[cfg(feature = "dev-rows")]
+fn dev_row_of(standing: &Standing, roles: &[RoleName]) -> bool {
+    matches!(
+        standing,
+        Standing::Service { role, proof: Proof::Dev, .. } if roles.contains(role)
+    )
+}
+
+/// No developer rows in this build: nothing is one.
+#[cfg(not(feature = "dev-rows"))]
+fn dev_row_of(_standing: &Standing, _roles: &[RoleName]) -> bool {
+    false
 }
 
 /// What the log says was found: the standing and why it did not do.
@@ -107,4 +137,46 @@ fn log_refusal(roles: &[RoleName], found: &dyn std::fmt::Display) {
 
 fn not_the_caller() -> fdo::Error {
     fdo::Error::AccessDenied(NOT_THE_CALLER.to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use peephole_bus::peephole_core::{AppKey, Pin as Pinning};
+
+    fn shell_at(proof: Proof) -> Standing {
+        Standing::Service {
+            app: AppKey::new("org.quire.Shell").expect("an app"),
+            role: roles::SHELL,
+            proof,
+            pin: Pinning::Reopened,
+        }
+    }
+
+    #[test]
+    fn a_role_is_held_all_the_way_or_not_at_all() {
+        let asked = [roles::SHELL];
+        assert!(admitted(&shell_at(Proof::Full), &asked).is_ok());
+        assert!(admitted(&shell_at(Proof::Exe), &asked).is_err());
+        assert!(admitted(&shell_at(Proof::Cgroup), &asked).is_err());
+        assert!(admitted(&shell_at(Proof::Full), &[roles::PORTAL]).is_err());
+    }
+
+    /// A developer row's service is let in for its own role and only that proof; the other
+    /// refusals stand. A build without `dev-rows` has no such proof to be let in.
+    #[cfg(feature = "dev-rows")]
+    #[test]
+    fn a_developer_row_is_let_in_for_its_own_role_only() {
+        assert!(admitted(&shell_at(Proof::Dev), &[roles::SHELL]).is_ok());
+        assert!(admitted(&shell_at(Proof::Dev), &[roles::AGENT_TIER, roles::SHELL]).is_ok());
+        assert!(admitted(&shell_at(Proof::Dev), &[roles::PORTAL]).is_err());
+        assert!(admitted(&shell_at(Proof::Exe), &[roles::SHELL]).is_err());
+        assert!(admitted(&shell_at(Proof::Cgroup), &[roles::SHELL]).is_err());
+    }
+
+    #[cfg(not(feature = "dev-rows"))]
+    #[test]
+    fn no_standing_is_a_developer_row_in_a_build_without_them() {
+        assert!(!dev_row_of(&shell_at(Proof::Full), &[roles::SHELL]));
+    }
 }

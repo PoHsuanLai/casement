@@ -84,6 +84,7 @@ mod tests {
         });
         let found = Standing::Unverified {
             exe_name: Some("transom".to_owned()),
+            scope_app: None,
             why: WhyNot::ImageWritable,
         };
         let exe = Exe::Read {
