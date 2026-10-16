@@ -26,6 +26,16 @@ pub use intake::{
 pub use peephole_bus::peephole::{LoadError, RealProc, TableFiles};
 pub use peephole_bus::peephole_core::Table as CallerTable;
 
+/// What the composition root needs to say who the program on a Wayland socket is (the same
+/// library's, for the same reason): hold the peer, read its facts, judge them against the table.
+pub mod peer {
+    pub use peephole_bus::peephole::{Alive, PinError, Pinned, ProbeError, Prober};
+    pub use peephole_bus::peephole_core::{
+        AppKey, Engine, Exe, ExePath, Facts, FileTrust, Pin, Proof, RoleName, Standing, Table,
+        WhyNot, judge, roles,
+    };
+}
+
 #[cfg(feature = "debug-inject")]
 mod debug1;
 

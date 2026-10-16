@@ -14,6 +14,7 @@ members = [
   "crates/casement-backend",
   "crates/casement-agent",
   "crates/casement-ipc",
+  "crates/casement-privacy",
   "crates/casement",
   "crates/casementctl",
   "crates/casement-testclient",
@@ -41,6 +42,7 @@ casement-wayland = { path = "crates/casement-wayland" }
 casement-backend = { path = "crates/casement-backend" }
 casement-agent = { path = "crates/casement-agent" }
 casement-ipc = { path = "crates/casement-ipc" }
+casement-privacy = { path = "crates/casement-privacy" }
 # No default features: the real session (features `tty`, `libinput`) is the binary's, and a
 # headless consumer builds with no system libraries (A2).
 casement = { path = "crates/casement", default-features = false }
@@ -60,6 +62,8 @@ ds-core   = { path = "../quire/crates/ds-core", default-features = false }
 ds-style  = { path = "../quire/crates/ds-style", default-features = false }
 ds-motion = { path = "../quire/crates/ds-motion", default-features = false }
 ds-behaviour = { path = "../quire/crates/ds-behaviour" }
+# The safe file reader and writer every quire crate shares (`read_capped`, `write_atomic`, `move_aside`): the privacy book (`casement-privacy`).
+ds-helpers = { path = "../quire/crates/ds-helpers", default-features = false }
 # The desktop's keymap (chordkit's layers) and keycap's program end, `KeycapSource`: casement
 # reads its shell bindings from them (`casement::keymap`). The revs are the ones sill, quire and
 # cua pin.

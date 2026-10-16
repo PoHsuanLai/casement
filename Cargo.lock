@@ -361,6 +361,7 @@ dependencies = [
  "casement-ipc",
  "casement-layout",
  "casement-motion",
+ "casement-privacy",
  "casement-protocols",
  "casement-render",
  "casement-wayland",
@@ -494,6 +495,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "casement-privacy"
+version = "0.1.0"
+dependencies = [
+ "casement-core",
+ "casement-protocols",
+ "ds-helpers",
+ "rustix 1.1.5",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tracing",
+]
+
+[[package]]
 name = "casement-protocols"
 version = "0.1.0"
 dependencies = [
@@ -589,9 +603,11 @@ dependencies = [
 name = "casementctl"
 version = "0.1.0"
 dependencies = [
+ "casement-privacy",
  "casement-testclient",
  "desktop-client",
  "image",
+ "rustix 1.1.5",
  "thiserror 2.0.21",
  "tokio",
  "wayland-client",

@@ -1,0 +1,25 @@
+[package]
+name = "casement-privacy"
+description = "casement's privacy files: the person's book (which program may use which power) and the administrator's floor, read and written safely, and the list of both that casementctl prints."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+casement-core = { workspace = true }
+casement-protocols = { workspace = true }
+# The safe file reader and writer every quire crate shares (`read_capped`, `write_atomic`,
+# `move_aside`); no bus, no UI.
+ds-helpers = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+rustix = { workspace = true }
+
+[lints]
+workspace = true
