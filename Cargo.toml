@@ -65,6 +65,12 @@ ds-behaviour = { path = "../quire/crates/ds-behaviour" }
 # cua pin.
 chordkit      = { git = "https://github.com/PoHsuanLai/chordkit.git", rev = "934a2d71f6516bee5919ee29278003702a4ea5e1" }
 keycap-client = { git = "https://github.com/PoHsuanLai/keycap", rev = "b45d4c22ec22be1117ce451dcc0b4a1f63764515" }
+# Which program is calling (caller identity): the bus adapter (casement-ipc checks every
+# `org.quire.Compositor1` call with it, on casement's tokio runtime) and the pure vocabulary
+# (casement-agent names the roles). The desktop's role names; the `fake` seams are a dev
+# dependency of casement-ipc only (the desktop gate greps `cargo tree -e features` for them).
+peephole-bus  = { git = "https://github.com/PoHsuanLai/peephole", tag = "v0.1.1", default-features = false, features = ["desktop", "tokio"] }
+peephole-core = { git = "https://github.com/PoHsuanLai/peephole", tag = "v0.1.1", features = ["desktop"] }
 # The stored settings document (C45, B13): casement and casement-ipc only.
 # `quire-desktop`: the settings portal, so `theme = "system"` follows the desktop (wave-2026-10-15/chrome2 ask).
 ds-settings = { path = "../quire/crates/ds-settings", default-features = false, features = ["quire-desktop"] }

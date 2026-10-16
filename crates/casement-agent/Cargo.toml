@@ -14,6 +14,9 @@ smithay = { workspace = true, features = ["wayland_frontend"] }
 # The remote EIS server (eis.rs; B14: no other crate names it). Already in the lock through
 # smithay; the calloop feature gives the event-loop source.
 reis = { workspace = true, features = ["calloop"] }
+# Role names only (`roles::SHELL`, `AGENT_TIER`, `PORTAL`): what a caller proved on the bus,
+# no bus and no process reading in this crate.
+peephole-core = { workspace = true }
 
 [lints]
 workspace = true

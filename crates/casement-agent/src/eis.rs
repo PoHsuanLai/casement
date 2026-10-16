@@ -9,11 +9,11 @@
 //! for the person's own keystrokes (I8, C19). The composition root only stamps the time and
 //! feeds the model.
 //!
-//! Only the portal's unit may ask ([`portal_may_connect`]); it holds no Wayland role.
+//! Only the portal may ask ([`portal_may_connect`], by the role it proved); it holds no
+//! Wayland role.
 //! This is the only file that names `reis` (B14). The agent seat's EIS (P4) is not here.
 
 use crate::remote::{Fit, Held, RemoteHandle, RemoteSlot, releases, tagged};
-use crate::socket::CallerUnit;
 use casement_core::DeviceId;
 use casement_core::geometry::{LogicalPoint, LogicalRect, SubPoint, SubPx};
 use casement_core::input::{
@@ -21,6 +21,7 @@ use casement_core::input::{
     Origin, PortalSessionId, TouchStep,
 };
 use casement_core::time::Mono;
+use peephole_core::{RoleName, roles};
 use reis::calloop::{EisRequestSource, EisRequestSourceEvent};
 use reis::eis;
 use reis::request::{Connection, Device, DeviceCapability, EisRequest, Seat};
@@ -30,13 +31,12 @@ use std::io;
 use std::os::fd::OwnedFd;
 use std::os::unix::net::UnixStream;
 
-/// The systemd unit of the desktop portal's backend: the one caller that may ask for a remote
-/// EIS socket.
-pub const PORTAL_UNIT: &str = "transom.service";
-
-/// Whether `caller` is the portal's unit.
-pub fn portal_may_connect(caller: &CallerUnit) -> bool {
-    caller.0 == PORTAL_UNIT
+/// Whether `held`, the role the caller proved, is the desktop portal's backend: the one caller
+/// that may ask for a remote EIS socket. The proof is made on the bus thread
+/// (`casement_ipc::dbus`); this is the second line, so an ask that reaches the event loop with
+/// another role is refused there too.
+pub fn portal_may_connect(held: &RoleName) -> bool {
+    *held == roles::PORTAL
 }
 
 /// A kind of device a remote session may offer.
@@ -623,11 +623,15 @@ mod tests {
     }
 
     #[test]
-    fn only_the_portals_unit_may_ask() {
-        let unit = |name: &str| CallerUnit(name.to_owned());
-        assert!(portal_may_connect(&unit("transom.service")));
-        for other in ["sill.service", "cuad.service", "firefox.service", ""] {
-            assert!(!portal_may_connect(&unit(other)), "{other}");
+    fn only_the_portal_may_ask() {
+        assert!(portal_may_connect(&roles::PORTAL));
+        for other in [
+            roles::SHELL,
+            roles::AGENT_TIER,
+            roles::PORTAL_FRONTEND,
+            roles::SETTINGS,
+        ] {
+            assert!(!portal_may_connect(&other), "{other}");
         }
     }
 

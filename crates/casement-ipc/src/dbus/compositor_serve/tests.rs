@@ -1,261 +1,156 @@
-//! `serve_compositor_at` over a private dbus-daemon: a `Connect` call reaches the channel with
-//! the caller's control group read through the seam, and the stand-in loop's answer comes back
-//! as the reply or the right D-Bus error. A table of fake control groups stands in for `/proc`.
+//! `serve_compositor_at` over a private dbus-daemon, with every caller made to stand as a chosen
+//! program (`BusPeers::introduce`): a call reaches the event loop's channel only from the caller
+//! that holds the role the method answers, all the way; the rest are refused on the bus thread
+//! with the one sentence. A stand-in loop answers what gets through. No test reads the real
+//! `/proc` for a caller.
 
-use super::*;
-use crate::dbus::{ConnectAsk, ConnectRefusal, ConnectReply};
+use crate::dbus::{CALLS_PER_WINDOW, CONNECT_QUEUE, NOT_THE_CALLER};
+use crate::test_served::{BAD_ARGS, DENIED, Loop, Served, TOO_MANY, WHOLE_TEST, outcome, service};
 use casement_core::policy::ConnectionRole;
-use std::io::{BufRead, BufReader};
-use std::os::unix::net::UnixStream;
-use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex, PoisonError};
-use std::thread::JoinHandle;
+use peephole_bus::peephole::fake::{introduced_program, introduced_unverified};
+use peephole_bus::peephole_core::{Proof, WhyNot};
+use std::time::Duration;
 
-/// A dbus-daemon on the repo's private-bus.conf with a cleared environment, killed and reaped
-/// when dropped.
-struct PrivateBus {
-    daemon: Child,
-    address: String,
-}
-
-impl PrivateBus {
-    fn start() -> PrivateBus {
-        let config = concat!(env!("CARGO_MANIFEST_DIR"), "/../../dev/private-bus.conf");
-        let daemon = Command::new("dbus-daemon")
-            .env_clear()
-            .args(["--config-file", config, "--nofork", "--print-address=1"])
-            .stdout(Stdio::piped())
-            .spawn()
-            .expect("dbus-daemon");
-        let mut bus = PrivateBus {
-            daemon,
-            address: String::new(),
-        };
-        let stdout = bus.daemon.stdout.take().expect("stdout");
-        BufReader::new(stdout)
-            .read_line(&mut bus.address)
-            .expect("address");
-        bus.address = bus.address.trim().to_owned();
-        assert!(!bus.address.is_empty(), "dbus-daemon printed no address");
-        bus
-    }
-}
-
-impl Drop for PrivateBus {
-    fn drop(&mut self) {
-        let _ = self.daemon.kill();
-        let _ = self.daemon.wait();
-    }
-}
-
-/// The control group text every process reads as; `None` is a process the table does not know.
-#[derive(Debug, Default)]
-struct Table(Mutex<Option<String>>);
-
-impl Table {
-    fn runs_in(&self, text: Option<&str>) {
-        *self.0.lock().unwrap_or_else(PoisonError::into_inner) = text.map(str::to_owned);
-    }
-}
-
-impl PeerCgroups for Table {
-    fn cgroup_of(&self, pid: u32) -> Result<String, IpcError> {
-        self.0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-            .ok_or_else(|| IpcError::Bus(format!("no process {pid}")))
-    }
-}
-
-/// A calloop loop on its own thread standing in for casement's: it records each ask, grants a
-/// socket to a caller whose cgroup names `sill.service` asking for the shell, and refuses the
-/// rest the way `casement_agent::hand_out` would.
-struct StandInLoop {
-    seen: Arc<Mutex<Vec<ConnectAsk>>>,
-    stop: calloop::LoopSignal,
-    thread: Option<JoinHandle<()>>,
-}
-
-impl StandInLoop {
-    fn run(channel: Channel<ConnectCall>) -> StandInLoop {
-        let seen = Arc::new(Mutex::new(Vec::new()));
-        let record = seen.clone();
-        let (signals, signal) = std::sync::mpsc::channel();
-        let thread = std::thread::spawn(move || {
-            let mut event_loop = calloop::EventLoop::<()>::try_new().expect("loop");
-            signals.send(event_loop.get_signal()).expect("signal");
-            event_loop
-                .handle()
-                .insert_source(channel, move |event, (), ()| {
-                    if let calloop::channel::Event::Msg(call) = event {
-                        let reply = decide(&call.ask);
-                        record.lock().expect("seen").push(call.ask);
-                        let _ = call.reply.send(reply);
-                    }
-                })
-                .expect("source");
-            event_loop.run(None, &mut (), |()| {}).expect("run");
-        });
-        StandInLoop {
-            seen,
-            stop: signal.recv().expect("signal"),
-            thread: Some(thread),
-        }
-    }
-
-    fn asks(&self) -> Vec<ConnectAsk> {
-        self.seen.lock().expect("seen").clone()
-    }
-}
-
-fn decide(ask: &ConnectAsk) -> ConnectReply {
-    if ask.end.is_some() {
-        let portal = ask.caller_cgroup.trim_end().ends_with("/transom.service");
-        return match portal {
-            true => ConnectReply::Ended,
-            false => ConnectReply::Refused(ConnectRefusal::UnknownUnit),
-        };
-    }
-    if ask.remote.is_some() {
-        let portal = ask.caller_cgroup.trim_end().ends_with("/transom.service");
-        return match (portal, UnixStream::pair()) {
-            (true, Ok((_server, client))) => ConnectReply::Granted(client.into()),
-            (true, Err(_)) => ConnectReply::Refused(ConnectRefusal::Unavailable),
-            (false, _) => ConnectReply::Refused(ConnectRefusal::UnknownUnit),
-        };
-    }
-    let sill = ask.caller_cgroup.trim_end().ends_with("/sill.service");
-    match (sill, &ask.role) {
-        (true, ConnectionRole::Shell) => match UnixStream::pair() {
-            Ok((_server, client)) => ConnectReply::Granted(client.into()),
-            Err(_) => ConnectReply::Refused(ConnectRefusal::Unavailable),
-        },
-        (true, _) => ConnectReply::Refused(ConnectRefusal::RoleNotAllowed),
-        (false, _) => ConnectReply::Refused(ConnectRefusal::UnknownUnit),
-    }
-}
-
-impl Drop for StandInLoop {
-    fn drop(&mut self) {
-        self.stop.stop();
-        self.stop.wakeup();
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
-        }
-    }
-}
-
-async fn proxy(address: &str) -> zbus::Proxy<'static> {
-    let connection = zbus::connection::Builder::address(address)
-        .expect("address")
-        .build()
-        .await
-        .expect("client");
-    zbus::Proxy::new(&connection, BUS_NAME, OBJECT_PATH, "org.quire.Compositor1")
-        .await
-        .expect("proxy")
-}
-
-/// What `Connect(role)` came to: the error's D-Bus name, or `granted`.
 async fn connect_as(proxy: &zbus::Proxy<'_>, role: &str) -> String {
-    match proxy
-        .call::<_, _, zbus::zvariant::OwnedFd>("Connect", &(role,))
-        .await
-    {
-        Ok(_) => "granted".to_owned(),
-        Err(zbus::Error::MethodError(name, ..)) => name.to_string(),
-        Err(other) => format!("{other}"),
-    }
+    outcome(
+        proxy
+            .call::<_, _, zbus::zvariant::OwnedFd>("Connect", &(role,))
+            .await,
+    )
 }
 
+/// CASW-05: a `Connect` reaches the loop only from the caller that holds the role it asks for,
+/// proven all the way. The refusals are the attacks of the caller-identity design: a user-level
+/// unit override or a drop-in (the unit manager disagrees, so the proof stops at the image), a
+/// copied binary, a moved control group running a user-writable image, a peer that left.
 #[tokio::test]
-async fn connect_is_decided_by_the_callers_unit_over_a_private_bus() {
-    let bus = PrivateBus::start();
-    let cgroups = Arc::new(Table::default());
-    let (channel, _connection) = serve_compositor_at(&bus.address, cgroups.clone()).expect("serve");
-    let event_loop = StandInLoop::run(channel);
-    let proxy = proxy(&bus.address).await;
-
-    let sill = "0::/user.slice/user@1000.service/app.slice/sill.service\n";
-    let firefox = "0::/user.slice/user@1000.service/app.slice/firefox.service\n";
-    // (case, the caller's cgroup, the role named, what comes back)
+async fn connect_is_decided_by_who_the_caller_proves_to_be() {
+    let served = Served::start(WHOLE_TEST, Loop::Reads, None);
+    let program = || introduced_program("/usr/bin/sill").expect("a standing");
+    // (case, how the caller stands, the role named, what comes back)
     let cases = [
         (
-            "the shell's unit asks for the shell",
-            Some(sill),
+            "the shell, proven all the way",
+            service("shell", Proof::Full),
             "shell",
             "granted",
         ),
         (
-            "the shell's unit asks for the agent tier",
-            Some(sill),
+            "the agent tier, proven all the way",
+            service("agent_tier", Proof::Full),
             "agent",
-            "org.freedesktop.DBus.Error.AccessDenied",
+            "granted",
         ),
         (
-            "another program asks for the shell",
-            Some(firefox),
+            "the shell asks for the agent tier",
+            service("shell", Proof::Full),
+            "agent",
+            DENIED,
+        ),
+        (
+            "the agent tier asks for the shell",
+            service("agent_tier", Proof::Full),
             "shell",
-            "org.freedesktop.DBus.Error.AccessDenied",
+            DENIED,
+        ),
+        (
+            "the portal asks for the shell",
+            service("portal", Proof::Full),
+            "shell",
+            DENIED,
+        ),
+        (
+            "a user-level unit override or a drop-in: the image is right, the unit is not",
+            service("shell", Proof::Exe),
+            "shell",
+            DENIED,
+        ),
+        (
+            "only the control group names the unit",
+            service("shell", Proof::Cgroup),
+            "shell",
+            DENIED,
+        ),
+        ("a copied binary no row names", program(), "shell", DENIED),
+        (
+            "a moved control group running a user-writable image",
+            introduced_unverified(WhyNot::ImageWritable),
+            "shell",
+            DENIED,
+        ),
+        (
+            "a caller that left before it was looked at",
+            introduced_unverified(WhyNot::PeerGone),
+            "shell",
+            DENIED,
         ),
         (
             "a role casement does not hand out",
-            Some(sill),
+            service("shell", Proof::Full),
             "public",
-            "org.freedesktop.DBus.Error.InvalidArgs",
-        ),
-        (
-            "a caller whose process is not known",
-            None,
-            "shell",
-            "org.freedesktop.DBus.Error.Failed",
+            BAD_ARGS,
         ),
     ];
-    for (case, cgroup, role, want) in cases {
-        cgroups.runs_in(cgroup);
+    for (case, standing, role, want) in cases {
+        let proxy = served.caller(standing).await;
         assert_eq!(connect_as(&proxy, role).await, want, "{case}");
     }
-    let asks = event_loop.asks();
-    assert_eq!(
-        asks.len(),
-        3,
-        "only well-formed asks from known callers reach the loop"
-    );
+    let asks = served.asks();
+    assert_eq!(asks.len(), 2, "only the two proven callers reach the loop");
     assert_eq!(asks[0].role, ConnectionRole::Shell);
-    assert_eq!(asks[0].caller_cgroup, sill);
+    assert_eq!(asks[0].caller.role.as_str(), "shell");
+    assert_eq!(asks[1].role, ConnectionRole::Agent);
+    assert_eq!(asks[1].caller.role.as_str(), "agent_tier");
 }
 
-/// What `ConnectEis(session, devices)` came to: the error's D-Bus name, or `granted`.
-async fn connect_eis_as(proxy: &zbus::Proxy<'_>, session: u64, devices: u32) -> String {
-    match proxy
-        .call::<_, _, zbus::zvariant::OwnedFd>("ConnectEis", &(session, devices))
-        .await
-    {
-        Ok(_) => "granted".to_owned(),
-        Err(zbus::Error::MethodError(name, ..)) => name.to_string(),
-        Err(other) => format!("{other}"),
+/// A refused caller learns one sentence and nothing about which check failed.
+#[tokio::test]
+async fn a_refusal_says_one_thing_whatever_failed() {
+    let served = Served::start(WHOLE_TEST, Loop::Reads, None);
+    for standing in [
+        service("shell", Proof::Exe),
+        introduced_unverified(WhyNot::ImageHidden),
+    ] {
+        let proxy = served.caller(standing).await;
+        let refused = proxy
+            .call::<_, _, zbus::zvariant::OwnedFd>("Connect", &("shell",))
+            .await;
+        match refused {
+            Err(zbus::Error::MethodError(_, Some(text), _)) => assert_eq!(text, NOT_THE_CALLER),
+            other => panic!("not a refusal with a text: {other:?}"),
+        }
     }
 }
 
+/// `ConnectEis` and `EndEis` are the portal's alone, proven all the way, and reach the loop as a
+/// remote ask and an end ask carrying who asked.
 #[tokio::test]
-async fn connect_eis_reaches_the_loop_as_a_remote_ask_with_the_callers_unit() {
-    let bus = PrivateBus::start();
-    let cgroups = Arc::new(Table::default());
-    let (channel, _connection) = serve_compositor_at(&bus.address, cgroups.clone()).expect("serve");
-    let event_loop = StandInLoop::run(channel);
-    let proxy = proxy(&bus.address).await;
-
-    let portal = "0::/user.slice/user@1000.service/app.slice/transom.service\n";
-    let firefox = "0::/user.slice/user@1000.service/app.slice/firefox.service\n";
-    cgroups.runs_in(Some(portal));
-    assert_eq!(connect_eis_as(&proxy, 7, 3).await, "granted");
-    cgroups.runs_in(Some(firefox));
-    assert_eq!(
-        connect_eis_as(&proxy, 8, 7).await,
-        "org.freedesktop.DBus.Error.AccessDenied"
-    );
-    let asks = event_loop.asks();
+async fn the_remote_input_calls_are_the_portals_alone() {
+    let served = Served::start(WHOLE_TEST, Loop::Reads, None);
+    let portal = served.caller(service("portal", Proof::Full)).await;
+    let shell = served.caller(service("shell", Proof::Full)).await;
+    let half = served.caller(service("portal", Proof::Exe)).await;
+    let eis = |proxy: zbus::Proxy<'static>, session: u64| async move {
+        outcome(
+            proxy
+                .call::<_, _, zbus::zvariant::OwnedFd>("ConnectEis", &(session, 3_u32))
+                .await,
+        )
+    };
+    let end = |proxy: zbus::Proxy<'static>, session: u64| async move {
+        match proxy.call::<_, _, ()>("EndEis", &(session,)).await {
+            Ok(()) => "ended".to_owned(),
+            Err(zbus::Error::MethodError(name, ..)) => name.to_string(),
+            Err(other) => format!("{other}"),
+        }
+    };
+    assert_eq!(eis(portal.clone(), 7).await, "granted");
+    assert_eq!(eis(shell.clone(), 8).await, DENIED);
+    assert_eq!(eis(half.clone(), 9).await, DENIED);
+    assert_eq!(end(portal, 7).await, "ended");
+    assert_eq!(end(shell, 8).await, DENIED);
+    assert_eq!(end(half, 9).await, DENIED);
+    let asks = served.asks();
     assert_eq!(asks.len(), 2);
     assert_eq!(
         asks[0].remote,
@@ -264,40 +159,54 @@ async fn connect_eis_reaches_the_loop_as_a_remote_ask_with_the_callers_unit() {
             devices: 3
         })
     );
-    assert_eq!(asks[0].caller_cgroup, portal);
+    assert_eq!(asks[0].caller.role.as_str(), "portal");
+    assert_eq!(asks[1].end, Some(crate::dbus::EndAsk { session: 7 }));
 }
 
-/// What `EndEis(session)` came to: the error's D-Bus name, or `ended`.
-async fn end_eis_as(proxy: &zbus::Proxy<'_>, session: u64) -> String {
-    match proxy.call::<_, _, ()>("EndEis", &(session,)).await {
-        Ok(()) => "ended".to_owned(),
-        Err(zbus::Error::MethodError(name, ..)) => name.to_string(),
-        Err(other) => format!("{other}"),
-    }
-}
-
-/// PORTAL-05: `EndEis` is checked against the caller's unit exactly as `ConnectEis` is, and
-/// reaches the loop as an end ask for the session named.
+/// One caller gets `CALLS_PER_WINDOW` calls in a window; the rest are told to wait and never
+/// reach the loop, proven caller or not.
 #[tokio::test]
-async fn end_eis_reaches_the_loop_only_from_the_portals_unit() {
-    let bus = PrivateBus::start();
-    let cgroups = Arc::new(Table::default());
-    let (channel, _connection) = serve_compositor_at(&bus.address, cgroups.clone()).expect("serve");
-    let event_loop = StandInLoop::run(channel);
-    let proxy = proxy(&bus.address).await;
+async fn a_caller_that_asks_too_often_is_told_to_wait() {
+    let served = Served::start(WHOLE_TEST, Loop::Reads, None);
+    let proxy = served.caller(service("shell", Proof::Full)).await;
+    let mut seen = Vec::new();
+    for _ in 0..(CALLS_PER_WINDOW + 2) {
+        seen.push(connect_as(&proxy, "shell").await);
+    }
+    let granted = usize::try_from(CALLS_PER_WINDOW).expect("small");
+    assert!(seen[..granted].iter().all(|o| o == "granted"), "{seen:?}");
+    assert!(seen[granted..].iter().all(|o| o == TOO_MANY), "{seen:?}");
+    assert_eq!(served.asks().len(), granted);
+}
 
-    let portal = "0::/user.slice/user@1000.service/app.slice/transom.service\n";
-    let firefox = "0::/user.slice/user@1000.service/app.slice/firefox.service\n";
-    cgroups.runs_in(Some(portal));
-    assert_eq!(end_eis_as(&proxy, 7).await, "ended");
-    cgroups.runs_in(Some(firefox));
-    assert_eq!(
-        end_eis_as(&proxy, 8).await,
-        "org.freedesktop.DBus.Error.AccessDenied"
-    );
-    let asks = event_loop.asks();
-    assert_eq!(asks.len(), 2);
-    assert_eq!(asks[0].end, Some(crate::dbus::EndAsk { session: 7 }));
-    assert_eq!(asks[0].remote, None, "an end is not a connect");
-    assert_eq!(asks[0].caller_cgroup, portal);
+/// The queue into the loop holds `CONNECT_QUEUE` calls and drops the rest at once, whatever the
+/// loop is doing: nine calls from three callers, a loop that reads nothing, eight wait and one is
+/// dropped.
+#[tokio::test]
+async fn a_stalled_loop_holds_the_queue_and_drops_the_rest() {
+    let served = Served::start(WHOLE_TEST, Loop::Stalled, None);
+    let mut tasks = Vec::new();
+    for _ in 0..3 {
+        let proxy = served.caller(service("shell", Proof::Full)).await;
+        for _ in 0..3 {
+            let proxy = proxy.clone();
+            tasks.push(tokio::spawn(async move {
+                let call = proxy.call::<_, _, zbus::zvariant::OwnedFd>("Connect", &("shell",));
+                match tokio::time::timeout(Duration::from_millis(1500), call).await {
+                    Ok(result) => outcome(result),
+                    Err(_) => "waiting".to_owned(),
+                }
+            }));
+        }
+    }
+    let mut waiting = 0;
+    let mut dropped = 0;
+    for task in tasks {
+        match task.await.expect("task").as_str() {
+            "waiting" => waiting += 1,
+            TOO_MANY => dropped += 1,
+            other => panic!("unexpected: {other}"),
+        }
+    }
+    assert_eq!((waiting, dropped), (CONNECT_QUEUE, 9 - CONNECT_QUEUE));
 }

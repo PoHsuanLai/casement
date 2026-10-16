@@ -18,14 +18,27 @@ ds-core = { workspace = true }
 porter-core = { workspace = true }
 # `SpacesProxy::register`: the compositor registers the Spaces it mints with accountd.
 porter-dbus = { workspace = true }
-ds-settings = { workspace = true }
+# `live`: `org.quire.SettingsModule1`, the way Settings reads and changes the Privacy list.
+ds-settings = { workspace = true, features = ["live"] }
 calloop = { workspace = true }
 zbus = { workspace = true }
 tokio = { workspace = true }
 thiserror = { workspace = true }
+toml = { workspace = true }
+# Which program is calling: every Compositor1 call and every Privacy call is checked with it.
+peephole-bus = { workspace = true }
+# `WireCode::ALL` and `Power`: the section list of the Privacy module (the vocabulary's one home).
+casement-protocols = { workspace = true }
 serde_json = { workspace = true }
+# The refusal of a call is logged once, with the role asked and the standing found.
+tracing = { workspace = true }
 # Keysym names in the inject grammar (`key Return down`).
 xkbcommon = { workspace = true }
+
+[dev-dependencies]
+# `BusPeers::introduce`, `FixtureProc`: the tests make a sender stand as a chosen caller on a
+# private bus and never read the real `/proc` for it.
+peephole-bus = { workspace = true, features = ["fake"] }
 
 [features]
 # org.quire.Casement.Debug1 on the private bus (B10): never in a release build.
