@@ -449,3 +449,100 @@ fn a_browsers_picture_in_picture_window_is_guessed_from_its_title() {
         SpacePlace::AllSpaces
     );
 }
+
+/// CASC-11: what floats above every other window is small, and a guess from a title and an app
+/// id counts only for a proven app; one picture in picture window per app joins every Space.
+#[test]
+fn only_a_small_believed_window_floats_above_and_one_per_app_joins_every_space() {
+    use casement_core::window::{WindowTitle, floats_above};
+    use casement_core::{ToplevelMeta, WindowHintChange::Role};
+    use casement_protocols::vocab::WindowRole;
+    let proven_app = proven("org.mozilla.firefox");
+    let claimed_app = casement_core::app::AppKey::Claimed(support::claimed("firefox"));
+    let meta = |n: u64, meta: ToplevelMeta| {
+        Op::Event(Event::ToplevelMeta {
+            window: WindowId(n),
+            meta,
+        })
+    };
+    let guessed = |n: u64| {
+        vec![
+            meta(n, ToplevelMeta::ClaimedId(support::claimed("firefox"))),
+            meta(
+                n,
+                ToplevelMeta::Title(WindowTitle("Picture-in-Picture".to_owned())),
+            ),
+        ]
+    };
+    let committed = |n: u64, w: u32, h: u32| {
+        Op::Event(Event::ToplevelCommitted {
+            window: WindowId(n),
+            size: size(w, h),
+        })
+    };
+    let spread =
+        |run: &Run, n: u64| run.model.windows()[&WindowId(n)].place == SpacePlace::AllSpaces;
+    let floats = |run: &Run, n: u64| floats_above(&run.model.windows()[&WindowId(n)]);
+
+    // A guess floats for a proven app and not for a claimed one.
+    for (name, app, want) in [
+        ("proven", &proven_app, true),
+        ("claimed", &claimed_app, false),
+    ] {
+        let mut ops = vec![
+            plug("HEADLESS-1"),
+            map(1, app, TokenCheck::Valid),
+            committed(1, 320, 180),
+        ];
+        ops.extend(guessed(1));
+        let run = run(ops);
+        assert_eq!(floats(&run, 1), want, "{name}: floats");
+        assert_eq!(spread(&run, 1), want, "{name}: joins every Space");
+    }
+
+    // A declared window floats only while small.
+    let small = run(vec![
+        plug("HEADLESS-1"),
+        map(1, &proven_app, TokenCheck::Valid),
+        committed(1, 320, 180),
+        hint(1, Role(WindowRole::Pip)),
+    ]);
+    assert!(floats(&small, 1) && spread(&small, 1));
+    let grown = support::driver::run_from(small.model, vec![committed(1, 1920, 1080)]);
+    assert!(
+        !floats(&grown, 1),
+        "a window the size of the screen does not float"
+    );
+    let huge = run(vec![
+        plug("HEADLESS-1"),
+        map(1, &proven_app, TokenCheck::Valid),
+        committed(1, 1920, 1080),
+        hint(1, Role(WindowRole::Pip)),
+    ]);
+    assert!(!floats(&huge, 1) && !spread(&huge, 1), "too big to join");
+
+    // The second picture in picture window of an app stays on its Space.
+    let two = run(vec![
+        plug("HEADLESS-1"),
+        map(1, &proven_app, TokenCheck::Valid),
+        map(2, &proven_app, TokenCheck::Missing),
+        committed(1, 320, 180),
+        committed(2, 320, 180),
+        hint(1, Role(WindowRole::Pip)),
+        hint(2, Role(WindowRole::Pip)),
+    ]);
+    assert!(spread(&two, 1) && !spread(&two, 2));
+    let other_app = run(vec![
+        plug("HEADLESS-1"),
+        map(1, &proven_app, TokenCheck::Valid),
+        map(2, &proven("org.example.Video"), TokenCheck::Missing),
+        committed(1, 320, 180),
+        committed(2, 320, 180),
+        hint(1, Role(WindowRole::Pip)),
+        hint(2, Role(WindowRole::Pip)),
+    ]);
+    assert!(
+        spread(&other_app, 1) && spread(&other_app, 2),
+        "another app has its own"
+    );
+}

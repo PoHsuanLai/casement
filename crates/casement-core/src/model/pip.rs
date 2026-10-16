@@ -12,12 +12,21 @@ use crate::window::{SpacePlace, WindowState, fit_aspect, floats_above, snap_corn
 impl Model {
     /// A window whose role or title just changed: when it is picture in picture and sits on one
     /// Space, it moves to every Space of its output. A window that is full screen, minimised or
-    /// already on every Space is left alone.
+    /// already on every Space is left alone, and so is one whose app already has a picture in
+    /// picture window on every Space (one per app, CASC-11).
     pub(super) fn pip_joined(self, id: WindowId) -> Moved {
         let Some(window) = self.windows.get(&id) else {
             return Moved::of(self);
         };
+        let app = window.app.clone();
+        let spread_already = self.windows.values().any(|other| {
+            other.id != id
+                && other.app == app
+                && other.place == SpacePlace::AllSpaces
+                && floats_above(other)
+        });
         let joins = floats_above(window)
+            && !spread_already
             && matches!(window.place, SpacePlace::On(_))
             && matches!(window.state, WindowState::New(_) | WindowState::Floating(_));
         let home = self.output_of(window);

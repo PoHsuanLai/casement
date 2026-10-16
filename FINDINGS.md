@@ -4244,3 +4244,10 @@ Rows for the findings CASW-02/03/04/07/11/12/13/15/18/19, CASC-02/05/06/07/09/10
 - **CASC-14: a window with a modal sheet open is keyed through the sheet.** The focus machine's token, rekey-after-unmap and
   activate-app paths redirect to `view.sheet_of(window)` (the press path already did). Test:
   `a_window_with_an_open_sheet_is_keyed_through_the_sheet`.
+- **CASC-11: what floats above every window is small, believed and one per app.** `floats_above` (the one predicate layout, snap and
+  aspect already read) now needs the window floating or new (not maximised, filled or full screen), at most `PIP_MAX_AREA`
+  (640 000 logical px squared, about 1140 x 560), and, for the title-and-app-id guess, `AppKey::Proven`. `pip_joined` puts a
+  window on every Space only when its app has none there already. **Consequence:** every connection is `Unproven` today, so
+  browsers' picture-in-picture windows (guessed) float above nothing until a peer can be proven; a declared role (the
+  `quire_window` protocol) still works. The shell's way to take a window off every Space is the existing Assign ask. Test:
+  `only_a_small_believed_window_floats_above_and_one_per_app_joins_every_space`.

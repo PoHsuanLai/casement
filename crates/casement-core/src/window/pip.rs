@@ -8,7 +8,8 @@
 //! app id are a known browser's picture-in-picture window is treated the same way
 //! ([`PipSource::Guessed`]); a client that later sets a role of its own overrides the guess.
 
-use super::Window;
+use super::{Window, WindowState};
+use crate::app::AppKey;
 use crate::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_protocols::vocab::WindowRole;
 
@@ -23,6 +24,11 @@ pub enum PipSource {
     /// Its title and app id are a browser's picture-in-picture window (a guess).
     Guessed,
 }
+
+/// The most area a window may have and still float above the rest, in logical pixels squared
+/// (about 1140 x 560): a picture in picture window is a corner thumbnail, and one that fills
+/// the screen is not one (CASC-11).
+pub const PIP_MAX_AREA: u64 = 640_000;
 
 /// The browsers whose picture-in-picture windows are recognised, by the start of the app id
 /// (case-insensitive).
@@ -61,14 +67,28 @@ fn browser_pip(title: &str, app_id: &str) -> bool {
     BROWSER_TITLES.contains(&title.as_str()) && BROWSER_IDS.iter().any(|id| app_id.starts_with(id))
 }
 
-/// Whether `window` floats above the rest: it is picture in picture by either source.
+/// Whether `window` floats above the rest. It must be picture in picture: declared by its
+/// client, or guessed from a browser's title and app id, which counts only when the app is
+/// proven (a title and an app id are text any client can write). And it must be small enough
+/// ([`PIP_MAX_AREA`]) and loose (floating, not maximised or full screen).
 pub fn floats_above(window: &Window) -> bool {
-    pip_source_of(
+    let source = pip_source_of(
         window.role,
         window.title.0.as_str(),
         window.claimed_id.as_str(),
-    )
-    .is_some()
+    );
+    let believed = match (source, &window.app) {
+        (Some(PipSource::Declared), _) => true,
+        (Some(PipSource::Guessed), AppKey::Proven(_)) => true,
+        (Some(PipSource::Guessed), AppKey::Claimed(_)) | (None, _) => false,
+    };
+    let size = match &window.state {
+        WindowState::New(size) => Some(*size),
+        WindowState::Floating(rect) => Some(rect.size),
+        _ => None,
+    };
+    let small = size.is_some_and(|size| u64::from(size.w) * u64::from(size.h) <= PIP_MAX_AREA);
+    believed && small
 }
 
 /// `rect` moved to the corner of `area` it is nearest to, [`PIP_MARGIN`] in from both edges.

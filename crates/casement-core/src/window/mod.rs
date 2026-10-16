@@ -35,7 +35,9 @@ pub use menu::{
 };
 pub use menu_dwell::{Dwell, DwellInput, DwellOutcome, DwellTiming};
 pub use origin::WindowOrigin;
-pub use pip::{PIP_MARGIN, PipSource, fit_aspect, floats_above, pip_source_of, snap_corner};
+pub use pip::{
+    PIP_MARGIN, PIP_MAX_AREA, PipSource, fit_aspect, floats_above, pip_source_of, snap_corner,
+};
 pub use request::WlrToplevelRequest;
 pub use sheet::{attach_rect, sheet_parent, slide_clip, slide_start};
 pub use state::{Restore, WindowState};
