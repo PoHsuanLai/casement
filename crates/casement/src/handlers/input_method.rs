@@ -1,12 +1,18 @@
-//! `zwp_input_method_manager_v2` (P0-H7): the candidate popup callbacks.
+//! `zwp_input_method_manager_v2` (P0-H7): the candidate popup callbacks, and the consent gate
+//! (`Power::TypingHelp`: an input method sees what a person types, so smithay asks
+//! `input_method_gate` when a client asks to be the input method and settles it when the answer
+//! comes).
 
 use crate::core_loop;
 use crate::state::State;
 use casement_core::Event;
+use casement_protocols::vocab::Power;
 use casement_wayland::convert::rect_to;
-use casement_wayland::{input_method, text_input};
+use casement_wayland::{consent, input_method, text_input};
+use smithay::reexports::wayland_server::Client;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Rectangle};
+use smithay::wayland::Gate;
 use smithay::wayland::input_method::{InputMethodHandler, PopupSurface};
 
 /// Feeds `events` to the model when there are any (the popup callbacks mostly have none).
@@ -17,6 +23,10 @@ fn feed_any(state: &mut State, events: Vec<Event>) {
 }
 
 impl InputMethodHandler for State {
+    fn input_method_gate(&mut self, client: &Client) -> Gate {
+        consent::gate(self, client, Power::TypingHelp)
+    }
+
     /// smithay calls this when the input method activates on a field (and when a popup is
     /// created over one): the popup is kept for the scene, and a new activation opens for the
     /// key gate.

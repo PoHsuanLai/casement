@@ -178,6 +178,27 @@ pub(super) fn asked_world() -> (Fixture, ScriptedShell, ClientId) {
     (fixture, shell, client)
 }
 
+/// The person decided `verdict` on `power` for [`ASKED_PROGRAM`] after it connected (a book
+/// loaded under a client already there): its next use is answered at once, without a question.
+pub(super) fn decided(fixture: &mut Fixture, power: Power, verdict: Verdict) {
+    fixture.feed_events(vec![Event::BookLoaded(book_with(
+        ASKED_PROGRAM,
+        power,
+        verdict,
+    ))]);
+}
+
+/// How many events called `name` client `id` has received so far.
+pub(super) fn heard(fixture: &mut Fixture, id: ClientId, name: &str) -> usize {
+    fixture
+        .client(id)
+        .transcript()
+        .0
+        .iter()
+        .filter(|line| line.event == name)
+        .count()
+}
+
 /// The client `id` creates a virtual keyboard: its first use of the keys power.
 pub(super) fn use_keys(fixture: &mut Fixture, id: ClientId) -> VirtualBoard {
     let board = VirtualBoard::start(fixture.client(id).globals()).expect("a keyboard");

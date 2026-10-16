@@ -16,7 +16,7 @@ use casement_testclient::{Pattern, ShmBuffer, shm_buffer};
 use casement_testkit::{ASKED_PROGRAM, ClientId, Fixture, FixtureSpec};
 
 /// Maps a titled window of `app_id` (the buffer must outlive the window).
-fn map_titled(
+pub(super) fn map_titled(
     fixture: &mut Fixture,
     id: ClientId,
     base: &WmBase,

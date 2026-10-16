@@ -15,6 +15,9 @@ use wayland_protocols::ext::data_control::v1::client::ext_data_control_manager_v
 use wayland_protocols::ext::data_control::v1::client::ext_data_control_offer_v1::{
     self, ExtDataControlOfferV1,
 };
+use wayland_protocols::ext::data_control::v1::client::ext_data_control_source_v1::{
+    self, ExtDataControlSourceV1,
+};
 
 /// The user data of every object of the manager: nothing, the transcript has the events.
 #[derive(Debug, Clone, Copy, Default)]
@@ -44,6 +47,26 @@ impl ExtControl {
     /// The manager.
     pub fn manager(&self) -> &ExtDataControlManagerV1 {
         &self.manager
+    }
+
+    /// Makes a data source on the manager: what a clipboard manager does to set the
+    /// clipboard. The compositor answers `cancelled` when it refuses it.
+    pub fn source(&self, client: &TestClient) -> ExtDataControlSourceV1 {
+        let source = self.manager.create_data_source(&client.qh(), ControlPlain);
+        let _ = client.connection().flush();
+        source
+    }
+}
+
+impl Dispatch<ExtDataControlSourceV1, ControlPlain> for ClientState {
+    fn event(
+        _: &mut Self,
+        _: &ExtDataControlSourceV1,
+        _: ext_data_control_source_v1::Event,
+        _: &ControlPlain,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
     }
 }
 
@@ -101,6 +124,9 @@ pub mod wlr {
     use wayland_protocols_wlr::data_control::v1::client::zwlr_data_control_offer_v1::{
         self, ZwlrDataControlOfferV1,
     };
+    use wayland_protocols_wlr::data_control::v1::client::zwlr_data_control_source_v1::{
+        self, ZwlrDataControlSourceV1,
+    };
 
     /// The user data of every object of the manager: nothing, the transcript has the events.
     #[derive(Debug, Clone, Copy, Default)]
@@ -130,6 +156,28 @@ pub mod wlr {
         /// The manager.
         pub fn manager(&self) -> &ZwlrDataControlManagerV1 {
             &self.manager
+        }
+
+        /// Makes a data source on the manager: what a clipboard manager does to set the
+        /// clipboard. The compositor answers `cancelled` when it refuses it.
+        pub fn source(&self, client: &TestClient) -> ZwlrDataControlSourceV1 {
+            let source = self
+                .manager
+                .create_data_source(&client.qh(), WlrControlPlain);
+            let _ = client.connection().flush();
+            source
+        }
+    }
+
+    impl Dispatch<ZwlrDataControlSourceV1, WlrControlPlain> for ClientState {
+        fn event(
+            _: &mut Self,
+            _: &ZwlrDataControlSourceV1,
+            _: zwlr_data_control_source_v1::Event,
+            _: &WlrControlPlain,
+            _: &Connection,
+            _: &QueueHandle<Self>,
+        ) {
         }
     }
 

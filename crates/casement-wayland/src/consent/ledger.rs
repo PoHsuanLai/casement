@@ -4,6 +4,7 @@
 use casement_core::ClientKey;
 use casement_core::privilege::PowerOutcome;
 use casement_protocols::vocab::Power;
+use smithay::reexports::wayland_server::backend::ClientId;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
@@ -38,14 +39,25 @@ pub(super) enum Begin {
     Fresh,
 }
 
+/// The latest word per client and power.
+type Rows = BTreeMap<(ClientKey, Power), Word>;
+
 /// Every client's latest word per power. Shared by clone: the display's client data forgets a
 /// client's rows when it disconnects, the compositor root writes the model's answers.
+///
+/// It also remembers the connection of each client that has objects on hold in a protocol
+/// smithay serves whole (the clipboard managers, the input method, the window list of
+/// `ext_foreign_toplevel_list`): smithay settles what it holds by connection, the model answers
+/// by client key.
 #[derive(Debug, Clone, Default)]
-pub struct Ledger(Arc<Mutex<BTreeMap<(ClientKey, Power), Word>>>);
+pub struct Ledger {
+    rows: Arc<Mutex<Rows>>,
+    parked: Arc<Mutex<BTreeMap<ClientKey, ClientId>>>,
+}
 
 impl PartialEq for Ledger {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
+        Arc::ptr_eq(&self.rows, &other.rows)
     }
 }
 
@@ -53,8 +65,27 @@ impl Eq for Ledger {}
 
 impl Ledger {
     /// A poisoned lock is still a lock: the rows are plain data.
-    fn rows(&self) -> MutexGuard<'_, BTreeMap<(ClientKey, Power), Word>> {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    fn rows(&self) -> MutexGuard<'_, Rows> {
+        self.rows.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn parked_ids(&self) -> MutexGuard<'_, BTreeMap<ClientKey, ClientId>> {
+        self.parked.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// `client` (connection `id`) has objects on hold in a protocol smithay serves whole.
+    pub fn park(&self, client: ClientKey, id: ClientId) {
+        self.parked_ids().insert(client, id);
+    }
+
+    /// How many clients have a connection parked.
+    pub fn parked_count(&self) -> usize {
+        self.parked_ids().len()
+    }
+
+    /// The connection of `client`, when it has had objects on hold since it connected.
+    pub fn parked(&self, client: ClientKey) -> Option<ClientId> {
+        self.parked_ids().get(&client).cloned()
     }
 
     /// The latest word on `client` and `power`, if any.
@@ -96,9 +127,10 @@ impl Ledger {
         word
     }
 
-    /// `client` disconnected: its rows go.
+    /// `client` disconnected: its rows and its parked connection go.
     pub fn forget(&self, client: ClientKey) {
         self.rows().retain(|(owner, _), _| *owner != client);
+        self.parked_ids().remove(&client);
     }
 
     /// How many rows there are (a client has at most one per power).

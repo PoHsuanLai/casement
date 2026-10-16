@@ -31,9 +31,11 @@ pub use watch::{ImageWatch, Unwatched};
 use crate::client::ClientState;
 use casement_core::ClientKey;
 use casement_core::Event;
+use casement_core::privilege::PowerOutcome;
 use casement_protocols::vocab::Power;
 use ledger::Begin;
 use smithay::reexports::wayland_server::Client;
+use smithay::wayland::Gate;
 
 /// What the composition root provides to every module that gates a power.
 pub trait ConsentHandler: 'static {
@@ -80,6 +82,35 @@ fn first_use(data: &ClientState, power: Power) -> Vec<Event> {
             power,
         }])
         .collect()
+}
+
+/// [`admit`] for the protocols smithay serves whole (the clipboard managers, the input method,
+/// the window list of `ext_foreign_toplevel_list`): the answer in smithay's words. A client
+/// that must wait is parked in the [`Ledger`] under its connection, so
+/// `Effect::Resolve` can settle what smithay holds for it
+/// ([`release_gate`]). smithay keeps at most
+/// [`MAX_HELD_PER_CLIENT`](smithay::wayland::gate::MAX_HELD_PER_CLIENT) objects per client and
+/// protocol and refuses the rest itself, so casement keeps no count of its own for them.
+pub fn gate<D: ConsentHandler>(state: &mut D, client: &Client, power: Power) -> Gate {
+    match admit(state, client, power) {
+        Admission::Go => Gate::Open,
+        Admission::Refuse => Gate::Refuse,
+        Admission::Hold => {
+            if let Some(key) = key_of(client) {
+                state.consent_ledger().park(key, client.id());
+            }
+            Gate::Hold
+        }
+    }
+}
+
+/// What smithay does with the objects it held for a client once the model answered `outcome`:
+/// an allowed use opens them; a refusal, or a power taken back, refuses them.
+pub fn release_gate(outcome: PowerOutcome) -> Gate {
+    match outcome {
+        PowerOutcome::Allowed => Gate::Open,
+        PowerOutcome::Denied | PowerOutcome::Revoked => Gate::Refuse,
+    }
 }
 
 /// Whether `client` may use `power` now, without asking: the guard for requests on objects

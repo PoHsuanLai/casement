@@ -124,8 +124,10 @@ taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "4863877b9cab21645b
 # sizes, text-input `enter` and `leave` with keyboard focus without an input method, activation of an
 # input method that binds late, `unavailable` to the new input method, a zero-size anchor rectangle,
 # the fractional-scale and viewporter errors on their manager, the viewporter `bad_size` hook and
-# check, buffer scale and transform applied at every commit, and a popup pointer grab that leaves a
-# nested popup's keyboard grab alone. Three more are written on the fork's branch `lane/wlcs-w3-w4-w7`
+# check, buffer scale and transform applied at every commit, a popup pointer grab that leaves a
+# nested popup's keyboard grab alone, and the consent gates of the protocols smithay serves whole
+# (branch `lane/consent-gates`: `Gate` and a defaulted gate hook for data control, the input method and
+# the foreign toplevel list, with `release` on each state). Three more are written on the fork's branch `lane/wlcs-w3-w4-w7`
 # (wave 2 lane fork) and arrive with the next rev: `get_xdg_surface` raising `role` and
 # `invalid_surface_state`, `xdg_toplevel.wm_capabilities` at toplevel creation, and subsurface positions
 # as state of the parent with a sync subtree applying only what it committed. `wl_surface.damage` with a
@@ -136,7 +138,7 @@ taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "4863877b9cab21645b
 # backend_winit backend_egl backend_drm backend_gbm backend_libinput backend_udev
 # backend_session_libseat backend_libei backend_vulkan use_system_lib; renderer_test only
 # under the `testing` feature; xwayland off until the Q-C5 gate.
-smithay = { git = "https://github.com/PoHsuanLai/smithay", rev = "90efde43eba801e0311dead6f361f237fc29c417", default-features = false }
+smithay = { git = "https://github.com/PoHsuanLai/smithay", rev = "6d813694696f74d5668a41703f06d1820788f997", default-features = false }
 # The client side of the test kit: the protocol extensions smithay serves from these crates.
 wayland-protocols-wlr = { version = "0.3.12", features = ["client"] }
 wayland-protocols-misc = { version = "0.3.12", features = ["client"] }

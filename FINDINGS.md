@@ -4460,20 +4460,11 @@ first. The contract it implements is ARCHITECTURE.md "Consent at the wire". The 
   - `ext_image_copy_capture` cursor sessions (`cursor_frame`) are not gated: they carry the cursor image and position over the
     capture source, not the screen's contents. The shell's own Space pictures are gated like any frame; the shell is trusted, so the
     model answers them at once.
-- **Not done: the globals smithay serves entirely.** `ext_data_control_manager_v1`, `zwlr_data_control_manager_v1` (Clipboard),
-  `zwp_input_method_manager_v2` (TypingHelp) and `ext_foreign_toplevel_list_v1` (Windows) have no place to hold, refuse or
-  delay a request: their `Dispatch2` impls are smithay's, and so are the user-data types (private fields), so the dispatch cannot
-  be wrapped from here. They are advertised to a public client unless the power was refused at connect, and are used without
-  asking; the model's answer for them is kept in the ledger (`handlers::consent::resolved`) and nothing waits on it. This leaves
-  CASW-01 open for the clipboard and the input method. The smithay change that closes it (the fork `PoHsuanLai/smithay`):
-  a `Gate { Open, Hold, Refuse }` in `smithay::wayland`; a defaulted handler method per protocol that returns it for the client
-  (`DataControlHandler::data_control_gate`, both flavours; `InputMethodHandler::input_method_gate`;
-  `ForeignToplevelListHandler::foreign_toplevel_list_gate`), asked in `get_data_device` and `create_data_source`, in
-  `get_input_method` and in the list's `bind`; on `Refuse` the object is made and told the protocol's denial (`finished`,
-  `cancelled`, `unavailable`, `finished`) without being registered (no `SeatData` device, no `list_instances` entry, no toplevel
-  sent); on `Hold` it is made inert and remembered with its client; and a `release(&mut self, display, &Client, Gate)` on each
-  state that registers what was held (the selection is sent to a new device, the toplevels listed) or refuses it. Then
-  `ConsentHandler` gives the handlers the answer the same way the other protocols get it.
+- **Closed (pa2-cgate): the globals smithay serves entirely.** `ext_data_control_manager_v1`, `zwlr_data_control_manager_v1`
+  (Clipboard), `zwp_input_method_manager_v2` (TypingHelp) and `ext_foreign_toplevel_list_v1` (Windows) are gated through the
+  fork's `Gate` hooks (smithay rev `6d813694`); see ARCHITECTURE.md "Consent at the wire". Left open there: a power taken back
+  does not end a device, input method or list smithay already registered (no hook in smithay for it); only held objects and
+  later uses are refused.
 - **Deferred / for other lanes.**
   - The composition root fills `ClientState` (`with_standing_under`, `with_image_watch` with the pinned peer's image check),
     `QuireShellPart::wall`, and the privacy store behind `Effect::SaveBook` (`exec.rs` logs it) (croot).
@@ -4647,5 +4638,4 @@ group/world writable; a user-writable program or an interpreter gets Allow Once 
   - the desktop harness: scenarios that run `grim`/`wl-copy` start casement with `--system-dir` and a floor of `allow` rows
     (design 3.8); the flag exists, the scenarios are theirs.
   - sill: nothing new (the question is `quire_shell_v1` version 5, as cwl built it).
-  - still open from cwl: the four globals smithay serves whole (clipboard, input method, `ext_foreign_toplevel_list`); the fork change
-    is described in the pa2-cwl section.
+  - closed by pa2-cgate: the four globals smithay serves whole (clipboard, input method, `ext_foreign_toplevel_list`) are gated.

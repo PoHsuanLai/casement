@@ -1,7 +1,10 @@
 //! `wlr_data_control` (P0-H5).
 
+use crate::protocol::consent::{asked_world, decided, heard, kept};
 use casement_core::geometry::PhysicalSize;
 use casement_core::policy::ConnectionRole;
+use casement_core::privilege::Verdict;
+use casement_protocols::vocab::{Answer, Power};
 use casement_testclient::seat::keyboard::Keyboard;
 use casement_testclient::selection::data_control::wlr::WlrControl;
 use casement_testclient::selection::data_device::DataDevice;
@@ -9,8 +12,7 @@ use casement_testclient::surface::layer::{
     Anchor, KeyboardInteractivity, Layer, LayerAsk, LayerSurface,
 };
 use casement_testclient::{Pattern, shm_buffer};
-use casement_testkit::ClientId;
-use casement_testkit::{Fixture, FixtureSpec};
+use casement_testkit::{ASKED_PROGRAM, ClientId, Fixture, FixtureSpec};
 
 /// A clipboard manager is told of every new selection.
 #[test]
@@ -68,4 +70,134 @@ fn map(fixture: &mut Fixture, id: ClientId, ask: &LayerAsk) -> LayerSurface {
     layer.show(fixture.client(id), &buffer);
     fixture.pump();
     layer
+}
+
+// ---- Per-app consent (`Power::Clipboard`): smithay serves this protocol whole, so it holds what a
+// ---- client that waits for the answer created and the gate hook settles it.
+
+/// Binds a clipboard manager on `id` (a manager and the device of its seat) and lets the
+/// compositor answer.
+fn bind(fixture: &mut Fixture, id: ClientId) -> WlrControl {
+    let keyboard = Keyboard::bind(fixture.client(id)).expect("keyboard");
+    let control = WlrControl::bind(fixture.client(id), keyboard.seat()).expect("manager");
+    fixture.pump();
+    control
+}
+
+/// The shell takes the keyboard on a layer and sets the clipboard: what a manager that may
+/// watch the clipboard is told of. What it returns must stay alive.
+fn shell_copies(fixture: &mut Fixture) -> (Keyboard, DataDevice, LayerSurface) {
+    let owner = fixture.connect(ConnectionRole::Shell);
+    fixture.pump();
+    let keyboard = Keyboard::bind(fixture.client(owner)).expect("keyboard");
+    let device = DataDevice::bind(fixture.client(owner), keyboard.seat(), None).expect("device");
+    let layer = map(fixture, owner, &focused(Layer::Top, "owner"));
+    device.copy(fixture.client(owner), "text/plain", 0);
+    fixture.pump();
+    (keyboard, device, layer)
+}
+
+/// A program the person already allowed binds its manager without a question and is told
+/// the clipboard.
+#[test]
+fn a_program_the_person_allowed_gets_a_working_manager_without_a_question() {
+    let (mut fixture, shell, client) = asked_world();
+    decided(&mut fixture, Power::Clipboard, Verdict::Allow);
+    let _control = bind(&mut fixture, client);
+    assert!(shell.asked().is_empty(), "the book answers");
+    assert!(
+        heard(&mut fixture, client, "selection") > 0,
+        "told the clipboard at once"
+    );
+    assert_eq!(heard(&mut fixture, client, "finished"), 0);
+    let before = heard(&mut fixture, client, "selection");
+    let _owner = shell_copies(&mut fixture);
+    assert!(
+        heard(&mut fixture, client, "selection") > before,
+        "and every change"
+    );
+}
+
+/// A program the person already refused gets a finished device and a cancelled source, and
+/// is never told the clipboard, without being asked again.
+#[test]
+fn a_program_the_person_refused_never_gets_the_clipboard() {
+    let (mut fixture, shell, client) = asked_world();
+    decided(&mut fixture, Power::Clipboard, Verdict::Deny);
+    let control = bind(&mut fixture, client);
+    let _source = control.source(fixture.client(client));
+    fixture.pump();
+    assert!(shell.asked().is_empty(), "the book answers");
+    assert_eq!(heard(&mut fixture, client, "finished"), 1);
+    assert_eq!(heard(&mut fixture, client, "cancelled"), 1);
+    let _owner = shell_copies(&mut fixture);
+    assert_eq!(heard(&mut fixture, client, "selection"), 0);
+    assert_eq!(heard(&mut fixture, client, "data_offer"), 0);
+}
+
+/// Asked, then allowed: the manager hears nothing while the question is open, and once the
+/// person allows it is told the clipboard and every change after.
+#[test]
+fn a_manager_made_while_asked_is_released_when_allowed() {
+    let (mut fixture, shell, client) = asked_world();
+    let control = bind(&mut fixture, client);
+    let _source = control.source(fixture.client(client));
+    fixture.pump();
+    assert_eq!(
+        shell.asked().len(),
+        1,
+        "one question for the device and the source"
+    );
+    assert_eq!(shell.asked()[0].power, Power::Clipboard);
+    let _owner = shell_copies(&mut fixture);
+    assert_eq!(
+        heard(&mut fixture, client, "selection"),
+        0,
+        "nothing while it waits"
+    );
+
+    shell.answer(&mut fixture, shell.only_ask(), Answer::Allow);
+    assert!(
+        heard(&mut fixture, client, "selection") > 0,
+        "told the clipboard now"
+    );
+    assert_eq!(heard(&mut fixture, client, "finished"), 0);
+    assert_eq!(heard(&mut fixture, client, "cancelled"), 0);
+    assert_eq!(
+        kept(&fixture, ASKED_PROGRAM, Power::Clipboard),
+        Some(Verdict::Allow)
+    );
+}
+
+/// Asked, then refused: the device is finished, the source cancelled, and the clipboard never
+/// reaches them.
+#[test]
+fn a_manager_made_while_asked_is_finished_when_refused() {
+    let (mut fixture, shell, client) = asked_world();
+    let control = bind(&mut fixture, client);
+    let _source = control.source(fixture.client(client));
+    fixture.pump();
+    shell.answer(&mut fixture, shell.only_ask(), Answer::Deny);
+    assert_eq!(heard(&mut fixture, client, "finished"), 1);
+    assert_eq!(heard(&mut fixture, client, "cancelled"), 1);
+    let _owner = shell_copies(&mut fixture);
+    assert_eq!(heard(&mut fixture, client, "selection"), 0);
+    assert_eq!(
+        kept(&fixture, ASKED_PROGRAM, Power::Clipboard),
+        Some(Verdict::Deny)
+    );
+}
+
+/// A client that hangs up while its manager waits is forgotten, and an answer that comes
+/// after it is gone changes nothing for anyone.
+#[test]
+fn a_client_that_leaves_while_its_manager_waits_is_forgotten() {
+    let (mut fixture, shell, client) = asked_world();
+    let _control = bind(&mut fixture, client);
+    assert_eq!(fixture.held_connections(), 1);
+    fixture.disconnect(client);
+    assert_eq!(fixture.held_connections(), 0);
+    shell.answer(&mut fixture, shell.only_ask(), Answer::Allow);
+    assert!(fixture.client(shell.id).protocol_error().is_none());
+    let _owner = shell_copies(&mut fixture);
 }

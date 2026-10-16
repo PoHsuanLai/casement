@@ -218,10 +218,28 @@ How the protocol layer carries the contract above (wave 2: `pa2-cwl`).
   against the heads as they are when allowed), `zwlr_output_power` and `zwlr_gamma_control` (`failed`; revoke fails the control
   and lights the output or restores the identity curve). `Windows`: `zwlr_foreign_toplevel_manager` and `ext_workspace_manager`
   (`finished`; a handle or a `commit` of a client without the power changes nothing).
-- **Not gated yet (smithay owns the dispatch).** `ext_data_control` and `zwlr_data_control` (Clipboard), `zwp_input_method`
-  (TypingHelp) and `ext_foreign_toplevel_list` (Windows) are served entirely by smithay, which has no place to hold or refuse a
-  request: they are advertised to a public client unless the power was refused at connect, and used without asking. FINDINGS
-  (pa2-cwl) has the exact smithay change that closes this; `handlers::consent::resolved` already keeps their ledger word.
+- **Gated through smithay's hooks (it owns the dispatch).** Four globals are served entirely by smithay, which holds their
+  state; our fork (`PoHsuanLai/smithay`, rev `6d813694`) asks the compositor before it acts, through a defaulted handler method
+  that returns `smithay::wayland::Gate { Open, Hold, Refuse }`, and settles what it held with `release(&mut self, display,
+  &ClientId, Gate)` on the protocol's state. `consent::gate(state, client, power)` is the one place casement answers: it calls
+  `admit` and maps `Go` to `Open`, `Refuse` to `Refuse`, and `Hold` to `Hold` after parking the client's connection in the
+  `Ledger` (`park`; forgotten when the client goes). `Effect::Resolve` then calls `handlers::consent::settle_served`, which
+  releases the protocol's state with `consent::release_gate(outcome)` (`Allowed` opens, `Denied` and `Revoked` refuse).
+
+  | Global | Power | Hook (handler in `casement/src/handlers/`) | Held | Refused | Released on allow |
+  |---|---|---|---|---|---|
+  | `ext_data_control_manager_v1` | `Clipboard` | `data_control_gate` (`ext_data_control.rs`) | a device or a source, at `get_data_device` / `create_data_source` | device `finished`, source `cancelled`, registered nowhere | the device is registered and told the clipboard |
+  | `zwlr_data_control_manager_v1` | `Clipboard` | `data_control_gate` (`wlr_data_control.rs`) | the same | the same | the same |
+  | `zwp_input_method_manager_v2` | `TypingHelp` | `input_method_gate` (`input_method.rs`) | the input method made by `get_input_method` | `unavailable` | it becomes the seat's input method (activated for a field already enabled) |
+  | `ext_foreign_toplevel_list_v1` | `Windows` | `foreign_toplevel_list_gate` (`foreign_toplevel_list.rs`) | the list bound | `finished` | every window is listed, then each new one |
+
+  A held object is inert: it receives no events and its requests are ignored except `destroy`. smithay keeps at most
+  `MAX_HELD_PER_CLIENT` (16) held objects per client and protocol and refuses the rest itself; casement keeps no count of its own
+  for these (the 256 of `HELD_REQUESTS` is for the queues casement holds). A client that disconnects while held is dropped by
+  smithay at its next hold, and its parked connection is forgotten with its ledger rows. None of the refusal events is a
+  destructor, so none needs `consent::finish_later` (the pa2-cwl lesson is about `finished` on the workspace and window-list
+  managers, which are destructors). A power taken back (`Revoked`) ends nothing smithay already registered, because smithay has
+  no hook for that: the objects made after it are refused, and the next use asks again.
 - **The global filter.** `GlobalFilter` takes the decision function as a field (`advertised_to`); `ClientState` carries the
   `hidden: PowerSet` decided at accept (`ClientState::with_standing_under(&Privilege, standing)`), so a power refused before
   the client connected is not advertised to it, and a refusal that comes later changes no registry.

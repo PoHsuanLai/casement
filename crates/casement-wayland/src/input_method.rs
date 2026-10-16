@@ -9,9 +9,9 @@ use smithay::reexports::wayland_protocols_misc::zwp_input_method_v2::server::{
     zwp_input_method_manager_v2::ZwpInputMethodManagerV2, zwp_input_method_v2::ZwpInputMethodV2,
 };
 use smithay::reexports::wayland_server::{Dispatch, DisplayHandle, GlobalDispatch, Resource};
-use smithay::wayland::GlobalData;
 use smithay::wayland::input_method::{
-    InputMethodManagerGlobalData, InputMethodManagerState, InputMethodUserData, PopupSurface,
+    InputMethodManagerGlobalData, InputMethodManagerState, InputMethodManagerUserData,
+    InputMethodUserData, PopupSurface,
 };
 use std::collections::BTreeMap;
 
@@ -41,7 +41,7 @@ impl InputMethodPart {
     pub fn new<D>(display: &DisplayHandle, role_filter: GlobalFilter) -> InputMethodPart
     where
         D: GlobalDispatch<ZwpInputMethodManagerV2, InputMethodManagerGlobalData>
-            + Dispatch<ZwpInputMethodManagerV2, GlobalData>
+            + Dispatch<ZwpInputMethodManagerV2, InputMethodManagerUserData>
             + Dispatch<ZwpInputMethodV2, InputMethodUserData<D>>
             + SeatHandler
             + 'static,

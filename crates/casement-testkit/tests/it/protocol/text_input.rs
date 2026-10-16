@@ -11,6 +11,15 @@ use casement_testclient::ime::text_input::TextInputEvent;
 use casement_testclient::surface::toplevel::{Toplevel, WmBase};
 use casement_testkit::{ClientId, Fixture, TestOrigin};
 
+/// Whether the input method is bound when the session starts.
+#[derive(Debug, Clone, Copy)]
+enum Method {
+    /// It binds with the field.
+    Bound,
+    /// It starts later (fcitx5 after the apps).
+    Later,
+}
+
 /// A document window with keyboard focus, a text field and an input method on its connection.
 pub(crate) struct Typing {
     pub(crate) fixture: Fixture,
@@ -30,14 +39,28 @@ impl Typing {
     /// As [`Typing::start`], but the input method binds only if `with_method` (an IME that
     /// starts after the apps binds later with [`Typing::start_method`]).
     pub(crate) fn start_with(with_method: bool) -> Typing {
-        let (mut fixture, client) = boot();
+        let (fixture, client) = boot();
+        let method = match with_method {
+            true => Method::Bound,
+            false => Method::Later,
+        };
+        Typing::in_world(fixture, client, method)
+    }
+
+    /// As [`Typing::start`], in a world the caller built: `client` is connected to `fixture`
+    /// and is the one that maps the document and binds the field and the method (a program that
+    /// is asked about its powers, for the consent tests).
+    pub(crate) fn start_in(fixture: Fixture, client: ClientId) -> Typing {
+        Typing::in_world(fixture, client, Method::Bound)
+    }
+
+    fn in_world(mut fixture: Fixture, client: ClientId, method: Method) -> Typing {
         let base = WmBase::bind(fixture.client(client), 7);
         let window = map_toplevel(&mut fixture, client, &base, (400, 300));
         let globals = fixture.client(client).globals();
-        let ime = if with_method {
-            ImeSession::start(globals)
-        } else {
-            ImeSession::start_field(globals)
+        let ime = match method {
+            Method::Bound => ImeSession::start(globals),
+            Method::Later => ImeSession::start_field(globals),
         }
         .expect("the session");
         fixture.pump();

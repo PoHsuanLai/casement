@@ -56,6 +56,12 @@ impl Fixture {
         self.connect_standing(program_standing(ASKED_PROGRAM))
     }
 
+    /// How many clients have objects on hold in a protocol smithay serves whole (the clipboard
+    /// managers, the input method, the foreign toplevel list), waiting for the person's answer.
+    pub fn held_connections(&self) -> usize {
+        self.state().wl.clients.ledger().parked_count()
+    }
+
     /// Inserts the compositor's end of a new connection through the composition root's own door
     /// (`casement::clients::insert_client`). With a standing, the way the root does it for a
     /// public client: the client data carries the standing and the globals the person's book
