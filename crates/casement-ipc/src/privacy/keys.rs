@@ -13,8 +13,8 @@ use ds_settings::schema::{
 };
 use std::collections::BTreeSet;
 
-/// The page the keys are listed on until Settings has a page of its own for them.
-pub const PRIVACY_PAGE: Page = Page::Apps;
+/// The page the keys are listed on: Settings' Privacy page.
+pub const PRIVACY_PAGE: Page = Page::Privacy;
 
 /// The word of a switch that is on: the program may use the power.
 pub const ON: &str = "on";
@@ -282,6 +282,19 @@ mod tests {
             keys.iter()
                 .all(|key| key.write == Write::Refused(Why::ReadOut))
         );
+    }
+
+    #[test]
+    fn every_key_is_on_the_privacy_page() {
+        let rows = [row(
+            program("/usr/bin/grim"),
+            Power::Screen,
+            Verdict::Allow,
+            Source::Person,
+        )];
+        let keys = listed(&rows);
+        assert!(keys.len() > rows.len());
+        assert!(keys.iter().all(|key| key.spec.page == Page::Privacy));
     }
 
     #[test]
