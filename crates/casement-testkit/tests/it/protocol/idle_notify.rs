@@ -107,3 +107,23 @@ fn input_moves_the_deadline() {
     step(&mut fixture, &mut watch, Duration::from_secs(10));
     assert_eq!(watch.signals(), vec![IdleSignal::Idled]);
 }
+
+/// CASW-07 (decided 2026-10-16): a peer nothing proves is served no less than 5 s, so a 1 ms
+/// watch cannot read keystroke timing; the shell's own watch keeps the timeout it asked for.
+#[test]
+fn an_unproven_peer_asking_for_one_millisecond_is_told_after_five_seconds() {
+    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let client = fixture.connect(ConnectionRole::Public);
+    fixture.pump();
+    let mut watch = IdleWatch::start(
+        fixture.client(client).globals(),
+        IdleKind::InputOnly,
+        Duration::from_millis(1),
+    )
+    .expect("the notification");
+    fixture.pump();
+    step(&mut fixture, &mut watch, Duration::from_millis(4_999));
+    assert!(watch.lines().is_empty(), "nothing before the floor");
+    step(&mut fixture, &mut watch, Duration::from_millis(1));
+    assert_eq!(watch.signals(), vec![IdleSignal::Idled]);
+}

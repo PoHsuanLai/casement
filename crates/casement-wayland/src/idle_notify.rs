@@ -18,8 +18,10 @@ pub use machine::{Honours, IdleBook, Inhibited, Moved, Signal};
 
 use crate::client::ClientState;
 use crate::states::{GlobalFilter, WaylandFault};
+use casement_core::policy::ConnectionRole;
 use casement_core::time::{IdleNotifierId, Mono};
 use casement_core::{ClientKey, Effect};
+use porter_core::{Isolation, PeerIdentity};
 use smithay::reexports::wayland_protocols::ext::idle_notify::v1::server::{
     ext_idle_notification_v1::{self, ExtIdleNotificationV1},
     ext_idle_notifier_v1::{self, ExtIdleNotifierV1},
@@ -34,6 +36,26 @@ use std::time::Duration;
 
 /// The version casement serves (2 adds `get_input_idle_notification`).
 pub const VERSION: u32 = 2;
+
+/// The shortest idle timeout a sandboxed or unproven peer is served (CASW-07, decided
+/// 2026-10-16): a `resumed` fires on every input event on the desktop, so a 1 ms watch would
+/// read another window's keystroke timing; 5 s is far from useful for that and still short
+/// enough for a screensaver or a video player.
+pub const UNTRUSTED_MIN_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// The shortest timeout `role` and `peer` get: the shell and the agent tier any, a peer proven
+/// to be a native app any, and every other peer (sandboxed, or nothing proves who it is)
+/// [`UNTRUSTED_MIN_TIMEOUT`].
+pub fn timeout_floor(role: &ConnectionRole, peer: &PeerIdentity) -> Duration {
+    match (role, peer) {
+        (ConnectionRole::Shell | ConnectionRole::Agent, _) => Duration::ZERO,
+        (ConnectionRole::Sandboxed(_), _) | (_, PeerIdentity::Unproven) => UNTRUSTED_MIN_TIMEOUT,
+        (ConnectionRole::Public, PeerIdentity::Proven(app)) => match app.isolation {
+            Isolation::Flatpak => UNTRUSTED_MIN_TIMEOUT,
+            _ => Duration::ZERO,
+        },
+    }
+}
 
 /// `ext_idle_notifier_v1`: the watches and their objects.
 #[derive(Debug)]
@@ -217,12 +239,15 @@ where
             }
             _ => return,
         };
-        let key = ClientState::of(client).map_or(ClientKey(0), |data| data.key);
+        let (key, floor) = ClientState::of(client)
+            .map_or((ClientKey(0), UNTRUSTED_MIN_TIMEOUT), |data| {
+                (data.key, timeout_floor(&data.role, &data.peer))
+            });
         let now = state.session_now();
         let watched = on_notification(
             state.idle_notify_part(),
             key,
-            Duration::from_millis(u64::from(timeout)),
+            Duration::from_millis(u64::from(timeout)).max(floor),
             honours,
             now,
         );
@@ -252,5 +277,73 @@ where
     fn destroyed(&self, state: &mut D, _client: ClientId, _resource: &ExtIdleNotificationV1) {
         let effects = on_destroyed(state.idle_notify_part(), self.id);
         state.idle_effects(effects);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use porter_core::{AppId, AppName};
+
+    fn proven(isolation: Isolation) -> PeerIdentity {
+        PeerIdentity::Proven(AppId {
+            name: AppName::parse("org.quire.Mail").expect("an app name"),
+            isolation,
+        })
+    }
+
+    /// Who gets a floor, and what the timeout becomes (CASW-07).
+    #[test]
+    fn an_unproven_or_sandboxed_peer_is_served_no_less_than_five_seconds() {
+        let one_ms = Duration::from_millis(1);
+        let cases = [
+            (
+                "a public unproven peer",
+                ConnectionRole::Public,
+                PeerIdentity::Unproven,
+                true,
+            ),
+            (
+                "a public proven native peer",
+                ConnectionRole::Public,
+                proven(Isolation::Unsandboxed),
+                false,
+            ),
+            (
+                "a public proven Flatpak peer",
+                ConnectionRole::Public,
+                proven(Isolation::Flatpak),
+                true,
+            ),
+            (
+                "the shell",
+                ConnectionRole::Shell,
+                PeerIdentity::Unproven,
+                false,
+            ),
+            (
+                "the agent tier",
+                ConnectionRole::Agent,
+                PeerIdentity::Unproven,
+                false,
+            ),
+        ];
+        for (name, role, peer, floored) in cases {
+            let got = one_ms.max(timeout_floor(&role, &peer));
+            let want = if floored {
+                UNTRUSTED_MIN_TIMEOUT
+            } else {
+                one_ms
+            };
+            assert_eq!(got, want, "{name}");
+        }
+        assert_eq!(
+            Duration::from_secs(60).max(timeout_floor(
+                &ConnectionRole::Public,
+                &PeerIdentity::Unproven
+            )),
+            Duration::from_secs(60),
+            "a long timeout is untouched"
+        );
     }
 }
