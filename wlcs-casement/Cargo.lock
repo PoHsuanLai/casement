@@ -361,6 +361,7 @@ dependencies = [
  "casement-ipc",
  "casement-layout",
  "casement-motion",
+ "casement-privacy",
  "casement-protocols",
  "casement-render",
  "casement-wayland",
@@ -374,6 +375,7 @@ dependencies = [
  "serde",
  "smithay",
  "thiserror 2.0.21",
+ "tokio",
  "tracing",
  "tracing-subscriber",
  "x11rb",
@@ -384,6 +386,7 @@ name = "casement-agent"
 version = "0.1.0"
 dependencies = [
  "casement-core",
+ "peephole-core 0.1.1",
  "reis",
  "smithay",
 ]
@@ -435,6 +438,7 @@ dependencies = [
  "freedesktop-icons",
  "image",
  "resvg",
+ "rustix 1.1.5",
  "thiserror 2.0.21",
 ]
 
@@ -444,13 +448,17 @@ version = "0.1.0"
 dependencies = [
  "calloop",
  "casement-core",
+ "casement-protocols",
  "ds-core",
  "ds-settings",
+ "peephole-bus 0.1.1",
  "porter-core",
  "porter-dbus",
  "serde_json",
  "thiserror 2.0.21",
  "tokio",
+ "toml",
+ "tracing",
  "xkbcommon",
  "zbus",
 ]
@@ -477,6 +485,17 @@ dependencies = [
  "ds-core",
  "ds-motion",
  "ds-style",
+]
+
+[[package]]
+name = "casement-privacy"
+version = "0.1.0"
+dependencies = [
+ "casement-core",
+ "casement-protocols",
+ "ds-helpers",
+ "thiserror 2.0.21",
+ "tracing",
 ]
 
 [[package]]
@@ -854,6 +873,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ds-helpers"
+version = "0.1.0"
+dependencies = [
+ "ds-peer",
+ "rustix 1.1.5",
+ "serde",
+ "thiserror 2.0.21",
+ "toml",
+]
+
+[[package]]
 name = "ds-motion"
 version = "0.1.0"
 dependencies = [
@@ -862,11 +892,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "ds-peer"
+version = "0.1.0"
+dependencies = [
+ "futures-timer",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "ds-settings"
 version = "0.1.0"
 dependencies = [
  "ds-behaviour",
  "ds-core",
+ "ds-helpers",
+ "ds-peer",
  "ds-settings-derive",
  "ds-style",
  "futures-timer",
@@ -875,6 +915,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "toml",
+ "toml_edit",
  "zbus",
 ]
 
@@ -2134,6 +2175,72 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
+name = "peephole"
+version = "0.1.1"
+source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.1#e1b1b6adaff180516f198cf5435e85e4dc36e971"
+dependencies = [
+ "peephole-core 0.1.1",
+ "rustix 1.1.5",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "peephole"
+version = "0.1.2"
+source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.2#f111ee0c32461d72173bb591079a1fbe0fca1953"
+dependencies = [
+ "peephole-core 0.1.2",
+ "rustix 1.1.5",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "peephole-bus"
+version = "0.1.1"
+source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.1#e1b1b6adaff180516f198cf5435e85e4dc36e971"
+dependencies = [
+ "futures-timer",
+ "peephole 0.1.1",
+ "peephole-core 0.1.1",
+ "thiserror 2.0.21",
+ "tokio",
+ "zbus",
+]
+
+[[package]]
+name = "peephole-bus"
+version = "0.1.2"
+source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.2#f111ee0c32461d72173bb591079a1fbe0fca1953"
+dependencies = [
+ "futures-timer",
+ "peephole 0.1.2",
+ "peephole-core 0.1.2",
+ "thiserror 2.0.21",
+ "tokio",
+ "zbus",
+]
+
+[[package]]
+name = "peephole-core"
+version = "0.1.1"
+source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.1#e1b1b6adaff180516f198cf5435e85e4dc36e971"
+dependencies = [
+ "serde",
+ "thiserror 2.0.21",
+ "toml",
+]
+
+[[package]]
+name = "peephole-core"
+version = "0.1.2"
+source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.2#f111ee0c32461d72173bb591079a1fbe0fca1953"
+dependencies = [
+ "serde",
+ "thiserror 2.0.21",
+ "toml",
+]
+
+[[package]]
 name = "peniko"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2290,6 +2397,9 @@ dependencies = [
 name = "porter-dbus"
 version = "0.1.0"
 dependencies = [
+ "peephole 0.1.2",
+ "peephole-bus 0.1.2",
+ "peephole-core 0.1.2",
  "porter-core",
  "serde",
  "serde_json",
@@ -2819,7 +2929,7 @@ checksum = "f9395f0f0eee849a9b707b2f06bb92a6a422090e2123bb2ef8e87a0e61892a8e"
 [[package]]
 name = "smithay"
 version = "0.7.0"
-source = "git+https://github.com/PoHsuanLai/smithay?rev=90efde43eba801e0311dead6f361f237fc29c417#90efde43eba801e0311dead6f361f237fc29c417"
+source = "git+https://github.com/PoHsuanLai/smithay?rev=6d813694696f74d5668a41703f06d1820788f997#6d813694696f74d5668a41703f06d1820788f997"
 dependencies = [
  "aliasable",
  "appendlist",
@@ -3137,6 +3247,7 @@ dependencies = [
  "indexmap",
  "toml_datetime",
  "toml_parser",
+ "toml_writer",
  "winnow",
 ]
 
