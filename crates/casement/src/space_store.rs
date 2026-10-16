@@ -185,7 +185,16 @@ impl SpaceStore for EphemeralSpaceStore {
 /// The stored Spaces: none when nothing was stored.
 pub fn load_spaces(store: &dyn SpaceStore) -> Result<SpaceFile, SpaceStoreError> {
     match store.read()? {
-        Some(text) => Ok(SpaceFile::parse(&text)?),
+        Some(text) => {
+            let read = SpaceFile::parse_counting(&text)?;
+            if read.dropped > 0 {
+                tracing::warn!(
+                    dropped = read.dropped,
+                    "the Spaces file had duplicate or surplus entries; they were left out"
+                );
+            }
+            Ok(read.file)
+        }
         None => Ok(SpaceFile::empty()),
     }
 }

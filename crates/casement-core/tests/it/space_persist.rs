@@ -78,6 +78,45 @@ fn an_imported_record_keeps_its_output_and_index() {
     assert_eq!(file.spaces, want);
 }
 
+/// CASC-18: a duplicate id cannot overwrite the Space under it, and a file of far more Spaces
+/// than casement writes is cut, instead of making start-up slow.
+#[test]
+fn a_damaged_file_is_trimmed_to_what_casement_would_have_written() {
+    let output = output_key("connector:DP-1");
+    let two = |id: &str, position: u32| {
+        format!("[[spaces]]\nid = \"{id}\"\noutput = \"connector:DP-1\"\nposition = {position}\n")
+    };
+    let one = "s-00000000000000000000000000000001";
+    let text = format!(
+        "{}{}[[shown]]\noutput = \"connector:DP-1\"\nspace = \"{one}\"\n\
+         [[shown]]\noutput = \"connector:DP-1\"\nspace = \"s-other\"\n",
+        two(one, 0),
+        two(one, 5),
+    );
+    let read = SpaceFile::parse_counting(&text).expect("parse");
+    assert_eq!(
+        read.dropped, 2,
+        "the second Space of the id and the second shown entry"
+    );
+    assert_eq!(
+        read.file.spaces,
+        vec![StoredSpace::new(
+            space_id(one),
+            output.clone(),
+            SpaceIndex(0)
+        )],
+        "the first entry of an id wins"
+    );
+    assert_eq!(
+        read.file.shown,
+        vec![StoredShown::new(output, space_id(one))]
+    );
+
+    let many: String = (0..1000).map(|n| two(&format!("s-{n:032}"), n)).collect();
+    let capped = SpaceFile::parse(&many).expect("parse");
+    assert_eq!(capped.spaces.len(), casement_core::space::MAX_STORED_SPACES);
+}
+
 #[test]
 fn bad_text_is_a_typed_error() {
     assert!(SpaceFile::parse("spaces = 3").is_err());

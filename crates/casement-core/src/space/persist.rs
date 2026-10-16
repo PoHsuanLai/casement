@@ -17,7 +17,16 @@ use super::{SpaceBook, SpaceContent, SpaceIndex};
 use crate::ids::OutputKey;
 use porter_core::SpaceId;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+
+/// The most Spaces a file may hold when it is read: 16 desktops (the Mac's limit) on each of up
+/// to 16 displays. A hand-edited or damaged file with more would make start-up slow; the rest
+/// is dropped.
+pub const MAX_STORED_SPACES: usize = 256;
+
+/// The most "which Space an output showed" entries a file may hold when it is read: one per
+/// display, so no more than there are displays a desktop could drive.
+pub const MAX_STORED_SHOWN: usize = 32;
 
 /// The Spaces file.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -81,6 +90,16 @@ impl StoredShown {
     }
 }
 
+/// A file read from text, and how many of its entries were dropped to make it one casement
+/// would have written.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Trimmed {
+    /// The file.
+    pub file: SpaceFile,
+    /// The entries dropped.
+    pub dropped: usize,
+}
+
 /// Why the file's text could not be read or written.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -107,9 +126,42 @@ impl SpaceFile {
         SpaceFile { spaces, shown }
     }
 
-    /// The file `text` holds (empty text is an empty file; keys it does not know are ignored).
+    /// The file `text` holds (empty text is an empty file; keys it does not know are ignored),
+    /// trimmed: see [`SpaceFile::trimmed`].
     pub fn parse(text: &str) -> Result<SpaceFile, SpaceFileError> {
-        Ok(toml::from_str(text)?)
+        Ok(SpaceFile::parse_counting(text)?.file)
+    }
+
+    /// As [`SpaceFile::parse`], and how many entries the trimming dropped (for the log).
+    pub fn parse_counting(text: &str) -> Result<Trimmed, SpaceFileError> {
+        Ok(toml::from_str::<SpaceFile>(text)?.trimmed())
+    }
+
+    /// The file with what a file written by casement never has dropped (CASC-18): a second
+    /// Space under an id already seen (the first wins, so a duplicate cannot move windows onto
+    /// another Space), a second "shown" entry for an output, and anything past
+    /// [`MAX_STORED_SPACES`] / [`MAX_STORED_SHOWN`].
+    pub fn trimmed(self) -> Trimmed {
+        let before = self.spaces.len() + self.shown.len();
+        let mut seen = BTreeSet::new();
+        let spaces: Vec<StoredSpace> = self
+            .spaces
+            .into_iter()
+            .filter(|stored| seen.insert(stored.id.clone()))
+            .take(MAX_STORED_SPACES)
+            .collect();
+        let mut outputs = BTreeSet::new();
+        let shown: Vec<StoredShown> = self
+            .shown
+            .into_iter()
+            .filter(|stored| outputs.insert(stored.output.clone()))
+            .take(MAX_STORED_SHOWN)
+            .collect();
+        let dropped = before - (spaces.len() + shown.len());
+        Trimmed {
+            file: SpaceFile { spaces, shown },
+            dropped,
+        }
     }
 
     /// The file as text: one `[[spaces]]` table per Space, in id order, so the same Spaces
@@ -148,7 +200,7 @@ impl SpaceFile {
                 None => StoredSpace::homeless(id, position),
             });
         }
-        Ok(SpaceFile::new(spaces, Vec::new()))
+        Ok(SpaceFile::new(spaces, Vec::new()).trimmed().file)
     }
 
     /// What `book` stores: its desktop Spaces and what each output shows.
