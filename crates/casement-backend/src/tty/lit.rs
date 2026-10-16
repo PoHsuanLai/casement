@@ -293,6 +293,7 @@ impl TtyBackend {
             self.lit.remove(&name);
             let _ = self.scanouts.detach(&name);
             self.readback.forget(&name);
+            self.capture_stopped(&name);
             self.carried.remove(&name);
             self.distrust.remove(&name);
         }

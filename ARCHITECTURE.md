@@ -292,12 +292,15 @@ pub trait ShellCalls: Debug {
     fn failures(&mut self) -> Vec<FailedCall>;
 }
 
-// casement (real: FileSpaceStore, ProcessSpawner; fakes: MemorySpaceStore, FakeSpawner)
+// casement (real: BackgroundSpaceStore (writes on a thread), ProcessSpawner (binding programs in their own systemd user scope); fakes: MemorySpaceStore, FakeSpawner)
 pub trait SpaceStore: Debug {
     fn read(&self) -> Result<Option<String>, SpaceStoreError>;
     fn write(&mut self, text: &str) -> Result<(), SpaceStoreError>;     // atomic
 }
-pub trait Spawner: Debug { fn spawn(&mut self, spec: SpawnSpec) -> Result<Spawned, SpawnError>; }
+pub trait Spawner: Debug {
+    fn spawn(&mut self, spec: SpawnSpec) -> Result<Spawned, SpawnError>;
+    fn exited(&mut self, now: Mono) -> Vec<Pid>; // the one that starts a child reaps it and says which ended
+}
 ```
 
 `casement::State::new` builds the real seams (`Seams::real`); `State::with_seams` takes injected

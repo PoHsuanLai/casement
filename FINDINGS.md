@@ -4087,3 +4087,47 @@ test-client helper pin the wire behaviour transom relies on.
   working). The test client gained `BufferAsk::Reuse` (`casement-testclient/src/capture/copy_session.rs`): the buffer of the
   last request attached to the next frame, as transom does. **Unsure it compiles or passes** (written without a build): the
   `Kept` refactor of `OutputCapture::request`, and the two tests' pump sequencing.
+
+## Production audit, lane pa-casrob (CASB, CASC-08)
+
+Fixed in this lane (no compile was run; the gate run is the first):
+
+- CASB-01, CASB-09: an icon name from a toplevel or an app id is a plain theme name (`casement_icons::IconName`), never a path;
+  only a desktop entry's `Icon=` may be a path. Every icon and desktop-entry read is `read::plain_file` (non-blocking open, `fstat`
+  must say regular file, capped read). usvg gets a resolver that loads no outside file. Lookups run on the `casement-icons` thread
+  (`icons/worker.rs`); the plate is drawn until the answer comes.
+- CASB-02, CASC-08: EDID text is printable ASCII only. `attached_outputs` keys two displays with one EDID key apart: the connector
+  that sorts first keeps `edid:...`, the others get `connector:<name>`, so stored settings stay valid. **Not done:** escaping `/`
+  inside EDID text (a make `a/b` + model `c` still equals make `a` + model `b/c`; the text is now printable ASCII, and `/` is
+  printable). It needs a change to `OutputKey::of` in casement-core (pa-cassec's crate): see the interface ask in the report.
+- CASB-03, CASB-08, CASB-16, CASB-22: `ProcessSpawner` keeps its children and reaps them in `Spawner::exited` (polled each loop turn);
+  `XwaylandState::reap` reads that list, so a dead satellite is noticed. Binding programs run under `systemd-run --user --scope`
+  when the user manager's socket exists, plain child otherwise. Children get `WAYLAND_DISPLAY` and lose `NOTIFY_SOCKET`,
+  `WATCHDOG_*`, `LISTEN_*`.
+- CASB-04, CASB-05, CASB-11, CASB-12, CASB-18, CASB-24: mode ladder (asked, previous, preferred, smallest) with the real mode told to
+  the model; flip deadline 500 ms, reset then re-initialise; three failed frames in a row recover; permission denied on a frame is a
+  lost master and retried every second; the watchdog is not fed once every output has shown nothing for 10 s; the seat is lent by
+  two causes (session, sleep) and held again only when both end; the fence wait is bounded to 500 ms; a firmware framebuffer opened
+  before a GPU arrived is closed. Unverified on hardware: all of `surface_real.rs`, `bridge_real.rs`, `kms_real.rs` behaviour.
+- CASB-07: `--safe` ignores `settings.toml` (defaults), draws opaque materials, minimises with the plainest effect, serves no X11,
+  looks for no icons, uses the first display only and skips the settings and appearance watchers. **Not done:** a software renderer
+  on the tty backend (the scanout path is GLES only; there is none to fall back to).
+- CASB-10: icon buffers over 512 px are not read, at most eight per window.
+- CASB-15: the Spaces file is written by `BackgroundSpaceStore` (latest text wins, folder fsync).
+- CASB-17: a stale `X<n>` socket nobody listens on is removed; a socket folder others may write in (without the sticky bit) is refused.
+  The abstract-socket access question is still unverifiable from this code.
+- CASB-19: the draw caches evict the least recently used entry (`casement-render/src/lru.rs`).
+- CASB-23: `prune` also frees the capture images of an output that went away.
+- CASB-27: SIGTERM and SIGINT stop the loop in order (`stop.rs`, a tokio signal thread into a calloop channel).
+
+Deferred:
+
+- CASB-26 (test mode behind a cargo feature): the vkms flags are parsed in `cli.rs`, used by `casement-testkit` tests and by
+  `dev/vkms/accept.sh`; a feature needs those three to turn it on, which cannot be checked without a build. Reachable only by whoever
+  builds the command line.
+- CASB-25 (keymap fetch on a worker thread): bounded to about 2 s per keymap change by keycap-client's own timeout; low.
+- CASB-27, `OOMScoreAdjust=-500` in `dist/casement.service`: an unprivileged user manager cannot lower a unit's OOM score, so the
+  unit would fail to start. Needs a system-level grant (a drop-in installed as root); not added.
+- CASB-12, the `unwrap`s in smithay's libseat session (`dispatch(0).unwrap()`, `disable().unwrap()`): the fork's code, not casement's.
+- CASB-13, CASB-14: quire's ds-settings (bounded reader, hardened writer): interface ask, not this repo.
+- CASB-20, CASB-21, CASB-28: left, as decided.
