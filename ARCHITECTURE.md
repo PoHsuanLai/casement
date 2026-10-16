@@ -83,7 +83,7 @@ A1: `Instant::now`, `SystemTime::now`, smithay's `Clock::now` and calloop's `Tim
 | the closed sets of inputs and outputs of the model | `casement-core::{Event, Effect}` |
 | what the shell asks of the desktop (apps, windows, Spaces) and what the model says back | `casement-core::desktop::{DesktopRequest, AppAsk, WindowAsk, SpaceAsk, DesktopNote, DesktopRef}` (P2-Z) |
 | what the shell says of its surfaces and what it is told | `casement-core::shell::{ShellRequest, ShellNote}` (P2-Z) |
-| who may have a `Shell` or `Agent` connection, and the socket pair | `casement-agent::{role_for, hand_out}` (the only hand-out, B14); inserted by `casement::connect`. Remote EIS socket for the portal's unit (`transom.service`): `casement-agent::open_remote_eis`, `Compositor1.ConnectEis`, fed by `casement::connect::answer_remote` |
+| who may have a `Shell` or `Agent` connection, and the socket pair | `casement-agent::{role_for, hand_out}` (the only hand-out, B14); inserted by `casement::connect`. Remote EIS socket for the portal's unit (`transom.service`): `casement-agent::open_remote_eis`, `Compositor1.ConnectEis`, fed by `casement::connect::answer_remote`; each connection has its own device slot (`casement-agent::RemoteSlots`, minted in `connect.rs`, CASW-19) and `Compositor1.EndEis(session)` (`connect::answer_end`, same caller check) closes every socket of a portal session through `casement::remote_sessions::RemoteSessions` |
 | `org.quire.Compositor1` | `casement-ipc::dbus::Compositor1` (the object), answered by `casement::connect::answer` |
 | the window a foreign-toplevel identifier names | `casement_wayland::foreign_toplevel_list::{identifier_of, window_of_identifier}` |
 | what changed on an output since a capture client's last frame | `casement_wayland::image_capture::{DamageLogs, Since}` (fed by `casement::handlers::serve_captures` from `PresentedFrame::damage`) |
@@ -104,6 +104,10 @@ A1: `Instant::now`, `SystemTime::now`, smithay's `Clock::now` and calloop's `Tim
 | a protocol's state and its request and effect functions | `casement-wayland::<protocol>` |
 | which globals a client sees (the filter that wraps I7) | `casement-wayland::GlobalFilter` |
 | a client's key, role and identity | `casement-wayland::ClientState` (inserted by `casement::clients::insert_client`) |
+| how many objects of each kind one client may hold, and the cut when it asks for more (`wl_display.no_memory`) | `casement-wayland::limits::{Limit, admit, cut}`; each call site counts from the collection that owns the objects (toplevels in `XdgShellPart::records`, popups, layers, waiting screencopies, window-list managers, icon buffers, exports, a keyboard's keymaps) |
+| which client files may be read on the loop (a keymap, a gamma ramp) | `casement-wayland::client_file` (memory files only: `fcntl(F_GET_SEALS)`, which asks the filesystem nothing) |
+| which keys may switch the VT | `casement-core::input::Origin::switches_vt` (kernel keyboards only), asked in `casement::core_loop::deliver` before `vt_chord` |
+| the shortest idle timeout a peer is served | `casement-wayland::idle_notify::timeout_floor` (5 s for unproven or sandboxed peers) |
 | who may take the keyboard, take over a dead locker's lock, or reserve room (shell versus another client) | `casement-core`: `LayerSpec::owner` (`LayerOwner`) and `Model` (`shell_clients`, `locker: LockHolder`), learned from `ConnectionRole::Shell`; a security context carries at most its creator's proof (`casement-wayland::security_context::identity_for_clients`) |
 | whether the session was locked when casement last ran | `casement::lock_marker::LockMarker` (injected; real `FileLockMarker` in `$XDG_RUNTIME_DIR/casement`; fake `MemoryLockMarker`), written and removed by `LockReply::{Remember, Forget}` |
 | smithay's types becoming ours | `casement-wayland::convert` and the handlers, never deeper |

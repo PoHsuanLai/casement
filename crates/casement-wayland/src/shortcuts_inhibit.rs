@@ -1,8 +1,9 @@
 //! `zwp_keyboard_shortcuts_inhibit_manager_v1`: a focused surface (a VM, a remote desktop)
 //! asks for every key, bindings included. The VT-switch chord is never inhibited (`vt_chord` runs
-//! before the bindings and the inhibitor); no other chord is exempt, so a captured session's
-//! way out is that chord or the pointer. (A fixed escape chord and an indicator that shortcuts
-//! are captured are a design call: FINDINGS, pa-cassec CASW-15.)
+//! before the bindings and the inhibitor) when it comes from a kernel keyboard (a virtual
+//! keyboard cannot make it: CASW-13); no other chord is exempt, so a captured session's way out
+//! is that chord or the pointer. No extra escape chord is added (decided 2026-10-16, FINDINGS
+//! CASW-15).
 
 use crate::states::GlobalFilter;
 use casement_core::Event;

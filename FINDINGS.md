@@ -319,7 +319,8 @@ byte-exact for tier P and 2 per channel on at most 1000 ppm of pixels for tier L
   by arming order, vblanks by output key; a timer already due stops at now; vblanks are
   computed from their phase (no drift: vblank 36,000 at 60 Hz is exactly 600 s).
 - **`OutputKey` text**: `edid:<make>/<model>/<serial>` when the EDID has a serial, else
-  `connector:<name>`.
+  `connector:<name>`. `/` and `%` inside the make, model and serial are percent-encoded (`%2F`, `%25`)
+  so the separators stay the only slashes (CASC-08, pa-caslim).
 - **`to_physical` rounds edges, not sizes**, so touching rectangles touch at every scale.
 - **The first-sight scale is sill's PreferWhole rule** (`sill-model` `displays/scale.rs`): 109
   points per inch, whole scale from an ideal of 1.5 while at least 1280 points wide, capped at
@@ -4269,3 +4270,103 @@ Rows for the findings CASW-02/03/04/07/11/12/13/15/18/19, CASC-02/05/06/07/09/10
   above bit 28 would share a device. Session ids come only from transom (a counter), so it needs over 268 million sessions. The
   fix is a per-session device counter minted where the remote link is opened (`casement/src/connect.rs`), outside the four
   crates this lane was given.
+
+## pa-caslim: production-audit limits and the decisions taken for the lane (2026-10-16)
+
+Rows for CASC-03/04/05/07/08/16/18, CASW-06/07/08/09/10/13/15/16/17/19/20 and the transom ask PORTAL-05 (audit files in
+`~/rs-wt/prod-audit-de/`). Written without a build: the gate run is the first compile. Every cap is a named constant with its
+reason beside it; a peer that goes past one is cut with `wl_display.no_memory` (`casement-wayland::limits`), refused, or
+dropped, never waited for.
+
+- **CASC-03: a client cannot make the model, the loop or Mission Control grow without end.** Toplevels (`MAX_TOPLEVELS` 1024,
+  well above the X11 satellite's real set), popups (256) and layer surfaces (64) are counted per client where they are made
+  (`new_toplevel`, `new_popup`, `new_layer_surface`), and the client that asks for one more is cut. In the model, an input event
+  that is not a swipe no longer builds the two whole-model snapshots (`Model::step`, `Watch::Nothing`); `DeskSnapshot` finds an
+  app's rank in one pass, not one scan per app; the layout finds a sheet's parent and an overview target by a map built once;
+  and the spread (`MAX_PUSHED` 96 windows) goes straight to the shelf pack at the floor scale above that, instead of up to 24
+  passes of every pair at fourteen scales. Tests: `a_client_that_makes_toplevels_without_end_is_cut`,
+  `a_client_that_makes_layer_surfaces_without_end_is_cut` (fixture), `a_crowd_of_windows_is_packed_without_the_trials` (layout),
+  the `Limit` table in `limits.rs`. **Not tested:** the popup cap (the same `admit` path; its count is
+  `XdgShellPart::popups_held_by`) and the snapshot skip (a cost, not a behaviour: the existing publish tests still hold it).
+  **Not done:** an incremental `Published` (dirty flags per window); the full snapshots on every other step stay, so a client at
+  the cap still makes a click cost a snapshot of 1024 windows.
+- **CASC-04: a connection serves a set of apps.** `Model::clients` is `BTreeMap<ClientKey, BTreeSet<AppKey>>`; a disconnect drops
+  every app no other connection serves, a ping goes by the key window's app, and a missing or recovered answer applies to every app
+  of the connection. Test: `a_client_that_carried_several_apps_leaves_none_of_them_behind`. The "every app has a window or a
+  client" invariant was not added.
+- **CASC-05 break-glass (decided 2026-10-16): logind `Unlock` is NOT honoured.** A lock whose locker died after `locked` stays
+  covered; recovery is a VT switch and a new locker from the shell, which may take the lock over (pa-cassec CASW-02). Nothing in
+  the code claims otherwise, so no code changed.
+- **CASC-07 (decided 2026-10-16): a full-screen request from a window that is not key is refused.** `enter_full_screen` answers
+  `CoreNote::RefusedFullScreen` and changes nothing (the person's desktop is not replaced by a background app's). The person's own
+  hand is not gated: the shell's window menu and desktop-protocol asks and Split View go through `full_screened` /
+  `full_screen_by_hand`. A foreign window-list client's request (`zwlr_foreign_toplevel`) is gated like a window's own, since that
+  socket is public. **Consequence:** a video player that asks for full screen from a window the person has not clicked is
+  refused until it is key. Tests: `a_full_screen_request_from_a_window_that_is_not_key_is_refused`,
+  `the_shells_full_screen_asks_are_not_refused_for_a_window_that_is_not_key`.
+- **CASC-08 remainder: `/` and `%` in EDID text are percent-encoded in an `OutputKey`.** Make `a/b` + model `c` and make `a` +
+  model `b/c` are now different keys. **Keys change only for EDID text containing `/` or `%`**; every key without them is what
+  it was, so stored settings stay valid (the connector fallback pa-casrob added for two displays with one EDID is unchanged).
+  Test: `separators_inside_edid_text_are_encoded_so_distinct_displays_keep_distinct_keys`.
+- **CASC-16: a first-mouse region is read up to `MAX_FIRST_MOUSE_RECTS` (64) rectangles**, so the add-against-subtract test is
+  at most 64 x 64 and a window's hint stays small. Test: `a_huge_region_is_read_up_to_the_cap`. The accessibility strings were
+  already capped (`A11Y_MAX_LEN`).
+- **CASC-18: the Spaces file is read trimmed.** A second Space of an id, a second "shown" entry of an output and anything past
+  `MAX_STORED_SPACES` (256) / `MAX_STORED_SHOWN` (32) are dropped (the first wins), and `load_spaces` logs how many.
+  Test: `a_damaged_file_is_trimmed_to_what_casement_would_have_written`.
+- **CASW-06: per-client caps** on waiting screen copies (16; and the last-delivery notes are bounded at 256, oldest first), window
+  list managers (4), icon buffers (256), exports (256); the `SerialBook` forgets the latest input of clients none of whose
+  presses is remembered. Tests: one fixture test per cap (`a_client_with_copies_piled_up_is_cut`,
+  `a_client_that_binds_the_window_list_without_end_is_cut`, `a_client_that_adds_icon_buffers_without_end_is_cut`,
+  `a_client_that_exports_without_end_is_cut`) and `the_latest_input_of_clients_long_gone_is_forgotten`. **Departure:** the audit
+  asks for the icon registry to be per icon (buffers kept in `IconData`); it is still one table that every buffer destroy
+  scans, now bounded by 256 buffers per client rather than unbounded. The caps count from each module's own collection (no
+  second counter to keep in step); the numbers are mine, chosen well above real use, and the owner can move them.
+- **CASW-07 (decided 2026-10-16): idle notifications for unproven or sandboxed peers have a 5 s minimum timeout**
+  (`UNTRUSTED_MIN_TIMEOUT`; the shell, the agent tier and a proven native peer keep what they ask). **Consequence:** every
+  connection is `Unproven` today, so every client on the public socket is floored until peers can be proven. Test:
+  `an_unproven_peer_asking_for_one_millisecond_is_told_after_five_seconds`, `timeout_floor` table. Hiding input-idle from
+  sandboxes and a cap on watches per client were not done.
+- **CASW-08: a client's cursor surface over `MAX_CLIENT_CURSOR` (256) logical pixels on a side is drawn and announced as the
+  arrow** (`cursor::drawn`, used by the element and by `cursor_face`, so a screencast's buffers follow). Tests:
+  `a_cursor_surface_over_the_cap_is_the_arrow` (fixture), `exceeds_cap` table. The drag icon is never drawn by the compositor, so
+  it needed no cap. **Not done:** drawing trusted surfaces above the client cursor (a design call).
+- **CASW-09: a client file is read on the loop only when it is a memory file** (`client_file`): `fcntl(F_GET_SEALS)` succeeds on a
+  memfd or a tmpfs file and nothing else, and asks the filesystem nothing, so a FUSE file cannot block it (an `fstat` or `fstatfs`
+  could). Applies to the virtual keyboard's keymap and the gamma ramp; a keyboard may send 16 keymaps. **Consequence:** a client
+  that passes a keymap or a ramp in a file on disk (not tmpfs) is refused; the protocols' clients use memfd or the runtime
+  directory. Tests: `a_memory_file_is_read_exactly`, `anything_else_is_not_read` (a pipe and a procfs file),
+  `a_keyboard_that_sends_keymaps_without_end_is_cut`.
+- **CASW-10:** fixed by pa-cassec's CASC-09 (at least one output stays lit; positions bounded; a client's power change undone when it
+  goes), confirmed by reading `output_requests.rs` and `output::keeps_one_lit`. **Not done (needs a decision):** a timed
+  confirm-or-revert for output changes by non-shell clients.
+- **CASW-13 (decided 2026-10-16): the VT-switch chord is honoured only from a kernel keyboard** (`Origin::switches_vt`, true for
+  `Origin::Physical` only): a virtual keyboard, a remote session, the agent seat and a feed cannot send the compositor to a
+  text console, under a lock or not. keycap's on-screen output therefore cannot switch VT. Test: `only_a_kernel_keyboard_switches_the_vt`
+  (property over every origin); the chord itself runs only on the tty backend, which no fixture reaches.
+- **CASW-15 (decided 2026-10-16): no extra escape chord.** The module header says the way out of a captured session is the VT chord
+  or the pointer; no code added.
+- **CASW-16: a binding's call waits at most `CALL_TIMEOUT` (5 s) and at most `MOST_IN_FLIGHT` (16) calls wait at once**; a call past
+  either is reported through `failures()` (`ShellCallError::{TimedOut, Overloaded}`). Tests: `a_reply_that_never_comes_is_a_timeout`,
+  `calls_waiting_for_a_reply_are_limited`. Coalescing key repeats was not done.
+- **CASW-17: a dma-buf is refused at import** when a side is over `MAX_DMABUF_SIDE` (16384) or, for a linear buffer, a plane
+  (offset + stride x rows) reaches past the end of its file (`lseek(SEEK_END)`, which every dma-buf answers). Non-linear
+  buffers are checked for size only (their layout is the driver's). Tests: `a_buffer_larger_than_its_file_or_the_limit_is_refused`,
+  `plane_arithmetic_cannot_overflow_into_a_fit`; the unit test's buffers now sit in sized memfds instead of `/dev/null`.
+  **Unverified:** that every real exporter answers `lseek(SEEK_END)` with the buffer size (the kernel's `dma_buf_llseek` does).
+- **CASW-19: a device slot per remote connection.** `casement::connect` mints a `RemoteSlot` for each `ConnectEis`
+  (`RemoteSessions::mint`, 28 bits, refused when spent); `remote_device_id(slot, class)` replaces the id squeezed from the portal
+  session id, so two sessions never share a device. The held-key sets are shared with the connection's `RemoteHandle`, capped at
+  `MAX_HELD` (256) keys and buttons. Tests: `two_connections_never_share_a_device_id`, `a_full_held_set_drops_new_presses_and_releases_empty_it`.
+- **PORTAL-05: `org.quire.Compositor1.EndEis(session: t)`.** Next to `ConnectEis`, callable only by `transom.service` (the same
+  `portal_only` check). It takes every socket opened for `session` out of the event loop (the compositor's end closes, so the app is
+  disconnected), then feeds the releases of every key and button the app still held. An unknown or already ended session is not an
+  error. Tests: `end_eis_reaches_the_loop_only_from_the_portals_unit` (private bus),
+  `ending_a_session_closes_its_sockets_and_only_the_portal_may_ask` (fixture, the client end reads end-of-stream),
+  `a_session_ended_from_outside_releases_once`, `a_handle_releases_what_is_held_once`.
+- **CASW-20: commit timing and fifo no longer scan.** A surface in either watch list carries a mark (`watch_mark`), set once and
+  cleared when it leaves the list, so noting a barrier and forgetting a surface cost a lookup; the clients to release are kept
+  by key (`ClearedClients`). Screencopy's remaining scans run over lists the caps above bound.
+
+Not covered by a test here (no way to reach it without hardware or a second process): the tty VT chord, the `lseek` on a real
+GPU buffer, and the x11 satellite at the toplevel cap.

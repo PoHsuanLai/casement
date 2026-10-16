@@ -233,7 +233,7 @@ pub(super) fn present(
 /// A key press whose symbol names a VT (`Ctrl+Alt+Fn` is `XF86Switch_VT_n` after xkb) asks the
 /// seat's session to switch there, before any binding or client sees the key. The VT the key
 /// names, press or release (the release is swallowed too); none for any other key and on a
-/// backend that has no VTs.
+/// backend that has no VTs. Only a kernel keyboard's key is asked (`Origin::switches_vt`).
 pub(super) fn vt_chord(
     state: &mut State,
     mods: &ModifiersState,
