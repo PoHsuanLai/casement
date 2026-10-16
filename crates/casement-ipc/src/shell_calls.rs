@@ -56,6 +56,18 @@ pub enum ShellCallError {
     /// The session bus refused.
     #[error("bus: {0}")]
     Bus(#[from] zbus::Error),
+    /// The target did not reply in time (CASW-16).
+    #[error("no reply after {after:?}")]
+    TimedOut {
+        /// How long the call waited.
+        after: std::time::Duration,
+    },
+    /// Too many calls were already waiting for a reply, so this one was dropped (CASW-16).
+    #[error("{most} calls are already waiting for a reply")]
+    Overloaded {
+        /// The most calls that may wait at once.
+        most: usize,
+    },
 }
 
 /// A call that was sent and then failed.
