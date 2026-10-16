@@ -11,7 +11,8 @@ use rustix::net::{
     AddressFamily, SocketAddrUnix, SocketFlags, SocketType, bind, listen, socket_with,
 };
 use std::os::fd::{AsFd, OwnedFd};
-use std::os::unix::net::UnixListener;
+use std::os::unix::fs::{FileTypeExt, MetadataExt};
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 
 /// The directory X11 path sockets live in (`/tmp/.X11-unix` on a real system).
@@ -47,6 +48,7 @@ impl Listening {
     /// ```
     pub fn bind(dir: &X11Dir) -> Result<Listening, XwaylandError> {
         std::fs::create_dir_all(&dir.0)?;
+        check_dir(&dir.0)?;
         (0..=LAST_DISPLAY)
             .find_map(|number| try_display(&dir.0, number))
             .ok_or(XwaylandError::NoDisplay)
@@ -100,9 +102,42 @@ impl Drop for Listening {
     }
 }
 
+/// Refuses a folder other people could put sockets in: it must be a real folder (not a link)
+/// owned by root or by us, and not writable by others unless sticky (as `/tmp/.X11-unix` is,
+/// mode 1777): in a folder anyone may write, another user could have made the socket we are
+/// about to take, or swap it under us.
+fn check_dir(dir: &Path) -> Result<(), XwaylandError> {
+    let meta = std::fs::symlink_metadata(dir)?;
+    let owner_ok = meta.uid() == 0 || meta.uid() == rustix::process::getuid().as_raw();
+    let others_write = meta.mode() & 0o022 != 0;
+    let sticky = meta.mode() & 0o1000 != 0;
+    match meta.is_dir() && owner_ok && (!others_write || sticky) {
+        true => Ok(()),
+        false => Err(XwaylandError::Socket(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            format!("{} is not a safe place for sockets", dir.display()),
+        ))),
+    }
+}
+
+/// Removes the socket at `path` when it is a leftover: a socket file that nothing listens on
+/// (a casement that was killed leaves its sockets behind), so that display number is taken
+/// again instead of the next one.
+fn clear_leftover(path: &Path) {
+    let is_socket = std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_socket());
+    let refused = matches!(
+        UnixStream::connect(path),
+        Err(error) if error.kind() == std::io::ErrorKind::ConnectionRefused
+    );
+    if is_socket && refused {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
 /// Binds display `number` in `dir`, or `None` when it is taken.
 fn try_display(dir: &Path, number: u32) -> Option<Listening> {
     let path = dir.join(format!("X{number}"));
+    clear_leftover(&path);
     let listener = UnixListener::bind(&path).ok()?;
     let Some(abstract_socket) = bind_abstract(&path) else {
         let _ = std::fs::remove_file(&path);
@@ -130,4 +165,47 @@ fn bind_abstract(path: &Path) -> Option<OwnedFd> {
     bind(&fd, &address).ok()?;
     listen(&fd, BACKLOG).ok()?;
     Some(fd)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn a_display_left_by_a_killed_run_is_taken_again() {
+        let dir = tempfile::tempdir().expect("a scratch folder");
+        // A killed run closes its sockets but removes no file: the path stays, nobody listens.
+        let leftover = dir.path().join("X0");
+        drop(UnixListener::bind(&leftover).expect("a socket file"));
+        assert!(leftover.exists());
+        let again = Listening::bind(&X11Dir(dir.path().to_owned())).expect("a free display");
+        assert_eq!(again.display(), &DisplayName(":0".to_owned()));
+    }
+
+    #[test]
+    fn a_display_someone_listens_on_is_not_taken() {
+        let dir = tempfile::tempdir().expect("a scratch folder");
+        let first = Listening::bind(&X11Dir(dir.path().to_owned())).expect("a free display");
+        let second = Listening::bind(&X11Dir(dir.path().to_owned())).expect("the next one");
+        assert_ne!(first.display(), second.display());
+    }
+
+    #[test]
+    fn a_folder_anyone_may_write_in_is_refused_unless_sticky() {
+        let dir = tempfile::tempdir().expect("a scratch folder");
+        let open = dir.path().join("open");
+        std::fs::create_dir(&open).expect("folder");
+        // name, mode, accepted
+        let cases = [
+            ("private", 0o700, true),
+            ("group and others may read", 0o755, true),
+            ("others may write", 0o777, false),
+            ("others may write, sticky", 0o1777, true),
+        ];
+        for (name, mode, accepted) in cases {
+            std::fs::set_permissions(&open, std::fs::Permissions::from_mode(mode)).expect("mode");
+            assert_eq!(check_dir(&open).is_ok(), accepted, "{name}");
+        }
+    }
 }
