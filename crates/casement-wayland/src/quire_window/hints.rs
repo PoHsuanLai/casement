@@ -12,6 +12,11 @@ use smithay::wayland::compositor::{RectangleKind, RegionAttributes};
 /// a name is 255; a path longer than that is not one we pass on).
 pub const A11Y_MAX_LEN: usize = 255;
 
+/// The most rectangles of a `wl_region` that are read for the first-mouse regions (CASC-16): the
+/// subtraction test is every added rectangle against every subtracted one on the loop, so a
+/// region of a million rectangles must not be read whole. Rectangles past it are ignored.
+pub const MAX_FIRST_MOUSE_RECTS: usize = 64;
+
 /// Values `set_first_mouse` and `set_frame` staged since the last commit: they are
 /// double-buffered, so the model hears them when the toplevel commits.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -57,14 +62,13 @@ impl PendingHints {
 /// subtraction keeps only the added rectangles no subtraction fully covers; an empty region
 /// is `Nowhere`.
 pub fn first_mouse_of(region: &RegionAttributes) -> FirstMouse {
-    let subtracted: Vec<_> = region
-        .rects
+    let read: Vec<_> = region.rects.iter().take(MAX_FIRST_MOUSE_RECTS).collect();
+    let subtracted: Vec<_> = read
         .iter()
         .filter(|(kind, _)| matches!(kind, RectangleKind::Subtract))
         .map(|(_, rect)| *rect)
         .collect();
-    let kept: Vec<_> = region
-        .rects
+    let kept: Vec<_> = read
         .iter()
         .filter(|(kind, rect)| {
             matches!(kind, RectangleKind::Add)
@@ -230,6 +234,25 @@ mod tests {
         for (case, attrs, want) in rows {
             assert_eq!(first_mouse_of(&attrs), want, "{case}");
         }
+    }
+
+    /// CASC-16: a region of far more rectangles than the cap is read up to the cap, so the
+    /// subtraction test stays small and the hint a window carries stays small.
+    #[test]
+    fn a_huge_region_is_read_up_to_the_cap() {
+        use RectangleKind::{Add, Subtract};
+        let many: Vec<_> = (0..200_000_i32)
+            .map(|n| (if n % 2 == 0 { Add } else { Subtract }, (n, 0, 10, 10)))
+            .collect();
+        let FirstMouse::Regions(kept) = first_mouse_of(&region(&many)) else {
+            panic!("the first rectangles are added ones");
+        };
+        assert!(kept.len() <= MAX_FIRST_MOUSE_RECTS, "{} kept", kept.len());
+        let adds: Vec<_> = (0..200_000_i32).map(|n| (Add, (n, 0, 10, 10))).collect();
+        let FirstMouse::Regions(kept) = first_mouse_of(&region(&adds)) else {
+            panic!("added rectangles");
+        };
+        assert_eq!(kept.len(), MAX_FIRST_MOUSE_RECTS);
     }
 
     #[test]
