@@ -186,6 +186,9 @@ fn lock_event() -> impl Strategy<Value = LockEvent> {
         output().prop_map(|name| LockEvent::SurfaceCommitted {
             output: headless(name).key
         }),
+        output().prop_map(|name| LockEvent::SurfaceGone {
+            output: headless(name).key
+        }),
         Just(LockEvent::Unlocked),
         Just(LockEvent::LockerGone),
     ]

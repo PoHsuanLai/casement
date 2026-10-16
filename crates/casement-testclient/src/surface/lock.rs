@@ -83,9 +83,26 @@ impl Locker {
 
     /// Creates a surface covering the first output the compositor advertises.
     pub fn cover(&self, client: &TestClient) -> Result<LockSurface, ClientError> {
+        self.cover_on(client, 0)
+    }
+
+    /// Creates a surface covering the `nth` output the compositor advertises (0 is the first).
+    pub fn cover_on(&self, client: &TestClient, nth: usize) -> Result<LockSurface, ClientError> {
         let qh = client.qh();
         let compositor: WlCompositor = client.bind(1..=5, LockPlain)?;
-        let output: WlOutput = client.bind(1..=4, LockPlain)?;
+        let global = client
+            .globals()
+            .contents()
+            .clone_list()
+            .into_iter()
+            .filter(|global| global.interface == "wl_output")
+            .nth(nth)
+            .ok_or_else(|| ClientError::MissingGlobal("wl_output".to_owned()))?;
+        let output: WlOutput =
+            client
+                .globals()
+                .registry()
+                .bind(global.name, global.version.min(4), &qh, LockPlain);
         let surface = compositor.create_surface(&qh, LockPlain);
         let log = LockSurfaceLog::default();
         let shell = self
@@ -120,6 +137,20 @@ impl LockSurface {
         self.shell.ack_configure(serial);
         let _ = client.connection().flush();
         true
+    }
+
+    /// Removes the buffer (`attach(null)`) and commits: the surface shows nothing.
+    pub fn unmap(&self, client: &TestClient) {
+        self.surface.attach(None, 0, 0);
+        self.surface.commit();
+        let _ = client.connection().flush();
+    }
+
+    /// Destroys the lock surface and its `wl_surface`.
+    pub fn destroy(self, client: &TestClient) {
+        self.shell.destroy();
+        self.surface.destroy();
+        let _ = client.connection().flush();
     }
 
     /// Attaches `buffer` over the whole surface and commits.

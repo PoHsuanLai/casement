@@ -4144,3 +4144,16 @@ Rows for the findings CASW-02/03/04/07/11/12/13/15/18/19, CASC-02/05/06/07/09/10
   client (privileged globals on the public socket are CASW-01/CASC-01, a later wave). Tests: `model_lock.rs`
   (`only_the_shell_or_the_same_client_takes_a_lock_over`, `a_refused_takeover_does_not_become_the_holder`) and the fixture test
   `a_lock_whose_locker_died_is_taken_over_only_by_the_shell`.
+- **CASC-05: a locker that dies before `locked` was sent leaves the session open.** `lose_locker` in `Locking` now abandons the
+  lock (covers down, `LockWait` cancelled, `Unlocked`); in any later state the cover stays, as ext-session-lock requires.
+  **Deferred (owner decision):** the break-glass path for a dead locker after `locked` (respawn the configured locker, or honour
+  logind `Unlock`) belongs to the session crate and needs the owner to pick one; recovery is still a VT switch plus a new locker
+  from the shell (CASW-02 lets the shell take the lock over). Tests: `a_locker_that_dies_before_locked_leaves_the_session_open`
+  (core table and fixture).
+- **CASC-06 / CASW-12: a lock surface that goes puts its output's cover back.** New `LockEvent::SurfaceGone { output }`,
+  sent by the edge when a lock surface is destroyed or commits `attach(null)` after it had been reported covering (a commit
+  that leaves the buffer as it was says nothing). The model removes the output from `Covering` (`Pending` when it was the last)
+  and asks `ShowCover`, so `chrome.covers` holds the output and the scene never falls through to the desktop. Tests:
+  `a_lock_surface_that_goes_puts_the_cover_back` (core), `a_destroyed_lock_surface_leaves_its_output_covered` and
+  `an_unmapped_lock_surface_leaves_its_output_covered` (fixture, two outputs, a window on the first; the test client gained
+  `Locker::cover_on`, `LockSurface::unmap` and `LockSurface::destroy`).

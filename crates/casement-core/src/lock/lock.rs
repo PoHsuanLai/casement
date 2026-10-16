@@ -45,6 +45,12 @@ pub enum LockEvent {
         /// The output.
         output: OutputKey,
     },
+    /// The locker's surface on an output is gone (destroyed, or committed without a buffer):
+    /// the output shows the cover again.
+    SurfaceGone {
+        /// The output.
+        output: OutputKey,
+    },
     /// The locker unlocked.
     Unlocked,
     /// The locker's connection went away while locked.

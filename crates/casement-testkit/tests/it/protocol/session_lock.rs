@@ -9,7 +9,7 @@ use casement_testclient::seat::keyboard::Keyboard;
 use casement_testclient::surface::layer::{
     Anchor, KeyboardInteractivity, Layer, LayerAsk, LayerSurface,
 };
-use casement_testclient::surface::lock::Locker;
+use casement_testclient::surface::lock::{LockSurface, Locker};
 use casement_testclient::{Pattern, TestClient, shm_buffer};
 use casement_testkit::{Fixture, FixtureSpec, FrameCount, ShotTarget, TestOrigin};
 use std::time::Duration;
@@ -209,6 +209,24 @@ fn lock_with_content(fixture: &mut Fixture, id: casement_testkit::ClientId) -> L
     locker
 }
 
+/// CASC-05: a locker that dies before `locked` never locked anything: the session is open again
+/// and the stale wait changes nothing.
+#[test]
+fn a_locker_that_dies_before_locked_leaves_the_session_open() {
+    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let client = fixture.connect(ConnectionRole::Public);
+    fixture.pump();
+    let locker = Locker::request(fixture.client(client)).expect("a lock");
+    fixture.pump();
+    assert!(!locker.is_locked(), "it waits for a lock surface");
+    assert!(matches!(fixture.model().lock(), LockState::Locking { .. }));
+    fixture.disconnect(client);
+    fixture.pump();
+    assert_eq!(fixture.model().lock(), &LockState::Unlocked);
+    fixture.advance(Duration::from_secs(2));
+    assert_eq!(fixture.model().lock(), &LockState::Unlocked);
+}
+
 /// CASW-02: once the locker is gone, another public client that asks to lock is refused and
 /// the session stays covered; the shell's own locker takes the lock over.
 #[test]
@@ -237,6 +255,97 @@ fn a_lock_whose_locker_died_is_taken_over_only_by_the_shell() {
     fixture.pump();
     assert!(own.is_locked(), "the shell takes the lock over");
     assert!(!own.is_finished());
+}
+
+/// Two 1920x1080 outputs side by side.
+const TWO: [&str; 2] = [
+    "HEADLESS-1:1920x1080@60000:120:0,0",
+    "HEADLESS-2:1920x1080@60000:120:1920,0",
+];
+
+/// A window is open on the first of two outputs, `id` locks both with lock surfaces showing
+/// content, and the session is locked when this returns: the locker and its two surfaces.
+fn lock_both_outputs(
+    fixture: &mut Fixture,
+    id: casement_testkit::ClientId,
+) -> (Locker, LockSurface, LockSurface) {
+    let locker = Locker::request(fixture.client(id)).expect("a lock");
+    fixture.pump();
+    let first = locker
+        .cover_on(fixture.client(id), 0)
+        .expect("first surface");
+    let second = locker
+        .cover_on(fixture.client(id), 1)
+        .expect("second surface");
+    fixture.pump();
+    let size = PhysicalSize { w: 1920, h: 1080 };
+    for surface in [&first, &second] {
+        assert!(surface.ack(fixture.client(id)));
+        let buffer = shm_buffer(fixture.client(id), size, Pattern::Solid(0xff00_0000));
+        surface.show(fixture.client(id), &buffer);
+    }
+    fixture.pump();
+    assert!(locker.is_locked(), "the session is locked");
+    (locker, first, second)
+}
+
+/// How many pixels of the first output show something, away from where the cursor rests.
+fn showing_on_first(fixture: &mut Fixture) -> usize {
+    let output = OutputName::parse("HEADLESS-1").expect("a valid output name");
+    fixture.frames(&output, FrameCount(2));
+    fixture
+        .shot(ShotTarget::Output(output))
+        .enumerate_pixels()
+        .filter(|(x, y, _)| {
+            x.abs_diff(CURSOR_AT.0) >= CURSOR_REACH || y.abs_diff(CURSOR_AT.1) >= CURSOR_REACH
+        })
+        .filter(|(_, _, pixel)| pixel.0 != BLACK)
+        .count()
+}
+
+/// CASC-06, CASW-12: a live locker that destroys the lock surface of one output must not
+/// reveal the desktop there: the cover goes back up.
+#[test]
+fn a_destroyed_lock_surface_leaves_its_output_covered() {
+    let mut fixture = Fixture::start(FixtureSpec::desktop().with_outputs(&TWO)).expect("fixture");
+    let app = fixture.connect(ConnectionRole::Public);
+    let owner = fixture.connect(ConnectionRole::Public);
+    fixture.pump();
+    let base = WmBase::bind(fixture.client(app), 6);
+    let _window = map_toplevel(&mut fixture, app, &base, (400, 300));
+    settle(&mut fixture);
+    let (_locker, first, _second) = lock_both_outputs(&mut fixture, owner);
+    assert_eq!(showing_on_first(&mut fixture), 0, "covered while locked");
+
+    first.destroy(fixture.client(owner));
+    fixture.pump();
+    assert_eq!(
+        showing_on_first(&mut fixture),
+        0,
+        "the output whose lock surface went is still covered"
+    );
+    assert!(matches!(fixture.model().lock(), LockState::Locked { .. }));
+}
+
+/// CASC-06: the same when the locker removes the buffer of its lock surface.
+#[test]
+fn an_unmapped_lock_surface_leaves_its_output_covered() {
+    let mut fixture = Fixture::start(FixtureSpec::desktop().with_outputs(&TWO)).expect("fixture");
+    let app = fixture.connect(ConnectionRole::Public);
+    let owner = fixture.connect(ConnectionRole::Public);
+    fixture.pump();
+    let base = WmBase::bind(fixture.client(app), 6);
+    let _window = map_toplevel(&mut fixture, app, &base, (400, 300));
+    settle(&mut fixture);
+    let (_locker, first, _second) = lock_both_outputs(&mut fixture, owner);
+
+    first.unmap(fixture.client(owner));
+    fixture.pump();
+    assert_eq!(
+        showing_on_first(&mut fixture),
+        0,
+        "the output whose lock surface showed nothing is still covered"
+    );
 }
 
 /// Locked arrives only after each output shows a lock surface or a cover.

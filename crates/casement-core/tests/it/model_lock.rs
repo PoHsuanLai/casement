@@ -235,6 +235,99 @@ fn a_dead_locker_leaves_the_cover_and_another_locker_takes_over() {
     assert_eq!(last(&taken), [Effect::Lock(LockReply::SendLocked)]);
 }
 
+fn surface_gone(output: &str) -> Op {
+    lock(LockEvent::SurfaceGone {
+        output: key(output),
+    })
+}
+
+/// CASC-06, CASW-12: when a live locker's surface on one output goes, that output is covered
+/// again at once; the last one going leaves the lock waiting for a surface; a surface that
+/// comes back is taken in.
+#[test]
+fn a_lock_surface_that_goes_puts_the_cover_back() {
+    let (a, b) = ("HEADLESS-1", "HEADLESS-2");
+    let both = run(vec![
+        plug(a),
+        plug(b),
+        requested(),
+        committed(a),
+        committed(b),
+    ]);
+    let one = run_from(both.model.clone(), vec![surface_gone(a)]);
+    assert_eq!(
+        one.model.lock(),
+        &LockState::Locked {
+            surfaces: LockSurfaces::Covering(vec![key(b)])
+        }
+    );
+    assert!(last(&one).contains(&cover(a)));
+    assert!(!last(&one).contains(&cover(b)));
+    assert!(last(&one).contains(&Effect::Keyboard(KeyboardTarget::LockSurface(key(b)))));
+
+    let none = run_from(one.model, vec![surface_gone(b)]);
+    assert_eq!(
+        none.model.lock(),
+        &LockState::Locked {
+            surfaces: LockSurfaces::Pending
+        }
+    );
+    assert!(last(&none).contains(&cover(b)));
+
+    let back = run_from(none.model, vec![committed(a)]);
+    assert!(last(&back).contains(&uncover(a)));
+    assert_eq!(
+        back.model.lock(),
+        &LockState::Locked {
+            surfaces: LockSurfaces::Covering(vec![key(a)])
+        }
+    );
+
+    // An output the locker never covered, a repeat, and a lock that is not held change nothing.
+    for (name, model, op) in [
+        ("never covered", &both.model, surface_gone("HEADLESS-9")),
+        ("not held", &run(vec![plug(a)]).model, surface_gone(a)),
+        (
+            "still waiting",
+            &run(vec![plug(a), requested()]).model,
+            surface_gone(a),
+        ),
+    ] {
+        let run = run_from(model.clone(), vec![op]);
+        assert_same_world(&run.model, model, name);
+        assert_eq!(last(&run), [], "{name}");
+    }
+}
+
+/// CASC-05: a locker that dies before `locked` was sent never locked anything: the covers come
+/// down, the wait ends and the session is open. One that dies after it leaves the session
+/// locked.
+#[test]
+fn a_locker_that_dies_before_locked_leaves_the_session_open() {
+    let locking = run(vec![plug("HEADLESS-1"), plug("HEADLESS-2"), requested()]);
+    assert!(matches!(locking.model.lock(), LockState::Locking { .. }));
+    let gone = run_from(locking.model, vec![lock(LockEvent::LockerGone)]);
+    assert_eq!(gone.model.lock(), &LockState::Unlocked);
+    let effects = last(&gone);
+    assert!(effects.contains(&uncover("HEADLESS-1")));
+    assert!(effects.contains(&uncover("HEADLESS-2")));
+    assert!(effects.contains(&Effect::CancelTimer(TimerKey::LockWait)));
+    // The timer that was armed is stale now and changes nothing.
+    let stale = run_from(
+        gone.model.clone(),
+        vec![Op::Event(Event::TimerFired(TimerKey::LockWait))],
+    );
+    assert_same_world(&stale.model, &gone.model, "the wait that was cancelled");
+    // With the first surface committed, `locked` was sent: that locker's death keeps the cover.
+    let locked = run(vec![
+        plug("HEADLESS-1"),
+        requested(),
+        committed("HEADLESS-1"),
+        lock(LockEvent::LockerGone),
+    ]);
+    assert_eq!(locked.model.lock(), &LockState::LockedWithoutSurface);
+}
+
 /// CASW-02: while the locker is gone, only the shell or the client that held the lock may take
 /// it over; any other client is refused and the session stays covered.
 #[test]

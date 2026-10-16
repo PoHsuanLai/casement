@@ -37,6 +37,7 @@ impl Model {
             }
             (LockState::Unlocked, _) => Moved::of(self),
             (state, LockEvent::SurfaceCommitted { output }) => self.commit_surface(state, output),
+            (state, LockEvent::SurfaceGone { output }) => self.lose_surface(state, &output),
             (state, LockEvent::Unlocked) => self.end_lock(&state),
             (state, LockEvent::LockerGone) => self.lose_locker(&state),
         }
@@ -151,6 +152,28 @@ impl Model {
         .with_all(announce)
     }
 
+    /// The locker's surface on `output` is gone while the lock holds: the output is covered by
+    /// the cover again, so the desktop never shows through, and the locker is back to having
+    /// covered the rest. (Before `locked` nothing has been hidden for it yet.)
+    fn lose_surface(self, state: LockState, output: &OutputKey) -> Moved {
+        let LockState::Locked {
+            surfaces: LockSurfaces::Covering(covered),
+        } = state
+        else {
+            return Moved::of(self);
+        };
+        if !covered.contains(output) {
+            return Moved::of(self);
+        }
+        let rest: Vec<OutputKey> = covered.into_iter().filter(|held| held != output).collect();
+        let surfaces = match rest.is_empty() {
+            true => LockSurfaces::Pending,
+            false => LockSurfaces::Covering(rest),
+        };
+        self.with_lock(LockState::Locked { surfaces })
+            .with(show_cover(output.clone()))
+    }
+
     /// The locker unlocked: the covers come down and the keyboard goes back to the desktop.
     fn end_lock(self, state: &LockState) -> Moved {
         let covers = self.covers_for(state);
@@ -158,21 +181,31 @@ impl Model {
             .with_all(covers.into_iter().map(hide_cover))
     }
 
-    /// The locker is gone: the session stays locked, and each output its surface covered
-    /// shows the cover instead.
+    /// The locker is gone. Before `locked` was sent nothing was ever locked, so the session
+    /// opens again (a locker that crashes at start-up must not lock the person out). After it,
+    /// the session stays locked, and each output its surface covered shows the cover instead.
     fn lose_locker(self, state: &LockState) -> Moved {
-        let uncovered = match state {
-            LockState::Locked {
-                surfaces: LockSurfaces::Covering(covered),
-            } => covered.clone(),
-            _ => Vec::new(),
-        };
         match state {
-            LockState::LockedWithoutSurface | LockState::Unlocked => Moved::of(self),
-            _ => self
-                .with_lock(LockState::LockedWithoutSurface)
-                .with_all(uncovered.into_iter().map(show_cover)),
+            LockState::Unlocked | LockState::LockedWithoutSurface => Moved::of(self),
+            LockState::Locking { .. } => self.abandon_lock(state),
+            LockState::Locked { surfaces } => {
+                let uncovered = match surfaces {
+                    LockSurfaces::Covering(covered) => covered.clone(),
+                    LockSurfaces::Pending => Vec::new(),
+                };
+                self.with_lock(LockState::LockedWithoutSurface)
+                    .with_all(uncovered.into_iter().map(show_cover))
+            }
         }
+    }
+
+    /// The locker died before it was told `locked`: the covers come down, the wait for its
+    /// first surface ends, and the session is open.
+    fn abandon_lock(self, state: &LockState) -> Moved {
+        let covers = self.covers_for(state);
+        self.with_lock_by(LockState::Unlocked, None)
+            .with(Effect::CancelTimer(TimerKey::LockWait))
+            .with_all(covers.into_iter().map(hide_cover))
     }
 
     /// An output left the lock's coverage.

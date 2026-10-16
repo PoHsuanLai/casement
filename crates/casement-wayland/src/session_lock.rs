@@ -111,37 +111,63 @@ pub fn on_lock_surface(
     Vec::new()
 }
 
+/// What a commit did to a lock surface's buffer.
+enum Attach {
+    /// A new buffer was attached.
+    Content,
+    /// The buffer was removed (`attach(null)`): the surface shows nothing.
+    Removed,
+    /// Neither: the commit left the buffer as it was.
+    Unchanged,
+}
+
 /// A lock surface committed: the first commit with a buffer on an output tells the model the
-/// locker covers it (`LockEvent::SurfaceCommitted`).
+/// locker covers it (`LockEvent::SurfaceCommitted`); one that removes its buffer no longer covers it
+/// (`LockEvent::SurfaceGone`).
 pub fn on_lock_surface_commit(part: &mut SessionLockPart, surface: &WlSurface) -> Vec<Event> {
     let Some(output) = part.output_of(surface) else {
         return Vec::new();
     };
-    let has_content = compositor::with_states(surface, |states| {
+    let attach = compositor::with_states(surface, |states| {
         let mut attributes = states.cached_state.get::<SurfaceAttributes>();
-        matches!(
-            attributes.current().buffer,
-            Some(BufferAssignment::NewBuffer(_))
-        )
-    });
-    match (has_content, part.shown.insert(output.clone())) {
-        (true, true) => vec![Event::Lock(LockEvent::SurfaceCommitted { output })],
-        (true, false) => Vec::new(),
-        (false, _) => {
-            part.shown.remove(&output);
-            Vec::new()
+        match attributes.current().buffer {
+            Some(BufferAssignment::NewBuffer(_)) => Attach::Content,
+            Some(BufferAssignment::Removed) => Attach::Removed,
+            None => Attach::Unchanged,
         }
+    });
+    match attach {
+        Attach::Content if part.shown.insert(output.clone()) => {
+            vec![Event::Lock(LockEvent::SurfaceCommitted { output })]
+        }
+        Attach::Content | Attach::Unchanged => Vec::new(),
+        Attach::Removed => surface_gone(part, &output),
     }
 }
 
-/// A lock surface was destroyed: its output is no longer covered by the locker, and a locker
-/// that went with it is reported.
+/// A lock surface was destroyed: its output is no longer covered by the locker (the cover
+/// goes back up there), and a locker that went with it is reported.
 pub fn on_lock_surface_destroyed(part: &mut SessionLockPart, surface: &WlSurface) -> Vec<Event> {
-    if let Some(output) = part.output_of(surface) {
-        part.surfaces.remove(&output);
-        part.shown.remove(&output);
+    let mut events = match part.output_of(surface) {
+        Some(output) => {
+            part.surfaces.remove(&output);
+            surface_gone(part, &output)
+        }
+        None => Vec::new(),
+    };
+    events.extend(poll_locker(part));
+    events
+}
+
+/// The model hears that `output`'s lock surface stopped covering it, if it had been told that
+/// it did; `shown` forgets the output either way.
+fn surface_gone(part: &mut SessionLockPart, output: &OutputKey) -> Vec<Event> {
+    match part.shown.remove(output) {
+        true => vec![Event::Lock(LockEvent::SurfaceGone {
+            output: output.clone(),
+        })],
+        false => Vec::new(),
     }
-    poll_locker(part)
 }
 
 /// The locker unlocked.
