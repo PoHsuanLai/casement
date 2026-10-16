@@ -71,6 +71,9 @@ pub struct Model {
     apps: BTreeMap<AppKey, App>,
     /// Each connected client and the app its windows belong to, once it has mapped one.
     clients: BTreeMap<ClientKey, Option<AppKey>>,
+    /// The clients that hold a `quire_window_manager_v1` bound at version 2 or later: an app
+    /// asked to quit is sent `quit` through them instead of having its windows closed.
+    quit_listeners: BTreeSet<ClientKey>,
     spaces: SpaceBook,
     /// The Spaces file as it was read at start (P1-M2): its Spaces wait here for their output
     /// to be plugged, and what is stored still names them until then.
@@ -121,6 +124,7 @@ impl Model {
             windows: BTreeMap::new(),
             apps: BTreeMap::new(),
             clients: BTreeMap::new(),
+            quit_listeners: BTreeSet::new(),
             spaces: SpaceBook::empty(),
             remembered: SpaceFile::empty(),
             minimise_rects: BTreeMap::new(),
@@ -205,6 +209,7 @@ impl Model {
             Event::OutputConfigured { output, config } => self.configure_output(&output, config),
             Event::TimerFired(key) => self.fire(key),
             Event::Pong { client } => self.pong(client),
+            Event::QuitListener { client, toggle } => self.quit_listener(client, toggle),
             Event::SettingsChanged(settings) => self.change_settings(*settings),
             Event::OutputRequested { output, change } => self.request_output(output, change),
             Event::GammaSet { output, ramp } => self.set_gamma(output, ramp),

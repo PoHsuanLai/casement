@@ -98,6 +98,9 @@ fn apply(state: &mut State, effect: Effect) {
         Effect::SendClose { window } => {
             log(xdg_shell::apply_close(&mut state.wl.xdg_shell, window));
         }
+        Effect::SendQuit { client } => {
+            log(quire_window::apply_quit(&mut state.wl.quire_window, client))
+        }
         Effect::Keyboard(target) => keyboard(state, &target),
         Effect::Emphasis(list) => {
             for (window, emphasis) in list {

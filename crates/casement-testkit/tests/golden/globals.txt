@@ -25,7 +25,7 @@ xdg_toplevel_tag_manager_v1 1 xdg_toplevel_tag
 zxdg_exporter_v2 1 xdg_foreign
 zxdg_importer_v2 1 xdg_foreign
 xdg_system_bell_v1 1 system_bell
-quire_window_manager_v1 1 quire_window
+quire_window_manager_v1 2 quire_window
 zwlr_layer_shell_v1 5 layer_shell
 ext_session_lock_manager_v1 1 session_lock
 wl_seat 9 seat

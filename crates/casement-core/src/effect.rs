@@ -35,6 +35,12 @@ pub enum Effect {
         /// The window.
         window: WindowId,
     },
+    /// Tell a client the person asked its app to quit (`quire_window_manager_v1.quit`, sent in
+    /// place of closing the app's windows to a client that listens for it).
+    SendQuit {
+        /// The client.
+        client: ClientKey,
+    },
     /// Move keyboard focus.
     Keyboard(KeyboardTarget),
     /// Raise these windows, bottom first.

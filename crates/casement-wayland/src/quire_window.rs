@@ -7,8 +7,13 @@
 //! `Dispatch2` impls; `delegate_dispatch2!` in the composition root routes to them, and they
 //! reach the root through [`QuireWindowHandler`].
 //!
+//! Version 2 adds the manager's `quit` event: the person asked the app to quit. A client that
+//! binds the manager at version 2 or later is reported to the model as a quit listener
+//! ([`Event::QuitListener`]) for as long as it holds the manager, and the model then sends it
+//! `quit` ([`apply_quit`]) in place of closing its windows.
+//!
 //! What each request means is in [`hints`] as pure functions; this file is the wire: the part,
-//! the handler trait, the two dispatch impls and the two effects.
+//! the handler trait, the two dispatch impls and the three effects.
 
 mod hints;
 
@@ -17,16 +22,17 @@ pub use hints::{
     first_mouse_of, forgotten, frame_of, placement_events, role_request,
 };
 
+use crate::client::ClientState;
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::policy::GlobalKind;
 use casement_core::window::{A11yRoot, FirstMouse, FrameHint};
-use casement_core::{Event, InputSerial, WindowHintChange, WindowId};
+use casement_core::{ClientKey, Event, InputSerial, WindowHintChange, WindowId};
 use casement_protocols::server::quire_window_v1::quire_window_manager_v1::{
     self, QuireWindowManagerV1,
 };
 use casement_protocols::server::quire_window_v1::quire_window_v1::{self, QuireWindowV1};
 use casement_protocols::vocab::{
-    Edited, Emphasis, FrameMode, PlaceTarget, PlacementMark, WindowRole, WireCode,
+    Edited, Emphasis, FrameMode, PlaceTarget, PlacementMark, Toggle, WindowRole, WireCode,
 };
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::XdgToplevel;
 use smithay::reexports::wayland_server::backend::{ClientId, GlobalId};
@@ -40,7 +46,10 @@ use smithay::wayland::{Dispatch2, GlobalDispatch2};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// The version casement serves.
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
+
+/// The first version that carries `quit`.
+pub const QUIT_VERSION: u32 = 2;
 
 /// `quire_window_manager_v1` and its per-toplevel objects.
 #[derive(Debug)]
@@ -58,10 +67,12 @@ pub struct QuireWindowPart {
     pub marks: BTreeMap<WindowId, PlacementMark>,
     /// The windows whose surface carries our commit hook (it is added once).
     hooked: BTreeSet<WindowId>,
+    /// Each live manager bound at [`QUIT_VERSION`] or later, with its client: where `quit` goes.
+    pub quit_managers: Vec<(ClientKey, QuireWindowManagerV1)>,
 }
 
 impl QuireWindowPart {
-    /// Creates the global (version 1), filtered by the I7 table.
+    /// Creates the global (version 2), filtered by the I7 table.
     pub fn new<D>(display: &DisplayHandle, role_filter: GlobalFilter) -> QuireWindowPart
     where
         D: GlobalDispatch<QuireWindowManagerV1, QuireWindowGlobal> + 'static,
@@ -78,6 +89,7 @@ impl QuireWindowPart {
             placements: BTreeMap::new(),
             marks: BTreeMap::new(),
             hooked: BTreeSet::new(),
+            quit_managers: Vec::new(),
         }
     }
 }
@@ -130,17 +142,25 @@ pub struct QuireWindowData {
 
 impl<D> GlobalDispatch2<QuireWindowManagerV1, D> for QuireWindowGlobal
 where
-    D: Dispatch<QuireWindowManagerV1, QuireWindowManagerData> + 'static,
+    D: QuireWindowHandler + Dispatch<QuireWindowManagerV1, QuireWindowManagerData> + 'static,
 {
     fn bind(
         &self,
-        _state: &mut D,
+        state: &mut D,
         _handle: &DisplayHandle,
-        _client: &Client,
+        client: &Client,
         resource: New<QuireWindowManagerV1>,
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(resource, QuireWindowManagerData);
+        let manager = data_init.init(resource, QuireWindowManagerData);
+        if manager.version() < QUIT_VERSION {
+            return;
+        }
+        let Some(key) = ClientState::of(client).map(|data| data.key) else {
+            return;
+        };
+        let events = on_quit_manager_bound(state.quire_window_part(), key, manager);
+        state.quire_window_events(events);
     }
 
     fn can_view(&self, client: &Client) -> bool {
@@ -188,6 +208,13 @@ where
             }
             quire_window_manager_v1::Request::Destroy => {}
             _ => {}
+        }
+    }
+
+    fn destroyed(&self, state: &mut D, _client: ClientId, resource: &QuireWindowManagerV1) {
+        let events = on_quit_manager_gone(state.quire_window_part(), resource);
+        if !events.is_empty() {
+            state.quire_window_events(events);
         }
     }
 }
@@ -353,6 +380,47 @@ fn wire_mark(mark: PlacementMark) -> quire_window_v1::PlacementMark {
     }
 }
 
+/// A manager bound at version 2 or later: its client now hears `quit`. The model is told when
+/// it is the client's first such manager.
+pub fn on_quit_manager_bound(
+    part: &mut QuireWindowPart,
+    client: ClientKey,
+    manager: QuireWindowManagerV1,
+) -> Vec<Event> {
+    let first = !part.quit_managers.iter().any(|(held, _)| *held == client);
+    part.quit_managers.push((client, manager));
+    match first {
+        true => vec![Event::QuitListener {
+            client,
+            toggle: Toggle::On,
+        }],
+        false => Vec::new(),
+    }
+}
+
+/// A manager was destroyed (by its client, or with the connection). The model is told when it
+/// was the last one its client held at version 2 or later.
+pub fn on_quit_manager_gone(
+    part: &mut QuireWindowPart,
+    manager: &QuireWindowManagerV1,
+) -> Vec<Event> {
+    let Some(at) = part
+        .quit_managers
+        .iter()
+        .position(|(_, held)| held == manager)
+    else {
+        return Vec::new();
+    };
+    let (client, _) = part.quit_managers.remove(at);
+    match part.quit_managers.iter().any(|(held, _)| *held == client) {
+        true => Vec::new(),
+        false => vec![Event::QuitListener {
+            client,
+            toggle: Toggle::Off,
+        }],
+    }
+}
+
 /// `get_window`: `window`'s toplevel was extended with `object`.
 pub fn on_get_window(
     part: &mut QuireWindowPart,
@@ -484,4 +552,22 @@ pub fn apply_placement(
         Some(_) => Err(WaylandFault::SurfaceGone),
         None => Ok(()),
     }
+}
+
+/// Tells `client` the person asked its app to quit: `quit` on each manager it holds at
+/// version 2 or later. A client with none (or none alive) has nobody to tell.
+pub fn apply_quit(part: &mut QuireWindowPart, client: ClientKey) -> Result<(), WaylandFault> {
+    let live: Vec<&QuireWindowManagerV1> = part
+        .quit_managers
+        .iter()
+        .filter(|(held, manager)| *held == client && manager.is_alive())
+        .map(|(_, manager)| manager)
+        .collect();
+    if live.is_empty() {
+        return Err(WaylandFault::SurfaceGone);
+    }
+    for manager in live {
+        manager.quit();
+    }
+    Ok(())
 }

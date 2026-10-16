@@ -3,10 +3,12 @@
 use crate::conn::TestClient;
 use crate::surface::toplevel::Shared;
 use crate::surface::toplevel::{Host, Toplevel};
-use casement_protocols::client::quire_window_v1::quire_window_manager_v1::QuireWindowManagerV1;
+use casement_protocols::client::quire_window_v1::quire_window_manager_v1::{
+    self, QuireWindowManagerV1,
+};
 use casement_protocols::client::quire_window_v1::quire_window_v1::{self, QuireWindowV1};
 use wayland_client::protocol::wl_region::WlRegion;
-use wayland_client::{Connection, Dispatch, Proxy, QueueHandle, WEnum};
+use wayland_client::{Connection, Dispatch, QueueHandle, WEnum};
 
 pub use casement_protocols::client::quire_window_v1::quire_window_manager_v1::Error as ManagerError;
 pub use casement_protocols::client::quire_window_v1::quire_window_v1::{
@@ -25,21 +27,33 @@ pub struct WindowEvents {
 /// A window extension's log.
 pub type WindowLog = Shared<WindowEvents>;
 
+/// How many `quit` events a manager was sent.
+pub type QuitLog = Shared<u32>;
+
 /// A bound `quire_window_manager_v1`.
 #[derive(Debug)]
 pub struct WindowManager {
     /// The global.
     pub manager: QuireWindowManagerV1,
+    /// The `quit` events it was sent (version 2).
+    pub quits: QuitLog,
 }
 
 impl WindowManager {
-    /// Binds the global at `version` (1 is the only one).
+    /// Binds the global at `version` (1 or 2; `quit` needs 2).
     pub fn bind(client: &mut TestClient, version: u32) -> WindowManager {
+        let quits = QuitLog::default();
         WindowManager {
             manager: client
-                .bind(version..=version, ())
+                .bind(version..=version, quits.clone())
                 .expect("the compositor advertises quire_window_manager_v1"),
+            quits,
         }
+    }
+
+    /// How many times the person asked the app to quit.
+    pub fn quit_count(&self) -> u32 {
+        self.quits.with(|count| *count)
     }
 
     /// Extends `toplevel`.
@@ -104,15 +118,18 @@ impl Window {
     }
 }
 
-impl Dispatch<QuireWindowManagerV1, ()> for Host {
+impl Dispatch<QuireWindowManagerV1, QuitLog> for Host {
     fn event(
         _: &mut Self,
         _: &QuireWindowManagerV1,
-        _: <QuireWindowManagerV1 as Proxy>::Event,
-        _: &(),
+        event: quire_window_manager_v1::Event,
+        quits: &QuitLog,
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
+        if let quire_window_manager_v1::Event::Quit = event {
+            quits.with(|count| *count += 1);
+        }
     }
 }
 

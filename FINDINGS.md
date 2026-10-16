@@ -3610,9 +3610,9 @@ the old renderer departure 4 (`OutputFrame.strip` was not applied).
   cursors per surface yet. The state is in the model (`AppLife::NotResponding`) and published to
   `quire_desktop_v1` (app life and window responsiveness).
 - Quit (Cmd+Q, `desktop_app.quit`): asks every window to close, shows the app as quitting for
-  3 s, then as running again if it is still here (a "Save changes?" sheet). Departure from macOS:
-  an app with no window cannot be asked to quit (there is no window to close and no quit request in
-  `quire_window_v1`); it only shows as quitting for the grace.
+  3 s, then as running again if it is still here (a "Save changes?" sheet). Since cas35 a client
+  that bound `quire_window_manager_v1` at version 2 is sent `quit` instead, so an app with no
+  window can be asked to quit too (see cas35-quitevent).
 - Force Quit panel (Option-Command-Escape): `ShellNote::ForceQuitPanel(rows)` goes to the shell
   edge, which has no event to carry it yet (see the interface ask in the lane report); the shell
   can already draw the list from `quire_desktop_v1` and call `desktop_app.force_quit`.
@@ -3722,9 +3722,9 @@ the pinned sources, none was built. Look here first when it fails to compile.
   cursors per surface yet. The state is in the model (`AppLife::NotResponding`) and published to
   `quire_desktop_v1` (app life and window responsiveness).
 - Quit (Cmd+Q, `desktop_app.quit`): asks every window to close, shows the app as quitting for
-  3 s, then as running again if it is still here (a "Save changes?" sheet). Departure from macOS:
-  an app with no window cannot be asked to quit (there is no window to close and no quit request in
-  `quire_window_v1`); it only shows as quitting for the grace.
+  3 s, then as running again if it is still here (a "Save changes?" sheet). Since cas35 a client
+  that bound `quire_window_manager_v1` at version 2 is sent `quit` instead, so an app with no
+  window can be asked to quit too (see cas35-quitevent).
 - Force Quit panel (Option-Command-Escape): `ShellNote::ForceQuitPanel(rows)` goes to the shell
   edge, which has no event to carry it yet (see the interface ask in the lane report); the shell
   can already draw the list from `quire_desktop_v1` and call `desktop_app.force_quit`.
@@ -3938,3 +3938,33 @@ Written without a build or a run (rule of the lane); the orchestrator's run sett
 - **Goldens.** None should change at 1x and 2x. At 1.5x the framed goldens (`minimise-scale-1.5x-mid`,
   `minimise-genie-1.5x-mid`, `one-window-1.5x` if it is framed) may move by a pixel along shadow piece edges, or not at
   all where every edge was whole: diff them before blessing.
+
+## cas35-quitevent: `quit` for apps that listen, the macOS applicationShouldTerminate path (2026-10-16)
+
+Written without a build or a run (rule of the lane); the orchestrator's gate settles it. Needs casement-protocols
+`quire_window_manager_v1` version 2 (branch `lane/cas35-quitevent`, land it first).
+
+- **Wire.** `quire_window_manager_v1` is version 2 and gains the event `quit()`. It sits on the manager (the object an app
+  binds once and may keep for its whole life), not on `quire_window_v1`, because a quit is about the app and an app with no
+  window still has the manager. A client bound at version 1 never gets it. Destroying the manager ends the listening.
+- **Model.** New `Event::QuitListener { client, toggle }` (fed by the wire when a client's first version-2 manager appears and
+  when its last goes), `Model::quit_listeners` (forgotten at disconnect, and a client that is not connected is not
+  recorded), new `Effect::SendQuit { client }`. `quit_app` (Cmd+Q `QuitActive`, `desktop_app.quit`) sends `SendQuit` to every
+  client that serves the app and listens, and `SendClose` only for the windows of clients that do not. So: all listen, no
+  window closes; none listens, today's window-by-window close; a mix does both for their own parts. An app with no window is
+  asked to quit when a client of it listens (the client stays tied to its app after its last window unmaps).
+- **Unchanged.** The app shows as `Quitting(Asked)`, `QuitGrace` is armed for 3 s, and an app still here after it is `Running`
+  again. The app answers by acting (exit, or a sheet and stay); there is no reply request.
+- **Edge.** `casement-wayland` `quire_window`: `VERSION` 2, `QUIT_VERSION`, `QuireWindowPart::quit_managers`,
+  `on_quit_manager_bound` / `on_quit_manager_gone` (feed the event), `apply_quit` (the effect; an error if none is alive);
+  `exec.rs` maps `Effect::SendQuit`. `golden/globals.txt` row is version 2.
+- **Tests.** `model_input.rs`: listening app gets `SendQuit` and no `SendClose` (and the grace still returns it to running);
+  a client that does not listen, a mixed app and a listener that let go keep the close; a windowless app with a listener is
+  asked; a listener that is not connected is ignored. `quire_desktop.rs` (testkit): a version 2 manager receives `quit` and no
+  window closes, a version 1 manager has both windows closed. The test client's `WindowManager` counts `quit` events.
+- **Departure removed.** The "an app with no window cannot be asked to quit" note of cas23 no longer holds for listening apps;
+  an app that never binds version 2 still cannot be asked (nothing to close), and only shows as quitting for the grace.
+- **What the app side needs.** quire / shell-host client hosts bind `quire_window_manager_v1` at `1..=2` (today at 1), keep the
+  manager for the life of the connection, handle `Event::Quit` as "run the app's should-terminate path": save or ask, then
+  exit, or stay (and then do nothing more). An app that does nothing is closed window by window only if it binds version 1;
+  one bound at version 2 that ignores `quit` just returns to running after 3 s, so a host that binds 2 must act on it.

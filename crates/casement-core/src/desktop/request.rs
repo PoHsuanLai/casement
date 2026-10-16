@@ -52,7 +52,8 @@ pub enum AppAsk {
     Unhide,
     /// Hide every other app.
     HideOthers,
-    /// Ask the app to quit (every window is asked to close).
+    /// Ask the app to quit (`quit` to each client that listens for it, every other window is
+    /// asked to close).
     Quit,
     /// End the app's processes (the quit machine, P3).
     ForceQuit,

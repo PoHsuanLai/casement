@@ -156,6 +156,14 @@ pub enum Event {
         /// The client.
         client: ClientKey,
     },
+    /// A client holds (`On`) or no longer holds (`Off`) a `quire_window_manager_v1` bound at
+    /// version 2 or later, so it can be sent `quit` when its app is asked to quit.
+    QuitListener {
+        /// The client.
+        client: ClientKey,
+        /// Whether it listens.
+        toggle: Toggle,
+    },
     /// The settings changed.
     SettingsChanged(Box<CasementSettings>),
     /// A client asked to change an output (`zwlr_output_manager_v1`, `zwlr_output_power_v1`);

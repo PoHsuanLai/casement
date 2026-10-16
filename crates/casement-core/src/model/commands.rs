@@ -10,7 +10,7 @@ use super::moved::Moved;
 use crate::app::{AppKey, AppVisibility};
 use crate::effect::Effect;
 use crate::focus::{FocusIn, Press};
-use crate::ids::WindowId;
+use crate::ids::{ClientKey, WindowId};
 use crate::input::{DesktopCommand, InputTarget, InputUse, Origin, Reach, ReachFacts, reach};
 use crate::lock::LockState;
 use crate::settings::Enabled;
@@ -161,14 +161,21 @@ impl Model {
         })
     }
 
-    /// Every window of the app is asked to close (the polite half of quitting).
-    pub(super) fn close_all_of(self, app: Option<AppKey>) -> Moved {
+    /// Every window of the app is asked to close (the polite half of quitting), except those of
+    /// the `told` clients, which were sent `quit` and close their own windows if they choose.
+    pub(super) fn close_all_of(self, app: Option<AppKey>, told: &[ClientKey]) -> Moved {
         let windows: Vec<WindowId> = app
             .and_then(|app| self.apps.get(&app).map(|record| record.windows.clone()))
             .unwrap_or_default();
-        let closes = windows
+        let closes: Vec<Effect> = windows
             .into_iter()
-            .map(|window| Effect::SendClose { window });
+            .filter(|id| {
+                self.windows
+                    .get(id)
+                    .is_none_or(|window| !told.contains(&window.client))
+            })
+            .map(|window| Effect::SendClose { window })
+            .collect();
         Moved::of(self).with_all(closes)
     }
 }

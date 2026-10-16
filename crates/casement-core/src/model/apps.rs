@@ -95,13 +95,16 @@ impl Model {
             .then(|model| model.redrawn(Cause::Configure, outputs))
     }
 
-    /// The app is asked to quit (Cmd+Q, or the shell): every window is asked to close, and the
-    /// app shows as quitting until it goes or [`QUIT_GRACE`] passes with it still here.
+    /// The app is asked to quit (Cmd+Q, or the shell): each client of it that listens for
+    /// `quit` is told so (it saves or asks, then exits; an app with no window is reached this
+    /// way), and every window of a client that does not listen is asked to close. The app shows
+    /// as quitting until it goes or [`QUIT_GRACE`] passes with it still here.
     pub(super) fn quit_app(self, app: Option<AppKey>) -> Moved {
         let Some(key) = app.filter(|key| self.apps.contains_key(key)) else {
             return Moved::of(self);
         };
         let since = self.now;
+        let listeners = self.quit_listeners_of(&key);
         let mut model = self;
         if let Some(record) = model.apps.get_mut(&key) {
             record.life = asked_to_quit(&record.life, since);
@@ -111,7 +114,22 @@ impl Model {
             key: TimerKey::QuitGrace(key.clone()),
         };
         model.timers = model.timers.arm(grace.clone());
-        model.close_all_of(Some(key)).with(Effect::ArmTimer(grace))
+        let told = listeners.iter().map(|&client| Effect::SendQuit { client });
+        Moved::of(model)
+            .with_all(told)
+            .then(|model| model.close_all_of(Some(key), &listeners))
+            .with(Effect::ArmTimer(grace))
+    }
+
+    /// The connections that serve `app` and hold a manager that hears `quit`.
+    fn quit_listeners_of(&self, app: &AppKey) -> Vec<ClientKey> {
+        self.clients
+            .iter()
+            .filter(|(client, served)| {
+                served.as_ref() == Some(app) && self.quit_listeners.contains(client)
+            })
+            .map(|(client, _)| *client)
+            .collect()
     }
 
     /// The app is force quit: its processes get `SIGTERM` now and `SIGKILL` after

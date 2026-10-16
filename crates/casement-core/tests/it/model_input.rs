@@ -16,7 +16,7 @@ use casement_core::shell::ShellNote;
 use casement_core::time::{Due, TimerKey};
 use casement_core::window::{WindowOrigin, WindowState};
 use casement_core::{CoreNote, Effect, Event, ToplevelRequest, WindowId};
-use casement_protocols::vocab::MacMods;
+use casement_protocols::vocab::{MacMods, Toggle};
 use support::driver::{Op, Run, assert_same_world, last, map, plug, press, request, run, run_from};
 use support::{claimed, proven};
 
@@ -388,6 +388,134 @@ fn quitting_shows_the_app_as_quitting_until_the_grace_ends_with_it_still_here() 
         )))],
     );
     assert_eq!(kept.model.apps()[&mail].life, AppLife::Running);
+}
+
+fn listening(client: u64, toggle: Toggle) -> Op {
+    Op::Event(Event::QuitListener {
+        client: ClientKey(client),
+        toggle,
+    })
+}
+
+fn quit_asked(app: &AppKey) -> Op {
+    Op::Event(Event::Desktop(DesktopRequest::App {
+        app: app.clone(),
+        ask: AppAsk::Quit,
+    }))
+}
+
+fn quits_and_closes(run: &Run) -> (Vec<ClientKey>, Vec<WindowId>) {
+    let quits = last(run)
+        .iter()
+        .filter_map(|e| match e {
+            Effect::SendQuit { client } => Some(*client),
+            _ => None,
+        })
+        .collect();
+    let closes = last(run)
+        .iter()
+        .filter_map(|e| match e {
+            Effect::SendClose { window } => Some(*window),
+            _ => None,
+        })
+        .collect();
+    (quits, closes)
+}
+
+#[test]
+fn an_app_whose_clients_listen_is_sent_quit_and_no_window_is_closed() {
+    let mail = proven("org.quire.Mail");
+    let quit = run_from(
+        two_apps().model,
+        vec![
+            listening(2, Toggle::On),
+            listening(3, Toggle::On),
+            Op::Command(DesktopCommand::QuitActive),
+        ],
+    );
+    assert_eq!(
+        quits_and_closes(&quit),
+        (vec![ClientKey(2), ClientKey(3)], vec![])
+    );
+    assert!(matches!(
+        quit.model.apps()[&mail].life,
+        AppLife::Quitting(QuitPhase::Asked { .. })
+    ));
+    assert!(last(&quit).iter().any(|e| matches!(
+        e,
+        Effect::ArmTimer(Due { key: TimerKey::QuitGrace(app), .. }) if *app == mail
+    )));
+    let kept = run_from(
+        quit.model,
+        vec![Op::Event(Event::TimerFired(TimerKey::QuitGrace(
+            mail.clone(),
+        )))],
+    );
+    assert_eq!(kept.model.apps()[&mail].life, AppLife::Running);
+}
+
+#[test]
+fn a_client_that_does_not_listen_keeps_the_window_by_window_close() {
+    let none = run_from(
+        two_apps().model,
+        vec![Op::Command(DesktopCommand::QuitActive)],
+    );
+    assert_eq!(
+        quits_and_closes(&none),
+        (vec![], vec![WindowId(2), WindowId(3)])
+    );
+    let mixed = run_from(
+        two_apps().model,
+        vec![
+            listening(2, Toggle::On),
+            Op::Command(DesktopCommand::QuitActive),
+        ],
+    );
+    assert_eq!(
+        quits_and_closes(&mixed),
+        (vec![ClientKey(2)], vec![WindowId(3)])
+    );
+    let let_go = run_from(
+        two_apps().model,
+        vec![
+            listening(2, Toggle::On),
+            listening(2, Toggle::Off),
+            Op::Command(DesktopCommand::QuitActive),
+        ],
+    );
+    assert_eq!(
+        quits_and_closes(&let_go),
+        (vec![], vec![WindowId(2), WindowId(3)])
+    );
+}
+
+#[test]
+fn an_app_with_no_window_is_asked_to_quit_when_its_client_listens() {
+    let mail = proven("org.quire.Mail");
+    let windowless = run(vec![
+        plug("HEADLESS-1"),
+        map(1, &mail, TokenCheck::Valid),
+        listening(1, Toggle::On),
+        Op::Event(Event::ToplevelUnmapped {
+            window: WindowId(1),
+        }),
+    ]);
+    assert_eq!(windowless.model.apps()[&mail].life, AppLife::Windowless);
+    let quit = run_from(windowless.model, vec![quit_asked(&mail)]);
+    assert_eq!(quits_and_closes(&quit), (vec![ClientKey(1)], vec![]));
+    assert!(matches!(
+        quit.model.apps()[&mail].life,
+        AppLife::Quitting(QuitPhase::Asked { .. })
+    ));
+}
+
+#[test]
+fn a_listener_that_is_not_connected_is_not_remembered() {
+    let mail = proven("org.quire.Mail");
+    let base = run(vec![plug("HEADLESS-1"), map(1, &mail, TokenCheck::Valid)]);
+    let late = run_from(base.model, vec![listening(9, Toggle::On)]);
+    let quit = run_from(late.model, vec![quit_asked(&mail)]);
+    assert_eq!(quits_and_closes(&quit), (vec![], vec![WindowId(1)]));
 }
 
 fn force_quit(app: &AppKey) -> Op {

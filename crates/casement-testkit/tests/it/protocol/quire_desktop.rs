@@ -14,6 +14,7 @@ use casement_testclient::quire::desktop::{
     PlaceTarget, PlacementMark, Presence, ProofKind, SpaceKind, SpaceRequest, Toggle,
     WindowRequest, WindowStateKind,
 };
+use casement_testclient::quire::window::WindowManager;
 use casement_testclient::surface::toplevel::{Toplevel, WmBase};
 use casement_testkit::{ClientId, Fixture, FixtureSpec};
 use porter_core::{SandboxFacts, SpaceId};
@@ -426,6 +427,28 @@ fn the_shells_requests_reach_the_model() {
     });
     ask(&mut fixture, &mut watch, |w| w.app(0, AppRequest::Reopen));
     assert!(fixture.client(shell).protocol_error().is_none());
+}
+
+/// An app whose client bound `quire_window_manager_v1` at version 2 is sent `quit` and no window
+/// is closed; one bound at version 1 keeps having its windows closed one by one.
+#[test]
+fn quit_goes_to_a_client_that_bound_version_2_and_closes_nothing() {
+    let (mut fixture, public, tops) = mapped(2);
+    let manager = WindowManager::bind(fixture.client(public), 2);
+    let (_shell, mut watch) = watched(&mut fixture, ConnectionRole::Shell);
+    assert_eq!(manager.quit_count(), 0);
+    ask(&mut fixture, &mut watch, |w| w.app(0, AppRequest::Quit));
+    assert_eq!(manager.quit_count(), 1);
+    assert_eq!(tops[0].log.with(|seen| seen.closes), 0);
+    assert_eq!(tops[1].log.with(|seen| seen.closes), 0);
+
+    let (mut fixture, public, tops) = mapped(2);
+    let manager = WindowManager::bind(fixture.client(public), 1);
+    let (_shell, mut watch) = watched(&mut fixture, ConnectionRole::Shell);
+    ask(&mut fixture, &mut watch, |w| w.app(0, AppRequest::Quit));
+    assert_eq!(manager.quit_count(), 0);
+    assert_eq!(tops[0].log.with(|seen| seen.closes), 1);
+    assert_eq!(tops[1].log.with(|seen| seen.closes), 1);
 }
 
 /// A window that closes is told `closed`; a Space that is removed is told `removed`; an app is
