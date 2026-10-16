@@ -5,6 +5,7 @@ mod capture;
 mod debug;
 mod jail;
 mod plan;
+mod privacy;
 mod shot;
 
 use std::path::PathBuf;
@@ -34,6 +35,9 @@ pub enum Command {
     },
     /// `report --kms --input --gpu` (P5; the user's hardware report).
     Report,
+    /// `privacy list | reload`: which program may use which power. It runs anywhere, not only
+    /// in the jail: it is for the person at their own desktop.
+    Privacy(privacy::Privacy),
 }
 
 /// A Debug1 verb.
@@ -119,9 +123,9 @@ pub enum CommandError {
 /// What `args` (without the program name) ask for. A `debug` command's arguments are checked
 /// here, so a typo never reaches the bus.
 pub fn parse(args: &[String]) -> Result<Command, CommandError> {
-    let (name, rest) = args
-        .split_first()
-        .ok_or_else(|| CommandError::BadArgument("no command (debug, shot, report)".to_owned()))?;
+    let (name, rest) = args.split_first().ok_or_else(|| {
+        CommandError::BadArgument("no command (debug, shot, report, privacy)".to_owned())
+    })?;
     match name.as_str() {
         "debug" => {
             let (verb, rest) = rest
@@ -141,6 +145,7 @@ pub fn parse(args: &[String]) -> Result<Command, CommandError> {
                 out,
             })
         }
+        "privacy" => privacy::parse(rest).map(Command::Privacy),
         "report" => match rest
             .iter()
             .find(|flag| !matches!(flag.as_str(), "--kms" | "--input" | "--gpu"))
@@ -173,6 +178,9 @@ fn exit_code(command: Command) -> u8 {
     if let Command::Report = command {
         return not_built("report is the user's hardware report, built in P5");
     }
+    if let Command::Privacy(asked) = command {
+        return privacy::run(asked);
+    }
     if let Some(breach) = jail::breach_here() {
         eprintln!(
             "casementctl: refusing to run outside the jail ({breach}); see ~/desktop/harness/jail.sh"
@@ -202,7 +210,9 @@ fn exit_code(command: Command) -> u8 {
                 },
             }
         }
-        Command::Report => not_built("report is the user's hardware report, built in P5"),
+        Command::Report | Command::Privacy(_) => {
+            not_built("report is the user's hardware report, built in P5")
+        }
     }
 }
 
@@ -248,6 +258,10 @@ mod tests {
                 out: PathBuf::from("out.png"),
             }
         );
+        assert!(matches!(
+            parse(&args("privacy reload")),
+            Ok(Command::Privacy(_))
+        ));
         assert!(matches!(
             parse(&args("debug frobnicate")),
             Err(CommandError::Unknown(_))

@@ -11,9 +11,10 @@
 //! casementctl debug fault panic-after-frames N | stall-client-ms MS | drop-output INDEX
 //! casementctl shot [--output NAME | --window ID | --region X,Y,W,H] [--masked] OUT.png
 //! casementctl report --kms --input --gpu                                              (P5, user only)
+//! casementctl privacy list | reload        which program may use which power; read the administrator's settings again
 //! ```
 //!
-//! Every subcommand but `report` runs only inside the jail (it refuses otherwise, exit 2).
+//! Every subcommand but `report` and `privacy` runs only inside the jail (it refuses otherwise, exit 2).
 
 use casementctl::command;
 
