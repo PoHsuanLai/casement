@@ -2,12 +2,14 @@
 //! `PrepareForSleep` held by inhibitors, the session and seat calls recorded. Everything runs
 //! on a private dbus-daemon; the client side is a second connection to it.
 
+use casement_ipc::sleep::{SleepBus, SleepHandler, SleepWatch};
 use casement_testkit::fakes::{
     FakeLogind, IdleHint, LogindCall, LogindError, PauseKind, PrivateBus, SleepPhase,
 };
 use std::future::poll_fn;
 use std::pin::Pin;
-use std::time::Duration;
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::{Duration, Instant};
 use tokio::runtime::{Builder, Runtime};
 use zbus::export::futures_core::Stream;
 use zbus::message::Type;
@@ -240,4 +242,91 @@ fn session_and_seat_calls_are_recorded_and_device_signals_sent() {
         )
     );
     drop(client);
+}
+
+/// What a sleep watcher told its handler.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Told {
+    Starting,
+    Resumed,
+}
+
+/// A handler that writes down what it is told.
+struct Record(Arc<Mutex<Vec<Told>>>);
+
+impl Record {
+    fn note(&self, told: Told) {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(told);
+    }
+}
+
+impl SleepHandler for Record {
+    fn starting(&mut self) {
+        self.note(Told::Starting);
+    }
+
+    fn resumed(&mut self) {
+        self.note(Told::Resumed);
+    }
+}
+
+/// CASW-03: the bus lets any process send `PrepareForSleep`; only logind's is acted on. A second
+/// connection claims the machine is going to sleep, and the watcher's handler hears nothing of
+/// it, while the real logind's signal that follows is heard.
+#[test]
+fn a_prepare_for_sleep_from_anyone_but_logind_is_not_acted_on() {
+    let bus = PrivateBus::start().expect("bus");
+    let logind = FakeLogind::serve(bus.address()).expect("serve");
+    let told = Arc::new(Mutex::new(Vec::new()));
+    let _watch = SleepWatch::start(
+        SleepBus::At(bus.address().to_owned()),
+        Record(Arc::clone(&told)),
+    )
+    .expect("the watcher subscribes");
+    let rt = runtime();
+    // Connections and streams drop at the end of the test, and dropping one spawns on the runtime.
+    let _in_runtime = rt.enter();
+    let spoofer = rt.block_on(async {
+        let spoofer = connect(bus.address()).await;
+        spoofer
+            .emit_signal(
+                None::<&str>,
+                MANAGER_PATH,
+                MANAGER,
+                "PrepareForSleep",
+                &(true,),
+            )
+            .await
+            .expect("the spoofed signal is sent");
+        // A round trip on the same connection: the bus has handled the signal before this
+        // returns, so it reached the watcher before anything logind sends next.
+        zbus::fdo::DBusProxy::new(&spoofer)
+            .await
+            .expect("the bus proxy")
+            .get_id()
+            .await
+            .expect("the bus answers");
+        spoofer
+    });
+    logind
+        .prepare_for_sleep(SleepPhase::Resumed)
+        .expect("logind's own signal");
+    let deadline = Instant::now() + IN_TIME;
+    while !told
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .contains(&Told::Resumed)
+    {
+        assert!(Instant::now() < deadline, "logind's signal was not heard");
+        std::thread::yield_now();
+    }
+    assert_eq!(
+        *told.lock().unwrap_or_else(PoisonError::into_inner),
+        [Told::Resumed],
+        "the spoofed sleep was not acted on"
+    );
+    drop(spoofer);
 }

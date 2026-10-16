@@ -4194,3 +4194,10 @@ Rows for the findings CASW-02/03/04/07/11/12/13/15/18/19, CASC-02/05/06/07/09/10
   with `--state-home DIR`). Tests: `a_restart_while_locked_comes_back_covered_until_the_shell_locks_again` (fixture, two
   compositors on one marker), `only_the_shells_lock_is_remembered` and `a_restored_lock_covers_until_the_shell_locks_and_unlocks`
   (core), the `FileLockMarker` unit test and the `main` placement test.
+- **CASW-03: `PrepareForSleep` is believed only from logind.** The match rule in `casement-ipc/src/sleep.rs` names the sender
+  `org.freedesktop.login1` (the bus resolves it to the current owner), and every signal that arrives is checked again against
+  `GetNameOwner(org.freedesktop.login1)` before the handler runs (resolved per signal rather than cached, so there is no
+  `NameOwnerChanged` bookkeeping; a signal with no sender or an unresolvable owner is dropped). zbus does not filter on a
+  well-known sender locally (`MatchRule::matches` accepts it), so the second check is what holds if a bus ignored the rule. It
+  is the only match rule in casement. Test: `a_prepare_for_sleep_from_anyone_but_logind_is_not_acted_on` (private bus, a
+  second connection spoofs the signal; fake logind's own signal that follows is heard and the spoofed one is not).

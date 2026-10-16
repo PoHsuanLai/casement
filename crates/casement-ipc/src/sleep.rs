@@ -8,6 +8,11 @@
 //! `PrepareForSleep(false)` it calls [`SleepHandler::resumed`] and takes the inhibitor again. The
 //! compositor names no bus type: the one D-Bus crate is this one (A4).
 //!
+//! Only logind is believed (CASW-03): the system bus lets any process send any signal, so a
+//! `PrepareForSleep` from anyone else would take the displays away from the session. The match
+//! rule names the sender, which the bus resolves to whoever owns `org.freedesktop.login1`, and
+//! each signal is checked again against that owner's unique name before it is acted on.
+//!
 //! ```no_run
 //! use casement_ipc::sleep::{SleepBus, SleepHandler, SleepWatch};
 //!
@@ -27,8 +32,9 @@ use std::time::Duration;
 use tokio::sync::oneshot;
 use zbus::export::futures_core::Stream;
 use zbus::message::Type;
+use zbus::names::BusName;
 use zbus::zvariant::OwnedFd;
-use zbus::{Connection, MatchRule, MessageStream, Proxy};
+use zbus::{Connection, MatchRule, Message, MessageStream, Proxy, fdo};
 
 const LOGIND: &str = "org.freedesktop.login1";
 const MANAGER: &str = "org.freedesktop.login1.Manager";
@@ -155,6 +161,9 @@ fn run(
                 // The bus went away: nothing more will be heard.
                 return;
             };
+            if !from_logind(&connection, &message).await {
+                continue;
+            }
             // A signal whose body is not a boolean is not logind's and is not acted on.
             match message.body().deserialize::<bool>() {
                 Ok(true) => {
@@ -187,12 +196,32 @@ async fn subscribe(bus: &SleepBus) -> zbus::Result<(Connection, Signals)> {
     };
     let rule = MatchRule::builder()
         .msg_type(Type::Signal)
+        .sender(LOGIND)?
         .interface(MANAGER)?
         .member("PrepareForSleep")?
         .path(MANAGER_PATH)?
         .build();
     let stream = MessageStream::for_match_rule(rule, &connection, None).await?;
     Ok((connection, Box::pin(stream)))
+}
+
+/// Whether `message` was sent by logind itself: its sender is the unique name that owns
+/// `org.freedesktop.login1` now. A message with no sender, or one whose owner cannot be
+/// resolved, is not logind's.
+async fn from_logind(connection: &Connection, message: &Message) -> bool {
+    let Some(sender) = message.header().sender().map(|sender| sender.to_string()) else {
+        return false;
+    };
+    let Ok(logind) = BusName::try_from(LOGIND) else {
+        return false;
+    };
+    let Ok(dbus) = fdo::DBusProxy::new(connection).await else {
+        return false;
+    };
+    match dbus.get_name_owner(logind).await {
+        Ok(owner) => owner.as_str() == sender,
+        Err(_) => false,
+    }
 }
 
 /// The delay inhibitor, or none when logind refuses (the sleep then goes on without waiting).
