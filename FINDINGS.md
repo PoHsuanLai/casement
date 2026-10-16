@@ -4338,8 +4338,8 @@ dropped, never waited for.
   directory. Tests: `a_memory_file_is_read_exactly`, `anything_else_is_not_read` (a pipe and a procfs file),
   `a_keyboard_that_sends_keymaps_without_end_is_cut`.
 - **CASW-10:** fixed by pa-cassec's CASC-09 (at least one output stays lit; positions bounded; a client's power change undone when it
-  goes), confirmed by reading `output_requests.rs` and `output::keeps_one_lit`. **Not done (needs a decision):** a timed
-  confirm-or-revert for output changes by non-shell clients.
+  goes), confirmed by reading `output_requests.rs` and `output::keeps_one_lit`. The timed confirm-or-revert for output changes by
+  non-shell clients is built (cas11, the display trial; see the section at the end).
 - **CASW-13 (decided 2026-10-16): the VT-switch chord is honoured only from a kernel keyboard** (`Origin::switches_vt`, true for
   `Origin::Physical` only): a virtual keyboard, a remote session, the agent seat and a feed cannot send the compositor to a
   text console, under a lock or not. keycap's on-screen output therefore cannot switch VT. Test: `only_a_kernel_keyboard_switches_the_vt`
@@ -4462,9 +4462,9 @@ first. The contract it implements is ARCHITECTURE.md "Consent at the wire". The 
     model answers them at once.
 - **Closed (pa2-cgate): the globals smithay serves entirely.** `ext_data_control_manager_v1`, `zwlr_data_control_manager_v1`
   (Clipboard), `zwp_input_method_manager_v2` (TypingHelp) and `ext_foreign_toplevel_list_v1` (Windows) are gated through the
-  fork's `Gate` hooks (smithay rev `6d813694`); see ARCHITECTURE.md "Consent at the wire". Left open there: a power taken back
-  does not end a device, input method or list smithay already registered (no hook in smithay for it); only held objects and
-  later uses are refused.
+  fork's `Gate` hooks (smithay rev `6d813694`); see ARCHITECTURE.md "Consent at the wire". Left open there, closed in cas11: a power
+  taken back did not end a device, input method or list smithay already registered (no hook in smithay for it); the fork's `revoke`
+  methods (rev `005eebf1`) do now.
 - **Deferred / for other lanes.**
   - The composition root fills `ClientState` (`with_standing_under`, `with_image_watch` with the pinned peer's image check),
     `QuireShellPart::wall`, and the privacy store behind `Effect::SaveBook` (`exec.rs` logs it) (croot).
@@ -4662,8 +4662,8 @@ group/world writable; a user-writable program or an interpreter gets Allow Once 
 
 Written without a compile (lane rules); the gate run is the first. Branch `cas10` from `origin/master` 8f0a962, one commit per item.
 
-- **CASW-10 (decided: a display change by anyone but the shell is kept only if the person confirms): NOT built, waits for the shell
-  protocol.** The question needs "Keep these display settings?" with Keep and Revert, and `quire_shell_v1` (version 5) has no event or
+- **CASW-10 (decided: a display change by anyone but the shell is kept only if the person confirms): built in cas11 (this was the
+  state at pa2-cwl2: NOT built, waiting for the shell protocol).** The question needs "Keep these display settings?" with Keep and Revert, and `quire_shell_v1` (version 5) has no event or
   request that fits: `permission_ask` is about a program and a power with Allow and Don't Allow, remembered per program, not a trial of
   a setup with a countdown. A new event and request are an interface ask on `casement-protocols` (a read-only sibling here), below. Nothing was
   written against a protocol that does not exist. What exists today and stays: the refusals in `resolve_change`/`keeps_one_lit` (at least one
@@ -4769,7 +4769,7 @@ Written without a compile (lane rules); the gate run is the first. Branch `cas10
     stands there, and picking Ask on an answered row is the `forget` action as today). Today `standing_of("ask")` is `None`, so detent drops these rows
     and the page shows no switch for a program that has not asked. The `Asking` cell kind ("the compositor lists no row to change") is then only
     for a compositor that lists none.
-- **Revoke ends live objects where smithay allows: it does not allow, so the change is an interface ask.** Read at the fork's `6d813694`
+- **Revoke ends live objects where smithay allows: it did not allow, so the change was an interface ask (landed in the fork and wired in cas11).** Read at the fork's `6d813694`
   (`lane/consent-gates`; the checkout at `~/rs-wt/p0-fork/smithay` is on branch `casement`, so use `git show 6d813694:<path>`). The registries of
   the four objects are private: the data devices live in `SeatData` (`pub(crate)`, seat user data), the input method in `InputMethodHandle.inner`
   (`pub(crate)` field; public methods are `has_instance` and `keyboard_grabbed` only), the lists in `ForeignToplevelListState.list_instances` (private).
@@ -4929,4 +4929,50 @@ Written without a compile (lane rules); the gate run is the first. Branch `cas10
   - `Page::Privacy` is a unit variant usable in a `const` (as `Page::Apps` was).
   - The ignored tests compile (they use only helpers the neighbouring tests use) but their behaviour is unproven: that `decided(Allow)` before the bind
     makes the first use `Allowed` in the ledger so the later `Deny` really is a `Revoked` outcome.
+
+## cas11: the display trial built, revoke wired (CASW-10, CASW-01 follow-ups; 2026-10-17)
+
+Written without a compile (lane rules); the gate run is the first. Branch `cas11` from `origin/master` 5cbb0da, one commit per item. Pins:
+smithay moves to the fork's `005eebf1` (branch `lane/revoke`: `revoke` on both data-control states, the input method handle and the
+foreign toplevel list state); `casement-protocols` is a path dependency (no rev to move) and its sibling stands at `8cebc9b`
+(`quire_shell_v1` version 6). casement serves `quire_shell_v1` at version 6. The lock files are the orchestrator's.
+
+- **`answered_too_soon` is the generated `quire_shell_v1::Error::AnsweredTooSoon`;** the hand-written `ANSWERED_TOO_SOON = 4` is gone (the
+  deviation recorded at pa2-cwl2 is closed). `displays_trial_answer` follows the same 500 ms rule (`ANSWER_NOT_BEFORE`), measured from the
+  trial's first send: a further change restarts the time and sends the question again but keeps the stamp, so a person who pressed a key
+  on a sheet that was already up just before it restarted is not cut.
+- **CASW-10, built as designed in pa2-cwl2** (ARCHITECTURE.md "Displays a program changed"). Where it differs from the pa2-cwl2 design:
+  - `output::Requester` has a third variant, `Restore`. `zwlr_output_power`'s `on_released` (a control goes, the output it darkened is lit
+    again) used to be an ordinary request; as `Shell` it would have settled a program's open trial as kept, as `Program` it would have
+    started a trial for lighting a display. `Restore` is applied, never asked, and leaves a trial alone.
+  - The late-binding replay is the wire part's (`QuireShellPart::trial`, `quire/shell_trial.rs`), not the model's `ShellReady`: only the new
+    object is told, with `ends - now` rounded up to whole seconds, and not at all when none is left.
+  - A trial is opened per `OutputRequested` event, so an `apply` of a configuration that changes two heads sends the shell `displays_trial`
+    twice with the same id (the second restarts the time); the shell treats an id it shows as the same question.
+  - **Needs a decision.** Every power change by a program is a trial, as decided in pa2-cwl2, which includes an idle daemon turning a display
+    off (`zwlr_output_power`). Built that way, an idle blank is reverted when the 15 s run out unless the person presses Keep, which defeats
+    idle blanking (the display lights again by itself, and with one display the sheet is on the very screen that went dark). The change
+    that would fix it is "a power change is not a trial" (or "Off by a program is a trial only while another display stays lit"): one
+    arm in `Model::display_changed`. Not changed here because the decision text says power is a change like any other.
+  - The model is told nothing about a shell being able to carry the question; a shell older than 6, or none, simply never answers and
+    the timer reverts.
+  - A locked session: the trial still runs and the previous setup comes back at the timer (the shell's sheet is not shown under the lock).
+- **Revoke wiring.** See ARCHITECTURE.md "Consent at the wire". The `Ledger` now also knows the `ClientId` of every client casement inserted
+  (`Ledger::connection`, written in `ClientData::initialized`, forgotten with the client), because `parked` only has clients that waited. The
+  held-connections count of the tests is unchanged (`parked` is untouched). Input methods still on hold are refused by the existing
+  `release(.., Gate::Refuse)` that `settle_served` runs for every outcome before the `revoke`. The three ignored tests are real and
+  `a_manager_the_person_switches_off_is_finished` has a wlr twin; both clipboard tests also check that a copy made afterwards does not
+  reach the manager.
+- **Not verified by reading (the gate run looks here).**
+  - `ClientData::initialized` is called by wayland-backend with the new `ClientId` during `insert_client`, after the data is in place (the
+    root builds `ClientState::with_gone(mint.gone_queue())` before inserting), so the ledger has the connection before any request.
+  - `quire_shell_v1::Request::DisplaysTrialAnswer { trial: u32, answer: WEnum<TrialAnswer> }` and `QuireShellV1::displays_trial(u32, u32)` /
+    `displays_trial_end(u32)` are named as wayland-scanner names them from the XML at `8cebc9b`; the client side takes the enum itself
+    (`displays_trial_answer(trial, wire::TrialAnswer)`), like `permission_answer`.
+  - In the tests, `fixture.advance(d)` fires a timer due exactly at `d` or earlier (the revert tests step past it by a second to stay
+    off the edge), and a second `ConnectionRole::Shell` connection (`the_shells_own_change_is_applied_and_not_asked`) is allowed by the fixture.
+  - `InputMethodHandle::revoke` takes `&self` and `&mut State`; the handle is cloned out of the seat first. Its popup dismissal calls back
+    into `InputMethodHandler::dismiss_popup` (ours) while the state is borrowed by the caller only through that `&mut`.
+  - Existing tests that darken a display or change a mode through a public client now open a trial; none advances the virtual clock by
+    15 s or more, so none should see a revert (`output_management.rs` and `output_power.rs` advance 100 ms at most).
 
