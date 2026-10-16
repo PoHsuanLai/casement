@@ -241,7 +241,8 @@ How the protocol layer carries the contract above (wave 2: `pa2-cwl`).
   smithay at its next hold, and its parked connection is forgotten with its ledger rows. None of the refusal events is a
   destructor, so none needs `consent::finish_later` (the pa2-cwl lesson is about `finished` on the workspace and window-list
   managers, which are destructors). A power taken back (`Revoked`) ends what smithay already registered for the client: `settle_served`
-  looks the connection up in the `Ledger` (`Ledger::connection`, written when the client is inserted, `ClientData::initialized`, and
+  looks the connection up in the `Ledger` (`Ledger::connection`, written by `clients::insert_client` right after the insert (the system
+  libwayland backend never calls `ClientData::initialized`), and
   forgotten with the client's rows; a client allowed at once was never parked, so `parked` is not enough), then, after the `release`
   with `Gate::Refuse` that settles what was held, `end_served` calls the fork's `revoke`: `DataControlState::revoke::<State>(&id)` on
   both clipboard managers (every device of the client is taken off its seat and sent `finished`), `InputMethodHandle::revoke::<State>(&mut

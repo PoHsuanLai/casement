@@ -4959,14 +4959,14 @@ foreign toplevel list state); `casement-protocols` is a path dependency (no rev 
     the timer reverts.
   - A locked session: the trial still runs and the previous setup comes back at the timer (the shell's sheet is not shown under the lock).
 - **Revoke wiring.** See ARCHITECTURE.md "Consent at the wire". The `Ledger` now also knows the `ClientId` of every client casement inserted
-  (`Ledger::connection`, written in `ClientData::initialized`, forgotten with the client), because `parked` only has clients that waited. The
+  (`Ledger::connection`, written by `clients::insert_client` after the insert, forgotten with the client), because `parked` only has clients that waited. The
   held-connections count of the tests is unchanged (`parked` is untouched). Input methods still on hold are refused by the existing
   `release(.., Gate::Refuse)` that `settle_served` runs for every outcome before the `revoke`. The three ignored tests are real and
   `a_manager_the_person_switches_off_is_finished` has a wlr twin; both clipboard tests also check that a copy made afterwards does not
   reach the manager.
 - **Not verified by reading (the gate run looks here).**
-  - `ClientData::initialized` is called by wayland-backend with the new `ClientId` during `insert_client`, after the data is in place (the
-    root builds `ClientState::with_gone(mint.gone_queue())` before inserting), so the ledger has the connection before any request.
+  - Found at the gate: `ClientData::initialized` is never called, because casement's wayland-backend has `server_system` (the C
+    libwayland server), which calls only `disconnected`. The connection is recorded by `clients::insert_client` instead.
   - `quire_shell_v1::Request::DisplaysTrialAnswer { trial: u32, answer: WEnum<TrialAnswer> }` and `QuireShellV1::displays_trial(u32, u32)` /
     `displays_trial_end(u32)` are named as wayland-scanner names them from the XML at `8cebc9b`; the client side takes the enum itself
     (`displays_trial_answer(trial, wire::TrialAnswer)`), like `permission_answer`.

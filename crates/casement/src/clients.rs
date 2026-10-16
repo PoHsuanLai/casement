@@ -67,6 +67,8 @@ pub fn insert_client(
         ),
     };
     let client = state.display.insert_client(stream, Arc::new(data))?;
+    // Recorded here, not in `ClientData::initialized`: the system libwayland backend never calls it.
+    state.wl.clients.ledger().connected(key, client.id());
     let connected = Event::ClientConnected {
         client: key,
         peer,
