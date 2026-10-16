@@ -9,7 +9,7 @@ use casement_testkit::fakes::{
 use std::future::poll_fn;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio::runtime::{Builder, Runtime};
 use zbus::export::futures_core::Stream;
 use zbus::message::Type;
@@ -314,15 +314,19 @@ fn a_prepare_for_sleep_from_anyone_but_logind_is_not_acted_on() {
     logind
         .prepare_for_sleep(SleepPhase::Resumed)
         .expect("logind's own signal");
-    let deadline = Instant::now() + IN_TIME;
-    while !told
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .contains(&Told::Resumed)
-    {
-        assert!(Instant::now() < deadline, "logind's signal was not heard");
-        std::thread::yield_now();
-    }
+    // Counted waits, not the clock: only casement/src/time/ reads one (boundary B8).
+    const STEP: Duration = Duration::from_millis(10);
+    let heard = (0..IN_TIME.as_millis() / STEP.as_millis()).any(|_| {
+        let heard = told
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .contains(&Told::Resumed);
+        if !heard {
+            std::thread::sleep(STEP);
+        }
+        heard
+    });
+    assert!(heard, "logind's signal was not heard");
     assert_eq!(
         *told.lock().unwrap_or_else(PoisonError::into_inner),
         [Told::Resumed],
