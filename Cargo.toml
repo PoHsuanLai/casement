@@ -68,7 +68,7 @@ ds-helpers = { path = "../quire/crates/ds-helpers", default-features = false }
 # reads its shell bindings from them (`casement::keymap`). The revs are the ones sill, quire and
 # cua pin.
 chordkit      = { git = "https://github.com/PoHsuanLai/chordkit.git", rev = "934a2d71f6516bee5919ee29278003702a4ea5e1" }
-keycap-client = { git = "https://github.com/PoHsuanLai/keycap", rev = "b45d4c22ec22be1117ce451dcc0b4a1f63764515" }
+keycap-client = { git = "https://github.com/PoHsuanLai/keycap", rev = "be632d80546928860197eaae8ef4e350641b08f5" }
 # Which program is calling (caller identity): the bus adapter (casement-ipc checks every
 # `org.quire.Compositor1` call with it, on casement's tokio runtime) and the pure vocabulary
 # (casement-agent names the roles). The desktop's role names; the `fake` seams are a dev
