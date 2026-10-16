@@ -237,13 +237,34 @@ fn draw_of_slot(slot: &Slot, edge: u32, plate_ink: [u8; 4]) -> Option<TitleDraw>
     })
 }
 
+/// The largest edge, in buffer pixels, of an icon buffer that is read: Mission Control draws an
+/// icon a hundred pixels across at most, even at a high scale. A larger buffer is not read at
+/// all (a client could hand over a window-sized one for every icon of every window).
+const ICON_EDGE_LIMIT: u32 = 512;
+
+/// The most buffers read for one window's icon.
+const ICON_BUFFER_LIMIT: usize = 8;
+
+/// Which of the icon buffers with these `edges` are read: the first [`ICON_BUFFER_LIMIT`] that are
+/// no larger than [`ICON_EDGE_LIMIT`], as positions.
+fn admissible(edges: &[u32]) -> Vec<usize> {
+    edges
+        .iter()
+        .enumerate()
+        .filter(|(_, edge)| **edge <= ICON_EDGE_LIMIT)
+        .map(|(at, _)| at)
+        .take(ICON_BUFFER_LIMIT)
+        .collect()
+}
+
 /// What to find for a window with this `app_id` and the icon its toplevel set (if it did): the
 /// toplevel's buffers are read out of shared memory here, once, when the overview opens.
 pub fn want_of(app_id: &str, set: Option<IconParts>) -> Want {
     let (name, buffers) = set.map_or((None, Vec::new()), |parts| {
-        let buffers = parts
-            .buffers
-            .iter()
+        let edges: Vec<u32> = parts.buffers.iter().map(|held| held.edge).collect();
+        let buffers = admissible(&edges)
+            .into_iter()
+            .filter_map(|at| parts.buffers.get(at))
             .filter_map(|held| ArgbImage::from_shm(&held.buffer).ok())
             .filter(|image| image.size.w == image.size.h)
             .filter_map(|image| RgbaBuffer::from_argb(image.size.w, &image.argb))
@@ -264,6 +285,13 @@ mod tests {
 
     fn icon() -> LogicalRect {
         LogicalRect::new(LogicalPoint { x: 0, y: 0 }, LogicalSize { w: 64, h: 64 })
+    }
+
+    #[test]
+    fn only_small_icon_buffers_are_read_and_only_a_few() {
+        assert_eq!(admissible(&[16, 512, 513, 64]), [0, 1, 3]);
+        assert_eq!(admissible(&[4096]), Vec::<usize>::new());
+        assert_eq!(admissible(&[32; 20]), [0, 1, 2, 3, 4, 5, 6, 7]);
     }
 
     #[test]
