@@ -13,10 +13,12 @@ use super::code_of;
 use super::shell::QuireShellPart;
 use casement_core::Event;
 use casement_core::privilege::{AskSubject, UnixSeconds};
+use casement_core::time::Mono;
 use casement_protocols::server::quire_shell_v1::quire_shell_v1::{self, QuireShellV1};
 use casement_protocols::vocab::{Answer, AskId, Memory, Power, WireCode};
 use smithay::reexports::wayland_server::{Resource, WEnum};
 use std::fmt::Debug;
+use std::time::Duration;
 
 /// The first version of `quire_shell_v1` that carries the question.
 pub const SINCE: u32 = 5;
@@ -24,6 +26,24 @@ pub const SINCE: u32 = 5;
 /// The most questions the part remembers having sent: the model keeps four open at once
 /// ([`OPEN_ASKS`](casement_core::privilege::OPEN_ASKS)); the bound is only a guard.
 const MAX_SENT: usize = 16;
+
+/// The least time between a question being sent and its answer arriving. The shell's sheet is
+/// disarmed for longer (sill's `PERMISSION_ARM_AFTER`, 600 ms) so a key held down or a click
+/// that was meant for the window behind cannot answer it; an answer faster than this did not
+/// come from a person looking at the sheet, so the shell connection that sent it is cut (the
+/// margin under the sheet's delay is for scheduling and the wire).
+pub const ANSWER_NOT_BEFORE: Duration = Duration::from_millis(500);
+
+/// The code `quire_shell_v1` posts when an answer comes sooner than [`ANSWER_NOT_BEFORE`]. It is
+/// the `answered_too_soon` entry of the protocol's `error` enum that `casement-protocols` has
+/// yet to carry (interface ask in FINDINGS); the value follows the four entries it has.
+pub const ANSWERED_TOO_SOON: u32 = 4;
+
+/// An answer that came sooner than the sheet could have been read: the shell connection that
+/// sent it is at fault.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("the answer came before the question could have been read")]
+pub struct AnsweredTooSoon;
 
 /// What the root knows of the date, in whole seconds: the stamp on an answer that is kept. Core
 /// reads no clock; the root replaces the part's [`UnknownWall`] with a real one.
@@ -49,6 +69,10 @@ pub struct SentAsk {
     power: Power,
     subject: AskSubject,
     memory: Memory,
+    /// When the question was first sent (the loop's clock). A shell that binds later and is
+    /// shown the question again does not move it: the delay protects a sheet that was
+    /// already on screen.
+    sent_at: Mono,
 }
 
 /// Sends `sent` to `shell`, when the object is new enough to carry it.
@@ -79,12 +103,14 @@ pub fn apply_ask(
     power: Power,
     subject: &AskSubject,
     memory: Memory,
+    now: Mono,
 ) {
     let sent = SentAsk {
         ask,
         power,
         subject: subject.clone(),
         memory,
+        sent_at: now,
     };
     part.bound.iter().for_each(|shell| send(shell, &sent));
     part.asks.retain(|old| old.ask != ask);
@@ -104,25 +130,31 @@ pub fn apply_withdraw(part: &mut QuireShellPart, ask: AskId) {
     }
 }
 
-/// `permission_answer`: the person's word on `ask`. An answer for a question the part has not
-/// sent or has settled, and one with a code the XML does not name, changes nothing.
+/// `permission_answer`: the person's word on `ask`, heard at `now`. An answer for a question
+/// the part has not sent or has settled, and one with a code the XML does not name, changes
+/// nothing; one that comes less than [`ANSWER_NOT_BEFORE`] after the question was sent is the
+/// shell's fault (`AnsweredTooSoon`) and settles nothing: the question stays open.
 pub fn on_answer(
     part: &mut QuireShellPart,
     ask: u32,
     answer: WEnum<quire_shell_v1::Answer>,
-) -> Vec<Event> {
+    now: Mono,
+) -> Result<Vec<Event>, AnsweredTooSoon> {
     let Some(at) = part.asks.iter().position(|sent| sent.ask.get() == ask) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
+    if now.since(part.asks[at].sent_at) < ANSWER_NOT_BEFORE {
+        return Err(AnsweredTooSoon);
+    }
     let Some(answer) = code_of(answer).and_then(|code| Answer::from_code(code).ok()) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let sent = part.asks.remove(at);
-    vec![Event::PermissionAnswered {
+    Ok(vec![Event::PermissionAnswered {
         ask: sent.ask,
         answer,
         at: part.wall.now(),
-    }]
+    }])
 }
 
 /// A shell object bound: it is shown the questions still open, and when it is the first that

@@ -90,7 +90,8 @@ pub(crate) fn ask(
     subject: &AskSubject,
     memory: Memory,
 ) {
-    shell_permission::apply_ask(&mut state.wl.quire_shell, ask, power, subject, memory);
+    let now = state.clock.now();
+    shell_permission::apply_ask(&mut state.wl.quire_shell, ask, power, subject, memory, now);
 }
 
 /// `Effect::WithdrawAsk`: the question is taken back from the shell.

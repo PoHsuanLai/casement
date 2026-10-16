@@ -3,6 +3,7 @@
 
 use crate::core_loop;
 use crate::state::State;
+use casement_core::time::Mono;
 use casement_core::{Event, LayerKey, OutputKey, WindowId};
 use casement_wayland::quire::shell::{QuireShellHandler, QuireShellPart};
 use smithay::output::Output;
@@ -13,6 +14,10 @@ use smithay::reexports::wayland_server::{Client, Resource};
 impl QuireShellHandler for State {
     fn quire_shell_part(&mut self) -> &mut QuireShellPart {
         &mut self.wl.quire_shell
+    }
+
+    fn quire_shell_now(&self) -> Mono {
+        self.clock.now()
     }
 
     fn quire_shell_events(&mut self, events: Vec<Event>) {

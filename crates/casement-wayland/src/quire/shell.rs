@@ -18,6 +18,7 @@ use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::overview_drag::SpaceTargets;
 use casement_core::policy::GlobalKind;
 use casement_core::shell::{ShellNote, ShellRequest};
+use casement_core::time::Mono;
 use casement_core::window::MenuEntry;
 use casement_core::{Event, LayerKey, OutputKey, WindowId};
 use casement_protocols::server::quire_shell_v1::quire_shell_v1::{self, QuireShellV1};
@@ -106,6 +107,8 @@ impl QuireShellPart {
 pub trait QuireShellHandler: ImageCaptureSourceHandler + 'static {
     /// The part.
     fn quire_shell_part(&mut self) -> &mut QuireShellPart;
+    /// Now on the loop's clock (the seam: the wire reads no clock of its own).
+    fn quire_shell_now(&self) -> Mono;
     /// Feeds the events a request produced into the model (`core_loop::feed`).
     fn quire_shell_events(&mut self, events: Vec<Event>);
     /// The layer surface `surface` is, when it is a live one of `client`.
@@ -249,8 +252,13 @@ where
                 ));
             }
             quire_shell_v1::Request::PermissionAnswer { ask, answer } => {
-                let events = shell_permission::on_answer(state.quire_shell_part(), ask, answer);
-                state.quire_shell_events(events);
+                let now = state.quire_shell_now();
+                match shell_permission::on_answer(state.quire_shell_part(), ask, answer, now) {
+                    Ok(events) => state.quire_shell_events(events),
+                    Err(fault) => {
+                        resource.post_error(shell_permission::ANSWERED_TOO_SOON, fault.to_string())
+                    }
+                }
             }
             // The switcher and show-desktop requests arrive with P3-Z; the version 2 requests
             // are `shell_space`'s, which ignores the rest.

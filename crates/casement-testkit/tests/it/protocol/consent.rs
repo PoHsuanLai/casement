@@ -18,6 +18,7 @@ use casement_testclient::ClientState;
 use casement_testclient::ime::virtual_keyboard::VirtualBoard;
 use casement_testclient::quire::shell::ShellHandle;
 use casement_testkit::{ASKED_PROGRAM, ClientId, Fixture, FixtureSpec, program_standing};
+use casement_wayland::quire::shell_permission::{ANSWER_NOT_BEFORE, ANSWERED_TOO_SOON};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 use wayland_client::{Connection, QueueHandle, WEnum};
@@ -137,8 +138,15 @@ impl ScriptedShell {
         asked[0].ask
     }
 
-    /// Answers question `ask` and lets the compositor act on it.
+    /// Answers question `ask` as a person would, after the sheet's delay, and lets the
+    /// compositor act on it.
     pub(super) fn answer(&self, fixture: &mut Fixture, ask: u32, answer: Answer) {
+        fixture.advance(ANSWER_NOT_BEFORE);
+        self.answer_at_once(fixture, ask, answer);
+    }
+
+    /// Answers question `ask` at the instant it is, with no wait.
+    pub(super) fn answer_at_once(&self, fixture: &mut Fixture, ask: u32, answer: Answer) {
         let wire = wire::Answer::try_from(answer.code()).expect("an answer on the wire");
         self.object.permission_answer(ask, wire);
         fixture.pump();
@@ -265,6 +273,49 @@ fn an_answer_for_an_unknown_or_settled_question_is_ignored() {
         Some(Verdict::Deny)
     );
     assert!(fixture.client(shell.id).protocol_error().is_none());
+}
+
+/// An answer that comes sooner than a person could have read the sheet is a protocol error for
+/// the shell's connection only: the question stays open, the program's connection is untouched,
+/// and the same answer a moment later after the delay is taken (the fixed clock is moved by
+/// exactly the margin, so the edge is tested on both sides).
+#[test]
+fn an_answer_that_comes_too_soon_cuts_the_shell_only() {
+    let (mut fixture, shell, client) = asked_world();
+    let _board = use_keys(&mut fixture, client);
+    let ask = shell.only_ask();
+    fixture.advance(ANSWER_NOT_BEFORE - Duration::from_millis(1));
+    shell.answer_at_once(&mut fixture, ask, Answer::Allow);
+    let error = fixture.client(shell.id).protocol_error().expect("too soon");
+    assert_eq!(error.interface, "quire_shell_v1");
+    assert_eq!(error.code, ANSWERED_TOO_SOON);
+    assert_eq!(kept(&fixture, ASKED_PROGRAM, Power::Keys), None);
+    assert!(fixture.client(client).protocol_error().is_none());
+    assert_eq!(fixture.model().privilege().asks().len(), 1, "still open");
+
+    // The next shell is shown the open question and answers it after the delay.
+    let next = ScriptedShell::start(&mut fixture);
+    assert_eq!(next.asked().len(), 1);
+    next.answer(&mut fixture, next.only_ask(), Answer::Allow);
+    assert_eq!(
+        kept(&fixture, ASKED_PROGRAM, Power::Keys),
+        Some(Verdict::Allow)
+    );
+}
+
+/// An answer exactly at the margin is taken.
+#[test]
+fn an_answer_at_the_margin_is_taken() {
+    let (mut fixture, shell, client) = asked_world();
+    let _board = use_keys(&mut fixture, client);
+    let ask = shell.only_ask();
+    fixture.advance(ANSWER_NOT_BEFORE);
+    shell.answer_at_once(&mut fixture, ask, Answer::Deny);
+    assert!(fixture.client(shell.id).protocol_error().is_none());
+    assert_eq!(
+        kept(&fixture, ASKED_PROGRAM, Power::Keys),
+        Some(Verdict::Deny)
+    );
 }
 
 /// A shell that binds after a program asked is shown the question then.
