@@ -88,9 +88,9 @@ fn a_keyboard_that_sends_keymaps_without_end_is_cut() {
     );
     board.keymap(KEYMAP).expect("keymap");
     fixture.pump();
-    let error = fixture
-        .client(id)
-        .protocol_error()
-        .expect("the client past the cap is cut");
-    assert_eq!((error.interface.as_str(), error.code), ("wl_display", 2));
+    // The cut closes the connection (the system backend sends no error first).
+    assert!(
+        !fixture.client(id).is_connected(),
+        "the client past the cap is cut"
+    );
 }

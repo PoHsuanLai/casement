@@ -120,9 +120,9 @@ fn a_client_that_exports_without_end_is_cut() {
     );
     made.push(foreign.export(fixture.client(owner), &parent));
     fixture.pump();
-    let error = fixture
-        .client(owner)
-        .protocol_error()
-        .expect("the client past the cap is cut");
-    assert_eq!((error.interface.as_str(), error.code), ("wl_display", 2));
+    // The cut closes the connection (the system backend sends no error first).
+    assert!(
+        !fixture.client(owner).is_connected(),
+        "the client past the cap is cut"
+    );
 }

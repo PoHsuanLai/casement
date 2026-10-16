@@ -44,6 +44,8 @@ pub fn attach_display(
                     Ok(n) => dispatched.set(dispatched.get().saturating_add(n as u64)),
                     Err(error) => tracing::warn!(%error, "dispatching clients failed"),
                 }
+                // A client that went over a cap during that dispatch is cut now, outside it.
+                casement_wayland::limits::cut_queued(&display.borrow().handle());
                 color_management::send_unsent(state.color_part());
                 Ok(PostAction::Continue)
             },

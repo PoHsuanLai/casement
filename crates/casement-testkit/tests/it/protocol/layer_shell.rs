@@ -14,7 +14,7 @@ use casement_testclient::surface::toplevel::{State, WmBase};
 use casement_testclient::{Pattern, TestClient, shm_buffer};
 use casement_testkit::{ClientId, Fixture, FixtureSpec, FrameCount, ShotTarget, TestOrigin};
 
-use crate::protocol::xdg_shell::{map_toplevel, settle, windows};
+use crate::protocol::xdg_shell::{make_key, map_toplevel, settle, windows};
 
 /// The evdev code of the left shift key.
 const KEY_LEFTSHIFT: KeyCode = KeyCode(42);
@@ -411,6 +411,8 @@ fn a_full_screen_window_covers_the_whole_output_with_a_bar_mapped() {
         size: (0, 28),
     };
     let _bar = map(&mut fixture, shell, &bar);
+    let window_id = windows(&fixture)[0];
+    make_key(&mut fixture, window_id);
     window.set_fullscreen();
     fixture.pump();
     assert!(window.ack_latest().is_some());
@@ -542,9 +544,9 @@ fn a_client_that_makes_layer_surfaces_without_end_is_cut() {
     );
     made.push(LayerSurface::create(fixture.client(id), &wallpaper()).expect("a layer"));
     fixture.pump();
-    let error = fixture
-        .client(id)
-        .protocol_error()
-        .expect("the client past the cap is cut");
-    assert_eq!((error.interface.as_str(), error.code), ("wl_display", 2));
+    // The cut closes the connection (the system backend sends no error first).
+    assert!(
+        !fixture.client(id).is_connected(),
+        "the client past the cap is cut"
+    );
 }

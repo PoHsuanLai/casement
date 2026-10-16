@@ -138,6 +138,21 @@ pub(crate) fn click_at(fixture: &mut Fixture, device: DeviceId, at: LogicalPoint
         .button(device, ButtonCode(0x110), Edge::Release);
 }
 
+/// Makes `window` the key window the way a person does: a click on it (a window mapped without a
+/// launch token is not key, and only the key window may ask for full screen).
+pub(crate) fn make_key(fixture: &mut Fixture, window: WindowId) {
+    let device = pointer(fixture);
+    settle(fixture);
+    let at = corner_of(fixture, window, Corner::TopLeft);
+    click_at(fixture, device, at);
+    fixture.pump();
+    assert_eq!(
+        fixture.model().focus().key,
+        Some(window),
+        "the click made it key"
+    );
+}
+
 /// A point of `window` that a window cascaded one step down and right of it does not cover (its
 /// top-left corner, inset), and its mirror: a point of the cascaded window that the first does
 /// not cover once it is raised (its bottom-right corner, inset).
@@ -660,11 +675,11 @@ fn a_client_that_makes_toplevels_without_end_is_cut() {
     );
     made.push(base.toplevel(fixture.client(id)));
     fixture.pump();
-    let error = fixture
-        .client(id)
-        .protocol_error()
-        .expect("the client past the cap is cut");
-    assert_eq!((error.interface.as_str(), error.code), ("wl_display", 2));
+    // The cut closes the connection (the system backend sends no error first).
+    assert!(
+        !fixture.client(id).is_connected(),
+        "the client past the cap is cut"
+    );
     let other = fixture.connect(ConnectionRole::Public);
     fixture.pump();
     assert!(fixture.client(other).protocol_error().is_none());

@@ -391,7 +391,7 @@ fn a_client_with_copies_piled_up_is_cut() {
         copy.copy(offer, CopyKind::WithDamage).expect("a copy");
         fixture.pump();
         piled.push(copy);
-        if fixture.client(client).protocol_error().is_some() {
+        if !fixture.client(client).is_connected() {
             break;
         }
     }
@@ -400,9 +400,9 @@ fn a_client_with_copies_piled_up_is_cut() {
         "the cut came only past the cap, after {} copies",
         piled.len()
     );
-    let error = fixture
-        .client(client)
-        .protocol_error()
-        .expect("the client with copies piled up is cut");
-    assert_eq!((error.interface.as_str(), error.code), ("wl_display", 2));
+    // The cut closes the connection (the system backend sends no error first).
+    assert!(
+        !fixture.client(client).is_connected(),
+        "the client with copies piled up is cut"
+    );
 }

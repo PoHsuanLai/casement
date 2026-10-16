@@ -181,7 +181,7 @@ fn an_attach_offset_at_version_five_is_a_protocol_error() {
 mod outputs_of_a_surface {
     //! `wl_surface.enter` and `leave`: a surface is on the outputs its drawn rectangle touches.
 
-    use super::super::xdg_shell::{map_toplevel, settle};
+    use super::super::xdg_shell::{make_key, map_toplevel, settle, windows};
     use casement_core::OutputName;
     use casement_core::geometry::PhysicalSize;
     use casement_core::policy::ConnectionRole;
@@ -272,6 +272,8 @@ mod outputs_of_a_surface {
         let (mut fixture, id, bound) = boot();
         let base = WmBase::bind(fixture.client(id), 7);
         let top = map_toplevel(&mut fixture, id, &base, (400, 300));
+        let window_id = windows(&fixture)[0];
+        make_key(&mut fixture, window_id);
         settle(&mut fixture);
         let second = output_named(&mut fixture, id, &bound, "HEADLESS-2")
             .output
@@ -306,6 +308,8 @@ mod outputs_of_a_surface {
         let (mut fixture, id, bound) = boot();
         let base = WmBase::bind(fixture.client(id), 7);
         let top = map_toplevel(&mut fixture, id, &base, (400, 300));
+        let window_id = windows(&fixture)[0];
+        make_key(&mut fixture, window_id);
         let second = output_named(&mut fixture, id, &bound, "HEADLESS-2")
             .output
             .clone();
@@ -364,6 +368,8 @@ mod outputs_of_a_surface {
         let (mut fixture, id, bound) = boot();
         let base = WmBase::bind(fixture.client(id), 7);
         let parent = map_toplevel(&mut fixture, id, &base, (400, 300));
+        let window_id = windows(&fixture)[0];
+        make_key(&mut fixture, window_id);
         let surface = fixture.client(id).create_surface().expect("a surface");
         let popup = Popup::of(
             fixture.client(id),

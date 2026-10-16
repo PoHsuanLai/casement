@@ -1,15 +1,29 @@
 //! What one client may hold at once (CASC-03, CASW-06). The loop is single-threaded, so a peer
 //! that makes objects without end stalls the whole session; each kind of object has a cap, and a
-//! client that asks for one past it is cut with a protocol error (`wl_display.no_memory`, the
-//! error the protocol has for a server that cannot take more), never allowed to wedge us.
+//! client that asks for one past it is cut (its connection closed, with a log line naming the
+//! cap), never allowed to wedge us. The system backend's kill sends no `wl_display` error, and
+//! reaching the client's `wl_display` resource to post `no_memory` would need `unsafe`; the log
+//! line is where the reason lives.
 //!
 //! The caps are generous: a person's real clients are an order of magnitude under them. Each
 //! call site counts what the client holds from the collection it already keeps, asks
 //! [`Limit::judge`], and calls [`cut`] on [`Standing::Over`]. This module is the numbers and the
 //! cut; the counting stays with the code that owns the objects.
+//!
+//! A cut is queued, never done inside the request that went over: killing a client from its own
+//! request handler frees the object libwayland is still dispatching (a use after free in the
+//! system backend). The composition root calls [`cut_queued`] right after each dispatch.
+
+use std::cell::RefCell;
 
 use smithay::reexports::wayland_server::backend::protocol::ProtocolError;
 use smithay::reexports::wayland_server::{Client, DisplayHandle};
+
+thread_local! {
+    /// Clients that went over a cap during the dispatch in progress, with the cap: the loop and
+    /// its dispatch run on one thread, so the queue is that thread's.
+    static QUEUED: RefCell<Vec<(Client, Limit)>> = const { RefCell::new(Vec::new()) };
+}
 
 /// `wl_display.error.no_memory`: the protocol's error for a server that cannot take more.
 const WL_DISPLAY_NO_MEMORY: u32 = 2;
@@ -116,26 +130,47 @@ impl Limit {
 }
 
 /// Whether `client`, which holds `held` of `limit`, may take one more; a client that may not is
-/// cut ([`cut`]) before this returns [`Standing::Over`], and the caller makes nothing.
-pub fn admit(display: &DisplayHandle, client: &Client, limit: Limit, held: usize) -> Standing {
+/// queued to be cut ([`cut`]) before this returns [`Standing::Over`], and the caller makes nothing.
+pub fn admit(_display: &DisplayHandle, client: &Client, limit: Limit, held: usize) -> Standing {
     let standing = limit.judge(held);
     if standing == Standing::Over {
-        cut(display, client, limit);
+        cut(client, limit);
     }
     standing
 }
 
-/// Cuts `client` with `wl_display.no_memory`: it asked for more `limit` than it may hold.
-pub fn cut(display: &DisplayHandle, client: &Client, limit: Limit) {
-    client.kill(
-        display,
-        ProtocolError {
-            code: WL_DISPLAY_NO_MEMORY,
-            object_id: WL_DISPLAY_ID,
-            object_interface: "wl_display".to_owned(),
-            message: format!("too many {} (at most {})", limit.what(), limit.cap()),
-        },
-    );
+/// Queues `client` to be cut: it asked for more `limit` than it may hold. The cut happens at [`cut_queued`], after the dispatch that asked; a client queued twice
+/// is cut once.
+pub fn cut(client: &Client, limit: Limit) {
+    QUEUED.with(|queued| {
+        let mut queued = queued.borrow_mut();
+        if queued.iter().all(|(held, _)| held.id() != client.id()) {
+            queued.push((client.clone(), limit));
+        }
+    });
+}
+
+/// Cuts every client queued by [`cut`] since the last call. Called by the composition root after
+/// each dispatch of client requests, never from inside one.
+pub fn cut_queued(display: &DisplayHandle) {
+    let queued = QUEUED.with(|queued| std::mem::take(&mut *queued.borrow_mut()));
+    for (client, limit) in queued {
+        tracing::warn!(
+            client = ?client.id(),
+            "a client asked for too many {} (at most {}); its connection is closed",
+            limit.what(),
+            limit.cap()
+        );
+        client.kill(
+            display,
+            ProtocolError {
+                code: WL_DISPLAY_NO_MEMORY,
+                object_id: WL_DISPLAY_ID,
+                object_interface: "wl_display".to_owned(),
+                message: format!("too many {} (at most {})", limit.what(), limit.cap()),
+            },
+        );
+    }
 }
 
 #[cfg(test)]

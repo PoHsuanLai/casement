@@ -165,9 +165,9 @@ fn a_client_that_adds_icon_buffers_without_end_is_cut() {
     icon.add_buffer(square.buffer(), 1);
     made.push(icon);
     fixture.pump();
-    let error = fixture
-        .client(id)
-        .protocol_error()
-        .expect("the client past the cap is cut");
-    assert_eq!((error.interface.as_str(), error.code), ("wl_display", 2));
+    // The cut closes the connection (the system backend sends no error first).
+    assert!(
+        !fixture.client(id).is_connected(),
+        "the client past the cap is cut"
+    );
 }
