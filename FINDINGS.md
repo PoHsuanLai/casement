@@ -4201,3 +4201,14 @@ Rows for the findings CASW-02/03/04/07/11/12/13/15/18/19, CASC-02/05/06/07/09/10
   well-known sender locally (`MatchRule::matches` accepts it), so the second check is what holds if a bus ignored the rule. It
   is the only match rule in casement. Test: `a_prepare_for_sleep_from_anyone_but_logind_is_not_acted_on` (private bus, a
   second connection spoofs the signal; fake logind's own signal that follows is heard and the spoofed one is not).
+- **CASW-04 (decided): a security context carries at most its creator's own proof.** The handler reads the creating client's
+  `PeerIdentity` (`SecurityContext::creator_client_id`, through the backend handle as `xdg_activation` reads client keys) and
+  `casement_wayland::security_context::identity_for_clients` lets the engine's facts count only when that creator is proven; a
+  context made by an unproven client leaves every client of its socket unproven. A cgroup that cannot be read now leaves the
+  peer unproven instead of standing in for the root. **Consequence to know:** every connection casement accepts today is
+  `PeerIdentity::Unproven` (the public socket, hand-outs), so until a creator can be proven no security-context client is
+  `Proven(Flatpak)`; sandboxed apps are known by their claimed app id until then. **Still open (porter):** a proven creator can
+  still claim any Flatpak app id, and a native process can name its own `app-<id>-<rand>.scope`; porter's `identity_of` should
+  cross-check the peer's cgroup against `app-flatpak-<id>-*.scope` before it returns `Proven`, and decide how far same-UID
+  spoofing is in scope (interface ask in the lane report). Test: `a_context_carries_at_most_its_creators_proof` (the
+  fixture cannot connect a proven creator, so the table is on the pure function).

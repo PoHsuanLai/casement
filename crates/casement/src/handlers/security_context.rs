@@ -6,7 +6,8 @@ use crate::clients::insert_client;
 use crate::core_loop;
 use crate::state::State;
 use casement_core::policy::ConnectionRole;
-use casement_wayland::security_context::on_create_listener;
+use casement_wayland::ClientState;
+use casement_wayland::security_context::{identity_for_clients, on_create_listener};
 use porter_core::{CgroupPath, PeerFacts, PeerIdentity, SandboxFacts, identity_of};
 use rustix::net::sockopt::socket_peercred;
 use smithay::wayland::security_context::{
@@ -19,10 +20,23 @@ impl SecurityContextHandler for State {
         let (facts, events) = on_create_listener(&mut self.wl.security_context, &context);
         core_loop::feed(self, events);
         let role = ConnectionRole::Sandboxed(facts.clone());
+        // The creator's own proof caps what the context's facts may prove (CASW-04); a creator
+        // that is gone, or was not inserted by casement, proves nothing.
+        let creator = self
+            .display
+            .backend_handle()
+            .get_client_data(context.creator_client_id.clone())
+            .ok()
+            .and_then(|data| {
+                (*data)
+                    .downcast_ref::<ClientState>()
+                    .map(|state| state.peer.clone())
+            })
+            .unwrap_or(PeerIdentity::Unproven);
         let inserted = self
             .event_loop
             .insert_source(source, move |stream, _, state| {
-                let peer = peer_of(&stream, &facts);
+                let peer = identity_for_clients(&creator, peer_of(&stream, &facts));
                 if let Err(error) = insert_client(state, stream, role.clone(), peer) {
                     tracing::warn!(%error, "a security-context client could not be inserted");
                 }
@@ -33,9 +47,9 @@ impl SecurityContextHandler for State {
     }
 }
 
-/// Who the process on `stream` is, from its credentials, its cgroup and the context's facts.
-/// What cannot be read leaves the peer unproven; a cgroup that cannot be read is the root
-/// (an engine's facts prove the app without it).
+/// Who the facts say the process on `stream` is, from its credentials, its cgroup and the
+/// context's facts. What cannot be read leaves the peer unproven. (Whether the context's creator
+/// lets the facts count is [`identity_for_clients`]'s.)
 fn peer_of(stream: &UnixStream, facts: &SandboxFacts) -> PeerIdentity {
     let Ok(cred) = socket_peercred(stream) else {
         return PeerIdentity::Unproven;
@@ -43,8 +57,7 @@ fn peer_of(stream: &UnixStream, facts: &SandboxFacts) -> PeerIdentity {
     let pid = cred.pid.as_raw_nonzero().get();
     let cgroup = std::fs::read_to_string(format!("/proc/{pid}/cgroup"))
         .ok()
-        .and_then(|text| CgroupPath::from_proc_cgroup(&text).ok())
-        .or_else(|| CgroupPath::parse("/").ok());
+        .and_then(|text| CgroupPath::from_proc_cgroup(&text).ok());
     cgroup.map_or(PeerIdentity::Unproven, |cgroup| {
         identity_of(&PeerFacts {
             pid: pid.unsigned_abs(),

@@ -5,7 +5,7 @@
 use crate::states::GlobalFilter;
 use casement_core::Event;
 use casement_core::policy::GlobalKind;
-use porter_core::SandboxFacts;
+use porter_core::{PeerIdentity, SandboxFacts};
 use smithay::reexports::wayland_protocols::wp::security_context::v1::server::{
     wp_security_context_manager_v1::WpSecurityContextManagerV1,
     wp_security_context_v1::WpSecurityContextV1,
@@ -62,4 +62,64 @@ pub fn on_create_listener(
         instance: text(&context.instance_id),
     };
     (facts, Vec::new())
+}
+
+/// What the clients of a context are known as. A context is its creator's claim about another
+/// process (any public client may make one, and the engine's name, app id and instance id are
+/// whatever it wrote), so it carries at most the creator's own proof: facts that would prove
+/// an app (`facts_prove`) count only when the creator is itself proven, and a context made by
+/// an unproven client leaves every client of its socket unproven (CASW-04).
+pub fn identity_for_clients(creator: &PeerIdentity, facts_prove: PeerIdentity) -> PeerIdentity {
+    match creator {
+        PeerIdentity::Proven(_) => facts_prove,
+        PeerIdentity::Unproven => PeerIdentity::Unproven,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use porter_core::{AppId, AppName, Isolation};
+
+    fn proven(name: &str, isolation: Isolation) -> PeerIdentity {
+        PeerIdentity::Proven(AppId {
+            name: AppName::parse(name).expect("an app name"),
+            isolation,
+        })
+    }
+
+    #[test]
+    fn a_context_carries_at_most_its_creators_proof() {
+        let firefox = proven("org.mozilla.firefox", Isolation::Flatpak);
+        let launcher = proven("org.example.Launcher", Isolation::Unsandboxed);
+        let cases = [
+            (
+                "unproven creator, facts prove an app",
+                PeerIdentity::Unproven,
+                firefox.clone(),
+                PeerIdentity::Unproven,
+            ),
+            (
+                "unproven creator, facts prove nothing",
+                PeerIdentity::Unproven,
+                PeerIdentity::Unproven,
+                PeerIdentity::Unproven,
+            ),
+            (
+                "proven creator, facts prove an app",
+                launcher.clone(),
+                firefox.clone(),
+                firefox,
+            ),
+            (
+                "proven creator, facts prove nothing",
+                launcher,
+                PeerIdentity::Unproven,
+                PeerIdentity::Unproven,
+            ),
+        ];
+        for (name, creator, proves, want) in cases {
+            assert_eq!(identity_for_clients(&creator, proves), want, "{name}");
+        }
+    }
 }
