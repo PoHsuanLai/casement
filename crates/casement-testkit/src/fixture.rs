@@ -11,7 +11,9 @@
 mod handout;
 mod live;
 
-use crate::fakes::{FakePalmrest, FakeSession, FakeShellCalls, FakeSpawner, MemorySpaceStore};
+use crate::fakes::{
+    FakePalmrest, FakeSession, FakeShellCalls, FakeSpawner, MemoryLockMarker, MemorySpaceStore,
+};
 use crate::input::FixtureInput;
 use crate::spec::FixtureSpec;
 use casement::cli::{
@@ -54,6 +56,8 @@ pub struct Fixture {
     next_client: u32,
     /// The Spaces file the compositor stores into (a clone of the one it holds).
     space_store: MemorySpaceStore,
+    /// The session lock's marker the compositor keeps (a clone of the one it holds).
+    lock_marker: MemoryLockMarker,
     /// The D-Bus calls bindings made (a clone of the one the compositor holds).
     shell_calls: FakeShellCalls,
     /// The programs the compositor started (a clone of the one it holds).
@@ -178,13 +182,15 @@ impl Fixture {
             icons: IconSearch::Off,
         };
         let space_store = spec.space_store.clone();
+        let lock_marker = spec.lock_marker.clone();
         let shell_calls = FakeShellCalls::new();
         let spawner = FakeSpawner::new();
         let seams = Seams::new(
             Box::new(space_store.clone()),
             Box::new(shell_calls.clone()),
             Box::new(spawner.clone()),
-        );
+        )
+        .with_lock_marker(Box::new(lock_marker.clone()));
         let seams = match tty {
             Some(tty) => seams.with_tty(tty),
             None => seams,
@@ -207,6 +213,7 @@ impl Fixture {
             servers: BTreeMap::new(),
             next_client: 1,
             space_store,
+            lock_marker,
             shell_calls,
             spawner,
             session: FakeSession::default(),
@@ -219,6 +226,12 @@ impl Fixture {
     /// clone of it to restart.
     pub fn space_store(&self) -> &MemorySpaceStore {
         &self.space_store
+    }
+
+    /// The session lock's marker the compositor keeps: read it back, or start another fixture
+    /// on a clone of it to restart while locked.
+    pub fn lock_marker(&self) -> &MemoryLockMarker {
+        &self.lock_marker
     }
 
     /// The D-Bus calls bindings made.

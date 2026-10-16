@@ -52,7 +52,7 @@ use crate::focus::Focus;
 use crate::ids::{ClientKey, LayerKey, OutputKey, WindowId};
 use crate::invariants::{self, InvariantBreak};
 use crate::layer::LayerBook;
-use crate::lock::LockState;
+use crate::lock::{LockHolder, LockState};
 use crate::output::{OutputConfig, OutputFacts};
 use crate::overview::Overview;
 use crate::settings::CasementSettings;
@@ -95,9 +95,9 @@ pub struct Model {
     /// The Split View whose other half is being chosen, if one is (`model/split.rs`).
     split_choice: Option<split::SplitChoice>,
     lock: LockState,
-    /// The client that asked for the lock now held (or lost with its locker): a lock whose
-    /// locker is gone is taken over only by the shell or by this client again.
-    locker: Option<ClientKey>,
+    /// Who asked for the lock now held (or lost with its locker): a lock whose locker is gone
+    /// is taken over only by the shell or by this client again.
+    locker: LockHolder,
     /// Mission Control's life (`model/overview.rs`).
     overview: Overview,
     focus: Focus,
@@ -142,7 +142,7 @@ impl Model {
             demand: None,
             split_choice: None,
             lock: LockState::Unlocked,
-            locker: None,
+            locker: LockHolder::Nobody,
             overview: Overview::Closed,
             focus: Focus::none(),
             swipe: swipe::SwipeState::default(),

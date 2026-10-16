@@ -6,4 +6,4 @@
 )]
 mod lock;
 
-pub use lock::{LockEvent, LockReply, LockState, LockSurfaces};
+pub use lock::{LockEvent, LockHolder, LockReply, LockState, LockSurfaces};

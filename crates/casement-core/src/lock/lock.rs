@@ -32,6 +32,29 @@ pub enum LockSurfaces {
     Covering(Vec<OutputKey>),
 }
 
+/// Who asked for the lock that is held now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LockHolder {
+    /// No lock is held.
+    Nobody,
+    /// The shell's own locker. `None` while the lock is one casement restored after a restart,
+    /// before the shell's new connection has locked again. Only the shell's locks are
+    /// remembered across a restart.
+    Shell(Option<ClientKey>),
+    /// Any other client.
+    Client(ClientKey),
+}
+
+impl LockHolder {
+    /// The client that asked for the lock, if it is known.
+    pub fn client(self) -> Option<ClientKey> {
+        match self {
+            LockHolder::Nobody | LockHolder::Shell(None) => None,
+            LockHolder::Shell(Some(client)) | LockHolder::Client(client) => Some(client),
+        }
+    }
+}
+
 /// What moves the lock.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LockEvent {
@@ -55,6 +78,9 @@ pub enum LockEvent {
     Unlocked,
     /// The locker's connection went away while locked.
     LockerGone,
+    /// casement started and found the lock marker its last run left: the session was locked by
+    /// the shell, and stays covered until the shell locks again and unlocks.
+    Restored,
 }
 
 /// What the lock asks the edge to do.
@@ -68,4 +94,8 @@ pub enum LockReply {
     HideCover(OutputKey),
     /// The lock is over (send `finished` if the locker remains).
     Finished,
+    /// Write the lock marker: a restart from here comes back locked.
+    Remember,
+    /// Remove the lock marker: the session is not locked by the shell any more.
+    Forget,
 }

@@ -1,6 +1,6 @@
 //! What a fixture starts with.
 
-use crate::fakes::MemorySpaceStore;
+use crate::fakes::{MemoryLockMarker, MemorySpaceStore};
 use crate::gpu::GpuTopology;
 use casement::relax::AckPolicy;
 use casement_backend::{DmabufMode, RenderCostModel, SoftRenderer, VirtualOutputSpec};
@@ -27,6 +27,9 @@ pub struct FixtureSpec {
     /// The Spaces file the compositor starts from and stores into (A1). A second fixture started
     /// with a clone of the same store is a restart.
     pub space_store: MemorySpaceStore,
+    /// The session lock's marker the compositor starts from and keeps (CASB-06). A second
+    /// fixture started with a clone of the same marker is a restart while locked.
+    pub lock_marker: MemoryLockMarker,
 }
 
 impl FixtureSpec {
@@ -45,6 +48,7 @@ impl FixtureSpec {
             dmabuf: DmabufMode::None,
             ack_policy: AckPolicy::Strict,
             space_store: MemorySpaceStore::empty(),
+            lock_marker: MemoryLockMarker::absent(),
         }
     }
 
@@ -57,6 +61,14 @@ impl FixtureSpec {
     pub fn with_space_store(self, space_store: MemorySpaceStore) -> FixtureSpec {
         FixtureSpec {
             space_store,
+            ..self
+        }
+    }
+
+    /// The same, starting from (and keeping) this lock marker.
+    pub fn with_lock_marker(self, lock_marker: MemoryLockMarker) -> FixtureSpec {
+        FixtureSpec {
+            lock_marker,
             ..self
         }
     }

@@ -8,11 +8,13 @@
 use self::scene::{SceneSource, empty_frame, layers_on, row_of, sample_scene_at};
 use crate::cli::StartMode;
 use crate::exec;
+use crate::lock_marker::Marked;
 use crate::state::State;
 use casement_backend::headless::Shown;
 use casement_backend::tty::PresentOutcome;
 use casement_backend::{BackendKind, ConnectorEvent, HeadlessBackend};
 use casement_core::frame::Repeat;
+use casement_core::lock::LockEvent;
 use casement_core::output::OutputConfig;
 use casement_core::settings::CasementSettings;
 use casement_core::space::SpaceSeed;
@@ -424,6 +426,7 @@ pub fn sample_scene(state: &State) -> FrameScene {
 /// clock and display are attached, so start-up and hotplug are one path).
 pub fn announce_outputs(state: &mut State) {
     load_stored_spaces(state);
+    restore_lock(state);
     let events = match &mut state.backend {
         BackendKind::Headless(backend) => backend.announce(),
         BackendKind::Winit(winit) => winit.announce(),
@@ -442,6 +445,14 @@ fn load_stored_spaces(state: &mut State) {
     match crate::space_store::load_spaces(state.seams.space_store.as_ref()) {
         Ok(file) => feed(state, vec![Event::SpacesLoaded(Box::new(file))]),
         Err(error) => tracing::warn!(%error, "the Spaces file could not be read"),
+    }
+}
+
+/// A lock the last run left behind (its marker is there) is held again before any output is
+/// plugged, so every output comes up under the cover until the shell locks again and unlocks.
+fn restore_lock(state: &mut State) {
+    if state.seams.lock_marker.marked() == Marked::Yes {
+        feed(state, vec![Event::Lock(LockEvent::Restored)]);
     }
 }
 

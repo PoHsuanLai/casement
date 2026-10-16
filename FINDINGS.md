@@ -4177,3 +4177,20 @@ Rows for the findings CASW-02/03/04/07/11/12/13/15/18/19, CASC-02/05/06/07/09/10
   clients (the ext list in smithay), so the blanking is for every list client, the shell included. The shell reads windows through
   the desktop protocol, which is not blanked. Tests: `a_locked_session_stops_window_capture_and_withholds_titles` (fixture),
   `locking_and_unlocking_list_every_window_again` (core), `a_locked_session_withholds_what_is_open`.
+- **CASB-06: casement keeps its own lock marker; a restart while the shell's lock is held comes back covered.**
+  `$XDG_RUNTIME_DIR/casement/locked` (runtime directory, so a reboot clears it), through the new `LockMarker` seam
+  (`casement::lock_marker`; a file in production, `MemoryLockMarker` in the test kit). The model asks `LockReply::Remember` when
+  the shell's lock reaches `Locked` and `Forget` when it ends (`LockHolder` records whether the shell or another client asked);
+  at start, `announce_outputs` feeds `LockEvent::Restored` when the marker is there, so the model is `LockedWithoutSurface`
+  (holder `Shell(None)`) before any output plugs and every output comes up under the cover. Only the shell's new connection
+  can take it over (CASW-02) and only an unlock lifts it. **How it agrees with sill:** sill's own marker
+  (`$XDG_RUNTIME_DIR/sill/locked`, `sill-services/src/locker/backend/marker.rs`) is written when its own lock is `Locked`
+  and removed at unlock, and a sill that starts in `Own` mode with the marker present locks again at once; `desktop-session`
+  restarts sill after every casement exit, so the shell locks again within a second of the new compositor going live and
+  both markers end together at the unlock. No sill change is needed. **Decision recorded:** a lock held by a non-shell
+  client (a locker run from a terminal) is deliberately not remembered: after a restart only the shell can take a held lock
+  over, so remembering a lock the shell would never re-lock would leave a cover nobody lifts; a restart then comes back open,
+  as before. The marker lives only when `main` resolves a state home with a runtime directory (not on the headless backend, not
+  with `--state-home DIR`). Tests: `a_restart_while_locked_comes_back_covered_until_the_shell_locks_again` (fixture, two
+  compositors on one marker), `only_the_shells_lock_is_remembered` and `a_restored_lock_covers_until_the_shell_locks_and_unlocks`
+  (core), the `FileLockMarker` unit test and the `main` placement test.

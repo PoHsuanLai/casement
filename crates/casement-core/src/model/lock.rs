@@ -6,7 +6,7 @@ use super::Model;
 use super::moved::Moved;
 use crate::effect::Effect;
 use crate::ids::{ClientKey, OutputKey};
-use crate::lock::{LockEvent, LockReply, LockState, LockSurfaces};
+use crate::lock::{LockEvent, LockHolder, LockReply, LockState, LockSurfaces};
 use crate::time::{Due, TimerKey};
 use std::time::Duration;
 
@@ -15,20 +15,49 @@ use std::time::Duration;
 pub const LOCK_WAIT: Duration = Duration::from_secs(1);
 
 impl Model {
-    /// The lock moved.
+    /// The lock moved. The lock marker follows: written when the shell's lock is held, removed
+    /// when it is not.
     pub(super) fn lock_event(self, event: LockEvent) -> Moved {
+        let before = self.marker();
+        let moved = self.lock_moved(event);
+        match (before, moved.model.marker()) {
+            (Marker::Absent, Marker::Present) => moved.with(Effect::Lock(LockReply::Remember)),
+            (Marker::Present, Marker::Absent) => moved.with(Effect::Lock(LockReply::Forget)),
+            (Marker::Absent, Marker::Absent) | (Marker::Present, Marker::Present) => moved,
+        }
+    }
+
+    /// Whether the lock marker should exist: the shell holds the lock (`locked` was sent, or
+    /// it is held with no locker). A lock another client holds is not remembered: after a
+    /// restart only the shell can take a held lock over, so a marker for any other locker could
+    /// leave the person with a cover nobody comes to lift.
+    fn marker(&self) -> Marker {
+        match (&self.lock, self.locker) {
+            (LockState::Locked { .. } | LockState::LockedWithoutSurface, LockHolder::Shell(_)) => {
+                Marker::Present
+            }
+            _ => Marker::Absent,
+        }
+    }
+
+    fn lock_moved(self, event: LockEvent) -> Moved {
         match (self.lock.clone(), event) {
+            (LockState::Unlocked, LockEvent::Restored) => {
+                self.with_lock_by(LockState::LockedWithoutSurface, LockHolder::Shell(None))
+            }
+            (_, LockEvent::Restored) => Moved::of(self),
             (LockState::Unlocked, LockEvent::Requested { client }) => self
                 .begin_lock(client)
                 .then(|model| model.leave_overview(None)),
             (LockState::LockedWithoutSurface, LockEvent::Requested { client })
                 if self.may_take_over(client) =>
             {
+                let holder = self.holder_of(client);
                 self.with_lock_by(
                     LockState::Locked {
                         surfaces: LockSurfaces::Pending,
                     },
-                    Some(client),
+                    holder,
                 )
                 .with(Effect::Lock(LockReply::SendLocked))
             }
@@ -57,7 +86,15 @@ impl Model {
     /// person's own locker), and so may the client that held the lock. Any other client is
     /// refused, so a program that waits for the locker to die cannot unlock the session.
     fn may_take_over(&self, client: ClientKey) -> bool {
-        self.is_shell(client) || self.locker == Some(client)
+        self.is_shell(client) || self.locker.client() == Some(client)
+    }
+
+    /// `client` as the holder of a lock it asked for.
+    fn holder_of(&self, client: ClientKey) -> LockHolder {
+        match self.is_shell(client) {
+            true => LockHolder::Shell(Some(client)),
+            false => LockHolder::Client(client),
+        }
     }
 
     /// The outputs the lock covers with its own cover, because no locker surface does.
@@ -84,7 +121,7 @@ impl Model {
     }
 
     /// The same with `locker` as the client that holds the lock.
-    fn with_lock_by(self, lock: LockState, locker: Option<ClientKey>) -> Moved {
+    fn with_lock_by(self, lock: LockState, locker: LockHolder) -> Moved {
         Moved::of(Model {
             lock,
             locker,
@@ -97,13 +134,14 @@ impl Model {
     fn begin_lock(self, client: ClientKey) -> Moved {
         let outputs: Vec<OutputKey> = self.outputs.0.keys().cloned().collect();
         let relisted = self.relisted();
+        let holder = self.holder_of(client);
         if outputs.is_empty() {
             return self
                 .with_lock_by(
                     LockState::Locked {
                         surfaces: LockSurfaces::Pending,
                     },
-                    Some(client),
+                    holder,
                 )
                 .with(Effect::Lock(LockReply::SendLocked))
                 .with_all(relisted);
@@ -113,7 +151,7 @@ impl Model {
             at: since.after(LOCK_WAIT),
             key: TimerKey::LockWait,
         };
-        self.with_lock_by(LockState::Locking { since }, Some(client))
+        self.with_lock_by(LockState::Locking { since }, holder)
             .with_all(outputs.into_iter().map(show_cover))
             .with(Effect::ArmTimer(wait))
             .with_all(relisted)
@@ -200,7 +238,7 @@ impl Model {
     fn end_lock(self, state: &LockState) -> Moved {
         let covers = self.covers_for(state);
         let relisted = self.relisted();
-        self.with_lock_by(LockState::Unlocked, None)
+        self.with_lock_by(LockState::Unlocked, LockHolder::Nobody)
             .with_all(covers.into_iter().map(hide_cover))
             .with_all(relisted)
     }
@@ -228,7 +266,7 @@ impl Model {
     fn abandon_lock(self, state: &LockState) -> Moved {
         let covers = self.covers_for(state);
         let relisted = self.relisted();
-        self.with_lock_by(LockState::Unlocked, None)
+        self.with_lock_by(LockState::Unlocked, LockHolder::Nobody)
             .with(Effect::CancelTimer(TimerKey::LockWait))
             .with_all(covers.into_iter().map(hide_cover))
             .with_all(relisted)
@@ -264,6 +302,15 @@ impl Model {
             _ => Some(show_cover(output.clone())),
         }
     }
+}
+
+/// Whether the lock marker should exist.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Marker {
+    /// The shell's lock is held.
+    Present,
+    /// It is not.
+    Absent,
 }
 
 fn show_cover(output: OutputKey) -> Effect {

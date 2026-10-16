@@ -1,5 +1,6 @@
 //! `session_lock` (P0-H3).
 
+use casement::lock_marker::Marked;
 use casement_core::OutputName;
 use casement_core::geometry::PhysicalSize;
 use casement_core::input::{DeviceClass, Edge, KeyCode};
@@ -11,6 +12,7 @@ use casement_testclient::surface::layer::{
 };
 use casement_testclient::surface::lock::{LockSurface, Locker};
 use casement_testclient::{Pattern, TestClient, shm_buffer};
+use casement_testkit::fakes::MemoryLockMarker;
 use casement_testkit::{Fixture, FixtureSpec, FrameCount, ShotTarget, TestOrigin};
 use std::time::Duration;
 
@@ -345,6 +347,53 @@ fn an_unmapped_lock_surface_leaves_its_output_covered() {
         showing_on_first(&mut fixture),
         0,
         "the output whose lock surface showed nothing is still covered"
+    );
+}
+
+/// CASB-06: casement restarting while the shell's lock is held comes back covered, refuses any
+/// client but the shell as the new locker, and is open again only when the shell locks and
+/// unlocks. The marker follows: written once the shell's lock is held, removed at the unlock.
+#[test]
+fn a_restart_while_locked_comes_back_covered_until_the_shell_locks_again() {
+    let marker = MemoryLockMarker::absent();
+    let spec = || FixtureSpec::desktop().with_lock_marker(marker.clone());
+    let mut first = Fixture::start(spec()).expect("fixture");
+    let shell = first.connect(ConnectionRole::Shell);
+    first.pump();
+    assert_eq!(marker.is_marked(), Marked::No, "nothing is locked yet");
+    let _locker = lock_with_content(&mut first, shell);
+    assert_eq!(
+        marker.is_marked(),
+        Marked::Yes,
+        "the shell's lock is remembered"
+    );
+    drop(first);
+
+    let mut second = Fixture::start(spec()).expect("fixture");
+    assert_eq!(
+        second.model().lock(),
+        &LockState::LockedWithoutSurface,
+        "it comes back covered"
+    );
+    let public = second.connect(ConnectionRole::Public);
+    let shell = second.connect(ConnectionRole::Shell);
+    second.pump();
+    let grab = Locker::request(second.client(public)).expect("a lock request");
+    second.pump();
+    assert!(
+        grab.is_finished() && !grab.is_locked(),
+        "a public client is refused"
+    );
+    assert_eq!(second.model().lock(), &LockState::LockedWithoutSurface);
+
+    let own = lock_with_content(&mut second, shell);
+    own.unlock(second.client(shell));
+    second.pump();
+    assert_eq!(second.model().lock(), &LockState::Unlocked);
+    assert_eq!(
+        marker.is_marked(),
+        Marked::No,
+        "the unlock removes the marker"
     );
 }
 

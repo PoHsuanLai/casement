@@ -240,6 +240,76 @@ fn a_dead_locker_leaves_the_cover_and_another_locker_takes_over() {
     assert_eq!(last(&taken), [Effect::Lock(LockReply::SendLocked)]);
 }
 
+/// CASB-06: the marker is written once the shell's lock is held and removed when it ends; a
+/// lock any other client holds is not remembered.
+#[test]
+fn only_the_shells_lock_is_remembered() {
+    let remember = Effect::Lock(LockReply::Remember);
+    let forget = Effect::Lock(LockReply::Forget);
+    for (name, locker, marked) in [("the shell", 9, true), ("another client", 7, false)] {
+        let begun = run(vec![
+            plug("HEADLESS-1"),
+            connected(9, ConnectionRole::Shell),
+            connected(7, ConnectionRole::Public),
+            requested_by(locker),
+        ]);
+        assert!(
+            !last(&begun).contains(&remember),
+            "{name}: not before locked"
+        );
+        let held = run_from(begun.model, vec![committed("HEADLESS-1")]);
+        assert_eq!(last(&held).contains(&remember), marked, "{name}: locked");
+        let gone = run_from(held.model.clone(), vec![lock(LockEvent::LockerGone)]);
+        assert!(
+            !last(&gone).contains(&forget),
+            "{name}: a dead locker keeps it"
+        );
+        let open = run_from(held.model, vec![lock(LockEvent::Unlocked)]);
+        assert_eq!(last(&open).contains(&forget), marked, "{name}: unlocked");
+    }
+}
+
+/// CASB-06: casement started with the marker found comes back covered, whatever outputs it
+/// plugs afterwards; only the shell takes the lock over, and only an unlock lifts it.
+#[test]
+fn a_restored_lock_covers_until_the_shell_locks_and_unlocks() {
+    let restored = run(vec![
+        lock(LockEvent::Restored),
+        plug("HEADLESS-1"),
+        connected(7, ConnectionRole::Public),
+        connected(9, ConnectionRole::Shell),
+    ]);
+    assert_eq!(restored.model.lock(), &LockState::LockedWithoutSurface);
+    assert!(
+        restored
+            .effects
+            .iter()
+            .flatten()
+            .any(|effect| effect == &cover("HEADLESS-1")),
+        "the output that plugs after the restore is covered"
+    );
+    let refused = run_from(restored.model.clone(), vec![requested_by(7)]);
+    assert_eq!(last(&refused), [Effect::Lock(LockReply::Finished)]);
+    assert_eq!(refused.model.lock(), &LockState::LockedWithoutSurface);
+
+    let taken = run_from(restored.model, vec![requested_by(9)]);
+    assert_eq!(
+        taken.model.lock(),
+        &LockState::Locked {
+            surfaces: LockSurfaces::Pending
+        }
+    );
+    assert!(last(&taken).contains(&Effect::Lock(LockReply::SendLocked)));
+    let open = run_from(taken.model, vec![lock(LockEvent::Unlocked)]);
+    assert_eq!(open.model.lock(), &LockState::Unlocked);
+    assert!(last(&open).contains(&Effect::Lock(LockReply::Forget)));
+
+    // A restore on a session that is already locked changes nothing.
+    let held = run(vec![plug("HEADLESS-1"), requested_by(7)]);
+    let again = run_from(held.model.clone(), vec![lock(LockEvent::Restored)]);
+    assert_same_world(&again.model, &held.model, "restored while locking");
+}
+
 /// CASC-13: while the session is locked (or being locked), nothing a window, a window-list
 /// client, a workspace client or the shell's desktop manager asks reaches the desktop. The same
 /// asks change it when the session is open, so the lock is what stops them.
@@ -479,16 +549,18 @@ fn only_the_shell_or_the_same_client_takes_a_lock_over() {
         lock(LockEvent::LockerGone),
     ]);
     assert_eq!(orphaned.model.lock(), &LockState::LockedWithoutSurface);
+    let sent = Effect::Lock(LockReply::SendLocked);
+    let remembered = Effect::Lock(LockReply::Remember);
     let cases = [
-        ("another public client", 8, false),
-        ("a client nobody introduced", 99, false),
-        ("the client that held the lock", 7, true),
-        ("the shell", 9, true),
+        ("another public client", 8, None),
+        ("a client nobody introduced", 99, None),
+        ("the client that held the lock", 7, Some(vec![sent.clone()])),
+        ("the shell", 9, Some(vec![sent, remembered])),
     ];
     for (name, client, taken) in cases {
         let run = run_from(orphaned.model.clone(), vec![requested_by(client)]);
         match taken {
-            true => {
+            Some(effects) => {
                 assert_eq!(
                     run.model.lock(),
                     &LockState::Locked {
@@ -496,9 +568,9 @@ fn only_the_shell_or_the_same_client_takes_a_lock_over() {
                     },
                     "{name}"
                 );
-                assert_eq!(last(&run), [Effect::Lock(LockReply::SendLocked)], "{name}");
+                assert_eq!(last(&run), effects, "{name}");
             }
-            false => {
+            None => {
                 assert_same_world(&run.model, &orphaned.model, name);
                 assert_eq!(last(&run), [Effect::Lock(LockReply::Finished)], "{name}");
             }

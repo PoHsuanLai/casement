@@ -50,6 +50,7 @@ pub mod icons;
 #[cfg(any(feature = "testing", feature = "debug-inject"))]
 pub mod jail_check;
 pub mod keymap;
+pub mod lock_marker;
 pub mod log;
 pub mod notify;
 #[cfg(feature = "testing")]

@@ -28,12 +28,32 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StateDirs {
     casement: PathBuf,
+    /// casement's directory in the session's runtime directory (the session lock's marker
+    /// lives there, so a reboot clears it); none keeps no marker.
+    runtime: Option<PathBuf>,
 }
 
 impl StateDirs {
     /// State kept in `dir`.
     pub fn at(dir: PathBuf) -> StateDirs {
-        StateDirs { casement: dir }
+        StateDirs {
+            casement: dir,
+            runtime: None,
+        }
+    }
+
+    /// The same, keeping the session lock's marker in `dir`.
+    #[must_use]
+    pub fn with_runtime(self, dir: PathBuf) -> StateDirs {
+        StateDirs {
+            runtime: Some(dir),
+            ..self
+        }
+    }
+
+    /// Where the session lock's marker is kept, if it is.
+    pub fn runtime_dir(&self) -> Option<&Path> {
+        self.runtime.as_deref()
     }
 
     /// The directory.

@@ -18,6 +18,7 @@ use std::process::ExitCode;
 struct StateEnv {
     xdg_state_home: Option<PathBuf>,
     home: Option<PathBuf>,
+    xdg_runtime_dir: Option<PathBuf>,
 }
 
 impl StateEnv {
@@ -25,6 +26,7 @@ impl StateEnv {
         StateEnv {
             xdg_state_home: std::env::var_os("XDG_STATE_HOME").map(PathBuf::from),
             home: std::env::var_os("HOME").map(PathBuf::from),
+            xdg_runtime_dir: std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from),
         }
     }
 }
@@ -32,6 +34,7 @@ impl StateEnv {
 /// Where state files go. An explicit `--state-home DIR` (`flag` is `At`) always wins, for any
 /// backend. Otherwise the headless backend keeps none (its runs are throwaway), and the others
 /// use `$XDG_STATE_HOME/casement`, else `$HOME/.local/state/casement`; a missing home keeps none.
+/// The session lock's marker goes to `$XDG_RUNTIME_DIR/casement` on those, when there is one.
 fn state_home(flag: StateHome, backend: BackendChoice, env: &StateEnv) -> StateHome {
     if matches!(flag, StateHome::At(_)) {
         return flag;
@@ -44,7 +47,11 @@ fn state_home(flag: StateHome, backend: BackendChoice, env: &StateEnv) -> StateH
         .clone()
         .or_else(|| env.home.as_ref().map(|home| home.join(".local/state")));
     base.map_or(StateHome::Ephemeral, |base| {
-        StateHome::At(StateDirs::at(base.join("casement")))
+        let dirs = StateDirs::at(base.join("casement"));
+        StateHome::At(match &env.xdg_runtime_dir {
+            Some(runtime) => dirs.with_runtime(runtime.join("casement")),
+            None => dirs,
+        })
     })
 }
 
@@ -168,6 +175,7 @@ mod tests {
         StateEnv {
             xdg_state_home: xdg.map(PathBuf::from),
             home: home.map(PathBuf::from),
+            xdg_runtime_dir: None,
         }
     }
 
@@ -180,6 +188,27 @@ mod tests {
         assert_eq!(start.mode, StartMode::Safe);
         assert_eq!(icon_search(start.backend, start.mode), IconSearch::Off);
         assert_eq!(x11_setup(&start).mode, XwaylandMode::Off);
+    }
+
+    #[test]
+    fn the_lock_marker_goes_to_the_runtime_directory_when_there_is_one() {
+        let with_runtime = StateEnv {
+            xdg_runtime_dir: Some(PathBuf::from("/run/user/1000")),
+            ..env(Some("/x"), None)
+        };
+        let want = StateHome::At(
+            StateDirs::at(PathBuf::from("/x/casement"))
+                .with_runtime(PathBuf::from("/run/user/1000/casement")),
+        );
+        assert_eq!(
+            state_home(StateHome::Ephemeral, BackendChoice::Tty, &with_runtime),
+            want
+        );
+        assert_eq!(
+            state_home(StateHome::Ephemeral, BackendChoice::Headless, &with_runtime),
+            StateHome::Ephemeral,
+            "a headless run keeps none"
+        );
     }
 
     #[test]

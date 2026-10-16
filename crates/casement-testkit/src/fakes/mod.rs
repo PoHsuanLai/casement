@@ -6,6 +6,7 @@ mod cgroups;
 mod input_devices;
 mod input_feed;
 pub mod kms;
+mod lock_marker;
 pub mod logind;
 mod notify;
 mod palmrest;
@@ -25,6 +26,7 @@ pub use kms::{
     CaptureGpuWorld, FakeCaptureGpu, FakeKms, FakeKmsOpener, GpuBehaviour, KmsFixtureError,
     KmsWorld, LinkBehaviour, SceneBehaviour, SyntheticTopology, edid, load_fixture,
 };
+pub use lock_marker::MemoryLockMarker;
 pub use logind::{
     FakeLogind, IdleHint, LogindCall, LogindError, PauseKind, PrivateBus, PrivateBusError,
     SleepPhase,

@@ -17,6 +17,7 @@ mod shell;
 mod spawn;
 
 use crate::core_loop;
+use crate::lock_marker::Marked;
 use crate::state::State;
 use casement_backend::tty::Lighting;
 use casement_core::output::OutputConfig;
@@ -265,6 +266,16 @@ fn lock(state: &mut State, reply: LockReply) {
         LockReply::ShowCover(_) => {}
         LockReply::HideCover(output) => covers.retain(|covered| *covered != output),
         LockReply::Finished => session_lock::apply_finished(&mut state.wl.session_lock),
+        LockReply::Remember => keep_lock_marker(state, Marked::Yes),
+        LockReply::Forget => keep_lock_marker(state, Marked::No),
+    }
+}
+
+/// Writes or removes the lock marker (a failure is logged and degrades: the session is locked
+/// either way, a restart just does not know it).
+fn keep_lock_marker(state: &mut State, marked: Marked) {
+    if let Err(error) = state.seams.lock_marker.set(marked) {
+        tracing::warn!(%error, "the lock marker could not be kept");
     }
 }
 

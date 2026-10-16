@@ -4,6 +4,7 @@
 //! kit's `Fixture` builds the fakes and calls `State::with_seams`. Nothing in the loop opens a
 //! file, calls a bus or starts a process any other way.
 
+use crate::lock_marker::{FileLockMarker, LockMarker, NoLockMarker};
 use crate::notify::{NoNotify, Notify};
 use crate::space_store::{BackgroundSpaceStore, EphemeralSpaceStore, SpaceStore, StateHome};
 use crate::space_sync::SpaceSync;
@@ -30,6 +31,8 @@ pub struct Seams {
     pub notify: Box<dyn Notify>,
     /// The tty backend's seams, when they are injected (a test); none builds the real ones.
     pub tty: Option<TtySeams>,
+    /// The session lock's marker (none kept until a runtime directory is given).
+    pub lock_marker: Box<dyn LockMarker>,
 }
 
 impl Seams {
@@ -47,6 +50,16 @@ impl Seams {
             space_sync: SpaceSync::none(),
             notify: Box::new(NoNotify),
             tty: None,
+            lock_marker: Box::new(NoLockMarker),
+        }
+    }
+
+    /// The same with the session lock's marker kept in `lock_marker`.
+    #[must_use]
+    pub fn with_lock_marker(self, lock_marker: Box<dyn LockMarker>) -> Seams {
+        Seams {
+            lock_marker,
+            ..self
         }
     }
 
@@ -78,10 +91,18 @@ impl Seams {
             StateHome::At(dirs) => Box::new(BackgroundSpaceStore::new(dirs)),
             StateHome::Ephemeral => Box::new(EphemeralSpaceStore),
         };
+        let lock_marker: Box<dyn LockMarker> = match home {
+            StateHome::At(dirs) => match dirs.runtime_dir() {
+                Some(dir) => Box::new(FileLockMarker::in_dir(dir)),
+                None => Box::new(NoLockMarker),
+            },
+            StateHome::Ephemeral => Box::new(NoLockMarker),
+        };
         Seams::new(
             space_store,
             Box::new(ZbusShellCalls::lazy()),
             Box::new(ProcessSpawner::default()),
         )
+        .with_lock_marker(lock_marker)
     }
 }
