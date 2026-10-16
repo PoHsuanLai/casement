@@ -4251,3 +4251,21 @@ Rows for the findings CASW-02/03/04/07/11/12/13/15/18/19, CASC-02/05/06/07/09/10
   browsers' picture-in-picture windows (guessed) float above nothing until a peer can be proven; a declared role (the
   `quire_window` protocol) still works. The shell's way to take a window off every Space is the existing Assign ask. Test:
   `only_a_small_believed_window_floats_above_and_one_per_app_joins_every_space`.
+- **CASW-13 (partly done): each virtual keyboard has its own device id and a bounded pressed set.** Ids count up from
+  `VIRTUAL_KEYBOARD_DEVICE` (`VirtualKeyboardPart::next_device`), so two clients' held keys no longer collide and one's
+  `destroyed` releases only its own; a keyboard holds at most 64 keys down (a press past it is dropped). Tests: unit tests in
+  `virtual_keyboard.rs`. **Deferred (owner decision):** limiting the VT-switch chord (`vt_chord`) to `Origin::Physical`; keycap's
+  on-screen output is `Origin::Virtual` and may need to switch VT, and bindings from a virtual keyboard are on purpose
+  (`fires_bindings`).
+- **CASW-15 (comment corrected, nothing added):** no kill chord exists; the VT-switch chord is the one exempt chord, and the
+  module header now says so. A fixed escape chord that always resolves, and a visible "shortcuts are captured" indicator, are a
+  design call and stay open.
+- **CASW-07 (deferred, owner decision):** a floor for `ext_idle_notifier` timeouts (for example 5 s for sandboxed and unproven peers)
+  versus hiding input-idle from sandboxes; Flatpak apps use it for screensavers and video players. The brief names no choice.
+- **CASC-07 (deferred, owner decision):** a full-screen request from a window that is not key or active: deferred until the window is
+  next visible, or refused. Video players ask on their own, so the owner picks. The change belongs in
+  `model/requests.rs::enter_full_screen`.
+- **CASW-19 (deferred):** `casement-agent/src/eis.rs::device_id` masks the portal session id to 28 bits; two sessions that differ only
+  above bit 28 would share a device. Session ids come only from transom (a counter), so it needs over 268 million sessions. The
+  fix is a per-session device counter minted where the remote link is opened (`casement/src/connect.rs`), outside the four
+  crates this lane was given.

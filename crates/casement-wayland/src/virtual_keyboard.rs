@@ -40,9 +40,16 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 /// The version casement serves.
 pub const VERSION: u32 = 1;
 
-/// The device id every virtual keyboard's events carry: far above the backend's own
-/// numbering (which counts from 1), so it never names a physical device.
+/// The first device id a virtual keyboard's events carry: far above the backend's own
+/// numbering (which counts from 1), so it never names a physical device. Each keyboard takes
+/// the next one ([`VirtualKeyboardPart::next_device`]), so two clients' pressed keys never
+/// share a device and one's going releases only its own.
 pub const VIRTUAL_KEYBOARD_DEVICE: DeviceId = DeviceId(0x8000_0000);
+
+/// The most keys one virtual keyboard may hold down at once (a keyboard has ten fingers and a
+/// handful of modifiers): a press past it is dropped, so a client cannot grow the set without
+/// bound.
+const MAX_PRESSED: usize = 64;
 
 /// The largest keymap text taken from a client.
 const KEYMAP_LIMIT: usize = 1 << 20;
@@ -52,11 +59,19 @@ const KEYMAP_LIMIT: usize = 1 << 20;
 pub struct VirtualKeyboardPart {
     /// The global.
     pub global: GlobalId,
-    /// The device id its keys carry.
+    /// The device id the next keyboard made gets.
     pub device: DeviceId,
 }
 
 impl VirtualKeyboardPart {
+    /// A device id for a new keyboard, and the part after it. The ids count up from
+    /// [`VIRTUAL_KEYBOARD_DEVICE`] and wrap inside the virtual range, never into a backend's.
+    pub fn next_device(&mut self) -> DeviceId {
+        let given = self.device;
+        self.device = successor(given);
+        given
+    }
+
     /// Creates the global (version 1), filtered by the I7 table.
     pub fn new<D>(display: &DisplayHandle, role_filter: GlobalFilter) -> VirtualKeyboardPart
     where
@@ -106,27 +121,55 @@ enum KeymapState {
 /// One virtual keyboard's data.
 #[derive(Debug)]
 pub struct VirtualKeyboardData {
+    device: DeviceId,
     keymap: Mutex<KeymapState>,
     pressed: Mutex<BTreeSet<KeyCode>>,
 }
 
 impl VirtualKeyboardData {
-    fn new() -> VirtualKeyboardData {
+    fn new(device: DeviceId) -> VirtualKeyboardData {
         VirtualKeyboardData {
+            device,
             keymap: Mutex::new(KeymapState::Missing),
             pressed: Mutex::new(BTreeSet::new()),
         }
     }
 }
 
-/// A virtual keyboard sent a key: an `Event::Input` with `Origin::Virtual(Keyboard)`.
-pub fn on_vk_key(
-    part: &mut VirtualKeyboardPart,
-    code: KeyCode,
-    edge: Edge,
-    at: Mono,
-) -> Vec<Event> {
-    vec![key_event(part.device, code, edge, at)]
+/// The device id after `device`, wrapping back to the first virtual one.
+fn successor(device: DeviceId) -> DeviceId {
+    DeviceId(device.0.checked_add(1).unwrap_or(VIRTUAL_KEYBOARD_DEVICE.0))
+}
+
+/// A virtual keyboard sent a key: an `Event::Input` with `Origin::Virtual(Keyboard)`, from
+/// that keyboard's own `device`.
+pub fn on_vk_key(device: DeviceId, code: KeyCode, edge: Edge, at: Mono) -> Vec<Event> {
+    vec![key_event(device, code, edge, at)]
+}
+
+/// Records `code`'s new `edge` in `pressed`. False when the key is not taken: a press past
+/// [`MAX_PRESSED`] keys held, which is dropped.
+fn track(pressed: &mut BTreeSet<KeyCode>, code: KeyCode, edge: Edge) -> Taken {
+    match edge {
+        Edge::Press if pressed.len() >= MAX_PRESSED && !pressed.contains(&code) => Taken::No,
+        Edge::Press => {
+            pressed.insert(code);
+            Taken::Yes
+        }
+        Edge::Release => {
+            pressed.remove(&code);
+            Taken::Yes
+        }
+    }
+}
+
+/// Whether a key was taken or dropped.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Taken {
+    /// It was.
+    Yes,
+    /// It was dropped.
+    No,
 }
 
 fn key_event(device: DeviceId, code: KeyCode, edge: Edge, at: Mono) -> Event {
@@ -205,11 +248,11 @@ where
 
 impl<D> Dispatch2<ZwpVirtualKeyboardManagerV1, D> for VirtualKeyboardManagerData
 where
-    D: Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardData> + 'static,
+    D: Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardData> + VirtualKeyboardHandler + 'static,
 {
     fn request(
         &self,
-        _state: &mut D,
+        state: &mut D,
         _client: &Client,
         _resource: &ZwpVirtualKeyboardManagerV1,
         request: zwp_virtual_keyboard_manager_v1::Request,
@@ -218,7 +261,8 @@ where
     ) {
         if let zwp_virtual_keyboard_manager_v1::Request::CreateVirtualKeyboard { id, .. } = request
         {
-            data_init.init(id, VirtualKeyboardData::new());
+            let device = state.virtual_keyboard_part().next_device();
+            data_init.init(id, VirtualKeyboardData::new(device));
         }
     }
 }
@@ -226,15 +270,11 @@ where
 impl VirtualKeyboardData {
     /// Records `code`'s new edge and feeds the key to the model.
     fn key<D: VirtualKeyboardHandler>(&self, state: &mut D, code: KeyCode, edge: Edge) {
-        {
-            let mut pressed = locked(&self.pressed);
-            match edge {
-                Edge::Press => pressed.insert(code),
-                Edge::Release => pressed.remove(&code),
-            };
+        if track(&mut locked(&self.pressed), code, edge) == Taken::No {
+            return;
         }
         let at = state.virtual_keyboard_now();
-        let events = on_vk_key(state.virtual_keyboard_part(), code, edge, at);
+        let events = on_vk_key(self.device, code, edge, at);
         state.virtual_keyboard_events(events);
     }
 }
@@ -283,8 +323,7 @@ where
 
     fn destroyed(&self, state: &mut D, _client: ClientId, _resource: &ZwpVirtualKeyboardV1) {
         let at = state.virtual_keyboard_now();
-        let device = state.virtual_keyboard_part().device;
-        let events = releases(&locked(&self.pressed), device, at);
+        let events = releases(&locked(&self.pressed), self.device, at);
         if !events.is_empty() {
             state.virtual_keyboard_events(events);
         }
@@ -315,6 +354,29 @@ mod tests {
                 edge: Edge::Press
             }
         );
+    }
+
+    #[test]
+    fn every_keyboard_gets_a_device_of_its_own() {
+        let first = VIRTUAL_KEYBOARD_DEVICE;
+        let (second, third) = (successor(first), successor(successor(first)));
+        assert!(first != second && second != third && first != third);
+        assert_eq!(successor(DeviceId(u32::MAX)), VIRTUAL_KEYBOARD_DEVICE);
+        assert!(second.0 > first.0, "ids stay above the backend's own");
+    }
+
+    #[test]
+    fn a_keyboard_holds_at_most_a_bounded_set_of_keys() {
+        let mut held = BTreeSet::new();
+        for code in 0..u32::try_from(MAX_PRESSED).expect("a small cap") {
+            assert_eq!(track(&mut held, KeyCode(code), Edge::Press), Taken::Yes);
+        }
+        assert_eq!(track(&mut held, KeyCode(1000), Edge::Press), Taken::No);
+        assert_eq!(held.len(), MAX_PRESSED);
+        // A key already down is no new key, and a release always frees room.
+        assert_eq!(track(&mut held, KeyCode(0), Edge::Press), Taken::Yes);
+        assert_eq!(track(&mut held, KeyCode(0), Edge::Release), Taken::Yes);
+        assert_eq!(track(&mut held, KeyCode(1000), Edge::Press), Taken::Yes);
     }
 
     #[test]
