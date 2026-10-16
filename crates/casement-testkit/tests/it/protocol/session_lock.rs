@@ -16,8 +16,13 @@ use casement_testkit::fakes::MemoryLockMarker;
 use casement_testkit::{Fixture, FixtureSpec, FrameCount, ShotTarget, TestOrigin};
 use std::time::Duration;
 
+use crate::protocol::consent::{asked_world, kept, program};
 use crate::protocol::xdg_shell::{map_toplevel, settle};
+use casement_core::Event;
+use casement_core::privilege::{UnixSeconds, Verdict};
+use casement_protocols::vocab::{Answer, Power};
 use casement_testclient::surface::toplevel::WmBase;
+use casement_testkit::ASKED_PROGRAM;
 
 /// An opaque black pixel.
 const BLACK: [u8; 4] = [0, 0, 0, 255];
@@ -422,4 +427,87 @@ fn locked_is_sent_once_every_output_is_covered() {
     cover.show(fixture.client(id), &buffer);
     fixture.pump();
     assert!(locker.is_locked(), "locked arrives with the first content");
+}
+
+/// Covers the first output with a lock surface that shows content, for a locker that was
+/// requested already.
+fn cover_with_content(fixture: &mut Fixture, id: casement_testkit::ClientId, locker: &Locker) {
+    let cover = locker.cover(fixture.client(id)).expect("a lock surface");
+    fixture.pump();
+    assert!(cover.ack(fixture.client(id)));
+    let size = PhysicalSize { w: 1920, h: 1080 };
+    let buffer = shm_buffer(fixture.client(id), size, Pattern::Solid(0xff00_0000));
+    cover.show(fixture.client(id), &buffer);
+    fixture.pump();
+}
+
+/// Locking is a power: a program that is asked gets neither `locked` nor `finished` while the
+/// question is open (and the session stays open however long the wait), the shell is asked once,
+/// and on Allow the normal lock flow goes on.
+#[test]
+fn a_lock_waits_for_the_answer_and_goes_on_when_allowed() {
+    let (mut fixture, shell, client) = asked_world();
+    let locker = Locker::request(fixture.client(client)).expect("a lock");
+    fixture.pump();
+    assert_eq!(shell.asked().len(), 1, "the shell is asked once");
+    assert_eq!(shell.asked()[0].power, Power::Lock);
+    fixture.advance(Duration::from_secs(2));
+    assert!(!locker.is_locked() && !locker.is_finished(), "it waits");
+    assert_eq!(fixture.model().lock(), &LockState::Unlocked);
+
+    shell.answer(&mut fixture, shell.only_ask(), Answer::Allow);
+    assert!(matches!(fixture.model().lock(), LockState::Locking { .. }));
+    cover_with_content(&mut fixture, client, &locker);
+    assert!(locker.is_locked(), "the lock goes on once allowed");
+    assert!(!locker.is_finished());
+    assert_eq!(
+        kept(&fixture, ASKED_PROGRAM, Power::Lock),
+        Some(Verdict::Allow)
+    );
+}
+
+/// Don't Allow: the locker is told `finished` and the session stays open.
+#[test]
+fn a_refused_lock_is_finished_and_the_session_stays_open() {
+    let (mut fixture, shell, client) = asked_world();
+    let locker = Locker::request(fixture.client(client)).expect("a lock");
+    fixture.pump();
+    assert!(!locker.is_finished());
+    shell.answer(&mut fixture, shell.only_ask(), Answer::Deny);
+    assert!(locker.is_finished(), "the refusal is `finished`");
+    assert!(!locker.is_locked());
+    assert_eq!(fixture.model().lock(), &LockState::Unlocked);
+    assert_eq!(
+        kept(&fixture, ASKED_PROGRAM, Power::Lock),
+        Some(Verdict::Deny)
+    );
+}
+
+/// Taking the power back never ends a lock that already holds the session: the covers stay up
+/// and the locker can still unlock.
+#[test]
+fn taking_the_power_back_does_not_end_a_lock_in_force() {
+    let (mut fixture, shell, client) = asked_world();
+    let locker = Locker::request(fixture.client(client)).expect("a lock");
+    fixture.pump();
+    shell.answer(&mut fixture, shell.only_ask(), Answer::Allow);
+    cover_with_content(&mut fixture, client, &locker);
+    assert!(locker.is_locked());
+
+    fixture.feed_events(vec![Event::PrivilegeRevoked {
+        subject: program(ASKED_PROGRAM),
+        power: Power::Lock,
+        at: UnixSeconds(2),
+    }]);
+    fixture.advance(Duration::from_secs(1));
+    assert!(!locker.is_finished(), "the lock is not ended");
+    assert!(matches!(fixture.model().lock(), LockState::Locked { .. }));
+
+    locker.unlock(fixture.client(client));
+    fixture.pump();
+    assert_eq!(
+        fixture.model().lock(),
+        &LockState::Unlocked,
+        "only the locker unlocks, and it still can"
+    );
 }

@@ -1,11 +1,14 @@
 //! `gamma` (P1-M1): the colour curve of an output. A ramp a client sets is recorded by the
 //! headless backend, so the test reads it back.
 
-use casement_core::OutputName;
+use super::consent::{ScriptedShell, kept, program};
 use casement_core::output::{GammaRamp, GammaTable};
 use casement_core::policy::ConnectionRole;
-use casement_testclient::manage::gamma::{ControlState, GammaControls};
-use casement_testkit::{ClientId, Fixture, FixtureSpec};
+use casement_core::privilege::{HELD_REQUESTS, UnixSeconds, Verdict};
+use casement_core::{Event, OutputName};
+use casement_protocols::vocab::{Answer, Power};
+use casement_testclient::manage::gamma::{ControlId, ControlState, GammaControls};
+use casement_testkit::{ASKED_PROGRAM, ClientId, Fixture, FixtureSpec};
 
 /// A fixture with one output, a client and a gamma helper that has read the output name.
 fn boot() -> (Fixture, ClientId, GammaControls) {
@@ -144,4 +147,135 @@ fn an_all_zero_ramp_is_raised_to_the_floor() {
     gamma.destroy(control).expect("destroyed");
     settle(&mut fixture, &mut gamma);
     assert_eq!(fixture.gamma_of(&output()), Some(GammaRamp::Identity));
+}
+
+/// A fixture with one output, the scripted shell, and a gamma helper held by a program that is
+/// asked about its powers.
+fn asked_boot() -> (Fixture, ScriptedShell, GammaControls) {
+    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let shell = ScriptedShell::start(&mut fixture);
+    let id = fixture.connect_via_ask();
+    fixture.pump();
+    let mut gamma = GammaControls::start(fixture.client(id).globals()).expect("the manager");
+    settle(&mut fixture, &mut gamma);
+    (fixture, shell, gamma)
+}
+
+/// A ramp of the size the headless backend drives, which a waiting control was never told.
+fn headless_ramp() -> (Vec<u16>, Vec<u16>, Vec<u16>) {
+    steps(u32::try_from(casement_backend::headless::GAMMA_SIZE).expect("a size"))
+}
+
+/// A control made while the question about the displays is open is inert: it hears no table
+/// size and a ramp it sends changes nothing. When the person allows it is told the size, and
+/// works.
+#[test]
+fn a_control_made_while_asked_is_inert_until_the_person_allows() {
+    let (mut fixture, shell, mut gamma) = asked_boot();
+    let control = gamma.control("HEADLESS-1").expect("a control");
+    settle(&mut fixture, &mut gamma);
+    assert_eq!(shell.asked().len(), 1, "the shell is asked once");
+    assert_eq!(shell.asked()[0].power, Power::Displays);
+    assert_eq!(gamma.state(control), Some(ControlState::Silent));
+
+    let (red, green, blue) = headless_ramp();
+    gamma
+        .set_ramp(control, &red, &green, &blue)
+        .expect("a ramp");
+    settle(&mut fixture, &mut gamma);
+    assert_eq!(fixture.gamma_of(&output()), Some(GammaRamp::Identity));
+
+    shell.answer(&mut fixture, shell.only_ask(), Answer::Allow);
+    settle(&mut fixture, &mut gamma);
+    let Some(ControlState::Sized(size)) = gamma.state(control) else {
+        panic!("the control is told its size: {:?}", gamma.state(control));
+    };
+    let (red, green, blue) = steps(size);
+    gamma
+        .set_ramp(control, &red, &green, &blue)
+        .expect("a ramp");
+    settle(&mut fixture, &mut gamma);
+    assert!(matches!(
+        fixture.gamma_of(&output()),
+        Some(GammaRamp::Table(_))
+    ));
+}
+
+/// Don't Allow fails the waiting control, and a ramp it sends changes nothing.
+#[test]
+fn a_control_made_while_asked_fails_when_the_person_refuses() {
+    let (mut fixture, shell, mut gamma) = asked_boot();
+    let control = gamma.control("HEADLESS-1").expect("a control");
+    settle(&mut fixture, &mut gamma);
+    shell.answer(&mut fixture, shell.only_ask(), Answer::Deny);
+    settle(&mut fixture, &mut gamma);
+    assert_eq!(gamma.state(control), Some(ControlState::Failed));
+    let (red, green, blue) = headless_ramp();
+    gamma
+        .set_ramp(control, &red, &green, &blue)
+        .expect("a ramp");
+    settle(&mut fixture, &mut gamma);
+    assert_eq!(fixture.gamma_of(&output()), Some(GammaRamp::Identity));
+    assert_eq!(
+        kept(&fixture, ASKED_PROGRAM, Power::Displays),
+        Some(Verdict::Deny)
+    );
+}
+
+/// Taking the power back in Settings fails the control in use at once and restores the identity
+/// curve it had changed.
+#[test]
+fn a_power_taken_back_fails_the_control_and_restores_the_curve() {
+    let (mut fixture, shell, mut gamma) = asked_boot();
+    let control = gamma.control("HEADLESS-1").expect("a control");
+    settle(&mut fixture, &mut gamma);
+    shell.answer(&mut fixture, shell.only_ask(), Answer::Allow);
+    settle(&mut fixture, &mut gamma);
+    let Some(ControlState::Sized(size)) = gamma.state(control) else {
+        panic!("the control is told its size");
+    };
+    let (red, green, blue) = steps(size);
+    gamma
+        .set_ramp(control, &red, &green, &blue)
+        .expect("a ramp");
+    settle(&mut fixture, &mut gamma);
+    assert!(matches!(
+        fixture.gamma_of(&output()),
+        Some(GammaRamp::Table(_))
+    ));
+
+    fixture.feed_events(vec![Event::PrivilegeRevoked {
+        subject: program(ASKED_PROGRAM),
+        power: Power::Displays,
+        at: UnixSeconds(2),
+    }]);
+    settle(&mut fixture, &mut gamma);
+    assert_eq!(gamma.state(control), Some(ControlState::Failed));
+    assert_eq!(fixture.gamma_of(&output()), Some(GammaRamp::Identity));
+    gamma
+        .set_ramp(control, &red, &green, &blue)
+        .expect("a ramp");
+    settle(&mut fixture, &mut gamma);
+    assert_eq!(fixture.gamma_of(&output()), Some(GammaRamp::Identity));
+}
+
+/// A client keeps at most `HELD_REQUESTS` controls waiting for the answer; the next one fails
+/// at once.
+#[test]
+fn a_client_holds_at_most_the_cap_of_waiting_controls() {
+    let (mut fixture, _shell, mut gamma) = asked_boot();
+    let controls: Vec<ControlId> = (0..=HELD_REQUESTS)
+        .map(|_| gamma.control("HEADLESS-1").expect("a control"))
+        .collect();
+    settle(&mut fixture, &mut gamma);
+    let failed: Vec<ControlId> = controls
+        .iter()
+        .copied()
+        .filter(|control| gamma.state(*control) == Some(ControlState::Failed))
+        .collect();
+    assert_eq!(
+        failed,
+        [controls[HELD_REQUESTS]],
+        "only the one past the cap"
+    );
 }

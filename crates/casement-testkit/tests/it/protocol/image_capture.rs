@@ -1,15 +1,20 @@
 //! `image_capture` (P1-C1): output capture through ext-image-copy-capture, read by
 //! `casement_testclient::capture` (which folds the events with `desktop_client`'s reducer).
 
+use super::consent::{ScriptedShell, kept, program};
 use casement_core::geometry::LogicalPoint;
 use casement_core::input::DeviceClass;
 use casement_core::policy::ConnectionRole;
-use casement_core::{DeviceId, OutputName};
+use casement_core::privilege::{UnixSeconds, Verdict};
+use casement_core::{DeviceId, Event, OutputName};
+use casement_protocols::vocab::{Answer, Power};
 use casement_testclient::Pumped;
 use casement_testclient::capture::{
     BufferAsk, CaptureFailure, CursorEvent, CursorMode, OutputCapture, Size,
 };
-use casement_testkit::{ClientId, Fixture, FixtureSpec, FrameCount, ShotTarget, TestOrigin};
+use casement_testkit::{
+    ASKED_PROGRAM, ClientId, Fixture, FixtureSpec, FrameCount, ShotTarget, TestOrigin,
+};
 
 /// One small output, so a frame is a few hundred kilobytes.
 pub(crate) fn small() -> FixtureSpec {
@@ -460,4 +465,92 @@ fn the_cursor_image_is_a_capture_of_its_own() {
         capture.take().is_none(),
         "the same cursor is not sent twice"
     );
+}
+
+/// A fixture with the scripted shell, a client that is a program asked about its powers, two
+/// presented frames and a session on `HEADLESS-1` opened and settled (a session may be made and
+/// told its constraints before anyone has answered).
+fn asked_opened() -> (Fixture, ScriptedShell, OutputCapture) {
+    let mut fixture = Fixture::start(small()).expect("fixture");
+    let shell = ScriptedShell::start(&mut fixture);
+    let client = fixture.connect_via_ask();
+    fixture.frames(&name("HEADLESS-1"), FrameCount(2));
+    let mut capture = OutputCapture::start(fixture.client(client).globals()).expect("the managers");
+    settle(&mut fixture, &mut capture);
+    capture
+        .open("HEADLESS-1", CursorMode::Hidden)
+        .expect("a session on the output");
+    settle(&mut fixture, &mut capture);
+    (fixture, shell, capture)
+}
+
+/// A frame asked for by a program that is asked waits: the session is told its constraints, the
+/// shell is asked once about the screen, and the frame is made when the person allows.
+#[test]
+fn a_frame_waits_for_the_answer_and_is_made_on_allow() {
+    let (mut fixture, shell, mut capture) = asked_opened();
+    assert_eq!(
+        capture.session().expect("a session").size,
+        Some(Size::new(640, 480)),
+        "the constraints need no consent"
+    );
+    capture.request(BufferAsk::Announced).expect("a frame");
+    settle(&mut fixture, &mut capture);
+    assert!(capture.take().is_none(), "no frame before the answer");
+    assert!(!capture.is_stopped());
+    let asked = shell.asked();
+    assert_eq!(asked.len(), 1);
+    assert_eq!(asked[0].power, Power::Screen);
+    assert_eq!(asked[0].subject, ASKED_PROGRAM);
+
+    shell.answer(&mut fixture, shell.only_ask(), Answer::Allow);
+    settle(&mut fixture, &mut capture);
+    let frame = capture
+        .take()
+        .expect("answered")
+        .expect("a frame, not a failure");
+    assert_eq!((frame.size.w, frame.size.h), (640, 480));
+    assert_eq!(
+        kept(&fixture, ASKED_PROGRAM, Power::Screen),
+        Some(Verdict::Allow)
+    );
+}
+
+/// Don't Allow fails the frame that waited and stops the session.
+#[test]
+fn a_refused_frame_fails_and_the_session_stops() {
+    let (mut fixture, shell, mut capture) = asked_opened();
+    capture.request(BufferAsk::Announced).expect("a frame");
+    settle(&mut fixture, &mut capture);
+    shell.answer(&mut fixture, shell.only_ask(), Answer::Deny);
+    settle(&mut fixture, &mut capture);
+    assert_eq!(
+        capture.take().expect("answered").expect_err("a failure"),
+        CaptureFailure::Stopped
+    );
+    assert!(capture.is_stopped(), "the session was told `stopped`");
+    assert_eq!(
+        kept(&fixture, ASKED_PROGRAM, Power::Screen),
+        Some(Verdict::Deny)
+    );
+}
+
+/// Taking the power back in Settings stops a session that was capturing, at once.
+#[test]
+fn a_power_taken_back_stops_a_session_in_use() {
+    let (mut fixture, shell, mut capture) = asked_opened();
+    capture.request(BufferAsk::Announced).expect("a frame");
+    settle(&mut fixture, &mut capture);
+    shell.answer(&mut fixture, shell.only_ask(), Answer::Allow);
+    settle(&mut fixture, &mut capture);
+    capture.take().expect("answered").expect("the first frame");
+    assert!(!capture.is_stopped());
+
+    fixture.feed_events(vec![Event::PrivilegeRevoked {
+        subject: program(ASKED_PROGRAM),
+        power: Power::Screen,
+        at: UnixSeconds(2),
+    }]);
+    settle(&mut fixture, &mut capture);
+    assert!(capture.is_stopped(), "the session stopped mid-use");
 }

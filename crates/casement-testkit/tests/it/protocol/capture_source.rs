@@ -2,15 +2,18 @@
 //! toplevel handle and captures the window through the same copy session output capture uses.
 //! The client side is `casement_testclient::capture::toplevel_source::WindowCapture`.
 
+use super::consent::{ScriptedShell, kept, program};
 use crate::protocol::xdg_shell::{boot, map_toplevel, windows};
 use casement_core::geometry::{LogicalSize, PhysicalSize};
 use casement_core::policy::ConnectionRole;
-use casement_core::{OutputName, WindowId};
+use casement_core::privilege::{UnixSeconds, Verdict};
+use casement_core::{Event, OutputName, WindowId};
+use casement_protocols::vocab::{Answer, Power};
 use casement_testclient::capture::toplevel_source::{CaptureFailure, CursorMode, WindowCapture};
 use casement_testclient::surface::lock::Locker;
 use casement_testclient::surface::toplevel::{Toplevel, WmBase};
 use casement_testclient::{Pattern, Pumped, shm_buffer};
-use casement_testkit::{ClientId, Fixture, FixtureSpec, FrameCount};
+use casement_testkit::{ASKED_PROGRAM, ClientId, Fixture, FixtureSpec, FrameCount};
 use casement_wayland::capture_source::capture_size;
 use casement_wayland::foreign_toplevel_list::identifier_of;
 use ds_core::geometry::scale::Scale;
@@ -264,4 +267,113 @@ fn a_locked_session_stops_window_capture_and_withholds_titles() {
         again.take().expect("answered").is_ok(),
         "capture works again once unlocked"
     );
+}
+
+/// What an asked window capture needs: a trusted client's mapped window, the scripted shell, and
+/// a session on that window made by a program that is asked about its powers (a session may be
+/// made and told its size before anyone has answered). The window's objects are kept alive.
+struct AskedCapture {
+    fixture: Fixture,
+    shell: ScriptedShell,
+    capture: WindowCapture,
+    _window: (WmBase, Toplevel),
+}
+
+fn asked_capture() -> AskedCapture {
+    let (mut fixture, owner) = boot();
+    let shell = ScriptedShell::start(&mut fixture);
+    let base = WmBase::bind(fixture.client(owner), 7);
+    let top = map_solid(&mut fixture, owner, &base, (320, 200), 0xffff_0000);
+    let window = windows(&fixture)[0];
+    let asked = fixture.connect_via_ask();
+    fixture.pump();
+    let capture = opened(&mut fixture, asked, window);
+    AskedCapture {
+        fixture,
+        shell,
+        capture,
+        _window: (base, top),
+    }
+}
+
+/// A window frame asked for by a program that is asked waits: the shell is asked once about the
+/// screen, and the window is drawn when the person allows.
+#[test]
+fn a_window_frame_waits_for_the_answer_and_is_made_on_allow() {
+    let AskedCapture {
+        mut fixture,
+        shell,
+        mut capture,
+        _window: _alive,
+    } = asked_capture();
+    assert_eq!(
+        capture.size(),
+        Some((320, 200)),
+        "the size needs no consent"
+    );
+    capture.request().expect("a request");
+    settle(&mut fixture, &mut capture);
+    assert!(capture.take().is_none(), "no frame before the answer");
+    let asked = shell.asked();
+    assert_eq!(asked.len(), 1);
+    assert_eq!(asked[0].power, Power::Screen);
+    assert_eq!(asked[0].subject, ASKED_PROGRAM);
+
+    shell.answer(&mut fixture, shell.only_ask(), Answer::Allow);
+    settle(&mut fixture, &mut capture);
+    let frame = capture.take().expect("answered").expect("a frame");
+    assert_eq!(frame.rgba[..4], [255, 0, 0, 255]);
+    assert_eq!(
+        kept(&fixture, ASKED_PROGRAM, Power::Screen),
+        Some(Verdict::Allow)
+    );
+}
+
+/// Don't Allow fails the waiting frame and stops the session.
+#[test]
+fn a_refused_window_frame_fails_and_the_session_stops() {
+    let AskedCapture {
+        mut fixture,
+        shell,
+        mut capture,
+        _window: _alive,
+    } = asked_capture();
+    capture.request().expect("a request");
+    settle(&mut fixture, &mut capture);
+    shell.answer(&mut fixture, shell.only_ask(), Answer::Deny);
+    settle(&mut fixture, &mut capture);
+    assert_eq!(
+        capture.take().expect("answered").expect_err("a failure"),
+        CaptureFailure::Stopped
+    );
+    assert!(capture.is_stopped(), "the session was told `stopped`");
+    assert_eq!(
+        kept(&fixture, ASKED_PROGRAM, Power::Screen),
+        Some(Verdict::Deny)
+    );
+}
+
+/// Taking the power back stops a window session that was capturing.
+#[test]
+fn a_power_taken_back_stops_a_window_session_in_use() {
+    let AskedCapture {
+        mut fixture,
+        shell,
+        mut capture,
+        _window: _alive,
+    } = asked_capture();
+    capture.request().expect("a request");
+    settle(&mut fixture, &mut capture);
+    shell.answer(&mut fixture, shell.only_ask(), Answer::Allow);
+    settle(&mut fixture, &mut capture);
+    capture.take().expect("answered").expect("the first frame");
+    assert!(!capture.is_stopped());
+
+    fixture.feed_events(vec![Event::PrivilegeRevoked {
+        subject: program(ASKED_PROGRAM),
+        power: Power::Screen,
+        at: UnixSeconds(2),
+    }]);
+    settle(&mut fixture, &mut capture);
+    assert!(capture.is_stopped(), "the session stopped mid-use");
 }

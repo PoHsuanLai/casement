@@ -10,6 +10,9 @@
 
 mod handout;
 mod live;
+mod standing;
+
+pub use standing::{ASKED_PROGRAM, program_standing, trusted_standing};
 
 use crate::fakes::{
     FakePalmrest, FakeSession, FakeShellCalls, FakeSpawner, MemoryLockMarker, MemorySpaceStore,
@@ -25,22 +28,24 @@ use casement::seams::Seams;
 use casement::space_store::StateHome;
 use casement::time::{ClockSource, SharedClock};
 use casement::xwayland::XwaylandConfig;
-use casement::{State, clients, core_loop};
+use casement::{State, core_loop};
 use casement_backend::tty::TtySeams;
 use casement_backend::{BackendChoice, BackendKind, FramePixels, HeadlessBackend, TtyBackend};
 use casement_core::geometry::LogicalRect;
 use casement_core::policy::ConnectionRole;
+use casement_core::privilege::ClientStanding;
 use casement_core::time::{Mono, Stop, TimerKey};
 use casement_core::{Event, Model, OutputName, WindowId};
 use casement_testclient::{ClientError, Pumped, TestClient};
+use casement_wayland::consent::ImageWatch;
 use casement_wayland::dmabuf::DmabufOffer;
-use porter_core::PeerIdentity;
 use smithay::reexports::calloop::EventLoop;
 use smithay::reexports::wayland_server::{Client, Display};
 use std::collections::BTreeMap;
 use std::os::fd::OwnedFd;
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
@@ -244,8 +249,24 @@ impl Fixture {
         &self.spawner
     }
 
-    /// A new client arriving through a socket of `role`.
+    /// A new client arriving through a socket of `role`. A public client is taken to be a
+    /// desktop service the table trusts ([`trusted_standing`]), so what it uses is not asked
+    /// about; [`Fixture::connect_via_ask`] connects one that is.
     pub fn connect(&mut self, role: ConnectionRole) -> ClientId {
+        let standing = match role {
+            ConnectionRole::Public => Some(trusted_standing()),
+            _ => None,
+        };
+        self.join(role, standing, None)
+    }
+
+    /// A new client of `role`, whose program is taken to be `standing` when it is given.
+    fn join(
+        &mut self,
+        role: ConnectionRole,
+        standing: Option<ClientStanding>,
+        watch: Option<Arc<dyn ImageWatch>>,
+    ) -> ClientId {
         let (server, client) = UnixStream::pair().expect("a socket pair for the test client");
         client
             .set_nonblocking(true)
@@ -253,8 +274,7 @@ impl Fixture {
         server
             .set_nonblocking(true)
             .expect("a non-blocking server end");
-        let held = clients::insert_client(&mut self.state, server, role, PeerIdentity::Unproven)
-            .expect("the compositor takes the client");
+        let held = self.insert(server, role, standing, watch);
         let id = ClientId(self.next_client);
         self.servers.insert(id, held);
         self.next_client += 1;

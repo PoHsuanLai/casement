@@ -21,7 +21,10 @@ pub mod udmabuf;
 pub mod writeback;
 
 pub use env::Env;
-pub use fixture::{Advanced, ClientId, Fixture, FixtureError, FrameCount, SceneDump, ShotTarget};
+pub use fixture::{
+    ASKED_PROGRAM, Advanced, ClientId, Fixture, FixtureError, FrameCount, SceneDump, ShotTarget,
+    program_standing, trusted_standing,
+};
 pub use input::FixtureInput;
 pub use origin::TestOrigin;
 pub use spec::FixtureSpec;

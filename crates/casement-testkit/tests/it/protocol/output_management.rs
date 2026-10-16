@@ -2,15 +2,19 @@
 //! heads, apply a mode, scale, position and transform, test a configuration, and the refused,
 //! stale and malformed ones.
 
+use super::consent::{ScriptedShell, kept};
 use casement_core::OutputName;
 use casement_core::geometry::PhysicalSize;
 use casement_core::output::{Mode, ModePreference, OutputConfig, OutputPower};
 use casement_core::policy::ConnectionRole;
+use casement_core::privilege::{HELD_REQUESTS, Verdict};
 use casement_core::time::Millihertz;
+use casement_protocols::vocab::{Answer as Reply, Power};
 use casement_testclient::manage::output_management::{
-    Answer, HeadPlan, Intent, Lit, ModeChoice, OutputManager, Preference, Properties, Setting,
+    Answer, ConfigId, HeadPlan, Intent, Lit, ModeChoice, OutputManager, Preference, Properties,
+    Setting,
 };
-use casement_testkit::{Fixture, FixtureSpec};
+use casement_testkit::{ASKED_PROGRAM, Fixture, FixtureSpec};
 use ds_core::geometry::scale::Scale;
 use std::time::Duration;
 use wayland_client::protocol::wl_output::Transform;
@@ -310,4 +314,130 @@ fn hotplug_adds_and_finishes_heads() {
     settle(&mut fixture, &mut manager);
     assert_eq!(manager.heads().len(), 1);
     assert_eq!(manager.finished_heads(), 1);
+}
+
+/// A fixture with `outputs`, the scripted shell, and a manager held by a program that is asked
+/// about its powers, which has read the heads.
+fn asked_boot(outputs: &[&str]) -> (Fixture, ScriptedShell, OutputManager) {
+    let mut fixture =
+        Fixture::start(FixtureSpec::desktop().with_outputs(outputs)).expect("fixture");
+    let shell = ScriptedShell::start(&mut fixture);
+    let id = fixture.connect_via_ask();
+    fixture.pump();
+    let mut manager = OutputManager::start(fixture.client(id).globals()).expect("the manager");
+    settle(&mut fixture, &mut manager);
+    (fixture, shell, manager)
+}
+
+/// Reading the heads is free, but an `apply` or a `test` waits for the person: neither is
+/// answered, nor does anything change, until they allow; then each is answered against the heads
+/// as they are.
+#[test]
+fn a_configuration_waits_for_the_person_and_is_answered_on_allow() {
+    let (mut fixture, shell, mut manager) = asked_boot(&TWO[..1]);
+    assert_eq!(
+        manager.heads().len(),
+        1,
+        "the heads were listed without asking"
+    );
+    assert!(shell.asked().is_empty());
+    let before = config_of(&fixture, "HEADLESS-1");
+    let moved = Properties {
+        position: Some((100, 50)),
+        ..Properties::default()
+    };
+    let tested = manager
+        .configure(None, &[plan("HEADLESS-1", moved)], Intent::Test)
+        .expect("a test");
+    let applied = manager
+        .configure(None, &[plan("HEADLESS-1", moved)], Intent::Apply)
+        .expect("an apply");
+    settle(&mut fixture, &mut manager);
+    assert_eq!(shell.asked().len(), 1, "one question for both");
+    assert_eq!(shell.asked()[0].power, Power::Displays);
+    assert_eq!(manager.answer(tested), None);
+    assert_eq!(manager.answer(applied), None);
+    assert_eq!(config_of(&fixture, "HEADLESS-1"), before);
+
+    shell.answer(&mut fixture, shell.only_ask(), Reply::Allow);
+    settle(&mut fixture, &mut manager);
+    assert_eq!(manager.answer(tested), Some(Answer::Succeeded));
+    assert_eq!(manager.answer(applied), Some(Answer::Succeeded));
+    let after = config_of(&fixture, "HEADLESS-1");
+    assert_eq!((after.position.x, after.position.y), (100, 50));
+}
+
+/// A configuration that waited is checked against the heads when it is let through: one built
+/// before the heads changed is `cancelled`.
+#[test]
+fn a_waiting_configuration_is_cancelled_when_the_heads_moved_meanwhile() {
+    let (mut fixture, shell, mut manager) = asked_boot(&TWO[..1]);
+    let applied = manager
+        .configure(
+            None,
+            &[plan("HEADLESS-1", Properties::default())],
+            Intent::Apply,
+        )
+        .expect("an apply");
+    settle(&mut fixture, &mut manager);
+    assert_eq!(manager.answer(applied), None);
+    fixture.plug(casement_backend::VirtualOutputSpec::parse(TWO[1]).expect("a spec"));
+    settle(&mut fixture, &mut manager);
+
+    shell.answer(&mut fixture, shell.only_ask(), Reply::Allow);
+    settle(&mut fixture, &mut manager);
+    assert_eq!(manager.answer(applied), Some(Answer::Cancelled));
+}
+
+/// Don't Allow fails what waited, changes nothing, and is kept.
+#[test]
+fn a_waiting_configuration_fails_when_the_person_refuses() {
+    let (mut fixture, shell, mut manager) = asked_boot(&TWO[..1]);
+    let before = config_of(&fixture, "HEADLESS-1");
+    let moved = Properties {
+        position: Some((100, 50)),
+        ..Properties::default()
+    };
+    let applied = manager
+        .configure(None, &[plan("HEADLESS-1", moved)], Intent::Apply)
+        .expect("an apply");
+    settle(&mut fixture, &mut manager);
+    shell.answer(&mut fixture, shell.only_ask(), Reply::Deny);
+    settle(&mut fixture, &mut manager);
+    assert_eq!(manager.answer(applied), Some(Answer::Failed));
+    assert_eq!(config_of(&fixture, "HEADLESS-1"), before);
+    assert_eq!(
+        kept(&fixture, ASKED_PROGRAM, Power::Displays),
+        Some(Verdict::Deny)
+    );
+
+    // Refused for good, the next one is failed at once without asking again.
+    let again = manager
+        .configure(None, &[plan("HEADLESS-1", moved)], Intent::Apply)
+        .expect("another apply");
+    settle(&mut fixture, &mut manager);
+    assert_eq!(manager.answer(again), Some(Answer::Failed));
+    assert_eq!(shell.asked().len(), 1);
+}
+
+/// A client keeps at most `HELD_REQUESTS` configurations waiting for the answer; the next one is
+/// `failed` at once.
+#[test]
+fn a_client_holds_at_most_the_cap_of_waiting_configurations() {
+    let (mut fixture, _shell, mut manager) = asked_boot(&TWO[..1]);
+    let all: Vec<ConfigId> = (0..=HELD_REQUESTS)
+        .map(|_| {
+            manager
+                .configure(
+                    None,
+                    &[plan("HEADLESS-1", Properties::default())],
+                    Intent::Apply,
+                )
+                .expect("an apply")
+        })
+        .collect();
+    settle(&mut fixture, &mut manager);
+    let (kept_waiting, past) = all.split_at(HELD_REQUESTS);
+    assert!(kept_waiting.iter().all(|id| manager.answer(*id).is_none()));
+    assert_eq!(manager.answer(past[0]), Some(Answer::Failed));
 }

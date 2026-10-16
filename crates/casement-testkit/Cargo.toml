@@ -25,7 +25,7 @@ casement-backend = { workspace = true, features = ["testing"] }
 casement-wayland = { workspace = true }
 casement-ipc = { workspace = true }
 casement-testclient = { workspace = true }
-casement-protocols = { workspace = true }
+casement-protocols = { workspace = true, features = ["client"] }
 porter-core = { workspace = true }
 ds-core = { workspace = true }
 smithay = { workspace = true, features = ["wayland_frontend", "renderer_pixman", "renderer_multi", "backend_session"] }

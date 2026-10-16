@@ -3,15 +3,20 @@
 //! (`grim -g`) is cut from them at the output's scale. The client side is
 //! `casement_testclient::capture::ScreenCopy`.
 
+use super::consent::{ScriptedShell, kept};
 use casement_core::geometry::LogicalPoint;
 use casement_core::input::DeviceClass;
 use casement_core::policy::ConnectionRole;
-use casement_core::{DeviceId, OutputName};
+use casement_core::privilege::{UnixSeconds, Verdict};
+use casement_core::{DeviceId, Event, OutputName};
+use casement_protocols::vocab::{Answer, Power};
 use casement_testclient::Pumped;
 use casement_testclient::capture::{
     Copied, CopyArea, CopyFailure, CopyKind, CursorMode, ScreenCopy,
 };
-use casement_testkit::{ClientId, Fixture, FixtureSpec, FrameCount, ShotTarget, TestOrigin};
+use casement_testkit::{
+    ASKED_PROGRAM, ClientId, Fixture, FixtureSpec, FrameCount, ShotTarget, TestOrigin,
+};
 
 fn name(text: &str) -> OutputName {
     OutputName::parse(text).expect("a name")
@@ -404,5 +409,125 @@ fn a_client_with_copies_piled_up_is_cut() {
     assert!(
         !fixture.client(client).is_connected(),
         "the client with copies piled up is cut"
+    );
+}
+
+/// A fixture with the scripted shell, a client that is a program asked about its powers, two
+/// presented frames and the manager bound.
+fn asked_started() -> (Fixture, ScriptedShell, ClientId, ScreenCopy) {
+    let mut fixture = Fixture::start(output_at(120)).expect("fixture");
+    let shell = ScriptedShell::start(&mut fixture);
+    let client = fixture.connect_via_ask();
+    fixture.frames(&name("HEADLESS-1"), FrameCount(2));
+    let mut copy = ScreenCopy::start(fixture.client(client).globals()).expect("the manager");
+    settle(&mut fixture, &mut copy);
+    (fixture, shell, client, copy)
+}
+
+/// Asks for the whole output and copies into the first buffer offered, without waiting for any
+/// answer.
+fn ask_and_copy(fixture: &mut Fixture, copy: &mut ScreenCopy, kind: CopyKind) {
+    copy.capture("HEADLESS-1", CopyArea::Output, CursorMode::Hidden)
+        .expect("a frame");
+    settle(fixture, copy);
+    let offer = *copy.offers().first().expect("the frame offered a buffer");
+    copy.copy(offer, kind).expect("a copy");
+    settle(fixture, copy);
+}
+
+/// A copy asked for by a program that is asked waits: the shell is asked once about the screen,
+/// and the frame is copied when the person allows.
+#[test]
+fn a_copy_waits_for_the_answer_and_is_made_on_allow() {
+    let (mut fixture, shell, _client, mut copy) = asked_started();
+    ask_and_copy(&mut fixture, &mut copy, CopyKind::Plain);
+    assert!(copy.take().is_none(), "nothing is copied before the answer");
+    let asked = shell.asked();
+    assert_eq!(asked.len(), 1);
+    assert_eq!(asked[0].power, Power::Screen);
+    assert_eq!(asked[0].subject, ASKED_PROGRAM);
+
+    shell.answer(&mut fixture, shell.only_ask(), Answer::Allow);
+    settle(&mut fixture, &mut copy);
+    let shot = copy
+        .take()
+        .expect("answered")
+        .expect("a frame, not a failure");
+    assert_eq!((shot.size.w, shot.size.h), (640, 480));
+    assert_eq!(
+        kept(&fixture, ASKED_PROGRAM, Power::Screen),
+        Some(Verdict::Allow)
+    );
+}
+
+/// Don't Allow fails the copy that waited; the refusal is kept, so the next copy fails at once
+/// without asking again.
+#[test]
+fn a_refused_copy_fails_and_is_not_asked_about_again() {
+    let (mut fixture, shell, _client, mut copy) = asked_started();
+    ask_and_copy(&mut fixture, &mut copy, CopyKind::Plain);
+    shell.answer(&mut fixture, shell.only_ask(), Answer::Deny);
+    settle(&mut fixture, &mut copy);
+    assert_eq!(
+        copy.take().expect("answered").expect_err("a failure"),
+        CopyFailure::Failed
+    );
+    assert_eq!(
+        kept(&fixture, ASKED_PROGRAM, Power::Screen),
+        Some(Verdict::Deny)
+    );
+
+    ask_and_copy(&mut fixture, &mut copy, CopyKind::Plain);
+    assert_eq!(
+        copy.take().expect("answered").expect_err("a failure"),
+        CopyFailure::Failed
+    );
+    assert_eq!(shell.asked().len(), 1, "no second question");
+}
+
+/// Taking the power back fails the copy that was queued for a newer frame.
+#[test]
+fn a_power_taken_back_fails_the_queued_copy() {
+    let (mut fixture, shell, _client, mut copy) = asked_started();
+    ask_and_copy(&mut fixture, &mut copy, CopyKind::Plain);
+    shell.answer(&mut fixture, shell.only_ask(), Answer::Allow);
+    settle(&mut fixture, &mut copy);
+    copy.take().expect("answered").expect("the first copy");
+
+    // The client has had the frame there is; this one waits for a newer.
+    ask_and_copy(&mut fixture, &mut copy, CopyKind::WithDamage);
+    assert!(copy.take().is_none(), "queued for a newer frame");
+    fixture.feed_events(vec![Event::PrivilegeRevoked {
+        subject: super::consent::program(ASKED_PROGRAM),
+        power: Power::Screen,
+        at: UnixSeconds(2),
+    }]);
+    settle(&mut fixture, &mut copy);
+    assert_eq!(
+        copy.take().expect("answered").expect_err("a failure"),
+        CopyFailure::Failed
+    );
+}
+
+/// Copies held for the answer count towards the cap on a client's waiting copies: a program
+/// that piles them up while the question is open is cut like one that piles up queued ones.
+#[test]
+fn a_client_with_copies_held_for_the_answer_is_cut_at_the_cap() {
+    let (mut fixture, _shell, client, _first) = asked_started();
+    let cap = casement_wayland::limits::MAX_PENDING_COPIES;
+    let mut piled = Vec::new();
+    for _ in 0..cap + 3 {
+        let mut copy = ScreenCopy::start(fixture.client(client).globals()).expect("the manager");
+        settle(&mut fixture, &mut copy);
+        ask_and_copy(&mut fixture, &mut copy, CopyKind::Plain);
+        piled.push(copy);
+        if !fixture.client(client).is_connected() {
+            break;
+        }
+    }
+    assert!(piled.len() > cap, "the cut came only past the cap");
+    assert!(
+        !fixture.client(client).is_connected(),
+        "the client with held copies piled up is cut"
     );
 }

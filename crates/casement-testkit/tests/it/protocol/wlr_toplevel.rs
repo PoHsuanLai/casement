@@ -2,15 +2,18 @@
 //! states and outputs; a handle's requests take the transitions the window's own requests do;
 //! `set_rectangle` is stored for the minimise animation; the listing's transcript is a golden.
 
+use crate::protocol::consent::{ScriptedShell, kept, program};
 use crate::protocol::xdg_shell::{boot, check_golden, golden, windows};
-use casement_core::WindowId;
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize, PhysicalSize};
+use casement_core::policy::ConnectionRole;
+use casement_core::privilege::{UnixSeconds, Verdict};
 use casement_core::window::WindowState;
-use casement_protocols::vocab::Emphasis;
+use casement_core::{Event, WindowId};
+use casement_protocols::vocab::{Answer, Emphasis, Power};
 use casement_testclient::manage::wlr_toplevel::{Closing, ToplevelWatch, WlrListed, WlrState};
 use casement_testclient::surface::toplevel::{Toplevel, WmBase};
 use casement_testclient::{Pattern, ShmBuffer, shm_buffer};
-use casement_testkit::{ClientId, Fixture};
+use casement_testkit::{ASKED_PROGRAM, ClientId, Fixture, FixtureSpec};
 
 /// Maps a titled window of `app_id` (the buffer must outlive the window).
 fn map_titled(
@@ -390,5 +393,140 @@ fn a_client_that_binds_the_window_list_without_end_is_cut() {
     assert!(
         !fixture.client(id).is_connected(),
         "the client past the cap is cut"
+    );
+}
+
+/// A desktop with the scripted shell, a window "Inbox" mapped by a client the desktop trusts,
+/// and a program that is asked about its powers.
+fn asked_with_window() -> (
+    Fixture,
+    ScriptedShell,
+    ClientId,
+    Toplevel,
+    ShmBuffer,
+    WindowId,
+) {
+    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let shell = ScriptedShell::start(&mut fixture);
+    let owner = fixture.connect(ConnectionRole::Public);
+    fixture.pump();
+    let base = WmBase::bind(fixture.client(owner), 7);
+    let (top, buffer) = map_titled(&mut fixture, owner, &base, "Inbox");
+    let window = windows(&fixture)[0];
+    let asked = fixture.connect_via_ask();
+    fixture.pump();
+    (fixture, shell, asked, top, buffer, window)
+}
+
+/// Seeing and managing the windows is a power: a list bound by a program that is asked hears
+/// nothing while the question is open, the shell is asked once, and on Allow the windows are
+/// listed and kept up to date.
+#[test]
+fn a_window_list_bound_while_asked_is_listed_nothing_until_allowed() {
+    let (mut fixture, shell, asked, top, _buffer, _window) = asked_with_window();
+    let mut watch = ToplevelWatch::start(fixture.client(asked).globals()).expect("the list");
+    settle(&mut fixture, &mut watch);
+    assert_eq!(shell.asked().len(), 1, "the shell is asked once");
+    assert_eq!(shell.asked()[0].power, Power::Windows);
+    assert!(watch.listed().is_empty(), "no window is listed yet");
+    assert!(!watch.finished());
+
+    shell.answer(&mut fixture, shell.only_ask(), Answer::Allow);
+    settle(&mut fixture, &mut watch);
+    assert_eq!(watch.listed().len(), 1);
+    assert_eq!(watch.listed()[0].title, "Inbox");
+    assert!(!watch.finished());
+    assert_eq!(
+        kept(&fixture, ASKED_PROGRAM, Power::Windows),
+        Some(Verdict::Allow)
+    );
+
+    top.set_title("Drafts");
+    top.surface.commit();
+    settle(&mut fixture, &mut watch);
+    assert_eq!(watch.listed()[0].title, "Drafts", "and kept up to date");
+}
+
+/// Don't Allow: the manager is `finished` and lists nothing.
+#[test]
+fn a_refused_window_list_is_finished() {
+    let (mut fixture, shell, asked, _top, _buffer, _window) = asked_with_window();
+    let mut watch = ToplevelWatch::start(fixture.client(asked).globals()).expect("the list");
+    settle(&mut fixture, &mut watch);
+    shell.answer(&mut fixture, shell.only_ask(), Answer::Deny);
+    settle(&mut fixture, &mut watch);
+    assert!(watch.finished());
+    assert!(watch.listed().is_empty());
+    assert_eq!(
+        kept(&fixture, ASKED_PROGRAM, Power::Windows),
+        Some(Verdict::Deny)
+    );
+
+    // The refusal is kept: binding again is finished at once, without a second question.
+    let mut again = ToplevelWatch::start(fixture.client(asked).globals()).expect("the list");
+    settle(&mut fixture, &mut again);
+    assert!(again.finished());
+    assert_eq!(shell.asked().len(), 1);
+}
+
+/// Taking the power back finishes the manager in use; its handles change nothing from then on
+/// and it hears nothing more.
+#[test]
+fn a_power_taken_back_finishes_the_window_list_and_silences_its_handles() {
+    let (mut fixture, shell, asked, top, _buffer, window) = asked_with_window();
+    let mut watch = ToplevelWatch::start(fixture.client(asked).globals()).expect("the list");
+    settle(&mut fixture, &mut watch);
+    shell.answer(&mut fixture, shell.only_ask(), Answer::Allow);
+    settle(&mut fixture, &mut watch);
+    assert_eq!(watch.listed().len(), 1);
+    assert!(!watch.finished());
+
+    fixture.feed_events(vec![Event::PrivilegeRevoked {
+        subject: program(ASKED_PROGRAM),
+        power: Power::Windows,
+        at: UnixSeconds(2),
+    }]);
+    settle(&mut fixture, &mut watch);
+    assert!(watch.finished(), "the manager in use is finished");
+
+    let before = states_of(&fixture, window);
+    ask(&mut fixture, &mut watch, |watch| {
+        watch.maximize(0).expect("request")
+    });
+    assert_eq!(
+        states_of(&fixture, window),
+        before,
+        "the handle does nothing"
+    );
+    assert!(!states_of(&fixture, window).contains(&WlrState::Maximized));
+
+    top.set_title("Drafts");
+    top.surface.commit();
+    settle(&mut fixture, &mut watch);
+    assert_eq!(watch.listed()[0].title, "Inbox", "and hears nothing more");
+}
+
+/// Managers that wait for the answer count toward the cap of window lists a client may bind:
+/// past it the client is cut, however long the question stays open.
+#[test]
+fn waiting_window_lists_count_toward_the_cap_of_binds() {
+    let (mut fixture, shell, asked, _top, _buffer, _window) = asked_with_window();
+    let cap = casement_wayland::limits::MAX_WINDOW_LIST_MANAGERS;
+    let mut watches = Vec::new();
+    for _ in 0..cap {
+        watches.push(ToplevelWatch::start(fixture.client(asked).globals()).expect("the list"));
+        fixture.pump();
+    }
+    assert!(
+        fixture.client(asked).is_connected(),
+        "up to the cap is allowed"
+    );
+    assert_eq!(shell.asked().len(), 1, "one question for all of them");
+    assert!(watches.iter().all(|watch| watch.listed().is_empty()));
+    watches.push(ToplevelWatch::start(fixture.client(asked).globals()).expect("a bind"));
+    fixture.pump();
+    assert!(
+        !fixture.client(asked).is_connected(),
+        "the client past the cap is cut while its lists wait"
     );
 }

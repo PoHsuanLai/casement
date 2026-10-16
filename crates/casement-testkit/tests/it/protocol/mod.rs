@@ -11,6 +11,7 @@ mod capture_source;
 mod color_management;
 mod commit_timing;
 mod compositor;
+mod consent;
 mod content_type;
 mod cursor_shape;
 mod data_device;
