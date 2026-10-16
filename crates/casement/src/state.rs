@@ -157,6 +157,9 @@ pub struct AgentState {
     /// The unit each privileged client was handed its connection as (`connect::answer`), so a
     /// later phase can say who holds the shell's and the agent tier's connections.
     pub handed: BTreeMap<casement_core::ClientKey, casement_agent::CallerUnit>,
+    /// The remote EIS connections that are open, one device slot each (`connect::answer_remote`),
+    /// so `EndEis` can end a portal session's sockets.
+    pub remote: crate::remote_sessions::RemoteSessions,
 }
 
 /// The D-Bus servers' handles (owned by `casement-ipc`, so their lanes change them there).

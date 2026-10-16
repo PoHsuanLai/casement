@@ -3,11 +3,16 @@
 //! kill chord. At P2-Z the hand-out's types and signatures; bodies at P2 (P2-Q2).
 
 mod eis;
+mod remote;
 mod socket;
 
 pub use eis::{
     PORTAL_UNIT, RemoteEisSource, RemoteEvent, RemoteGrant, RemoteInput, RemoteKind, RemoteKinds,
-    device_id as remote_device_id, open as open_remote_eis, portal_may_connect,
+    open as open_remote_eis, portal_may_connect,
+};
+pub use remote::{
+    MAX_HELD, MAX_REMOTE_SLOTS, RemoteHandle, RemoteSlot, RemoteSlots,
+    device_id as remote_device_id,
 };
 
 pub use socket::{CallerUnit, HandOut, Handed, RefuseWhy, hand_out, role_for};

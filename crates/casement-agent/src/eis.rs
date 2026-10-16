@@ -12,6 +12,7 @@
 //! Only the portal's unit may ask ([`portal_may_connect`]); it holds no Wayland role.
 //! This is the only file that names `reis` (B14). The agent seat's EIS (P4) is not here.
 
+use crate::remote::{Fit, Held, RemoteHandle, RemoteSlot, releases, tagged};
 use crate::socket::CallerUnit;
 use casement_core::DeviceId;
 use casement_core::geometry::{LogicalPoint, LogicalRect, SubPoint, SubPx};
@@ -24,7 +25,6 @@ use reis::calloop::{EisRequestSource, EisRequestSourceEvent};
 use reis::eis;
 use reis::request::{Connection, Device, DeviceCapability, EisRequest, Seat};
 use smithay::reexports::calloop::{EventSource, Poll, PostAction, Readiness, Token, TokenFactory};
-use std::collections::BTreeSet;
 use std::fmt;
 use std::io;
 use std::os::fd::OwnedFd;
@@ -118,24 +118,31 @@ pub struct RemoteGrant {
     pub source: RemoteEisSource,
     /// The client end of the socket, returned to the portal.
     pub client: OwnedFd,
+    /// What the compositor keeps to end the connection from outside (`EndEis`).
+    pub handle: RemoteHandle,
 }
 
-/// Opens a remote EIS connection for portal session `session`, offering `kinds`. Absolute
-/// pointer and touch positions are over `extent` (the union of the outputs now).
+/// Opens a remote EIS connection for portal session `session`, numbered `slot` (minted by the
+/// compositor, one per connection), offering `kinds`. Absolute pointer and touch positions are
+/// over `extent` (the union of the outputs now).
 pub fn open(
     session: PortalSessionId,
+    slot: RemoteSlot,
     kinds: RemoteKinds,
     extent: LogicalRect,
 ) -> io::Result<RemoteGrant> {
     let (server, client) = UnixStream::pair()?;
     server.set_nonblocking(true)?;
     let context = eis::Context::new(server)?;
+    let link = Link::new(session, slot, kinds, extent);
+    let handle = RemoteHandle::new(session, slot, link.held.clone());
     Ok(RemoteGrant {
         source: RemoteEisSource {
             inner: EisRequestSource::new(context, 1),
-            link: Link::new(session, kinds, extent),
+            link,
         },
         client: OwnedFd::from(client),
+        handle,
     })
 }
 
@@ -213,18 +220,19 @@ enum Made {
 /// The protocol state of one connection: what was offered and what is held down.
 struct Link {
     session: PortalSessionId,
+    slot: RemoteSlot,
     kinds: RemoteKinds,
     extent: LogicalRect,
     seat: Option<Seat>,
     devices: Vec<(Made, Device)>,
-    keys: BTreeSet<u32>,
-    buttons: BTreeSet<u32>,
+    held: Held,
 }
 
 impl fmt::Debug for Link {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Link")
             .field("session", &self.session)
+            .field("slot", &self.slot)
             .field("kinds", &self.kinds)
             .field("devices", &self.devices.len())
             .finish_non_exhaustive()
@@ -232,15 +240,20 @@ impl fmt::Debug for Link {
 }
 
 impl Link {
-    fn new(session: PortalSessionId, kinds: RemoteKinds, extent: LogicalRect) -> Link {
+    fn new(
+        session: PortalSessionId,
+        slot: RemoteSlot,
+        kinds: RemoteKinds,
+        extent: LogicalRect,
+    ) -> Link {
         Link {
             session,
+            slot,
             kinds,
             extent,
             seat: None,
             devices: Vec::new(),
-            keys: BTreeSet::new(),
-            buttons: BTreeSet::new(),
+            held: Held::default(),
         }
     }
 
@@ -373,7 +386,9 @@ impl Link {
     fn input(&mut self, request: EisRequest) -> Vec<RemoteInput> {
         let (class, kind) = match request {
             EisRequest::KeyboardKey(key) => {
-                self.track_key(key.key, key.state);
+                if self.held.key(key.key, key_edge(key.state)) == Fit::Full {
+                    return Vec::new();
+                }
                 (DeviceClass::Keyboard, key_kind(key.key, key.state))
             }
             EisRequest::PointerMotion(motion) => {
@@ -384,7 +399,9 @@ impl Link {
                 motion_to_kind(self.extent, motion.dx_absolute, motion.dy_absolute),
             ),
             EisRequest::Button(button) => {
-                self.track_button(button.button, button.state);
+                if self.held.button(button.button, button_edge(button.state)) == Fit::Full {
+                    return Vec::new();
+                }
                 (
                     DeviceClass::Pointer,
                     button_kind(button.button, button.state),
@@ -458,68 +475,18 @@ impl Link {
     }
 
     fn tag(&self, class: DeviceClass, kind: InputKind) -> RemoteInput {
-        RemoteInput {
-            origin: Origin::Remote(self.session),
-            device: device_id(self.session, class),
-            kind,
-        }
+        tagged(self.session, self.slot, class, kind)
     }
 
-    fn track_key(&mut self, code: u32, state: eis::keyboard::KeyState) {
-        match key_edge(state) {
-            Edge::Press => self.keys.insert(code),
-            Edge::Release => self.keys.remove(&code),
-        };
-    }
-
-    fn track_button(&mut self, code: u32, state: eis::button::ButtonState) {
-        match button_edge(state) {
-            Edge::Press => self.buttons.insert(code),
-            Edge::Release => self.buttons.remove(&code),
-        };
-    }
-
-    /// The connection is over: release what the app held, then say so.
+    /// The connection is over: release what the app held (nothing, when the compositor ended
+    /// the session first), then say so.
     fn end(&mut self) -> Vec<RemoteEvent> {
-        let keys = std::mem::take(&mut self.keys);
-        let buttons = std::mem::take(&mut self.buttons);
-        let mut out: Vec<RemoteEvent> = keys
+        releases(self.session, self.slot, &self.held)
             .into_iter()
-            .map(|code| {
-                self.tag(
-                    DeviceClass::Keyboard,
-                    InputKind::Key {
-                        code: KeyCode(code),
-                        edge: Edge::Release,
-                    },
-                )
-            })
-            .chain(buttons.into_iter().map(|code| {
-                self.tag(
-                    DeviceClass::Pointer,
-                    InputKind::Button {
-                        button: ButtonCode(code),
-                        edge: Edge::Release,
-                    },
-                )
-            }))
             .map(RemoteEvent::Input)
-            .collect();
-        out.push(RemoteEvent::Ended);
-        out
+            .chain(std::iter::once(RemoteEvent::Ended))
+            .collect()
     }
-}
-
-/// The id of the virtual device of `class` in `session`. The high bit keeps these clear of
-/// the ids the real input backends count up from.
-pub fn device_id(session: PortalSessionId, class: DeviceClass) -> DeviceId {
-    let slot = match class {
-        DeviceClass::Keyboard => 0,
-        DeviceClass::Touch => 2,
-        _ => 1,
-    };
-    let low = u32::try_from(session.0 & 0x0fff_ffff).unwrap_or(0);
-    DeviceId(0x8000_0000 | (low << 2) | slot)
 }
 
 /// Sub-pixels per logical pixel.
@@ -750,7 +717,12 @@ mod tests {
     #[test]
     fn every_event_of_a_session_is_remote_and_its_devices_are_apart() {
         let session = PortalSessionId(9);
-        let link = Link::new(session, RemoteKinds::from_wire(7), extent());
+        let link = Link::new(
+            session,
+            RemoteSlot::default(),
+            RemoteKinds::from_wire(7),
+            extent(),
+        );
         for class in [
             DeviceClass::Keyboard,
             DeviceClass::Pointer,
@@ -766,21 +738,22 @@ mod tests {
             DeviceClass::Pointer,
             DeviceClass::Touch,
         ]
-        .map(|class| device_id(session, class));
+        .map(|class| link.tag(class, InputKind::Touch(TouchStep::Cancel)).device);
         assert!(ids[0] != ids[1] && ids[1] != ids[2] && ids[0] != ids[2]);
-        assert_ne!(
-            device_id(PortalSessionId(1), DeviceClass::Keyboard),
-            device_id(PortalSessionId(2), DeviceClass::Keyboard)
-        );
     }
 
     #[test]
     fn ending_releases_what_was_held() {
-        let mut link = Link::new(PortalSessionId(3), RemoteKinds::from_wire(7), extent());
-        link.track_key(30, eis::keyboard::KeyState::Press);
-        link.track_key(31, eis::keyboard::KeyState::Press);
-        link.track_key(31, eis::keyboard::KeyState::Released);
-        link.track_button(0x110, eis::button::ButtonState::Press);
+        let mut link = Link::new(
+            PortalSessionId(3),
+            RemoteSlot::default(),
+            RemoteKinds::from_wire(7),
+            extent(),
+        );
+        link.held.key(30, Edge::Press);
+        link.held.key(31, Edge::Press);
+        link.held.key(31, Edge::Release);
+        link.held.button(0x110, Edge::Press);
         let events = link.end();
         let kinds: Vec<_> = events
             .iter()
@@ -806,9 +779,38 @@ mod tests {
         assert_eq!(events.last(), Some(&RemoteEvent::Ended));
     }
 
+    /// PORTAL-05: when the compositor ended the session first (through the handle), the source
+    /// finding the socket closed has nothing left to release.
+    #[test]
+    fn a_session_ended_from_outside_releases_once() {
+        let grant = open(
+            PortalSessionId(5),
+            RemoteSlot::default(),
+            RemoteKinds::from_wire(7),
+            extent(),
+        )
+        .expect("open");
+        let RemoteGrant {
+            mut source, handle, ..
+        } = grant;
+        source.link.held.key(30, Edge::Press);
+        assert_eq!(
+            handle.release().len(),
+            1,
+            "the held key is released from outside"
+        );
+        assert_eq!(source.link.end(), vec![RemoteEvent::Ended], "and not again");
+    }
+
     #[test]
     fn a_connection_opens_with_a_client_end() {
-        let grant = open(PortalSessionId(1), RemoteKinds::from_wire(3), extent()).expect("open");
+        let grant = open(
+            PortalSessionId(1),
+            RemoteSlot::default(),
+            RemoteKinds::from_wire(3),
+            extent(),
+        )
+        .expect("open");
         assert!(grant.source.link.devices.is_empty());
     }
 }

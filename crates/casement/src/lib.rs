@@ -55,6 +55,7 @@ pub mod log;
 pub mod notify;
 #[cfg(feature = "testing")]
 pub mod relax;
+pub mod remote_sessions;
 mod run;
 pub mod seams;
 pub mod settings_live;

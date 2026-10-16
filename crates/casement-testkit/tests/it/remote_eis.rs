@@ -9,6 +9,9 @@ use casement_core::input::{
 use casement_ipc::dbus::ConnectRefusal;
 use casement_testkit::fakes::FakeCgroups;
 use casement_testkit::{Fixture, FixtureSpec};
+use std::io::Read;
+use std::os::fd::OwnedFd;
+use std::os::unix::net::UnixStream;
 
 const KEY_LEFTMETA: KeyCode = KeyCode(125);
 const KEY_SPACE: KeyCode = KeyCode(57);
@@ -70,4 +73,83 @@ fn remote_keys_never_fire_a_binding() {
         });
     }
     assert!(fixture.shell_calls().calls().is_empty());
+}
+
+/// Whether the compositor has closed its end of the socket whose client end is `fd`: reading it
+/// reaches the end of the stream (anything the compositor had already written is drained first).
+fn closed_by_the_compositor(fd: OwnedFd) -> bool {
+    let mut end = UnixStream::from(fd);
+    end.set_nonblocking(true).expect("a non-blocking end");
+    let mut buffer = [0_u8; 256];
+    for _ in 0..64 {
+        match end.read(&mut buffer) {
+            Ok(0) => return true,
+            Ok(_) => {}
+            Err(_) => return false,
+        }
+    }
+    false
+}
+
+/// PORTAL-05: `EndEis` closes the compositor's end of every socket handed out for the session
+/// and no other, only the portal's unit may ask, and ending a session it does not know (or one
+/// already ended) is not an error.
+#[test]
+fn ending_a_session_closes_its_sockets_and_only_the_portal_may_ask() {
+    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let cgroups = FakeCgroups::new();
+    cgroups.run_in_service(200, "transom.service");
+    cgroups.run_in_service(201, "sill.service");
+    let first = fixture
+        .connect_remote_eis(&cgroups, 200, 1, 7)
+        .expect("granted");
+    let again = fixture
+        .connect_remote_eis(&cgroups, 200, 1, 3)
+        .expect("granted");
+    let other = fixture
+        .connect_remote_eis(&cgroups, 200, 2, 7)
+        .expect("granted");
+
+    assert_eq!(
+        fixture.end_remote_eis(&cgroups, 201, 1),
+        Err(ConnectRefusal::RoleNotAllowed),
+        "the shell's unit may not end a session"
+    );
+    assert_eq!(
+        fixture.end_remote_eis(&cgroups, 999, 1),
+        Err(ConnectRefusal::UnknownUnit),
+        "nor a process nobody knows"
+    );
+    let first = UnixStream::from(first);
+    let again = UnixStream::from(again);
+    first.set_nonblocking(true).expect("non-blocking");
+    again.set_nonblocking(true).expect("non-blocking");
+    assert!(
+        !closed_by_the_compositor(OwnedFd::from(first.try_clone().expect("a copy"))),
+        "a refused ask closes nothing"
+    );
+
+    assert_eq!(fixture.end_remote_eis(&cgroups, 200, 1), Ok(()));
+    assert!(
+        closed_by_the_compositor(OwnedFd::from(first)),
+        "the session's first socket"
+    );
+    assert!(
+        closed_by_the_compositor(OwnedFd::from(again)),
+        "the session's second socket"
+    );
+    assert!(
+        !closed_by_the_compositor(other),
+        "another session's socket stays open"
+    );
+    assert_eq!(
+        fixture.end_remote_eis(&cgroups, 200, 1),
+        Ok(()),
+        "ending twice"
+    );
+    assert_eq!(
+        fixture.end_remote_eis(&cgroups, 200, 77),
+        Ok(()),
+        "an unknown session"
+    );
 }

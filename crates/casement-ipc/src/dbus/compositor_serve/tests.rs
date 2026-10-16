@@ -110,6 +110,13 @@ impl StandInLoop {
 }
 
 fn decide(ask: &ConnectAsk) -> ConnectReply {
+    if ask.end.is_some() {
+        let portal = ask.caller_cgroup.trim_end().ends_with("/transom.service");
+        return match portal {
+            true => ConnectReply::Ended,
+            false => ConnectReply::Refused(ConnectRefusal::UnknownUnit),
+        };
+    }
     if ask.remote.is_some() {
         let portal = ask.caller_cgroup.trim_end().ends_with("/transom.service");
         return match (portal, UnixStream::pair()) {
@@ -257,5 +264,40 @@ async fn connect_eis_reaches_the_loop_as_a_remote_ask_with_the_callers_unit() {
             devices: 3
         })
     );
+    assert_eq!(asks[0].caller_cgroup, portal);
+}
+
+/// What `EndEis(session)` came to: the error's D-Bus name, or `ended`.
+async fn end_eis_as(proxy: &zbus::Proxy<'_>, session: u64) -> String {
+    match proxy.call::<_, _, ()>("EndEis", &(session,)).await {
+        Ok(()) => "ended".to_owned(),
+        Err(zbus::Error::MethodError(name, ..)) => name.to_string(),
+        Err(other) => format!("{other}"),
+    }
+}
+
+/// PORTAL-05: `EndEis` is checked against the caller's unit exactly as `ConnectEis` is, and
+/// reaches the loop as an end ask for the session named.
+#[tokio::test]
+async fn end_eis_reaches_the_loop_only_from_the_portals_unit() {
+    let bus = PrivateBus::start();
+    let cgroups = Arc::new(Table::default());
+    let (channel, _connection) = serve_compositor_at(&bus.address, cgroups.clone()).expect("serve");
+    let event_loop = StandInLoop::run(channel);
+    let proxy = proxy(&bus.address).await;
+
+    let portal = "0::/user.slice/user@1000.service/app.slice/transom.service\n";
+    let firefox = "0::/user.slice/user@1000.service/app.slice/firefox.service\n";
+    cgroups.runs_in(Some(portal));
+    assert_eq!(end_eis_as(&proxy, 7).await, "ended");
+    cgroups.runs_in(Some(firefox));
+    assert_eq!(
+        end_eis_as(&proxy, 8).await,
+        "org.freedesktop.DBus.Error.AccessDenied"
+    );
+    let asks = event_loop.asks();
+    assert_eq!(asks.len(), 2);
+    assert_eq!(asks[0].end, Some(crate::dbus::EndAsk { session: 7 }));
+    assert_eq!(asks[0].remote, None, "an end is not a connect");
     assert_eq!(asks[0].caller_cgroup, portal);
 }

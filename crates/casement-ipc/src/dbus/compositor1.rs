@@ -9,6 +9,10 @@
 //!                            end of an EIS socket whose input arrives tagged as remote input
 //!                            of portal session `session`; `devices` is the portal's `types`
 //!                            bit set (1 keyboard, 2 pointer, 4 touchscreen)
+//! EndEis(session: t)         only the desktop portal's unit may ask: input from every socket
+//!                            handed out for `session` stops (keys it still holds are let go)
+//!                            and the compositor's end of each is closed; a session it does not
+//!                            know is not an error
 //! ```
 //!
 //! The caller's systemd unit decides: this object reads the caller's cgroup (through the
@@ -90,6 +94,16 @@ pub struct ConnectAsk {
     /// Set for `ConnectEis`: the question is for a remote EIS socket, not a Wayland
     /// connection, and `role` is not read.
     pub remote: Option<RemoteAsk>,
+    /// Set for `EndEis`: the question is to end a remote session, and neither `role` nor
+    /// `remote` is read.
+    pub end: Option<EndAsk>,
+}
+
+/// What the portal asked of `EndEis`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EndAsk {
+    /// The portal session whose sockets are to be closed.
+    pub session: u64,
 }
 
 /// What the portal asked of `ConnectEis`.
@@ -117,6 +131,7 @@ impl ConnectAsk {
             role,
             caller_cgroup,
             remote: None,
+            end: None,
         }
     }
 
@@ -135,6 +150,26 @@ impl ConnectAsk {
             role: ConnectionRole::Public,
             caller_cgroup,
             remote: Some(RemoteAsk { session, devices }),
+            end: None,
+        }
+    }
+
+    /// The question of a caller whose control group file reads `caller_cgroup`, asking to end
+    /// portal session `session`'s remote sockets.
+    ///
+    /// ```
+    /// use casement_ipc::dbus::ConnectAsk;
+    ///
+    /// let ask = ConnectAsk::end_eis(7, "0::/app.slice/transom.service\n".to_owned());
+    /// assert_eq!(ask.end.map(|end| end.session), Some(7));
+    /// ```
+    pub fn end_eis(session: u64, caller_cgroup: String) -> ConnectAsk {
+        ConnectAsk {
+            // Not read: `end` decides.
+            role: ConnectionRole::Public,
+            caller_cgroup,
+            remote: None,
+            end: Some(EndAsk { session }),
         }
     }
 }
@@ -145,6 +180,8 @@ impl ConnectAsk {
 pub enum ConnectReply {
     /// The client end of the new connection.
     Granted(OwnedFd),
+    /// The remote session's sockets are closed (`EndEis`).
+    Ended,
     /// No connection, and why.
     Refused(ConnectRefusal),
 }
@@ -226,6 +263,26 @@ impl Compositor1 {
         self.ask(ConnectAsk::remote_eis(session, devices, caller_cgroup))
             .await
     }
+
+    /// `EndEis(session: t)`: input from every socket handed out for portal session `session`
+    /// stops and the compositor's end of each is closed. Only the portal's unit may ask, as for
+    /// `ConnectEis`.
+    async fn end_eis(
+        &self,
+        session: u64,
+        #[zbus(header)] header: Header<'_>,
+        #[zbus(connection)] connection: &Connection,
+    ) -> fdo::Result<()> {
+        let caller_cgroup = self.caller_cgroup(&header, connection).await?;
+        match self
+            .answer(ConnectAsk::end_eis(session, caller_cgroup))
+            .await?
+        {
+            ConnectReply::Ended => Ok(()),
+            ConnectReply::Refused(why) => Err(why.to_error()),
+            _ => Err(ConnectRefusal::Unavailable.to_error()),
+        }
+    }
 }
 
 impl Compositor1 {
@@ -247,16 +304,24 @@ impl Compositor1 {
             .map_err(|error| fdo::Error::Failed(error.to_string()))
     }
 
-    /// Hands `ask` to the event loop and turns its answer into the reply or a D-Bus error.
-    async fn ask(&self, ask: ConnectAsk) -> fdo::Result<zbus::zvariant::OwnedFd> {
+    /// Hands `ask` to the event loop and returns its answer; a loop that is gone is
+    /// `Unavailable`.
+    async fn answer(&self, ask: ConnectAsk) -> fdo::Result<ConnectReply> {
         let (reply, answer) = tokio::sync::oneshot::channel();
         self.calls
             .send(ConnectCall { ask, reply })
             .map_err(|_| ConnectRefusal::Unavailable.to_error())?;
-        match answer.await {
-            Ok(ConnectReply::Granted(fd)) => Ok(zbus::zvariant::OwnedFd::from(fd)),
-            Ok(ConnectReply::Refused(why)) => Err(why.to_error()),
-            Err(_) => Err(ConnectRefusal::Unavailable.to_error()),
+        answer
+            .await
+            .map_err(|_| ConnectRefusal::Unavailable.to_error())
+    }
+
+    /// Hands `ask` to the event loop and turns its answer into the reply or a D-Bus error.
+    async fn ask(&self, ask: ConnectAsk) -> fdo::Result<zbus::zvariant::OwnedFd> {
+        match self.answer(ask).await? {
+            ConnectReply::Granted(fd) => Ok(zbus::zvariant::OwnedFd::from(fd)),
+            ConnectReply::Refused(why) => Err(why.to_error()),
+            _ => Err(ConnectRefusal::Unavailable.to_error()),
         }
     }
 }

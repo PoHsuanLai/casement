@@ -67,6 +67,25 @@ impl Fixture {
         }
     }
 
+    /// The portal asking to end portal session `session`'s remote sockets as process `pid`
+    /// (`EndEis`'s decision, `casement::connect::answer`). Granted, nothing; refused, the reason
+    /// the D-Bus caller is told.
+    pub fn end_remote_eis(
+        &mut self,
+        cgroups: &dyn PeerCgroups,
+        pid: u32,
+        session: u64,
+    ) -> Result<(), ConnectRefusal> {
+        let text = cgroups
+            .cgroup_of(pid)
+            .map_err(|_| ConnectRefusal::UnknownUnit)?;
+        match connect::answer(&mut self.state, ConnectAsk::end_eis(session, text)) {
+            ConnectReply::Ended => Ok(()),
+            ConnectReply::Refused(why) => Err(why),
+            _ => Err(ConnectRefusal::Unavailable),
+        }
+    }
+
     /// An input event from a remote session, by the path a remote socket's input takes into
     /// the model, then a pump.
     pub fn deliver_remote(&mut self, event: InputEvent) {

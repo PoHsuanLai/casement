@@ -16,7 +16,9 @@ use casement_agent::{
 };
 use casement_core::Event;
 use casement_core::input::{InputEvent, PortalSessionId};
-use casement_ipc::dbus::{ConnectAsk, ConnectCall, ConnectRefusal, ConnectReply, RemoteAsk};
+use casement_ipc::dbus::{
+    ConnectAsk, ConnectCall, ConnectRefusal, ConnectReply, EndAsk, RemoteAsk,
+};
 use casement_wayland::ClientState;
 use porter_core::PeerIdentity;
 use smithay::reexports::calloop::channel::{Channel, Event as ChannelEvent};
@@ -45,6 +47,9 @@ pub fn attach(
 pub fn answer(state: &mut State, ask: ConnectAsk) -> ConnectReply {
     if let Some(remote) = ask.remote {
         return answer_remote(state, remote, &ask.caller_cgroup);
+    }
+    if let Some(end) = ask.end {
+        return answer_end(state, end, &ask.caller_cgroup);
     }
     let Some(unit) = CallerUnit::of_cgroup(&ask.caller_cgroup) else {
         return ConnectReply::Refused(ConnectRefusal::UnknownUnit);
@@ -80,20 +85,32 @@ fn refusal_of(why: RefuseWhy) -> ConnectRefusal {
     }
 }
 
+/// Whether the caller's control group is the portal's unit: the one caller that may open or end
+/// a remote EIS socket.
+fn portal_only(caller_cgroup: &str) -> Result<(), ConnectRefusal> {
+    match CallerUnit::of_cgroup(caller_cgroup) {
+        None => Err(ConnectRefusal::UnknownUnit),
+        Some(unit) if !portal_may_connect(&unit) => Err(ConnectRefusal::RoleNotAllowed),
+        Some(_) => Ok(()),
+    }
+}
+
 /// Decides one `ConnectEis`: only the portal's unit may have a remote EIS socket. On a grant
 /// the server end becomes an event-loop source whose input is fed to the model tagged as the
-/// remote origin of portal session `remote.session`; the client end is the reply.
+/// remote origin of portal session `remote.session`, with a device slot of its own (minted
+/// here, one per connection: CASW-19); the client end is the reply.
 pub fn answer_remote(state: &mut State, remote: RemoteAsk, caller_cgroup: &str) -> ConnectReply {
-    match CallerUnit::of_cgroup(caller_cgroup) {
-        None => return ConnectReply::Refused(ConnectRefusal::UnknownUnit),
-        Some(unit) if !portal_may_connect(&unit) => {
-            return ConnectReply::Refused(ConnectRefusal::RoleNotAllowed);
-        }
-        Some(_) => {}
+    if let Err(why) = portal_only(caller_cgroup) {
+        return ConnectReply::Refused(why);
     }
+    let Some(slot) = state.agent.remote.mint() else {
+        tracing::warn!("every remote input slot has been used");
+        return ConnectReply::Refused(ConnectRefusal::Unavailable);
+    };
     let extent = desktop_extent(state);
     let grant = match open_remote_eis(
         PortalSessionId(remote.session),
+        slot,
         RemoteKinds::from_wire(remote.devices),
         extent,
     ) {
@@ -103,21 +120,45 @@ pub fn answer_remote(state: &mut State, remote: RemoteAsk, caller_cgroup: &str) 
             return ConnectReply::Refused(ConnectRefusal::Unavailable);
         }
     };
-    let inserted = state
-        .event_loop
-        .insert_source(grant.source, |event, (), state: &mut State| {
-            if let RemoteEvent::Input(input) = event {
+    let inserted = state.event_loop.insert_source(
+        grant.source,
+        move |event, (), state: &mut State| match event {
+            RemoteEvent::Input(input) => {
                 let at = state.clock.now();
                 deliver_remote(state, input.at(at));
             }
-        });
+            RemoteEvent::Ended => state.agent.remote.closed(slot),
+            _ => {}
+        },
+    );
     match inserted {
-        Ok(_token) => ConnectReply::Granted(grant.client),
+        Ok(token) => {
+            state.agent.remote.opened(grant.handle, token);
+            ConnectReply::Granted(grant.client)
+        }
         Err(error) => {
             tracing::warn!(%error, "a remote input source could not be inserted");
             ConnectReply::Refused(ConnectRefusal::Unavailable)
         }
     }
+}
+
+/// Decides one `EndEis`: only the portal's unit may end a session. Every socket handed out for
+/// `end.session` is taken out of the loop (its server end closes, so the app is disconnected and
+/// sends nothing more), and the keys and buttons it still held are released. A session with no
+/// open socket is not an error: the portal may end one that already hung up.
+pub fn answer_end(state: &mut State, end: EndAsk, caller_cgroup: &str) -> ConnectReply {
+    if let Err(why) = portal_only(caller_cgroup) {
+        return ConnectReply::Refused(why);
+    }
+    for (handle, token) in state.agent.remote.end(PortalSessionId(end.session)) {
+        state.event_loop.remove(token);
+        for release in handle.release() {
+            let at = state.clock.now();
+            deliver_remote(state, release.at(at));
+        }
+    }
+    ConnectReply::Ended
 }
 
 /// One input event from a remote session into the model, by the path every input takes. Its

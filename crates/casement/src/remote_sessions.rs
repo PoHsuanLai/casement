@@ -1,0 +1,68 @@
+//! The remote EIS connections that are open (`org.quire.Compositor1.ConnectEis`), numbered one
+//! slot each (CASW-19) and findable by portal session, so `EndEis` can stop a session's input
+//! and close the compositor's end of each of its sockets (PORTAL-05).
+
+use casement_agent::{RemoteHandle, RemoteSlot, RemoteSlots};
+use casement_core::input::PortalSessionId;
+use smithay::reexports::calloop::RegistrationToken;
+use std::collections::BTreeMap;
+
+/// One open connection: its handle and where its source sits in the event loop.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Open {
+    handle: RemoteHandle,
+    token: RegistrationToken,
+}
+
+/// The slot mint and the open connections.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct RemoteSessions {
+    slots: RemoteSlots,
+    open: BTreeMap<RemoteSlot, Open>,
+}
+
+impl RemoteSessions {
+    /// The next connection's slot; none once every slot has been used (the connection is then
+    /// refused rather than given a number that is taken).
+    pub fn mint(&mut self) -> Option<RemoteSlot> {
+        let (slots, slot) = self.slots.next()?;
+        self.slots = slots;
+        Some(slot)
+    }
+
+    /// The connection `handle` is open, its source in the loop at `token`.
+    pub fn opened(&mut self, handle: RemoteHandle, token: RegistrationToken) {
+        self.open.insert(handle.slot(), Open { handle, token });
+    }
+
+    /// The connection in `slot` ended by itself (the app hung up).
+    pub fn closed(&mut self, slot: RemoteSlot) {
+        self.open.remove(&slot);
+    }
+
+    /// Takes every open connection of `session` out of the book: for each, the handle (to release
+    /// what the app held) and the loop token (to remove the source).
+    pub fn end(&mut self, session: PortalSessionId) -> Vec<(RemoteHandle, RegistrationToken)> {
+        let slots: Vec<RemoteSlot> = self
+            .open
+            .iter()
+            .filter(|(_, open)| open.handle.session() == session)
+            .map(|(slot, _)| *slot)
+            .collect();
+        slots
+            .into_iter()
+            .filter_map(|slot| self.open.remove(&slot))
+            .map(|open| (open.handle, open.token))
+            .collect()
+    }
+
+    /// How many connections are open.
+    pub fn len(&self) -> usize {
+        self.open.len()
+    }
+
+    /// Whether none is open.
+    pub fn is_empty(&self) -> bool {
+        self.open.is_empty()
+    }
+}
