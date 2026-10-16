@@ -375,6 +375,7 @@ dependencies = [
  "smithay",
  "tempfile",
  "thiserror 2.0.21",
+ "tokio",
  "toml",
  "tracing",
  "tracing-subscriber",
@@ -438,6 +439,7 @@ dependencies = [
  "freedesktop-icons",
  "image",
  "resvg",
+ "rustix 1.1.5",
  "tempfile",
  "thiserror 2.0.21",
 ]
