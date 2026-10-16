@@ -68,11 +68,13 @@ impl FocusView<'_> {
         }
     }
 
-    /// The modal sheet open on `window`, if any.
+    /// The modal sheet open on `window`, if any: one that is shown. A minimised or off-Space
+    /// sheet cannot take the key, so its window is keyed as if it had none.
     pub(super) fn sheet_of(&self, window: WindowId) -> Option<&Window> {
         self.windows.values().find(|candidate| {
             candidate.parent == Parent::Window(window)
                 && candidate.modality == Modality::WindowModal
+                && self.is_shown(candidate)
         })
     }
 }
