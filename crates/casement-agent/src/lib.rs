@@ -7,7 +7,7 @@ mod remote;
 mod socket;
 
 pub use eis::{
-    PORTAL_UNIT, RemoteEisSource, RemoteEvent, RemoteGrant, RemoteInput, RemoteKind, RemoteKinds,
+    RemoteEisSource, RemoteEvent, RemoteGrant, RemoteInput, RemoteKind, RemoteKinds,
     open as open_remote_eis, portal_may_connect,
 };
 pub use remote::{
@@ -15,4 +15,5 @@ pub use remote::{
     device_id as remote_device_id,
 };
 
-pub use socket::{CallerUnit, HandOut, Handed, RefuseWhy, hand_out, role_for};
+pub use peephole_core::{AppKey, RoleName};
+pub use socket::{HandOut, Handed, RefuseWhy, connection_role, hand_out};

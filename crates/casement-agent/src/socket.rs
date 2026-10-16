@@ -1,6 +1,6 @@
 //! The hand-out of privileged connections (C20, I7): `org.quire.Compositor1.Connect(role)`
 //! answers with a connected socket whose client is inserted with that role, after checking
-//! the caller's systemd unit. The only place a `Shell` or `Agent` connection is made (B14).
+//! the role the caller proved. The only place a `Shell` or `Agent` connection is made (B14).
 //!
 //! This crate decides and makes the socket pair; the composition root inserts the server end
 //! into the Wayland display as a client of the granted role (`casement::connect`), because
@@ -8,6 +8,7 @@
 //! P2-Q2.
 
 use casement_core::policy::ConnectionRole;
+use peephole_core::{RoleName, roles};
 use std::os::fd::OwnedFd;
 use std::os::unix::net::UnixStream;
 
@@ -35,46 +36,23 @@ pub struct Handed {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum RefuseWhy {
-    /// The caller's unit is not one casement knows.
+    /// The caller holds no role casement hands a connection to.
     UnknownUnit,
-    /// The caller's unit may not have this role.
+    /// The caller's role may not have this kind of connection.
     RoleNotAllowed,
     /// The socket pair could not be made.
     NoSocket,
 }
 
-/// The systemd unit of the D-Bus peer that asked: `"sill.service"`, `"cuad.service"`.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct CallerUnit(pub String);
-
-impl CallerUnit {
-    /// The unit a process runs in, from the text of its `/proc/<pid>/cgroup`: the last path
-    /// component of its cgroup when that is a service unit (`.../app.slice/sill.service`).
-    /// `None` for a scope, a slice or a process outside systemd.
-    ///
-    /// ```
-    /// use casement_agent::CallerUnit;
-    ///
-    /// let unit = CallerUnit::of_cgroup("0::/user.slice/app.slice/sill.service\n");
-    /// assert_eq!(unit, Some(CallerUnit("sill.service".to_owned())));
-    /// assert_eq!(CallerUnit::of_cgroup("0::/\n"), None);
-    /// ```
-    pub fn of_cgroup(text: &str) -> Option<CallerUnit> {
-        let path = text.lines().find_map(|line| line.strip_prefix("0::"))?;
-        let last = path.rsplit('/').next()?;
-        let named = last
-            .strip_suffix(".service")
-            .is_some_and(|name| !name.is_empty());
-        named.then(|| CallerUnit(last.to_owned()))
-    }
-}
-
-/// Hands `caller` a connection with `role` if its unit may have it: a socket pair, the role
-/// kept with it. The caller of this function inserts the server end into the display.
-pub fn hand_out(role: &ConnectionRole, caller: &CallerUnit) -> HandOut {
-    match role_for(caller) {
+/// Hands a caller that holds `held` a connection with `wanted`, if that role is the one `held`
+/// stands for: a socket pair, the role kept with it. `held` is what the bus thread proved of the
+/// caller (`casement_ipc::dbus`), never anything the caller said; this check is the second line
+/// should a caller of this function ask for more than the proof gave. The caller of this
+/// function inserts the server end into the display.
+pub fn hand_out(wanted: &ConnectionRole, held: &RoleName) -> HandOut {
+    match connection_role(held) {
         None => HandOut::Refused(RefuseWhy::UnknownUnit),
-        Some(allowed) if allowed != *role => HandOut::Refused(RefuseWhy::RoleNotAllowed),
+        Some(allowed) if allowed != *wanted => HandOut::Refused(RefuseWhy::RoleNotAllowed),
         Some(allowed) => match UnixStream::pair().and_then(|pair| {
             // The display reads the server end from its event loop: it must never block.
             pair.0.set_nonblocking(true)?;
@@ -90,12 +68,13 @@ pub fn hand_out(role: &ConnectionRole, caller: &CallerUnit) -> HandOut {
     }
 }
 
-/// The role `caller`'s unit may have: `sill.service` the shell, `cuad.service` the agent tier,
-/// anything else none.
-pub fn role_for(caller: &CallerUnit) -> Option<ConnectionRole> {
-    match caller.0.as_str() {
-        "sill.service" => Some(ConnectionRole::Shell),
-        "cuad.service" => Some(ConnectionRole::Agent),
+/// The connection role a proven caller role stands for: the shell the shell's, the agent tier
+/// the agent's, every other role none. The role comes from the shipped caller table (the
+/// caller-identity library), never from a unit name.
+pub fn connection_role(held: &RoleName) -> Option<ConnectionRole> {
+    match held {
+        held if *held == roles::SHELL => Some(ConnectionRole::Shell),
+        held if *held == roles::AGENT_TIER => Some(ConnectionRole::Agent),
         _ => None,
     }
 }
@@ -104,87 +83,69 @@ pub fn role_for(caller: &CallerUnit) -> Option<ConnectionRole> {
 mod tests {
     use super::*;
 
-    fn unit(name: &str) -> CallerUnit {
-        CallerUnit(name.to_owned())
+    fn role(name: &str) -> RoleName {
+        RoleName::new(name).expect("a role name")
     }
 
     #[test]
-    fn only_the_shell_and_the_agent_tier_get_privileged_roles() {
-        assert_eq!(role_for(&unit("sill.service")), Some(ConnectionRole::Shell));
-        assert_eq!(role_for(&unit("cuad.service")), Some(ConnectionRole::Agent));
-        assert_eq!(role_for(&unit("firefox.service")), None);
-        assert_eq!(role_for(&unit("")), None);
-    }
-
-    /// (case, who asks, the role asked, what comes back)
-    #[test]
-    fn a_hand_out_needs_the_unit_that_may_have_the_role() {
-        let cases = [
-            (
-                "sill asks for the shell",
-                "sill.service",
-                ConnectionRole::Shell,
-                None,
-            ),
-            (
-                "cuad asks for the agent tier",
-                "cuad.service",
-                ConnectionRole::Agent,
-                None,
-            ),
-            (
-                "sill asks for the agent tier",
-                "sill.service",
-                ConnectionRole::Agent,
-                Some(RefuseWhy::RoleNotAllowed),
-            ),
-            (
-                "cuad asks for the shell",
-                "cuad.service",
-                ConnectionRole::Shell,
-                Some(RefuseWhy::RoleNotAllowed),
-            ),
-            (
-                "a browser asks for the shell",
-                "firefox.service",
-                ConnectionRole::Shell,
-                Some(RefuseWhy::UnknownUnit),
-            ),
-            (
-                "an app scope asks for the shell",
-                "app-org.quire.Mail-12.scope",
-                ConnectionRole::Shell,
-                Some(RefuseWhy::UnknownUnit),
-            ),
-        ];
-        for (case, who, role, refused) in cases {
-            match (hand_out(&role, &unit(who)), refused) {
-                (HandOut::Granted(handed), None) => assert_eq!(handed.role, role, "{case}"),
-                (HandOut::Refused(why), Some(want)) => assert_eq!(why, want, "{case}"),
-                (other, _) => panic!("{case}: {other:?}"),
-            }
+    fn only_the_shell_and_the_agent_tier_stand_for_privileged_roles() {
+        assert_eq!(connection_role(&roles::SHELL), Some(ConnectionRole::Shell));
+        assert_eq!(
+            connection_role(&roles::AGENT_TIER),
+            Some(ConnectionRole::Agent)
+        );
+        for other in [
+            "portal",
+            "settings",
+            "compositor",
+            "companion",
+            "shell_helper",
+        ] {
+            assert_eq!(connection_role(&role(other)), None, "{other}");
         }
     }
 
-    /// (case, the text of /proc/<pid>/cgroup, the unit)
+    /// (case, the role the caller proved, the role asked, what comes back)
     #[test]
-    fn a_unit_is_read_from_the_cgroup_text() {
+    fn a_hand_out_needs_the_role_that_stands_for_the_connection() {
         let cases = [
             (
-                "a user service",
-                "0::/user.slice/user-1000.slice/user@1000.service/app.slice/sill.service\n",
-                Some("sill.service"),
-            ),
-            (
-                "an app scope is not a service",
-                "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-org.quire.Mail-12.scope\n",
+                "the shell asks for the shell",
+                roles::SHELL,
+                ConnectionRole::Shell,
                 None,
             ),
-            ("not under systemd", "0::/\n", None),
-            ("empty", "", None),
+            (
+                "the agent tier asks for the agent tier",
+                roles::AGENT_TIER,
+                ConnectionRole::Agent,
+                None,
+            ),
+            (
+                "the shell asks for the agent tier",
+                roles::SHELL,
+                ConnectionRole::Agent,
+                Some(RefuseWhy::RoleNotAllowed),
+            ),
+            (
+                "the agent tier asks for the shell",
+                roles::AGENT_TIER,
+                ConnectionRole::Shell,
+                Some(RefuseWhy::RoleNotAllowed),
+            ),
+            (
+                "the portal asks for the shell",
+                roles::PORTAL,
+                ConnectionRole::Shell,
+                Some(RefuseWhy::UnknownUnit),
+            ),
         ];
-        for (case, text, want) in cases {
-            assert_eq!(CallerUnit::of_cgroup(text), want.map(unit), "{case}");
+        for (case, held, wanted, refused) in cases {
+            match (hand_out(&wanted, &held), refused) {
+                (HandOut::Granted(handed), None) => assert_eq!(handed.role, wanted, "{case}"),
+                (HandOut::Refused(why), Some(want)) => assert_eq!(why, want, "{case}"),
+                (other, _) => panic!("{case}: {other:?}"),
+            }
         }
     }
 }

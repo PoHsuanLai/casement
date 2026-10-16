@@ -4481,3 +4481,76 @@ first. The contract it implements is ARCHITECTURE.md "Consent at the wire". The 
     (`fixture/standing.rs`) that mirrors `insert_client` with a standing; once `insert_client` takes a standing, the helper
     should call it (croot).
   - The scenario harness's floor file for `grim`/`wl-copy` (design 3.8) (croot).
+
+## pa2-cipc: caller identity on Compositor1, the Privacy list, the accessibility owner check (CASW-05, PORTAL-15, CASW-01 Settings side; 2026-10-16)
+
+Crates `casement-ipc` and `casement-agent`. Written without a compiler (lane rules); the gate run is the first build.
+
+- **CASW-05 (fixed).** `Compositor1` no longer reads `/proc/<pid>/cgroup`. `caller_cgroup`, `PeerCgroups`, `ProcCgroups`,
+  `casement_agent::{CallerUnit, role_for, PORTAL_UNIT}` are deleted. On the bus thread, before anything reaches the loop, a call is
+  (1) counted against its caller (`RateLimit`: 4 calls per fixed 1 s window per unique bus name, at most `TRACKED_CALLERS` (1024)
+  names at once, the table cleared by a timer task so no clock is read; `LimitsExceeded` beyond), (2) proven through
+  `peephole-bus` (`CallerCheck::who`, `Proof::Full` and either pin, because a socket pin is `Reopened` today): `Connect("shell")` needs role
+  `shell`, `Connect("agent")` `agent_tier`, `ConnectEis` and `EndEis` `portal`; a refusal is `AccessDenied("not the caller this
+  method answers")` and one `tracing::warn` with the roles asked and the standing found, (3) put in a `sync_channel` of
+  `CONNECT_QUEUE` (8): a full queue drops the call (`LimitsExceeded`), a loop that does not answer in `ANSWER_WAIT` (10 s) is
+  `Unavailable`. `ConnectAsk` carries `caller: Proven { app, role }` instead of a cgroup text; `casement_agent::hand_out(wanted,
+  held: &RoleName)` and `portal_may_connect(&RoleName)` check the proven role again (second line).
+  Tests: `dbus/compositor_serve/tests.rs` (private bus, `BusPeers::introduce`: the user-unit-override/drop-in standing (`Exe`), a
+  cgroup-only standing, a copied binary (`Program`), a moved cgroup running a user-writable image, a vanished peer, another
+  role, the portal's two calls, the one refusal sentence, the rate limit (4 then `LimitsExceeded`), nine calls into a stalled loop
+  (8 wait, 1 dropped)); `dbus/intake.rs` (100k calls from 100k names: the queue holds 8, the counts stop at 1024); `casement-agent`
+  socket and eis tables. The three old cgroup-based serve tests are replaced by these.
+- **Settings > Privacy (served).** `casement_ipc::privacy`: `org.quire.SettingsModule1` at `/org/quire/Compositor1/privacy` on
+  Compositor1's own connection (`CallerSetup::with_privacy(PrivacyLink)`). Read by `settings` and `shell`, written by `settings`
+  only, each `Proof::Full`; `permit` refuses everyone else, who then also hear no `Changed`. A section per power
+  (`Power::title()`, help `Power::blurb()`), `privacy.<power>.<n>` a two-word switch (`on`/`off`, labelled Allowed/Not allowed) and
+  `privacy.<power>.<n>.forget` ("Ask Again"); `n` is 12 hex digits of FNV-1a over (who set it, kind, engine, subject text), so a name
+  is the same on every run and a person's row and the administrator's for the same program differ. An administrator row is a
+  `Fixed` read-out with the note "Set by your administrator" and `Set` on it is `NotPermitted`. A section with no row has one
+  read-out "No program has asked yet.". A `Set` becomes a `PrivacyEdit` (`Allow`/`Deny`/`Forget`) in a queue of `EDIT_QUEUE` (16)
+  and is applied to the board at once, so Settings reads its own change back; the model's list replaces it at the next publish.
+  `Changed` is sent for each key whose value moved (a key that went away says `removed`; a pane reads the schema again on any
+  `Changed`). Tests: `privacy/tests.rs` (administrator rows read-only; shell reads and cannot write; a stranger cannot read;
+  `settings` at `Exe` cannot write; the edit reaches the queue), `keys.rs`, `write.rs`, `edit.rs`, `board.rs` tables.
+- **PORTAL-15 (verification worker written, not wired).** `casement_ipc::a11y::{A11yWorker, A11yAsk, A11yVerdict, verify}`:
+  `GetConnectionUnixProcessID(bus_name)` (unique or well-known, 2 s bound) must equal the client's pid, else the root stays
+  `A11yRoot::Unknown`; a sandboxed client's connection is its proxy's, a different process, so it never verifies. Queue and answers
+  are bounded (`A11Y_QUEUE` 32). The design says `Pinned::same_process` (pid and start time); peephole v0.1.1 has no such method, and
+  casement holds the client by its pidfd, so the pid cannot be reused while the client is held: the pid compare is equivalent.
+  Test: `a11y.rs` on a private bus.
+- **Debug units (`debug-inject`).** `DebugPeerUnits` is now a `CallerCheck`: a peer the test table matches stands as the role of
+  `sill.service` (shell), `cuad.service` (agent_tier) or `transom.service` (portal), `Proof::Full`, app `org.quire.TestOnly`, and
+  every other peer goes to the real check. `CallerSetup::with_test_units(table)`; it logs nothing itself (the root's one "TEST ONLY"
+  warning stays).
+- **Deviations from the design text.**
+  - `CallerSetup` (not a bare `Table`) is the argument of `serve_compositor_at`: the identifier needs the bus connection, which the
+    thread makes, so the setup is a closure over it (`CallerSetup::desktop(table)` builds `BusPeers` with `Tokio` offload and
+    `ManagerCheck::Verified(manager at Exe)`; tests pass `CallerSetup::with`). The connection is built first, the object served, then
+    the name requested with `DoNotQueue` and without replacement (zbus' builder cannot take an object that needs the connection).
+  - The rate window is a timer task that clears the table, not a sliding window: up to 8 calls can straddle a boundary. The shell
+    connects once, the portal once per session, so the loose edge costs nothing.
+  - `Page::Apps` is the interim page of the Privacy keys (ds-settings has no `Privacy` page); see the interface ask below.
+  - A person's row shadowed by an administrator's refusal is still listed (core's `rows()` lists both and `decide` lets the person
+    switch off an administrator's allow), so a program can show twice, once read-only.
+- **Needed from the root lane (`pa2-croot`, the `casement` crate; the build breaks there until done).**
+  - `run.rs::attach_compositor`: `CallerSetup::desktop(table)` with `table = TableFiles::desktop().load(&RealProc::system())` (all re-
+    exported from `casement_ipc::dbus`; a failed load runs with `CallerTable::empty()`, where nobody is a service and the shell cannot
+    connect: say so loudly); under `debug-inject` `.with_test_units(table)` replaces `with_debug_units`; `.with_privacy(link)` with
+    `let (link, edits) = PrivacyLink::new()`.
+  - `connect.rs`: `answer` reads `ask.caller` (`hand_out(&ask.role, &ask.caller.role)`, `portal_may_connect(&ask.caller.role)`);
+    `AgentState::handed` becomes `BTreeMap<ClientKey, AppKey>` (`casement_agent::AppKey`) from `ask.caller.app`.
+  - The loop reads `edits: Channel<PrivacyEdit>` and feeds `edit.into_event(UnixSeconds(now))`; after every step that can change the
+    book or floor it calls `link.board().publish(model.privilege().rows())` (a no-op when equal) and once at start.
+  - The test kit (`FakeCgroups`, `fixture/handout.rs`, `tests/it/remote_eis.rs`, `quire_shell.rs`) builds `Proven` instead of cgroup
+    text; `ConnectRefusal::UnknownUnit`/`RoleNotAllowed` are unchanged in name.
+  - `set_a11y_root`: the handler leaves `A11yRoot::Unknown` and the root queues `A11yWorker::check(A11yAsk { window, client_pid, .. })`
+    (the client's pinned pid), feeding the `Channel<A11yVerdict>` back as `WindowHintChange::A11y(verdict.root)`.
+- **Interface asks.** quire `ds-settings`: a `Page::Privacy` (label "Privacy", between Accounts and Keyboard & Shortcuts); then
+  `PRIVACY_PAGE` in `casement-ipc/src/privacy/keys.rs` becomes `Page::Privacy`. The release lane's `desktop-callers.toml` must have
+  the rows `shell` (sill.service), `agent_tier` (cuad.service), `portal` (transom.service), `settings` (detent) and `manager`
+  (systemd, `Exe`) with `exe` lists.
+- **Not verified by reading (the gate run looks here).** That `BusPeers::who`'s future is `Send` (the boxed `WhoFuture` and zbus
+  interface methods need it); that `Arc::new(BusPeers)` coerces at the closure return in `CallerSetup::with`; `tokio::spawn` of
+  `privacy::follow` (needs `Served: Send`); `Connection::request_name_with_flags(.., DoNotQueue.into())` yields `NameTaken` for a held
+  name; the FNV-1a test vector for "a"; that `ds-settings`' `live` feature unifies with the workspace's zbus `tokio` feature.

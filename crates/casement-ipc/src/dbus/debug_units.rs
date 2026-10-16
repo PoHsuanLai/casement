@@ -1,13 +1,17 @@
 //! Test unit overrides (feature `debug-inject` only): a table that says "the peer running the
 //! program `sill` is unit `sill.service`", for a jailed desktop scenario that has no systemd and
-//! so no `/proc/<pid>/cgroup` naming a unit. [`DebugPeerUnits`] is a [`PeerCgroups`] that answers
-//! from the table first and falls back to the real seam. This file is compiled only under
-//! `debug-inject`; a release build has no such type, and nothing in it reads the environment
-//! (the binary parses its variable and hands the text to [`PeerUnitTable::parse`]).
+//! so no unit manager to vouch for a unit. [`DebugPeerUnits`] is a [`CallerCheck`] that makes a
+//! matching peer stand as the role of the unit the table names, and asks the real check about
+//! every other. This file is compiled only under `debug-inject`; a release build has no such
+//! type, and nothing in it reads the environment (the binary parses its variable and hands the
+//! text to [`PeerUnitTable::parse`]).
 
-use super::compositor1::PeerCgroups;
-use crate::IpcError;
+use super::callers::{CallerCheck, WhoFuture};
+use peephole_bus::peephole_core::{AppKey, Pin as Pinning, Proof, RoleName, Standing, roles};
 use std::sync::Arc;
+use zbus::Connection;
+use zbus::fdo::DBusProxy;
+use zbus::names::BusName;
 
 /// Who an override applies to.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -132,73 +136,82 @@ impl PeerNames for ProcComm {
     }
 }
 
-/// A [`PeerCgroups`] that answers from a [`PeerUnitTable`] first and from `inner` otherwise.
+/// The role a test unit stands for: the units of the desktop's own processes, the only ones a
+/// jailed scenario needs to be.
+fn role_of_unit(unit: &str) -> Option<RoleName> {
+    match unit {
+        "sill.service" => Some(roles::SHELL),
+        "cuad.service" => Some(roles::AGENT_TIER),
+        "transom.service" => Some(roles::PORTAL),
+        _ => None,
+    }
+}
+
+/// The standing a peer of `unit` is made to have: a service of the unit's role, proven all the
+/// way (nothing real stands behind it).
+fn standing_of_unit(unit: &str) -> Option<Standing> {
+    Some(Standing::Service {
+        app: AppKey::new("org.quire.TestOnly").ok()?,
+        role: role_of_unit(unit)?,
+        proof: Proof::Full,
+        pin: Pinning::Reopened,
+    })
+}
+
+/// A [`CallerCheck`] that answers from a [`PeerUnitTable`] first and from `inner` otherwise.
 #[derive(Debug)]
 pub struct DebugPeerUnits {
     table: PeerUnitTable,
     names: Arc<dyn PeerNames>,
-    inner: Arc<dyn PeerCgroups>,
+    inner: Arc<dyn CallerCheck>,
+    connection: Connection,
 }
 
 impl DebugPeerUnits {
-    /// The wrapper over `inner`, reading program names through `names`.
+    /// The wrapper over `inner`, reading program names through `names` and asking the bus of
+    /// `connection` for a sender's process.
     pub fn new(
         table: PeerUnitTable,
         names: Arc<dyn PeerNames>,
-        inner: Arc<dyn PeerCgroups>,
+        inner: Arc<dyn CallerCheck>,
+        connection: Connection,
     ) -> DebugPeerUnits {
         DebugPeerUnits {
             table,
             names,
             inner,
+            connection,
         }
+    }
+
+    /// The standing the table gives `sender`, if a rule matches its process.
+    async fn matched(&self, sender: &str) -> Option<Standing> {
+        let name = BusName::try_from(sender).ok()?;
+        let pid = DBusProxy::new(&self.connection)
+            .await
+            .ok()?
+            .get_connection_unix_process_id(name)
+            .await
+            .ok()?;
+        let comm = self.names.name_of(pid);
+        standing_of_unit(self.table.unit_of(pid, comm.as_deref())?)
     }
 }
 
-impl PeerCgroups for DebugPeerUnits {
-    fn cgroup_of(&self, pid: u32) -> Result<String, IpcError> {
-        let name = self.names.name_of(pid);
-        match self.table.unit_of(pid, name.as_deref()) {
-            Some(unit) => Ok(format!("0::/user.slice/app.slice/{unit}\n")),
-            None => self.inner.cgroup_of(pid),
-        }
+impl CallerCheck for DebugPeerUnits {
+    fn who<'a>(&'a self, sender: &'a str) -> WhoFuture<'a> {
+        Box::pin(async move {
+            match self.matched(sender).await {
+                Some(standing) => Ok(standing),
+                None => self.inner.who(sender).await,
+            }
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeMap;
-
-    #[derive(Debug)]
-    struct Names(BTreeMap<u32, &'static str>);
-
-    impl PeerNames for Names {
-        fn name_of(&self, pid: u32) -> Option<String> {
-            self.0.get(&pid).map(|name| (*name).to_owned())
-        }
-    }
-
-    #[derive(Debug)]
-    struct Fixed;
-
-    impl PeerCgroups for Fixed {
-        fn cgroup_of(&self, pid: u32) -> Result<String, IpcError> {
-            match pid {
-                1 => Ok("0::/user.slice/app.slice/cuad.service\n".to_owned()),
-                _ => Err(IpcError::Bus(format!("no process {pid}"))),
-            }
-        }
-    }
-
-    fn wrapper(table: &str) -> DebugPeerUnits {
-        let names = Names(BTreeMap::from([(1, "sill"), (2, "sill"), (3, "other")]));
-        DebugPeerUnits::new(
-            PeerUnitTable::parse(table).expect("a table"),
-            Arc::new(names),
-            Arc::new(Fixed),
-        )
-    }
 
     #[test]
     fn the_table_parses_names_and_pids_and_refuses_the_rest() {
@@ -240,34 +253,27 @@ mod tests {
     }
 
     #[test]
-    fn the_table_wins_over_the_real_seam_and_the_real_seam_answers_the_rest() {
-        let units = wrapper("sill=sill.service");
-        let by_name = units.cgroup_of(2).expect("matched by name");
-        assert!(by_name.trim_end().ends_with("/sill.service"), "{by_name}");
-        // Pid 1 is also named sill: the table beats the inner seam's cuad.service.
-        let beaten = units.cgroup_of(1).expect("matched by name");
-        assert!(beaten.trim_end().ends_with("/sill.service"), "{beaten}");
-        // An unmatched peer is the inner seam's answer, error included.
-        assert!(units.cgroup_of(3).is_err());
-        let plain = wrapper("");
-        assert!(plain.cgroup_of(1).expect("inner").contains("cuad.service"));
+    fn a_rule_matches_by_pid_or_name_first_match_wins_and_the_comm_is_cut() {
+        let table = PeerUnitTable::parse("2=cuad.service,sill=sill.service").expect("a table");
+        assert_eq!(table.unit_of(2, Some("sill")), Some("cuad.service"));
+        assert_eq!(table.unit_of(1, Some("sill")), Some("sill.service"));
+        assert_eq!(table.unit_of(3, Some("other")), None);
+        assert_eq!(table.unit_of(3, None), None);
+        assert_eq!(comm_cut("a-very-long-program-name"), "a-very-long-pro");
     }
 
     #[test]
-    fn a_pid_rule_and_the_first_match_and_the_comm_cut_work() {
-        let units = wrapper("2=cuad.service,sill=sill.service");
-        assert!(
-            units
-                .cgroup_of(2)
-                .expect("pid")
-                .ends_with("/cuad.service\n")
-        );
-        assert!(
-            units
-                .cgroup_of(1)
-                .expect("name")
-                .ends_with("/sill.service\n")
-        );
-        assert_eq!(comm_cut("a-very-long-program-name"), "a-very-long-pro");
+    fn a_test_unit_stands_as_the_role_of_the_desktops_own_unit_and_no_other() {
+        for (unit, role) in [
+            ("sill.service", roles::SHELL),
+            ("cuad.service", roles::AGENT_TIER),
+            ("transom.service", roles::PORTAL),
+        ] {
+            assert!(
+                matches!(standing_of_unit(unit), Some(Standing::Service { role: got, .. }) if got == role),
+                "{unit}"
+            );
+        }
+        assert!(standing_of_unit("firefox.service").is_none());
     }
 }

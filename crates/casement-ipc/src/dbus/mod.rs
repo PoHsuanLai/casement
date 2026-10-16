@@ -1,15 +1,30 @@
-//! The D-Bus objects: `compositor1` (`org.quire.Compositor1`, P2-Z) and, under feature
-//! `debug-inject`, `debug1`.
+//! The D-Bus objects: `compositor1` (`org.quire.Compositor1`, P2-Z; its callers are proven in
+//! `callers` and counted in `intake`) and, under feature `debug-inject`, `debug1`.
 
+mod callers;
 mod compositor1;
 mod compositor_serve;
+mod connect_ask;
+mod intake;
 
-pub use compositor_serve::serve_compositor_at;
+pub use callers::{CallerCheck, DesktopCallers, WhoFuture, require, role_for_connection};
+pub use compositor_serve::{CallerSetup, serve_compositor_at};
 pub use compositor1::{
-    BUS_NAME as COMPOSITOR_BUS_NAME, Compositor1, ConnectAsk, ConnectCall, ConnectRefusal,
-    ConnectReply, EndAsk, OBJECT_PATH as COMPOSITOR_OBJECT_PATH, PeerCgroups, ProcCgroups,
-    RemoteAsk, parse_connect_role,
+    BUS_NAME as COMPOSITOR_BUS_NAME, Compositor1, OBJECT_PATH as COMPOSITOR_OBJECT_PATH,
+    parse_connect_role,
 };
+pub use connect_ask::{
+    ConnectAsk, ConnectCall, ConnectRefusal, ConnectReply, EndAsk, NOT_THE_CALLER, Proven,
+    RemoteAsk,
+};
+pub use intake::{
+    ANSWER_WAIT, Admission, CALLS_PER_WINDOW, CONNECT_QUEUE, Intake, RATE_WINDOW, RateLimit,
+    TRACKED_CALLERS,
+};
+/// The caller table and the files it is read from (the caller-identity library's), so the
+/// composition root names no second crate for them.
+pub use peephole_bus::peephole::{LoadError, RealProc, TableFiles};
+pub use peephole_bus::peephole_core::Table as CallerTable;
 
 #[cfg(feature = "debug-inject")]
 mod debug1;
