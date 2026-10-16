@@ -49,7 +49,7 @@ pub use standing::{AskSubject, ClientStanding, Identity, ServiceRole};
 pub use step::PowerOutcome;
 pub use subject::{Engine, ProgramPath, SandboxAppId, Subject};
 
-pub(crate) use step::{Ctx, Input, Screen};
+pub(crate) use step::Input;
 
 use crate::ids::ClientKey;
 use crate::policy::{ConnectionRole, PowerSet, trusted_powers};

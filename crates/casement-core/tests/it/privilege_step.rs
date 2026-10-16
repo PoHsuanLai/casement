@@ -968,10 +968,11 @@ mod storms {
                 .flat_map(|(n, power)| desk.uses(n, power))
                 .collect();
             prop_assert!(questions(&all).len() <= 1);
-            prop_assert!(!all.iter().any(|effect| matches!(
+            let allowed = all.iter().any(|effect| matches!(
                 effect,
                 Effect::Resolve { outcome: PowerOutcome::Allowed, .. }
-            )));
+            ));
+            prop_assert!(!allowed);
             prop_assert!(desk.model.privilege().asks().len() <= OPEN_ASKS);
         }
 

@@ -30,7 +30,7 @@ impl Model {
 
     /// `input` through the consent machine; its effects follow, and its deadline timer joins
     /// the model's timers.
-    pub(crate) fn privileged(self, input: Input) -> Moved {
+    pub(in crate::model) fn privileged(self, input: Input) -> Moved {
         let ctx = Ctx {
             now: self.now,
             screen: Screen::of(&self.lock),
@@ -56,7 +56,7 @@ impl Model {
     }
 
     /// A client connected through a socket of `role`.
-    pub(crate) fn privilege_connected(
+    pub(in crate::model) fn privilege_connected(
         self,
         client: crate::ids::ClientKey,
         role: &ConnectionRole,
