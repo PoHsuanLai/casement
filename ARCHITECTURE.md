@@ -104,6 +104,8 @@ A1: `Instant::now`, `SystemTime::now`, smithay's `Clock::now` and calloop's `Tim
 | a protocol's state and its request and effect functions | `casement-wayland::<protocol>` |
 | which globals a client sees (the filter that wraps I7) | `casement-wayland::GlobalFilter` |
 | a client's key, role and identity | `casement-wayland::ClientState` (inserted by `casement::clients::insert_client`) |
+| who may take the keyboard, take over a dead locker's lock, or reserve room (shell versus another client) | `casement-core`: `LayerSpec::owner` (`LayerOwner`) and `Model` (`shell_clients`, `locker: LockHolder`), learned from `ConnectionRole::Shell`; a security context carries at most its creator's proof (`casement-wayland::security_context::identity_for_clients`) |
+| whether the session was locked when casement last ran | `casement::lock_marker::LockMarker` (injected; real `FileLockMarker` in `$XDG_RUNTIME_DIR/casement`; fake `MemoryLockMarker`), written and removed by `LockReply::{Remember, Forget}` |
 | smithay's types becoming ours | `casement-wayland::convert` and the handlers, never deeper |
 | which serials answer a press | `casement-wayland::serial::SerialBook` |
 | a virtual output's spec and its text grammar (C27) | `casement-backend::VirtualOutputSpec` |
