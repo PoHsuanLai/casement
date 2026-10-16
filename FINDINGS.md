@@ -837,7 +837,8 @@ output and `--region` still go through Debug1.
   same read-back for a framebuffer, plus `CapturedFrame::from_rgba`) is written and tested on pixman but the
   headless path does not call it: the frame it would read is gone by the time a client asks. **The tty backend has
   no read-back yet**: a frame request there fails with `unknown` until P1-D3's scanout keeps a frame or renders one
-  for the request. A real-hardware run must check a capture on KMS.
+  for the request. A real-hardware run must check a capture on KMS. (**Stale since P1-T**: the tty has had a software shadow
+  read-back since P1-T and the display GPU's scenes since `wave-2026-10-15/dmabuf`; see cas34 below.)
 - **No dma-buf.** Constraints are shm only (`argb8888`, `xrgb8888`, the output's mode size, `dma: None`). dma-buf
   capture follows with P1-D4's GPU manager (the render node to announce). `BufferConstraints { dma }` exists because
   `casement-backend` always builds smithay with `renderer_multi`, which brings `backend_drm`; a build of
@@ -4002,3 +4003,39 @@ Written without a build or a run (rule of the lane); the orchestrator's gate set
   manager for the life of the connection, handle `Event::Quit` as "run the app's should-terminate path": save or ask, then
   exit, or stay (and then do nothing more). An app that does nothing is closed window by window only if it binds version 1;
   one bound at version 2 that ignores `quit` just returns to running after 3 s, so a host that binds 2 must act on it.
+## cas34-readback: tty capture read-back and the cursor in captures (2026-10-16)
+
+Written without a compiler (lane rule); the orchestrator builds. The tracker line ("tty backend has no read-back, so the eyedropper
+cancels on hardware; honour cursor-hidden in output captures") described the code before P1-T. Reading it again:
+
+- **The tty read-back exists.** While a capture session (ext-image-copy-capture) or a wlr copy waits on an output
+  (`core_loop/tty.rs::capture_watch`), `TtyBackend::present` draws each frame once more: on the display GPU into two GLES textures
+  (`capture_scene_real.rs`, `Offscreen` + `render_output`) when the lender keeps scenes, else into the pixman shadow
+  (`readback.rs`). A still desktop gets its first frame from `capture_first`. A shared-memory client is answered by reading the
+  texture back (`ExportMem` through `pass::capture_output`), a dma-buf client by `blit_texture`; a refused GPU draw falls back to
+  the shadow, and a frame that cannot be had fails the request with `CaptureFailure::Renderer` (never a hang: a request before the
+  first frame waits only until `serve_captures` runs after the next present). `sill`'s eyedropper asks for an output source with
+  the cursor hidden (`desktop-client` `CursorMode::Hidden`, `Options::empty()`), which is this path. The "no read-back" line in
+  sill's manual checks and `wave-6/colour-picker` is that older state.
+- **The cursor is explicit already.** `casement_render::pass::CursorInclusion { Include, Exclude }` is the typed choice every backend
+  takes (`CursorPaint` from the wire maps to it in `handlers/image_capture/direct.rs::inclusion`); a second enum `CursorInCapture`
+  would only rename it, so none was added. The element-list builder is `headless/bare.rs::without_cursor` (elements whose `Kind`
+  is `Cursor`), used by the headless backend's cursor-less layer, the tty shadow (a headless backend) and the GPU scenes' `bare`
+  texture (`Cursorless`). Both cursor sources are `Kind::Cursor` (`element/cursor.rs`: named and client surface).
+- **What was missing and is now done.** A region request read the whole frame off the GPU and cut it on the CPU. `CaptureGpu::
+  read_scene` and `TtyBackend::read_output` now take the `PhysicalRect`, `SceneStore::read` checks it (`Picture::holds`, pure) and
+  reads just that region with `pass::capture_output`; `frames::last_frame` takes the area and returns the frame already cut (the
+  pixman shadow's frame is cropped there, as `write_output` did). A one-pixel `capture_output_region` therefore copies one pixel
+  off the GPU. The whole-frame read is the same call with the whole area.
+- **Tests (pure).** `Picture::holds` table (whole, one pixel, last pixel, one past each edge, sticking out, negative, empty);
+  `without_cursor` table over solid elements of kind `Cursor` and `Unspecified` (order kept, every cursor element dropped);
+  `physical_region` rows for a 1 x 1 logical pick at 1x, 2x, 1.5x and at the last pixel. Existing protocol tests
+  (`capture_cursor.rs`, `screencopy.rs`, `image_capture.rs`, `tty/integration.rs::a_capture_of_a_kms_output_returns_its_frame`) cover
+  the cursor with and without `paint_cursors` / `overlay_cursor` over the fake KMS; the real GLES region read has no test of its
+  own (needs a device; llvmpipe in `capture_direct.rs` covers only the blit).
+- **Unsure it compiles.** `capture_scene_real.rs::read` (calls `capture_output` with the bound `GlesTarget`; `BackendError: From<
+  RenderError>` is relied on, as `blit` does), the unused imports I removed there (`ExportMem`, `Rectangle`), and the `bare.rs` test
+  (`SolidColorRenderElement::new` with `Kind::Cursor`, `CasementElement::<PixmanRenderer>::Solid`). The testkit's `FakeCaptureGpu`
+  does not override `read_scene` (the default, unchanged but for its arguments).
+- **By hand.** `docs/manual-checks.md` "Capture on a real seat (KMS)": the eyedropper on hardware, `grim -c` / no `-c`, a 1 x 1
+  region. Queue the first in `sill/docs/manual-checks.md` too, whose last line still says the tty has no read-back.

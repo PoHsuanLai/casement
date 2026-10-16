@@ -78,13 +78,16 @@ pub trait CaptureGpu: std::fmt::Debug {
         Err(BackendError::NoFrame)
     }
 
-    /// The frame last drawn for `output` read back to the CPU, for a shared-memory buffer.
+    /// `area` of the frame last drawn for `output` read back to the CPU, for a shared-memory
+    /// buffer: only those pixels cross to the CPU (a one-pixel colour pick reads one pixel).
+    /// [`BackendError::NoFrame`] when `area` is not inside the frame.
     fn read_scene(
         &mut self,
         output: &OutputName,
         cursor: CursorInclusion,
+        area: PhysicalRect,
     ) -> Result<CapturedFrame, BackendError> {
-        let _ = (output, cursor);
+        let _ = (output, cursor, area);
         Err(BackendError::NoFrame)
     }
 
@@ -182,6 +185,18 @@ impl Picture {
             transform: config.transform,
         }
     }
+
+    /// Whether `area` has pixels and lies wholly inside the picture.
+    pub fn holds(&self, area: PhysicalRect) -> bool {
+        let right = i64::from(area.x) + i64::from(area.w);
+        let bottom = i64::from(area.y) + i64::from(area.h);
+        area.x >= 0
+            && area.y >= 0
+            && area.w > 0
+            && area.h > 0
+            && right <= i64::from(self.size.w)
+            && bottom <= i64::from(self.size.h)
+    }
 }
 
 /// Which renderer answers a dma-buf capture frame.
@@ -253,6 +268,30 @@ mod tests {
 
     fn tiled() -> Modifier {
         Modifier::from(0x0100_0000_0000_0001_u64)
+    }
+
+    #[test]
+    fn a_picture_holds_a_region_only_when_it_is_inside() {
+        let picture = Picture {
+            size: PhysicalSize { w: 640, h: 480 },
+            scale: Scale(120),
+            transform: Transform::Normal,
+        };
+        let rect = |x, y, w, h| PhysicalRect { x, y, w, h };
+        // name, the region, whether it is held
+        let table = [
+            ("whole", rect(0, 0, 640, 480), true),
+            ("one pixel", rect(10, 20, 1, 1), true),
+            ("the last pixel", rect(639, 479, 1, 1), true),
+            ("one past the right edge", rect(640, 0, 1, 1), false),
+            ("one past the bottom edge", rect(0, 480, 1, 1), false),
+            ("sticks out", rect(600, 0, 41, 1), false),
+            ("before the origin", rect(-1, 0, 2, 2), false),
+            ("no area", rect(5, 5, 0, 1), false),
+        ];
+        for (name, area, held) in table {
+            assert_eq!(picture.holds(area), held, "{name}");
+        }
     }
 
     #[test]

@@ -91,3 +91,66 @@ pub(crate) fn without_cursor<R: Compositor>(
         .filter(|element| !matches!(element.kind(), Kind::Cursor))
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use smithay::backend::renderer::Color32F;
+    use smithay::backend::renderer::element::Id;
+    use smithay::backend::renderer::element::solid::SolidColorRenderElement;
+    use smithay::backend::renderer::utils::CommitCounter;
+    use smithay::utils::{Physical, Rectangle};
+
+    /// A solid element of `kind`, on pixman's element type (no renderer is needed to hold it).
+    fn solid(kind: Kind) -> CasementElement<PixmanRenderer> {
+        let rect = Rectangle::<i32, Physical>::new((0, 0).into(), (4, 4).into());
+        CasementElement::Solid(SolidColorRenderElement::new(
+            Id::new(),
+            rect,
+            CommitCounter::default(),
+            Color32F::new(1.0, 0.0, 0.0, 1.0),
+            kind,
+        ))
+    }
+
+    /// Which of `elements` are the cursor, in order.
+    fn cursors(elements: &[CasementElement<PixmanRenderer>]) -> Vec<bool> {
+        elements
+            .iter()
+            .map(|element| matches!(element.kind(), Kind::Cursor))
+            .collect()
+    }
+
+    #[test]
+    fn a_frame_without_the_cursor_keeps_every_other_element_in_order() {
+        // name, the element list, what is left (true = a cursor element)
+        let table = [
+            ("empty", Vec::new(), Vec::new()),
+            (
+                "no cursor",
+                vec![solid(Kind::Unspecified), solid(Kind::Unspecified)],
+                vec![false, false],
+            ),
+            ("only the cursor", vec![solid(Kind::Cursor)], Vec::new()),
+            (
+                "the cursor on top",
+                vec![solid(Kind::Cursor), solid(Kind::Unspecified)],
+                vec![false],
+            ),
+            (
+                "two cursor elements between windows",
+                vec![
+                    solid(Kind::Unspecified),
+                    solid(Kind::Cursor),
+                    solid(Kind::Cursor),
+                    solid(Kind::Unspecified),
+                ],
+                vec![false, false],
+            ),
+        ];
+        for (name, elements, left) in table {
+            let kept = without_cursor(elements);
+            assert_eq!(cursors(&kept), left, "{name}");
+        }
+    }
+}
