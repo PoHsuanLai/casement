@@ -388,7 +388,7 @@ name = "casement-agent"
 version = "0.1.0"
 dependencies = [
  "casement-core",
- "peephole-core 0.1.4",
+ "peephole-core",
  "reis",
  "smithay",
 ]
@@ -456,7 +456,7 @@ dependencies = [
  "casement-protocols",
  "ds-core",
  "ds-settings",
- "peephole-bus 0.1.4",
+ "peephole-bus",
  "porter-core",
  "porter-dbus",
  "serde_json",
@@ -2245,35 +2245,12 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "peephole"
-version = "0.1.2"
-source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.2#f111ee0c32461d72173bb591079a1fbe0fca1953"
-dependencies = [
- "peephole-core 0.1.2",
- "rustix 1.1.5",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "peephole"
 version = "0.1.4"
 source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.4#5a2e742fb12cd78b4555ff07d8d96681fa0bbeb8"
 dependencies = [
- "peephole-core 0.1.4",
+ "peephole-core",
  "rustix 1.1.5",
  "thiserror 2.0.21",
-]
-
-[[package]]
-name = "peephole-bus"
-version = "0.1.2"
-source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.2#f111ee0c32461d72173bb591079a1fbe0fca1953"
-dependencies = [
- "futures-timer",
- "peephole 0.1.2",
- "peephole-core 0.1.2",
- "thiserror 2.0.21",
- "tokio",
- "zbus",
 ]
 
 [[package]]
@@ -2282,21 +2259,11 @@ version = "0.1.4"
 source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.4#5a2e742fb12cd78b4555ff07d8d96681fa0bbeb8"
 dependencies = [
  "futures-timer",
- "peephole 0.1.4",
- "peephole-core 0.1.4",
+ "peephole",
+ "peephole-core",
  "thiserror 2.0.21",
  "tokio",
  "zbus",
-]
-
-[[package]]
-name = "peephole-core"
-version = "0.1.2"
-source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.2#f111ee0c32461d72173bb591079a1fbe0fca1953"
-dependencies = [
- "serde",
- "thiserror 2.0.21",
- "toml",
 ]
 
 [[package]]
@@ -2466,9 +2433,9 @@ dependencies = [
 name = "porter-dbus"
 version = "0.1.0"
 dependencies = [
- "peephole 0.1.2",
- "peephole-bus 0.1.2",
- "peephole-core 0.1.2",
+ "peephole",
+ "peephole-bus",
+ "peephole-core",
  "porter-core",
  "serde",
  "serde_json",

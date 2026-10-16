@@ -1,6 +1,6 @@
 [package]
 name = "casement-testclient"
-description = "Typed wayland-client helpers per protocol for casement's tests, the Transcript every client keeps, test patterns and shm buffers; the casement-probe binary. Reaches no smithay (B9)."
+description = "Typed wayland-client helpers per protocol for casement's tests, the Transcript every client keeps, test patterns and shm buffers; the casement-probe and casement-shell-exec binaries. Reaches no smithay (B9)."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -16,6 +16,11 @@ path = "src/bin/probe.rs"
 [[bin]]
 name = "casement-x11probe"
 path = "src/bin/x11probe.rs"
+
+# Runs a program as the shell: the socket Compositor1.Connect("shell") hands out, in WAYLAND_SOCKET.
+[[bin]]
+name = "casement-shell-exec"
+path = "src/bin/shell_exec.rs"
 
 [dependencies]
 casement-core = { workspace = true }
@@ -33,7 +38,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 x11rb = { workspace = true }
-# The probe's `shell-connect` asks org.quire.Compositor1 for the shell connection.
+# The probe's `shell-connect` and casement-shell-exec ask org.quire.Compositor1 for the shell
+# connection (quire/handout.rs).
 zbus = { workspace = true }
 tokio = { workspace = true }
 

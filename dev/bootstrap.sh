@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Fetches and builds every artefact the jailed scripts need, OUTSIDE the jail (A7: nothing inside
 # the jail calls cargo or the network), into dev/out/tools (no root):
-#   bin/casement bin/casementctl bin/casement-probe bin/fake-logind
+#   bin/casement bin/casementctl bin/casement-probe bin/casement-shell-exec bin/fake-logind
 #                the compositor (headless backend, `debug-inject`), its control tool, the test
-#                client's probe and the fake logind, built with plain cargo (CARGO_TARGET_DIR
-#                is honoured, else ./target; --release builds the release profile)
+#                client's probe and shell launcher, and the fake logind, built with plain cargo
+#                (CARGO_TARGET_DIR is honoured, else ./target; --release builds the release profile)
 #   bin/foot     a terminal for the toolkit scripts: the one on PATH, else (Fedora and its relatives
 #                only) the packages foot and fcft through `dnf download` (no root) and unpacked;
 #                on other distributions install foot from the distribution
@@ -67,12 +67,12 @@ build_casement() {
   cargo build "${flag[@]}" --bins -p casement -p casementctl -p casement-testclient -p casement-testkit \
     --features casement/debug-inject
   local bin
-  for bin in casement casementctl casement-probe fake-logind writeback-compare; do
+  for bin in casement casementctl casement-probe casement-shell-exec fake-logind writeback-compare; do
     # A copy, not a link: a later `cargo clean` must not leave the jail a dangling tool.
     cp -f "$target/$profile/$bin" "$tools/bin/$bin.new"
     mv -f "$tools/bin/$bin.new" "$tools/bin/$bin"
   done
-  echo "bootstrap: casement, casementctl, casement-probe, fake-logind, writeback-compare -> $tools/bin ($profile)"
+  echo "bootstrap: casement, casementctl, casement-probe, casement-shell-exec, fake-logind, writeback-compare -> $tools/bin ($profile)"
 }
 
 fetch_foot() {

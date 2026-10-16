@@ -2,6 +2,7 @@
 
 pub mod agent;
 pub mod desktop;
+pub mod handout;
 pub mod sensitive;
 pub mod shell;
 pub mod trusted;

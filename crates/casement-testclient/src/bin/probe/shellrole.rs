@@ -2,18 +2,13 @@
 //! out, and the `quire_shell_v1` requests made on it (roles and minimise targets). The grammar
 //! is in `command.rs`; every verb answers one JSON note.
 
+use casement_testclient::quire::handout;
 use casement_testclient::quire::shell::{ShellHandle, ShellRole};
 use casement_testclient::{ClientError, TestClient};
 use serde_json::{Value, json};
 use std::os::fd::OwnedFd;
-use std::time::Duration;
 use wayland_client::protocol::wl_surface::WlSurface;
 
-const BUS_NAME: &str = "org.quire.Compositor1";
-const OBJECT_PATH: &str = "/org/quire/Compositor1";
-const INTERFACE: &str = "org.quire.Compositor1";
-/// How long the bus call may take.
-const CALL_PATIENCE: Duration = Duration::from_secs(10);
 /// Poll rounds (100 ms each) the first roundtrip on the new connection may take.
 const ROUNDS: u32 = 100;
 
@@ -22,29 +17,6 @@ pub(crate) struct Shell {
     handle: ShellHandle,
     /// The surface that was given the dock role: minimise targets are local to it.
     dock: Option<WlSurface>,
-}
-
-/// The client end of a new `shell` connection, asked of casement on the session bus.
-fn hand_out() -> Result<OwnedFd, String> {
-    let address = std::env::var("DBUS_SESSION_BUS_ADDRESS")
-        .map_err(|_| "DBUS_SESSION_BUS_ADDRESS is not set".to_owned())?;
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|e| e.to_string())?;
-    let call = async {
-        let bus = zbus::connection::Builder::address(address.as_str())?
-            .build()
-            .await?;
-        let proxy = zbus::Proxy::new(&bus, BUS_NAME, OBJECT_PATH, INTERFACE).await?;
-        let fd: zbus::zvariant::OwnedFd = proxy.call("Connect", &("shell",)).await?;
-        Ok::<OwnedFd, zbus::Error>(fd.into())
-    };
-    // The timeout's timer is made inside the runtime: tokio's timers need its context.
-    runtime
-        .block_on(async { tokio::time::timeout(CALL_PATIENCE, call).await })
-        .map_err(|_| "Connect did not answer".to_owned())?
-        .map_err(|e| e.to_string())
 }
 
 /// A client over `fd` that has had its first roundtrip (the registry is filled).
@@ -77,7 +49,7 @@ fn client_over(fd: OwnedFd) -> Result<TestClient, ClientError> {
 
 /// Connects as the shell: the new client, and the bound `quire_shell_v1` on it.
 pub(crate) fn connect() -> Result<(TestClient, Shell), String> {
-    let mut client = client_over(hand_out()?).map_err(|e| e.to_string())?;
+    let mut client = client_over(handout::shell()?).map_err(|e| e.to_string())?;
     let advertised = client
         .globals()
         .contents()
