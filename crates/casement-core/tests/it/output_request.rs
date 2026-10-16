@@ -6,7 +6,7 @@ use crate::support::{display, headless, mode, ms};
 use casement_core::geometry::{LogicalPoint, Transform};
 use casement_core::output::{
     GammaRamp, GammaTable, Kelvin, MinuteOfDay, ModePreference, OutputChangeSet, OutputConfig,
-    OutputPower, OutputRefusal, resolve_change,
+    OutputPower, OutputRefusal, keeps_one_lit, resolve_change,
 };
 use casement_core::settings::{CasementSettings, NightLightMode, NightLightSettings};
 use casement_core::space::SpaceSeed;
@@ -151,6 +151,82 @@ fn the_model_notes_a_refused_request_and_changes_nothing() {
     );
 }
 
+fn refused(effects: &[Effect]) -> bool {
+    effects
+        .iter()
+        .any(|e| matches!(e, Effect::Note(casement_core::CoreNote::RefusedOutput(_))))
+}
+
+/// CASC-09: a request cannot put an output where the pointer never goes.
+#[test]
+fn a_position_far_outside_any_arrangement_is_refused() {
+    let facts = display(
+        "DP-1",
+        vec![mode(1920, 1080, 60_000, ModePreference::Preferred)],
+        (527, 296),
+    );
+    let config = current(&facts);
+    let cases = [
+        ("far right", LogicalPoint { x: i32::MAX, y: 0 }, false),
+        ("far up", LogicalPoint { x: 0, y: i32::MIN }, false),
+        ("beside", LogicalPoint { x: 1920, y: -40 }, true),
+        ("a long row", LogicalPoint { x: 100_000, y: 0 }, true),
+    ];
+    for (name, at, fine) in cases {
+        let mut want = OutputChangeSet::none();
+        want.position = Some(at);
+        let resolved = resolve_change(&facts, &config, &want);
+        match fine {
+            true => assert!(resolved.is_ok(), "{name}"),
+            false => assert_eq!(
+                resolved,
+                Err(OutputRefusal::PositionOutOfRange(at)),
+                "{name}"
+            ),
+        }
+    }
+}
+
+/// CASC-09: the last lit display cannot be turned dark by a request; one of two can, and then
+/// the other cannot.
+#[test]
+fn a_request_cannot_darken_the_last_lit_output() {
+    let (a, b) = (headless("HEADLESS-1").key, headless("HEADLESS-2").key);
+    let dark = OutputChangeSet::none().with_power(OutputPower::Off);
+    let ask = |output: &OutputKey| {
+        Op::Event(Event::OutputRequested {
+            output: output.clone(),
+            change: dark,
+        })
+    };
+    let alone = run(vec![plug("HEADLESS-1"), ask(&a)]);
+    assert_eq!(alone.model.outputs().0[&a].config.power, OutputPower::On);
+    assert!(refused(alone.effects.last().expect("a step")));
+
+    let two = run(vec![plug("HEADLESS-1"), plug("HEADLESS-2"), ask(&a)]);
+    assert_eq!(two.model.outputs().0[&a].config.power, OutputPower::Off);
+    assert!(!refused(two.effects.last().expect("a step")));
+    let both = run_from(two.model, vec![ask(&b)]);
+    assert_eq!(both.model.outputs().0[&b].config.power, OutputPower::On);
+    assert!(refused(both.effects.last().expect("a step")));
+
+    // The same rule over a whole configuration.
+    let book = both.model.outputs();
+    let all_dark = [(a.clone(), dark), (b.clone(), dark)];
+    assert_eq!(
+        keeps_one_lit(book, &all_dark),
+        Err(OutputRefusal::NoneLeftLit)
+    );
+    let swap = [
+        (
+            a.clone(),
+            OutputChangeSet::none().with_power(OutputPower::On),
+        ),
+        (b, dark),
+    ];
+    assert_eq!(keeps_one_lit(book, &swap), Ok(()));
+}
+
 #[test]
 fn gamma_for_a_plugged_output_becomes_an_effect_and_for_a_gone_one_nothing() {
     let key = headless("HEADLESS-1").key;
@@ -282,4 +358,18 @@ fn a_changed_skip_list_takes_effect_at_once_and_a_held_output_is_left_to_its_cli
     );
     assert_eq!(released[0].1, GammaRamp::Identity);
     assert!(is_table(&released[1].1));
+}
+
+/// CASW-18: a client's ramp is raised to an eighth of the identity curve and not touched where
+/// it is already above it.
+#[test]
+fn a_ramp_is_floored_at_an_eighth_of_the_identity_curve() {
+    let black = GammaTable::new(vec![0; 256], vec![0; 256], vec![0; 256])
+        .expect("a table")
+        .floored();
+    assert_eq!(black.red()[0], 0);
+    assert_eq!(black.red()[255], 65535 / 8);
+    assert!(black.red().windows(2).all(|pair| pair[0] <= pair[1]));
+    let bright = GammaTable::new(vec![65535; 4], vec![40_000; 4], vec![65535; 4]).expect("a table");
+    assert_eq!(bright.clone().floored(), bright);
 }

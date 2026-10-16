@@ -19,7 +19,9 @@ pub use configuration::{ConfigData, ConfigHeadData};
 pub use heads::{HeadData, ModeData};
 
 use crate::states::{GlobalFilter, WaylandFault};
-use casement_core::output::{OutputChangeSet, OutputConfig, OutputFacts, resolve_change};
+use casement_core::output::{
+    OutputChangeSet, OutputConfig, OutputFacts, keeps_one_lit, resolve_change,
+};
 use casement_core::policy::GlobalKind;
 use casement_core::{Event, OutputBook, OutputKey};
 use heads::{HeadObjects, create_head};
@@ -198,11 +200,19 @@ pub fn on_configuration(
     if configuration.serial != part.serial {
         return ConfigurationAnswer::Cancelled;
     }
-    let accepted = configuration.heads.iter().all(|head| {
+    let each_fits = configuration.heads.iter().all(|head| {
         outputs.0.get(&head.output).is_some_and(|plugged| {
             resolve_change(&plugged.facts, &plugged.config, &head.change).is_ok()
         })
     });
+    // Together they must also leave a display lit (CASC-09): the model checks each head as it
+    // applies them, so a configuration that darkens everything would otherwise half-apply.
+    let changes: Vec<(OutputKey, OutputChangeSet)> = configuration
+        .heads
+        .iter()
+        .map(|head| (head.output.clone(), head.change))
+        .collect();
+    let accepted = each_fits && keeps_one_lit(outputs, &changes).is_ok();
     match (accepted, intent) {
         (false, _) => ConfigurationAnswer::Failed,
         (true, ConfigurationIntent::Test) => ConfigurationAnswer::Succeeded(Vec::new()),

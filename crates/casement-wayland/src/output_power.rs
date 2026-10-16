@@ -35,6 +35,8 @@ pub struct OutputPowerPart {
     pub global: Option<GlobalId>,
     objects: BTreeMap<OutputKey, ZwlrOutputPowerV1>,
     shown: BTreeMap<OutputKey, OutputPower>,
+    /// The outputs a control asked to darken and has not lit again: lit when it goes (CASC-09).
+    darkened: BTreeSet<OutputKey>,
 }
 
 impl OutputPowerPart {
@@ -83,7 +85,8 @@ pub struct PowerData {
     output: Option<OutputKey>,
 }
 
-/// A client's `set_mode` on `output`: one `Event::OutputRequested` that changes only the power.
+/// A client's `set_mode` on `output`: one `Event::OutputRequested` that changes only the power
+/// (an output it darkens is lit again when its control goes, [`on_released`]).
 ///
 /// ```no_run
 /// use casement_core::output::OutputPower;
@@ -100,11 +103,29 @@ pub fn on_set_mode(
     output: OutputKey,
     power: OutputPower,
 ) -> Vec<Event> {
-    let _ = part;
+    match power {
+        OutputPower::Off => part.darkened.insert(output.clone()),
+        OutputPower::On => part.darkened.remove(&output),
+    };
     vec![Event::OutputRequested {
         output,
         change: OutputChangeSet::none().with_power(power),
     }]
+}
+
+/// The control on `output` went away (destroyed, or its client died): an output it left dark
+/// is lit again, so a client that darkens a display and disappears cannot leave it that way.
+pub fn on_released(part: &mut OutputPowerPart, output: &OutputKey) -> Vec<Event> {
+    part.objects.remove(output);
+    part.controls.remove(output);
+    part.shown.remove(output);
+    match part.darkened.remove(output) {
+        true => vec![Event::OutputRequested {
+            output: output.clone(),
+            change: OutputChangeSet::none().with_power(OutputPower::On),
+        }],
+        false => Vec::new(),
+    }
 }
 
 /// Tells the holders of a control on `output` its power is now `power` (`mode` event).
@@ -137,6 +158,7 @@ pub fn follow(part: &mut OutputPowerPart, outputs: &OutputBook) {
             None => {
                 part.controls.remove(&key);
                 part.shown.remove(&key);
+                part.darkened.remove(&key);
                 if let Some(control) = part.objects.remove(&key) {
                     control.failed();
                 }
@@ -261,9 +283,8 @@ where
         };
         let part = state.output_power_part();
         if part.objects.get(output) == Some(resource) {
-            part.objects.remove(output);
-            part.controls.remove(output);
-            part.shown.remove(output);
+            let events = on_released(part, output);
+            state.output_power_events(events);
         }
     }
 }

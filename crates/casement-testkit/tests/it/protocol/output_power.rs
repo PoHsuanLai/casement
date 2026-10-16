@@ -43,11 +43,11 @@ fn power_of(fixture: &Fixture, connector: &str) -> OutputPower {
         .expect("a plugged output")
 }
 
-/// Turning an output off darkens it (no more frames presented) and the control reports `off`;
-/// turning it on lights it again.
+/// Turning an output off darkens it (it presents no more frames, the other one still does) and
+/// the control reports `off`; turning it on lights it again.
 #[test]
 fn power_off_darkens_a_virtual_output_and_on_lights_it() {
-    let (mut fixture, id, mut powers) = boot(&TWO[..1]);
+    let (mut fixture, id, mut powers) = boot(&TWO);
     let control = powers.control("HEADLESS-1").expect("a control");
     settle(&mut fixture, &mut powers);
     assert_eq!(
@@ -55,13 +55,18 @@ fn power_off_darkens_a_virtual_output_and_on_lights_it() {
         Some(ControlState::Reported(PowerMode::On)),
         "a new control says what the power is"
     );
-    assert!(fixture.advance(Duration::from_millis(100)).frames > 0);
+    let both = fixture.advance(Duration::from_millis(100)).frames;
+    assert!(both > 0);
 
     powers.set_mode(control, PowerMode::Off).expect("off");
     settle(&mut fixture, &mut powers);
     assert_eq!(power_of(&fixture, "HEADLESS-1"), OutputPower::Off);
     assert_eq!(powers.reported(control), [PowerMode::On, PowerMode::Off]);
-    assert_eq!(fixture.advance(Duration::from_millis(100)).frames, 0);
+    let one = fixture.advance(Duration::from_millis(100)).frames;
+    assert!(
+        one > 0 && one < both,
+        "only the lit output presents: {one} of {both}"
+    );
 
     powers.set_mode(control, PowerMode::On).expect("on");
     settle(&mut fixture, &mut powers);
@@ -70,8 +75,48 @@ fn power_off_darkens_a_virtual_output_and_on_lights_it() {
         powers.reported(control),
         [PowerMode::On, PowerMode::Off, PowerMode::On]
     );
-    assert!(fixture.advance(Duration::from_millis(100)).frames > 0);
+    assert!(fixture.advance(Duration::from_millis(100)).frames > one);
     assert!(fixture.client(id).protocol_error().is_none());
+}
+
+/// CASC-09: the last lit output cannot be darkened by a client.
+#[test]
+fn the_last_lit_output_stays_lit() {
+    let (mut fixture, _, mut powers) = boot(&TWO);
+    let one = powers.control("HEADLESS-1").expect("a control");
+    let two = powers.control("HEADLESS-2").expect("a control");
+    settle(&mut fixture, &mut powers);
+    powers.set_mode(one, PowerMode::Off).expect("off");
+    settle(&mut fixture, &mut powers);
+    powers.set_mode(two, PowerMode::Off).expect("off");
+    settle(&mut fixture, &mut powers);
+    assert_eq!(power_of(&fixture, "HEADLESS-1"), OutputPower::Off);
+    assert_eq!(power_of(&fixture, "HEADLESS-2"), OutputPower::On, "refused");
+    assert!(fixture.advance(Duration::from_millis(100)).frames > 0);
+}
+
+/// CASC-09: an output a client darkened is lit again when its control goes, or its client does.
+#[test]
+fn a_darkened_output_is_lit_again_when_the_control_goes() {
+    let (mut fixture, id, mut powers) = boot(&TWO);
+    let control = powers.control("HEADLESS-1").expect("a control");
+    settle(&mut fixture, &mut powers);
+    powers.set_mode(control, PowerMode::Off).expect("off");
+    settle(&mut fixture, &mut powers);
+    assert_eq!(power_of(&fixture, "HEADLESS-1"), OutputPower::Off);
+    powers.destroy(control).expect("destroyed");
+    settle(&mut fixture, &mut powers);
+    assert_eq!(power_of(&fixture, "HEADLESS-1"), OutputPower::On);
+
+    // The same when the client goes without destroying anything.
+    let again = powers.control("HEADLESS-2").expect("a control");
+    settle(&mut fixture, &mut powers);
+    powers.set_mode(again, PowerMode::Off).expect("off");
+    settle(&mut fixture, &mut powers);
+    assert_eq!(power_of(&fixture, "HEADLESS-2"), OutputPower::Off);
+    drop(powers);
+    fixture.disconnect(id);
+    assert_eq!(power_of(&fixture, "HEADLESS-2"), OutputPower::On);
 }
 
 /// A second control on the same output is `failed`; once the first is destroyed a new one works.

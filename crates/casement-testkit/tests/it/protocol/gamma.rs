@@ -55,7 +55,10 @@ fn a_ramp_of_the_announced_size_reaches_the_backend() {
         .set_ramp(control, &red, &green, &blue)
         .expect("a ramp");
     settle(&mut fixture, &mut gamma);
-    let table = GammaTable::new(red, green, blue).expect("a table");
+    // The ramp is raised to the floor a client may not go under (CASW-18).
+    let table = GammaTable::new(red, green, blue)
+        .expect("a table")
+        .floored();
     assert_eq!(fixture.gamma_of(&output()), Some(GammaRamp::Table(table)));
     assert!(fixture.client(id).protocol_error().is_none());
 }
@@ -111,5 +114,34 @@ fn a_wrong_size_is_an_error() {
     let error = fixture.client(id).protocol_error().expect("an error");
     assert_eq!(error.interface, "zwlr_gamma_control_v1");
     assert_eq!(error.code, 1);
+    assert_eq!(fixture.gamma_of(&output()), Some(GammaRamp::Identity));
+}
+
+/// CASW-18: a client that asks for black gets a dim screen, not a black one, and its going
+/// restores the identity curve.
+#[test]
+fn an_all_zero_ramp_is_raised_to_the_floor() {
+    let (mut fixture, _, mut gamma) = boot();
+    let control = gamma.control("HEADLESS-1").expect("a control");
+    settle(&mut fixture, &mut gamma);
+    let Some(ControlState::Sized(size)) = gamma.state(control) else {
+        panic!("the control announces its size");
+    };
+    let zeros = vec![0u16; usize::try_from(size).expect("a size")];
+    gamma
+        .set_ramp(control, &zeros, &zeros, &zeros)
+        .expect("a ramp");
+    settle(&mut fixture, &mut gamma);
+    let Some(GammaRamp::Table(table)) = fixture.gamma_of(&output()) else {
+        panic!("a table reached the backend");
+    };
+    assert!(
+        table.red().last().is_some_and(|top| *top >= 8_000),
+        "the brightest step is lifted: {:?}",
+        table.red().last()
+    );
+    assert_eq!(table.red(), table.green());
+    gamma.destroy(control).expect("destroyed");
+    settle(&mut fixture, &mut gamma);
     assert_eq!(fixture.gamma_of(&output()), Some(GammaRamp::Identity));
 }

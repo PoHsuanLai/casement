@@ -6,7 +6,8 @@
 //! One control per output: a second `get_gamma_control` on a controlled output, or on one
 //! that is gone or cannot take a ramp, gets an inert control that says `failed` at once. The
 //! table size is the backend's ([`GammaHandler::gamma_table_size`]); a ramp of any other
-//! length is `invalid_gamma`. Hidden from sandboxed clients (I7).
+//! length is `invalid_gamma`, and a ramp is raised to at least an eighth of the identity curve
+//! (`GammaTable::floored`, so a client cannot black the screen out). Hidden from sandboxed clients (I7).
 
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::output::{GammaRamp, GammaTable};
@@ -178,7 +179,7 @@ fn read_ramp(fd: OwnedFd, size: GammaSize) -> Option<GammaRamp> {
     let (green, blue) = rest.split_at(steps);
     GammaTable::new(red.to_vec(), green.to_vec(), blue.to_vec())
         .ok()
-        .map(GammaRamp::Table)
+        .map(|table| GammaRamp::Table(table.floored()))
 }
 
 impl<D> GlobalDispatch2<ZwlrGammaControlManagerV1, D> for GammaGlobal

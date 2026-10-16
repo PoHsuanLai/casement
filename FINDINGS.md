@@ -4227,3 +4227,17 @@ Rows for the findings CASW-02/03/04/07/11/12/13/15/18/19, CASC-02/05/06/07/09/10
   quarter of the output along its axis (`CLIENT_ZONE_DIVISOR`), and never so much that windows keep less than half of it
   (`CLIENT_KEEPS_DIVISOR`), however many such surfaces there are; the shell's surfaces reserve what they ask for. Test:
   `arrange_cap_tests.rs` (a client bar, a zone of `u32::MAX`, stacked bars, four edges).
+- **CASC-09 (decided): at least one output stays lit, and a client's power change is undone when the client goes.**
+  `output::keeps_one_lit` refuses a request (single `zwlr_output_power` or a whole `zwlr_output_manager` configuration, checked in
+  `on_configuration` so a configuration cannot half-apply) that would leave every lit display dark; `resolve_change` refuses a
+  position further than 100 000 logical pixels from the origin. The power control remembers the outputs it darkened and asks
+  for them lit again when its object goes (destroyed or the client died). Gamma was already restored on destroy. **Not done:**
+  "outputs must touch" for management positions (a long row is legitimate and the pointer-reach rule needs the arrangement
+  code); the 100 000 bound stands in. A configuration (kanshi, sill) that darkens a display is deliberately not undone: it is
+  the person's layout. Tests: `a_request_cannot_darken_the_last_lit_output`,
+  `a_position_far_outside_any_arrangement_is_refused` (core); `the_last_lit_output_stays_lit`,
+  `a_darkened_output_is_lit_again_when_the_control_goes` (fixture; the old single-output power test now uses two outputs).
+- **CASW-18: a client's gamma ramp is floored.** `GammaTable::floored` raises every step to an eighth of the identity curve, applied
+  where the ramp is read (`gamma::read_ramp`); the night-light drive's own ramps do not go through it. Tests:
+  `a_ramp_is_floored_at_an_eighth_of_the_identity_curve` (core), `an_all_zero_ramp_is_raised_to_the_floor` (fixture); the
+  existing ramp test expects the floored table.

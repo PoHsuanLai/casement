@@ -5,19 +5,23 @@ use super::Model;
 use super::moved::Moved;
 use crate::effect::{CoreNote, Effect};
 use crate::ids::OutputKey;
-use crate::output::{GammaRamp, OutputChangeSet, OutputRefusal, resolve_change};
+use crate::output::{GammaRamp, OutputChangeSet, OutputRefusal, keeps_one_lit, resolve_change};
 
 impl Model {
     /// A client asked to change `output`: checked against its facts with
     /// `output::resolve_change`, then `Effect::ApplyOutput` with the new configuration (and an
     /// arrangement redraw), or a note when it was refused. A request that changes nothing
-    /// moves nothing.
+    /// moves nothing, and one that would leave every display dark is refused.
     pub(super) fn request_output(self, output: OutputKey, change: OutputChangeSet) -> Moved {
         let Some(plugged) = self.outputs.0.get(&output).cloned() else {
             let refusal = OutputRefusal::UnknownOutput(output);
             return Moved::of(self).with(Effect::Note(CoreNote::RefusedOutput(refusal)));
         };
-        match resolve_change(&plugged.facts, &plugged.config, &change) {
+        let resolved =
+            resolve_change(&plugged.facts, &plugged.config, &change).and_then(|config| {
+                keeps_one_lit(&self.outputs, &[(output.clone(), change)]).map(|()| config)
+            });
+        match resolved {
             Err(refusal) => Moved::of(self).with(Effect::Note(CoreNote::RefusedOutput(refusal))),
             Ok(config) if config == plugged.config => Moved::of(self),
             Ok(config) => Moved::of(self)

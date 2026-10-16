@@ -3,6 +3,10 @@
 use super::night_light::Tint;
 use crate::error::CoreError;
 
+/// The share of the identity curve ([`GammaTable::floored`]) a client's ramp may not go under,
+/// as a divisor (an eighth): dim, but a screen a person can still read to put right.
+const FLOOR_DIVISOR: u64 = 8;
+
 /// A ramp's three channels, each a table of 16-bit steps, all the same length.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GammaTable {
@@ -43,6 +47,34 @@ impl GammaTable {
                 .collect()
         };
         GammaTable::new(channel(tint.0[0]), channel(tint.0[1]), channel(tint.0[2]))
+    }
+
+    /// The table with every step raised to at least an eighth of the identity curve's: a ramp
+    /// from a client can warm or dim a display, never black it out (CASW-18). A table of one
+    /// step has no curve to compare with and is left as it is.
+    #[must_use]
+    pub fn floored(self) -> GammaTable {
+        let size = self.size();
+        let last = u64::try_from(size.saturating_sub(1)).unwrap_or(0);
+        let lift = |channel: Vec<u16>| -> Vec<u16> {
+            channel
+                .into_iter()
+                .enumerate()
+                .map(|(step, level)| {
+                    let step = u64::try_from(step).unwrap_or(0);
+                    let floor = match last {
+                        0 => 0,
+                        last => step * 65535 / last / FLOOR_DIVISOR,
+                    };
+                    level.max(u16::try_from(floor).unwrap_or(u16::MAX))
+                })
+                .collect()
+        };
+        GammaTable {
+            red: lift(self.red),
+            green: lift(self.green),
+            blue: lift(self.blue),
+        }
     }
 
     /// How many steps each channel has.
