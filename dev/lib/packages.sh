@@ -34,7 +34,7 @@ _pkg_names() {
         debian) echo pkg-config ;;
         arch) echo pkgconf ;;
       esac ;;
-    wlopm) echo wlopm ;; # unverified on Ubuntu 24.04 (universe?)
+    wlopm) echo wlopm ;; # Ubuntu 24.04: wlopm 0.1.0-1 in universe; Debian trixie: wlopm (packages.ubuntu.com, read 2026-10-16)
     rpm) [ "$1" != fedora ] || echo rpm ;;
     smithay-libs)
       case "$1" in
