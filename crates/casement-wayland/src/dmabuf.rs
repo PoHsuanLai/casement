@@ -12,6 +12,7 @@ use casement_core::gpu::{FeedbackPlan, TrancheUse};
 use casement_core::policy::GlobalKind;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::{Buffer, Format, Fourcc, Modifier};
+use smithay::reexports::rustix::fs::{SeekFrom, seek};
 use smithay::reexports::wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_v1::TrancheFlags;
 use smithay::reexports::wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1;
 use smithay::reexports::wayland_server::{DisplayHandle, GlobalDispatch};
@@ -212,6 +213,10 @@ impl DmabufOffer {
     }
 }
 
+/// The largest a client dma-buf may be on either side: 16384 is the biggest texture the GPUs
+/// casement targets sample, so a buffer past it could only fail on every frame it is drawn.
+pub const MAX_DMABUF_SIDE: u32 = 16384;
+
 /// Whether an imported buffer was accepted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Import {
@@ -224,7 +229,17 @@ pub enum Import {
 /// A client imported `dmabuf`: accepted when something is advertised and the buffer's format
 /// and modifier are among the formats of any offered tranche. The handler tags an accepted
 /// buffer with [`DmabufPart::source_device`]'s node (A5).
+///
+/// A buffer is refused too when a side is past [`MAX_DMABUF_SIDE`], or when it is linear and a
+/// plane reaches past the end of its file (CASW-17): the protocol would say "created" for a
+/// buffer the GPU can then only fail to import, on every frame, or read past with attacker data.
 pub fn on_import(part: &mut DmabufPart, dmabuf: &mut Dmabuf) -> Import {
+    if dmabuf.width() > MAX_DMABUF_SIDE || dmabuf.height() > MAX_DMABUF_SIDE {
+        return Import::Refused;
+    }
+    if dmabuf.format().modifier == Modifier::Linear && !linear_planes_fit(dmabuf) {
+        return Import::Refused;
+    }
     let format = dmabuf.format();
     let offered = part.offered.as_ref().is_some_and(|offer| {
         offer
@@ -237,6 +252,48 @@ pub fn on_import(part: &mut DmabufPart, dmabuf: &mut Dmabuf) -> Import {
     } else {
         Import::Refused
     }
+}
+
+/// Whether every plane of the linear `dmabuf` (its rows at its stride, from its offset) lies
+/// inside the file it sits in; a file whose size cannot be read is a plane that does not fit.
+fn linear_planes_fit(dmabuf: &Dmabuf) -> bool {
+    let planes: Vec<Plane> = dmabuf
+        .offsets()
+        .zip(dmabuf.strides())
+        .map(|(offset, stride)| Plane { offset, stride })
+        .collect();
+    let sizes: Vec<Option<u64>> = dmabuf
+        .handles()
+        .map(|fd| seek(fd, SeekFrom::End(0)).ok())
+        .collect();
+    planes_fit(&planes, &sizes, dmabuf.height())
+}
+
+/// Where a plane starts in its file and how far apart its rows are.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Plane {
+    offset: u32,
+    stride: u32,
+}
+
+/// Whether `planes` of a buffer `height` rows tall lie inside files of `sizes` bytes (none: the
+/// size could not be read). The first plane has every row; any other has at least half of them
+/// (a subsampled chroma plane), so this never refuses a valid buffer. The arithmetic is wide,
+/// so a stride of `u32::MAX` cannot overflow into a small number.
+fn planes_fit(planes: &[Plane], sizes: &[Option<u64>], height: u32) -> bool {
+    planes.len() == sizes.len()
+        && planes
+            .iter()
+            .zip(sizes)
+            .enumerate()
+            .all(|(n, (plane, size))| {
+                let rows = match n {
+                    0 => u64::from(height),
+                    _ => u64::from(height).div_ceil(2),
+                };
+                let end = u64::from(plane.offset) + u64::from(plane.stride) * rows;
+                size.is_some_and(|size| end <= size)
+            })
 }
 
 /// Creates (or replaces) the global with default feedback for `offer`, filtered by the I7
@@ -286,14 +343,22 @@ where
 mod tests {
     use super::*;
     use smithay::backend::allocator::dmabuf::DmabufFlags;
-    use std::fs::File;
+    use smithay::reexports::rustix::fs::{MemfdFlags, ftruncate, memfd_create};
     use std::os::fd::OwnedFd;
 
+    /// A 64 x 64 buffer of `code` with a plane of 256-byte rows in a memory file of the whole
+    /// buffer's size (a file standing in for the GPU's: `lseek(SEEK_END)` reads its size).
     fn buffer_of(code: Fourcc, modifier: Modifier) -> Dmabuf {
-        let fd = OwnedFd::from(File::open("/dev/null").expect("/dev/null opens"));
+        let fd = sized_file(256 * 64);
         let mut builder = Dmabuf::builder((64, 64), code, modifier, DmabufFlags::empty());
         assert!(builder.add_plane(fd, 0, 256), "one plane");
         builder.build().expect("a dmabuf with a plane")
+    }
+
+    fn sized_file(length: u64) -> OwnedFd {
+        let fd = memfd_create("dmabuf-test", MemfdFlags::CLOEXEC).expect("a memfd");
+        ftruncate(&fd, length).expect("a size");
+        fd
     }
 
     fn part_with(offer: Option<DmabufOffer>) -> DmabufPart {
@@ -451,6 +516,102 @@ mod tests {
                 want,
                 "{code:?} {modifier:?}"
             );
+        }
+    }
+
+    /// CASW-17: a plane that reaches past its file, or a side past the texture limit, is
+    /// refused; a plane that fits exactly is not.
+    #[test]
+    fn a_buffer_larger_than_its_file_or_the_limit_is_refused() {
+        let mut part = part_with(Some(DmabufOffer::soft()));
+        let build = |side: (i32, i32), length: u64, stride: u32| {
+            let mut builder = Dmabuf::builder(
+                side,
+                Fourcc::Argb8888,
+                Modifier::Linear,
+                DmabufFlags::empty(),
+            );
+            assert!(
+                builder.add_plane(sized_file(length), 0, stride),
+                "one plane"
+            );
+            builder.build().expect("a dmabuf with a plane")
+        };
+        let cases = [
+            (
+                "exactly the file",
+                build((64, 64), 256 * 64, 256),
+                Import::Accepted,
+            ),
+            (
+                "one row too many",
+                build((64, 65), 256 * 64, 256),
+                Import::Refused,
+            ),
+            (
+                "a stride past the file",
+                build((64, 64), 256 * 64, u32::MAX),
+                Import::Refused,
+            ),
+            (
+                "a side past the limit",
+                build(
+                    (i32::try_from(MAX_DMABUF_SIDE).expect("small") + 1, 1),
+                    1 << 20,
+                    1 << 20,
+                ),
+                Import::Refused,
+            ),
+        ];
+        for (name, mut buffer, want) in cases {
+            assert_eq!(on_import(&mut part, &mut buffer), want, "{name}");
+        }
+    }
+
+    #[test]
+    fn plane_arithmetic_cannot_overflow_into_a_fit() {
+        let plane = |offset, stride| Plane { offset, stride };
+        let cases = [
+            ("fits", vec![plane(0, 100)], vec![Some(1000)], 10, true),
+            (
+                "one byte short",
+                vec![plane(0, 100)],
+                vec![Some(999)],
+                10,
+                false,
+            ),
+            (
+                "the offset counts",
+                vec![plane(1, 100)],
+                vec![Some(1000)],
+                10,
+                false,
+            ),
+            ("unknown size", vec![plane(0, 100)], vec![None], 10, false),
+            (
+                "a chroma plane has half the rows",
+                vec![plane(0, 100), plane(0, 100)],
+                vec![Some(1000), Some(500)],
+                10,
+                true,
+            ),
+            (
+                "wide arithmetic",
+                vec![plane(u32::MAX, u32::MAX)],
+                vec![Some(u64::from(u32::MAX))],
+                1 << 20,
+                false,
+            ),
+            (
+                "planes and files agree",
+                vec![plane(0, 1)],
+                vec![],
+                1,
+                false,
+            ),
+        ];
+        for (name, planes, sizes, height, want) in cases {
+            assert_eq!(planes_fit(&planes, &sizes, height), want, "{name}");
         }
     }
 }
