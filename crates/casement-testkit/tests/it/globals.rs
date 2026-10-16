@@ -82,7 +82,7 @@ fn module_of(kind: GlobalKind) -> &'static str {
         GlobalKind::ForeignToplevelList => "foreign_toplevel_list",
         GlobalKind::SecurityContext => "security_context",
         GlobalKind::BackgroundEffect => "background_effect",
-        // P1 globals: those still declared and not advertised are not in KINDS or the golden.
+        // P1 globals, advertised behind their powers.
         GlobalKind::OutputManagement => "output_management",
         GlobalKind::OutputPower => "output_power",
         GlobalKind::Gamma => "gamma",
@@ -98,7 +98,7 @@ fn module_of(kind: GlobalKind) -> &'static str {
 }
 
 /// Every P0 global kind (the `match` above fails to compile when one is added).
-const KINDS: [GlobalKind; 48] = [
+const KINDS: [GlobalKind; 51] = [
     GlobalKind::Compositor,
     GlobalKind::Subcompositor,
     GlobalKind::Shm,
@@ -143,6 +143,9 @@ const KINDS: [GlobalKind; 48] = [
     GlobalKind::ForeignToplevelList,
     GlobalKind::SecurityContext,
     GlobalKind::BackgroundEffect,
+    GlobalKind::OutputManagement,
+    GlobalKind::OutputPower,
+    GlobalKind::Gamma,
     GlobalKind::WlrToplevel,
     GlobalKind::Workspace,
     GlobalKind::ImageCapture,

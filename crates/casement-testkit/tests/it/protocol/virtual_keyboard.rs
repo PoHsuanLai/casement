@@ -227,11 +227,12 @@ fn a_keyboard_holds_at_most_the_cap_of_requests_while_asked() {
     let _focus = listening(&mut fixture, &shell);
     let board = VirtualBoard::start(fixture.client(client).globals()).expect("the keyboard");
     board.keymap(KEYMAP).expect("keymap");
+    // The compositor reads as the keys are sent, as it would: the socket holds only so much.
     for _ in 0..HELD_REQUESTS {
         board.key(0, 30, 1).expect("key");
         board.key(0, 30, 0).expect("key");
+        fixture.pump();
     }
-    fixture.pump();
     shell.answer(&mut fixture, shell.only_ask(), Answer::Allow);
     assert_eq!(
         keys_heard(&mut fixture, &shell),

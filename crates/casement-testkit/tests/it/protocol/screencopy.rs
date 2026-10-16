@@ -516,18 +516,47 @@ fn a_client_with_copies_held_for_the_answer_is_cut_at_the_cap() {
     let (mut fixture, _shell, client, _first) = asked_started();
     let cap = casement_wayland::limits::MAX_PENDING_COPIES;
     let mut piled = Vec::new();
-    for _ in 0..cap + 3 {
-        let mut copy = ScreenCopy::start(fixture.client(client).globals()).expect("the manager");
-        settle(&mut fixture, &mut copy);
-        ask_and_copy(&mut fixture, &mut copy, CopyKind::Plain);
-        piled.push(copy);
-        if !fixture.client(client).is_connected() {
+    let mut asked = 0;
+    while asked < cap + 3 && fixture.client(client).is_connected() {
+        asked += 1;
+        let Ok(mut copy) = ScreenCopy::start(fixture.client(client).globals()) else {
+            break;
+        };
+        if pile_one(&mut fixture, &mut copy).is_err() {
             break;
         }
+        piled.push(copy);
     }
-    assert!(piled.len() > cap, "the cut came only past the cap");
+    assert!(asked > cap, "the cut came only past the cap");
     assert!(
         !fixture.client(client).is_connected(),
         "the client with held copies piled up is cut"
     );
+}
+
+/// Asks for one more held copy; `Err` once the client has been cut and its connection is gone.
+fn pile_one(fixture: &mut Fixture, copy: &mut ScreenCopy) -> Result<(), Cut> {
+    settle_or_cut(fixture, copy)?;
+    copy.capture("HEADLESS-1", CopyArea::Output, CursorMode::Hidden)
+        .map_err(|_| Cut)?;
+    settle_or_cut(fixture, copy)?;
+    let offer = *copy.offers().first().ok_or(Cut)?;
+    copy.copy(offer, CopyKind::Plain).map_err(|_| Cut)?;
+    settle_or_cut(fixture, copy)
+}
+
+/// The client's connection is gone.
+#[derive(Debug)]
+struct Cut;
+
+/// [`settle`], except that a connection the compositor closed ends it with [`Cut`].
+fn settle_or_cut(fixture: &mut Fixture, copy: &mut ScreenCopy) -> Result<(), Cut> {
+    for _ in 0..100 {
+        let compositor = fixture.pump();
+        let client = copy.pump().map_err(|_| Cut)?;
+        if (compositor, client) == (Pumped::Quiet, Pumped::Quiet) {
+            return Ok(());
+        }
+    }
+    panic!("the compositor and the copy did not go quiet");
 }
