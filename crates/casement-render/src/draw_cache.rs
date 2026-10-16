@@ -3,6 +3,7 @@
 //! cover's element id.
 
 use crate::element::{Raster, ShadowKey, ShadowSet, Tiles, WholeShadow};
+use crate::lru::Lru;
 use crate::scene::CursorShape;
 use casement_core::WindowId;
 use casement_core::window::FrameLook;
@@ -16,8 +17,8 @@ use std::rc::Rc;
 /// a stamp (a title's raster id; 0 for the parts that depend on nothing else).
 pub(crate) type FrameKey = (WindowId, u8, u32, u32, u32, FrameLook, u64);
 
-/// How many frame rasters the cache holds before it starts again: a window being resized makes
-/// a new size every frame.
+/// How many frame rasters the cache holds before it drops the one asked for longest ago: a
+/// window being resized makes a new size every frame.
 const FRAME_LIMIT: usize = 64;
 
 /// How many shadow tile sets the cache holds (a set per scale, radius and look: a handful).
@@ -45,17 +46,17 @@ pub(crate) struct DrawCache {
     rasters: RefCell<BTreeMap<(CursorShape, u32), MemoryRenderBuffer>>,
     /// Each server-side frame's rasters, by window, part (0 titlebar, 2 title; the shadow has its own map), scale, size and
     /// look. A window keeps its own buffers so no two elements in a frame share an id.
-    frames: RefCell<BTreeMap<FrameKey, MemoryRenderBuffer>>,
+    frames: RefCell<Lru<FrameKey, MemoryRenderBuffer>>,
     /// Each shadow's tiles, made once per scale, radius and layers (no window size in the key).
-    tiles: RefCell<BTreeMap<ShadowKey, Rc<Tiles>>>,
+    tiles: RefCell<Lru<ShadowKey, Rc<Tiles>>>,
     /// Each window's shadow as buffers, uploaded once from the tiles.
-    shadows: RefCell<BTreeMap<(WindowId, ShadowKey), Rc<ShadowSet>>>,
+    shadows: RefCell<Lru<(WindowId, ShadowKey), Rc<ShadowSet>>>,
     /// Small windows' shadows, made once per size, scale, radius and layers.
-    wholes: RefCell<BTreeMap<(ShadowKey, u32, u32), Rc<Raster>>>,
+    wholes: RefCell<Lru<(ShadowKey, u32, u32), Rc<Raster>>>,
     /// Each small window's shadow as a buffer, uploaded once from its raster.
-    whole_sets: RefCell<BTreeMap<WholeAt, Rc<WholeShadow>>>,
+    whole_sets: RefCell<Lru<WholeAt, Rc<WholeShadow>>>,
     /// Mission Control's app icons as buffers, uploaded once each and dropped when it closes.
-    icons: RefCell<BTreeMap<IconKey, MemoryRenderBuffer>>,
+    icons: RefCell<Lru<IconKey, MemoryRenderBuffer>>,
     /// The cover's id: one for every output (each output has its own damage tracker).
     cover: Id,
     /// The id of Mission Control's dimming layer (one for every output).
@@ -66,12 +67,12 @@ impl Default for DrawCache {
     fn default() -> DrawCache {
         DrawCache {
             rasters: RefCell::new(BTreeMap::new()),
-            frames: RefCell::new(BTreeMap::new()),
-            tiles: RefCell::new(BTreeMap::new()),
-            shadows: RefCell::new(BTreeMap::new()),
-            wholes: RefCell::new(BTreeMap::new()),
-            whole_sets: RefCell::new(BTreeMap::new()),
-            icons: RefCell::new(BTreeMap::new()),
+            frames: RefCell::new(Lru::new(FRAME_LIMIT)),
+            tiles: RefCell::new(Lru::new(SHADOW_LIMIT)),
+            shadows: RefCell::new(Lru::new(FRAME_LIMIT)),
+            wholes: RefCell::new(Lru::new(WHOLE_LIMIT)),
+            whole_sets: RefCell::new(Lru::new(FRAME_LIMIT)),
+            icons: RefCell::new(Lru::new(ICON_LIMIT)),
             cover: Id::new(),
             dim: Id::new(),
         }
@@ -112,23 +113,10 @@ impl DrawCache {
         key: ShadowKey,
         make: impl FnOnce() -> Tiles,
     ) -> Rc<ShadowSet> {
-        if let Some(set) = self.shadows.borrow().get(&(window, key)) {
-            return Rc::clone(set);
-        }
-        let tiles = {
-            let mut tiles = self.tiles.borrow_mut();
-            if tiles.len() >= SHADOW_LIMIT && !tiles.contains_key(&key) {
-                tiles.clear();
-            }
-            Rc::clone(tiles.entry(key).or_insert_with(|| Rc::new(make())))
-        };
-        let set = Rc::new(ShadowSet::new(tiles));
-        let mut shadows = self.shadows.borrow_mut();
-        if shadows.len() >= FRAME_LIMIT {
-            shadows.clear();
-        }
-        shadows.insert((window, key), Rc::clone(&set));
-        set
+        self.shadows.borrow_mut().get_or_make((window, key), || {
+            let tiles = self.tiles.borrow_mut().get_or_make(key, || Rc::new(make()));
+            Rc::new(ShadowSet::new(tiles))
+        })
     }
 
     /// The shadow of `window` when it is too small for the tiles: a raster of its `size`, made
@@ -141,24 +129,13 @@ impl DrawCache {
         make: impl FnOnce() -> Raster,
     ) -> Rc<WholeShadow> {
         let at = (window, key, size.0, size.1);
-        if let Some(set) = self.whole_sets.borrow().get(&at) {
-            return Rc::clone(set);
-        }
-        let raster = {
-            let mut wholes = self.wholes.borrow_mut();
-            let by_size = (key, size.0, size.1);
-            if wholes.len() >= WHOLE_LIMIT && !wholes.contains_key(&by_size) {
-                wholes.clear();
-            }
-            Rc::clone(wholes.entry(by_size).or_insert_with(|| Rc::new(make())))
-        };
-        let set = Rc::new(WholeShadow::new(raster));
-        let mut sets = self.whole_sets.borrow_mut();
-        if sets.len() >= FRAME_LIMIT {
-            sets.clear();
-        }
-        sets.insert(at, Rc::clone(&set));
-        set
+        self.whole_sets.borrow_mut().get_or_make(at, || {
+            let raster = self
+                .wholes
+                .borrow_mut()
+                .get_or_make((key, size.0, size.1), || Rc::new(make()));
+            Rc::new(WholeShadow::new(raster))
+        })
     }
 
     /// The icon buffer under `key`, made by `make` the first time.
@@ -167,11 +144,7 @@ impl DrawCache {
         key: IconKey,
         make: impl FnOnce() -> MemoryRenderBuffer,
     ) -> MemoryRenderBuffer {
-        let mut icons = self.icons.borrow_mut();
-        if icons.len() >= ICON_LIMIT && !icons.contains_key(&key) {
-            icons.clear();
-        }
-        icons.entry(key).or_insert_with(make).clone()
+        self.icons.borrow_mut().get_or_make(key, make)
     }
 
     /// Lets go of every icon buffer (Mission Control is not drawn).
@@ -185,11 +158,7 @@ impl DrawCache {
         key: FrameKey,
         make: impl FnOnce() -> MemoryRenderBuffer,
     ) -> MemoryRenderBuffer {
-        let mut frames = self.frames.borrow_mut();
-        if frames.len() >= FRAME_LIMIT && !frames.contains_key(&key) {
-            frames.clear();
-        }
-        frames.entry(key).or_insert_with(make).clone()
+        self.frames.borrow_mut().get_or_make(key, make)
     }
 }
 
@@ -288,6 +257,34 @@ mod tests {
         cache.drop_icons();
         ask();
         assert_eq!(made.get(), 2);
+    }
+
+    #[test]
+    fn a_window_resized_through_a_hundred_sizes_does_not_cost_another_window_its_frame() {
+        use smithay::backend::allocator::Fourcc;
+        use smithay::utils::Transform;
+        let cache = DrawCache::default();
+        let look = look();
+        let made = std::cell::Cell::new(0);
+        let buffer = || {
+            MemoryRenderBuffer::from_slice(
+                &[0u8; 4],
+                Fourcc::Argb8888,
+                (1, 1),
+                1,
+                Transform::Normal,
+                None,
+            )
+        };
+        for width in 0..100 {
+            // The steady window asks every frame; the resized one asks with a new width.
+            cache.frame((WindowId(1), 0, 120, 300, 28, look, 0), || {
+                made.set(made.get() + 1);
+                buffer()
+            });
+            cache.frame((WindowId(2), 0, 120, 300 + width, 28, look, 0), buffer);
+        }
+        assert_eq!(made.get(), 1, "the steady window's frame was never dropped");
     }
 
     #[test]

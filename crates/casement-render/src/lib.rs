@@ -22,6 +22,7 @@ mod damage;
 mod draw_cache;
 mod element;
 mod gl_raw;
+mod lru;
 mod scene;
 mod texture_book;
 
