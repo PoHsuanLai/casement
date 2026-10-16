@@ -13,7 +13,7 @@ fn usable(asks: &[(&'static str, u32, LayerOwner)]) -> LogicalRect {
         asks.iter()
             .enumerate()
             .fold(LayerBook::empty(), |book, (n, (edges, zone, owner))| {
-                let ask = ask(*edges, ExclusiveZone::Reserve(*zone), (0, 0)).owned_by(*owner);
+                let ask = ask(edges, ExclusiveZone::Reserve(*zone), (0, 0)).owned_by(*owner);
                 book.with_layer(LayerKey(n as u64 + 1), ask.spec())
             });
     book.usable_area(&output("HEADLESS-1"), rect(100, 50, 1920, 1080))
