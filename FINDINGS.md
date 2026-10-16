@@ -4098,7 +4098,7 @@ Fixed in this lane (no compile was run; the gate run is the first):
   must say regular file, capped read). usvg gets a resolver that loads no outside file. Lookups run on the `casement-icons` thread
   (`icons/worker.rs`); the plate is drawn until the answer comes.
 - CASB-02, CASC-08: EDID text is printable ASCII only. `attached_outputs` keys two displays with one EDID key apart: the connector
-  that sorts first keeps `edid:...`, the others get `connector:<name>`, so stored settings stay valid. **Not done:** escaping `/`
+  that sorts first keeps `edid:...`, the others get `connector:<name>`, so stored settings stay valid. **Done in pa-caslim (CASC-08 remainder):** escaping `/`
   inside EDID text (a make `a/b` + model `c` still equals make `a` + model `b/c`; the text is now printable ASCII, and `/` is
   printable). It needs a change to `OutputKey::of` in casement-core (pa-cassec's crate): see the interface ask in the report.
 - CASB-03, CASB-08, CASB-16, CASB-22: `ProcessSpawner` keeps its children and reaps them in `Spawner::exited` (polled each loop turn);
@@ -4255,18 +4255,18 @@ Rows for the findings CASW-02/03/04/07/11/12/13/15/18/19, CASC-02/05/06/07/09/10
 - **CASW-13 (partly done): each virtual keyboard has its own device id and a bounded pressed set.** Ids count up from
   `VIRTUAL_KEYBOARD_DEVICE` (`VirtualKeyboardPart::next_device`), so two clients' held keys no longer collide and one's
   `destroyed` releases only its own; a keyboard holds at most 64 keys down (a press past it is dropped). Tests: unit tests in
-  `virtual_keyboard.rs`. **Deferred (owner decision):** limiting the VT-switch chord (`vt_chord`) to `Origin::Physical`; keycap's
+  `virtual_keyboard.rs`. **Decided 2026-10-16 (pa-caslim; was deferred):** limiting the VT-switch chord (`vt_chord`) to `Origin::Physical`; keycap's
   on-screen output is `Origin::Virtual` and may need to switch VT, and bindings from a virtual keyboard are on purpose
   (`fires_bindings`).
 - **CASW-15 (comment corrected, nothing added):** no kill chord exists; the VT-switch chord is the one exempt chord, and the
   module header now says so. A fixed escape chord that always resolves, and a visible "shortcuts are captured" indicator, are a
   design call and stay open.
-- **CASW-07 (deferred, owner decision):** a floor for `ext_idle_notifier` timeouts (for example 5 s for sandboxed and unproven peers)
+- **CASW-07 (decided 2026-10-16, see pa-caslim; was deferred):** a floor for `ext_idle_notifier` timeouts (for example 5 s for sandboxed and unproven peers)
   versus hiding input-idle from sandboxes; Flatpak apps use it for screensavers and video players. The brief names no choice.
-- **CASC-07 (deferred, owner decision):** a full-screen request from a window that is not key or active: deferred until the window is
+- **CASC-07 (decided 2026-10-16, see pa-caslim; was deferred):** a full-screen request from a window that is not key or active: deferred until the window is
   next visible, or refused. Video players ask on their own, so the owner picks. The change belongs in
   `model/requests.rs::enter_full_screen`.
-- **CASW-19 (deferred):** `casement-agent/src/eis.rs::device_id` masks the portal session id to 28 bits; two sessions that differ only
+- **CASW-19 (done in pa-caslim; was deferred):** `casement-agent/src/eis.rs::device_id` masks the portal session id to 28 bits; two sessions that differ only
   above bit 28 would share a device. Session ids come only from transom (a counter), so it needs over 268 million sessions. The
   fix is a per-session device counter minted where the remote link is opened (`casement/src/connect.rs`), outside the four
   crates this lane was given.
