@@ -4639,3 +4639,20 @@ group/world writable; a user-writable program or an interpreter gets Allow Once 
     (design 3.8); the flag exists, the scenarios are theirs.
   - sill: nothing new (the question is `quire_shell_v1` version 5, as cwl built it).
   - closed by pa2-cgate: the four globals smithay serves whole (clipboard, input method, `ext_foreign_toplevel_list`) are gated.
+
+## pa2-cgate: the smithay-served globals gated, and the subject of an app (CASW-01, CASC-01, PORTAL-02, QUIRE-12; 2026-10-17)
+
+- Closed: the clipboard managers, the input method and `ext_foreign_toplevel_list` ask `consent::gate` (see ARCHITECTURE.md "Consent at
+  the wire"). smithay is pinned at the fork's `6d813694` (branch `lane/consent-gates`). `InputMethodManagerState::new` now needs
+  `Dispatch<ZwpInputMethodManagerV2, InputMethodManagerUserData>` (the manager's user data is no longer `GlobalData`), which
+  `casement-wayland/src/input_method.rs` states.
+- The held-object cap is smithay's (`MAX_HELD_PER_CLIENT` = 16 per client and protocol); casement keeps no count of its own for these
+  and relies on it. The `Ledger` also parks each waiting client's `ClientId` so `Effect::Resolve` can call `release`; the entry goes with
+  the client's ledger rows.
+- No refusal event here is a destructor (checked in the XML: ext/wlr data control `finished`/`cancelled`, input method `unavailable`,
+  `ext_foreign_toplevel_list_v1.finished`), so none needs `consent::finish_later`; smithay sends them inside the bind or request.
+- Not done: a power taken back (`Revoked`) does not end a device, an input method or a list that smithay already registered; the next
+  use asks again and objects made after the revocation are refused. Closing it needs a smithay hook to end registered objects.
+- QUIRE-12: `quire_desktop_app_v1.subject` (see casement-protocols FINDINGS). The subject is read when an app is published, from the
+  standing the model holds for the client of the app's first nameable window; a security-context sandbox connection has no standing in the
+  model, so its apps get no subject yet.

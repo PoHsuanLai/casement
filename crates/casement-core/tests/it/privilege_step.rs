@@ -7,9 +7,9 @@ use crate::support::headless;
 use casement_core::lock::LockEvent;
 use casement_core::policy::{ConnectionRole, GlobalKind, advertised_to};
 use casement_core::privilege::{
-    ASK_TTL, ASKS_PER_MINUTE, AskSubject, Book, ClientStanding, Fallback, Floor, FloorRule,
-    OPEN_ASKS, PowerOutcome, ProgramPath, REASK_AFTER, SHELL_WAIT, ServiceRole, Sheet, Subject,
-    UnixSeconds, Verdict,
+    ASK_TTL, ASKS_PER_MINUTE, AskSubject, Book, ClientStanding, Engine, Fallback, Floor, FloorRule,
+    OPEN_ASKS, PowerOutcome, ProgramPath, REASK_AFTER, SHELL_WAIT, SandboxAppId, ServiceRole,
+    Sheet, Subject, UnixSeconds, Verdict,
 };
 use casement_core::time::{Mono, TimerKey};
 use casement_core::{ClientKey, Effect, Event, Model};
@@ -188,6 +188,71 @@ fn the_shell_and_the_agent_tier_are_trusted_and_a_sandbox_is_not() {
             Some(PowerOutcome::Denied)
         );
     }
+}
+
+/// What the desktop protocol tells the shell about the program behind a window (QUIRE-12): the
+/// image of a program, the app of a sandbox, the image of a service when it is known, and
+/// nothing for anything that cannot be named or has no program of its own.
+#[test]
+fn the_subject_of_a_client_is_what_the_compositor_established() {
+    let service = |exe: Option<ProgramPath>| ClientStanding::Service {
+        role: ServiceRole::parse("portal").expect("a role"),
+        exe,
+    };
+    let sandboxed = ClientStanding::Sandboxed {
+        app: SandboxAppId::parse("org.gnome.Loupe").expect("an app id"),
+        engine: Engine::Flatpak,
+    };
+    let mut desk = Desk::with_shell();
+    desk.public(1, grim());
+    desk.public(2, sandboxed);
+    desk.public(3, service(Some(path("/usr/libexec/portal"))));
+    desk.public(4, service(None));
+    desk.public(5, unverified());
+    desk.public(6, ClientStanding::unproven());
+    desk.connect(7, ConnectionRole::Shell);
+    desk.connect(
+        8,
+        ConnectionRole::Sandboxed(porter_core::SandboxFacts::Native),
+    );
+    let privilege = desk.model.privilege();
+    let subjects: Vec<Option<&str>> = (1..=9)
+        .map(|n| privilege.subject_of(ClientKey(n)))
+        .collect();
+    assert_eq!(
+        subjects,
+        [
+            Some("/usr/bin/grim"),
+            Some("org.gnome.Loupe"),
+            Some("/usr/libexec/portal"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ]
+    );
+}
+
+/// A client that becomes someone else is reported as that program from then on.
+#[test]
+fn a_client_reported_as_another_program_has_the_new_subject() {
+    let mut desk = Desk::with_shell();
+    desk.public(1, grim());
+    desk.send(Event::ClientStanding {
+        client: ClientKey(1),
+        standing: unverified(),
+    });
+    assert_eq!(desk.model.privilege().subject_of(ClientKey(1)), None);
+    desk.send(Event::ClientStanding {
+        client: ClientKey(1),
+        standing: on_disk("/usr/bin/wl-copy"),
+    });
+    assert_eq!(
+        desk.model.privilege().subject_of(ClientKey(1)),
+        Some("/usr/bin/wl-copy")
+    );
 }
 
 #[test]

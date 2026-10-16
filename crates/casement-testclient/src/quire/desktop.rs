@@ -11,6 +11,7 @@ use self::roster::{Origin, Roster};
 use crate::misc::idle::{pump_queue, side_queue};
 use crate::{ClientError, GlobalList, Pumped};
 use casement_protocols::client::quire_desktop_v1::quire_desktop_manager_v1::QuireDesktopManagerV1;
+use std::ops::RangeInclusive;
 use wayland_client::Connection;
 use wayland_client::EventQueue;
 use wayland_client::protocol::wl_output::WlOutput;
@@ -103,7 +104,18 @@ pub struct DesktopWatch {
 impl DesktopWatch {
     /// Binds the first `wl_output`, a `wl_seat`, the window list when offered, and the manager;
     /// the compositor announces the desktop at the fixture's next pump.
+    ///
+    /// The manager is bound at the newest version the compositor serves (2); a client that
+    /// wants version 1 behaviour uses [`DesktopWatch::start_at`].
     pub fn start(globals: &GlobalList) -> Result<DesktopWatch, ClientError> {
+        DesktopWatch::start_at(globals, 1..=2)
+    }
+
+    /// As [`DesktopWatch::start`], binding the manager at a version in `versions`.
+    pub fn start_at(
+        globals: &GlobalList,
+        versions: RangeInclusive<u32>,
+    ) -> Result<DesktopWatch, ClientError> {
         let (connection, queue) = side_queue::<Roster>(globals)?;
         let qh = queue.handle();
         let missing = |name: &str| ClientError::MissingGlobal(name.to_owned());
@@ -117,7 +129,7 @@ impl DesktopWatch {
             .bind::<ExtForeignToplevelListV1, _, _>(&qh, 1..=1, ())
             .ok();
         let manager = globals
-            .bind::<QuireDesktopManagerV1, _, _>(&qh, 1..=1, ())
+            .bind::<QuireDesktopManagerV1, _, _>(&qh, versions, ())
             .map_err(|_| missing("quire_desktop_manager_v1"))?;
         connection
             .flush()

@@ -240,6 +240,13 @@ How the protocol layer carries the contract above (wave 2: `pa2-cwl`).
   destructor, so none needs `consent::finish_later` (the pa2-cwl lesson is about `finished` on the workspace and window-list
   managers, which are destructors). A power taken back (`Revoked`) ends nothing smithay already registered, because smithay has
   no hook for that: the objects made after it are refused, and the next use asks again.
+- **The program behind an app (`quire_desktop_app_v1.subject`, version 2; QUIRE-12).** The desktop manager is served at version 2 (the app
+  objects take the manager's version; windows and Spaces stay at 1). In an app's burst, right after `identity`, the manager sends
+  `subject` to a client that bound it at 2: the text `ClientStanding::subject_text` gives for the first window of the app whose client
+  has one (`Privilege::subject_of(window.client)`). `Program` is its image path, `Sandboxed` the sandbox's app id, `Service` its
+  image path when the table gave one and nothing otherwise, `Unverified` nothing (no event means no subject is known). It is sent once
+  per value, so a later change of the program behind the app (a new window of another program) sends it again; a standing that
+  changes with no change to the app is not published until the next time the app is.
 - **The global filter.** `GlobalFilter` takes the decision function as a field (`advertised_to`); `ClientState` carries the
   `hidden: PowerSet` decided at accept (`ClientState::with_standing_under(&Privilege, standing)`), so a power refused before
   the client connected is not advertised to it, and a refusal that comes later changes no registry.

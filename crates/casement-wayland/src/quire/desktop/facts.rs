@@ -3,7 +3,7 @@
 //! the events whose value differs from what was told (all of them for a new object), so
 //! publishing the same state twice sends nothing the second time.
 
-use super::DesktopView;
+use super::{DesktopView, SUBJECT_SINCE};
 use casement_core::app::{AppKey, AppVisibility as Held, MenuSource};
 use casement_core::space::SpaceContent;
 use casement_core::window::{Parent, SpacePlace};
@@ -75,6 +75,9 @@ pub(super) struct AppFacts {
     key: String,
     proof: app::ProofKind,
     claimed: String,
+    /// The program behind the app, when the compositor established it
+    /// (`ClientStanding::subject_text` of the client that owns its first nameable window).
+    subject: Option<String>,
     life: app::AppLifeKind,
     visibility: app::AppVisibility,
     attention: app::Attention,
@@ -94,6 +97,12 @@ impl AppFacts {
             .find_map(|id| view.model.windows().get(id))
             .map(|window| window.claimed_id.as_str().to_owned())
             .unwrap_or_default();
+        let subject = held
+            .windows
+            .iter()
+            .filter_map(|id| view.model.windows().get(id))
+            .find_map(|window| view.model.privilege().subject_of(window.client))
+            .map(str::to_owned);
         let visibility = match held.visibility {
             Held::Shown => vocab::AppVisibility::Shown,
             Held::Hidden { .. } => vocab::AppVisibility::Hidden,
@@ -102,6 +111,7 @@ impl AppFacts {
             key: key.wire(),
             proof: wire(key.proof())?,
             claimed,
+            subject,
             life: wire(held.life.kind())?,
             visibility: wire(visibility)?,
             attention: wire(held.attention)?,
@@ -118,6 +128,15 @@ impl AppFacts {
         }) {
             object.identity(self.key.clone(), self.proof, self.claimed.clone());
             sent += 1;
+        }
+        // `subject` is version 2: a client that bound the manager at 1 is not sent an opcode it
+        // does not know. Nothing is sent for a program the compositor cannot name.
+        if let Some(subject) = &self.subject {
+            let known = was.is_some_and(|was| was.subject.as_ref() == Some(subject));
+            if object.version() >= SUBJECT_SINCE && !known {
+                object.subject(subject.clone());
+                sent += 1;
+            }
         }
         if was.is_none_or(|was| was.life != self.life) {
             object.life(self.life);

@@ -7,6 +7,7 @@ use crate::protocol::wlr_toplevel::flow;
 use crate::protocol::xdg_shell::{boot, check_golden, golden, map_named, windows};
 use casement_core::app::AppVisibility as Held;
 use casement_core::policy::ConnectionRole;
+use casement_core::privilege::{ClientStanding, Engine, ProgramPath, SandboxAppId, ServiceRole};
 use casement_core::window::{SpacePlace, WindowState};
 use casement_testclient::ClientError;
 use casement_testclient::quire::desktop::{
@@ -16,7 +17,7 @@ use casement_testclient::quire::desktop::{
 };
 use casement_testclient::quire::window::WindowManager;
 use casement_testclient::surface::toplevel::{Toplevel, WmBase};
-use casement_testkit::{ClientId, Fixture, FixtureSpec};
+use casement_testkit::{ClientId, Fixture, FixtureSpec, program_standing};
 use porter_core::{SandboxFacts, SpaceId};
 
 const INTERFACE: &str = "quire_desktop_manager_v1";
@@ -532,4 +533,89 @@ fn a_menu_address_reaches_the_shell_as_the_apps_menu_source() {
         sources + 1,
         "unchanged: nothing sent"
     );
+}
+
+// ---- `quire_desktop_app_v1.subject` (version 2): the program behind an app, as the compositor
+// ---- established it (QUIRE-12).
+
+/// A started desktop where a public client taken to be `standing` has mapped one window of `APP`
+/// (the toplevel must stay alive).
+fn mapped_as(standing: ClientStanding) -> (Fixture, Toplevel) {
+    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let client = fixture.connect_standing(standing);
+    fixture.pump();
+    let base = WmBase::bind(fixture.client(client), 7);
+    let top = map_named(&mut fixture, client, &base, (400, 300), Some(APP));
+    (fixture, top)
+}
+
+/// The names of the events the app objects of client `id` received, in order.
+fn app_events(fixture: &mut Fixture, id: ClientId) -> Vec<String> {
+    fixture
+        .client(id)
+        .transcript()
+        .0
+        .iter()
+        .filter(|line| line.object.starts_with("quire_desktop_app_v1#"))
+        .map(|line| line.event.clone())
+        .collect()
+}
+
+/// What the shell is told about the program behind the app: the image of a program (or of a
+/// service whose image is known), the app of a sandbox, and nothing for anything the compositor
+/// cannot name.
+#[test]
+fn an_app_is_told_the_program_the_compositor_established() {
+    let service = |exe: Option<&str>| ClientStanding::Service {
+        role: ServiceRole::parse("portal").expect("a role"),
+        exe: exe.map(|exe| ProgramPath::parse(exe).expect("an absolute path")),
+    };
+    let sandboxed = ClientStanding::Sandboxed {
+        app: SandboxAppId::parse("org.gnome.Loupe").expect("an app id"),
+        engine: Engine::Flatpak,
+    };
+    let unverified = ClientStanding::Unverified {
+        exe_name: Some("payload".to_owned()),
+    };
+    let table = [
+        (program_standing("/usr/bin/notes"), Some("/usr/bin/notes")),
+        (sandboxed, Some("org.gnome.Loupe")),
+        (
+            service(Some("/usr/libexec/portal")),
+            Some("/usr/libexec/portal"),
+        ),
+        (service(None), None),
+        (unverified, None),
+    ];
+    for (standing, expected) in table {
+        let (mut fixture, _top) = mapped_as(standing.clone());
+        let (shell, watch) = watched(&mut fixture, ConnectionRole::Shell);
+        let apps = watch.apps();
+        assert_eq!(apps.len(), 1, "{standing:?}");
+        assert_eq!(apps[0].subject.as_deref(), expected, "{standing:?}");
+        let events = app_events(&mut fixture, shell);
+        let at = |name: &str| events.iter().position(|event| event == name);
+        match expected {
+            Some(_) => assert!(
+                at("identity").is_some() && at("identity") < at("subject"),
+                "subject follows identity: {events:?}"
+            ),
+            None => assert_eq!(at("subject"), None, "no subject, no event: {events:?}"),
+        }
+    }
+}
+
+/// A shell that bound the manager at version 1 is never sent an event it does not know.
+#[test]
+fn a_version_1_client_is_not_sent_the_subject() {
+    let (mut fixture, _top) = mapped_as(program_standing("/usr/bin/notes"));
+    let shell = fixture.connect(ConnectionRole::Shell);
+    fixture.pump();
+    let mut watch =
+        DesktopWatch::start_at(fixture.client(shell).globals(), 1..=1).expect("the manager");
+    settle(&mut fixture, &mut watch);
+    assert_eq!(watch.apps().len(), 1);
+    assert_eq!(watch.apps()[0].subject, None);
+    assert!(!app_events(&mut fixture, shell).contains(&"subject".to_owned()));
+    assert!(fixture.client(shell).protocol_error().is_none());
 }

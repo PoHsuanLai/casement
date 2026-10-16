@@ -154,6 +154,21 @@ impl Privilege {
         self.asks.views()
     }
 
+    /// What the compositor established about the program behind public client `client`, when it
+    /// has: the shell's and the agent tier's connections are handed out by the compositor and a
+    /// sandbox's has no program of its own, so none of them has a standing.
+    pub fn standing_of(&self, client: ClientKey) -> Option<&ClientStanding> {
+        match &self.clients.get(&client)?.class {
+            Class::Public(standing) => Some(standing),
+            Class::Trusted | Class::Sandboxed => None,
+        }
+    }
+
+    /// The program or app behind public client `client` as text (`ClientStanding::subject_text`).
+    pub fn subject_of(&self, client: ClientKey) -> Option<&str> {
+        self.standing_of(client)?.subject_text()
+    }
+
     /// The powers a public client whose program is `standing` is refused outright: the
     /// globals of those are not advertised to it. Nothing for any other kind of connection.
     pub fn hidden_for(&self, role: &ConnectionRole, standing: &ClientStanding) -> PowerSet {

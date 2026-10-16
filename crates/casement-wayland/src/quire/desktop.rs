@@ -41,8 +41,16 @@ use smithay::wayland::foreign_toplevel_list::ForeignToplevelHandle;
 use smithay::wayland::{Dispatch2, GlobalDispatch2};
 use std::collections::BTreeMap;
 
-/// The version casement serves.
-pub const VERSION: u32 = 1;
+/// The version casement serves. Version 2 adds `quire_desktop_app_v1.subject`; the app objects
+/// take the manager's version, so only a client that bound the manager at 2 is sent it.
+pub const VERSION: u32 = 2;
+
+/// The first version that sends `quire_desktop_app_v1.subject`.
+pub const SUBJECT_SINCE: u32 = 2;
+
+/// The version of the window and Space objects: their interfaces have not grown, so they are
+/// created at 1 whatever the manager's version is.
+const OBJECT_VERSION: u32 = 1;
 
 /// Whether the global is created: yes, behind the I7 filter (shell and agent tier only).
 pub const GLOBAL: Advertised = Advertised::Yes;
@@ -108,7 +116,7 @@ pub struct QuireDesktopPart {
 }
 
 impl QuireDesktopPart {
-    /// The part; creates the global (version 1) behind the I7 filter when [`GLOBAL`] says so.
+    /// The part; creates the global (at [`VERSION`]) behind the I7 filter when [`GLOBAL`] says so.
     pub fn new<D>(display: &DisplayHandle, role_filter: GlobalFilter) -> QuireDesktopPart
     where
         D: GlobalDispatch<QuireDesktopManagerV1, DesktopGlobal>
@@ -172,7 +180,7 @@ impl Makers {
                 let handle = client
                     .create_resource::<QuireDesktopWindowV1, WindowData, D>(
                         display,
-                        manager.version(),
+                        manager.version().min(OBJECT_VERSION),
                         data,
                     )
                     .ok()?;
@@ -184,7 +192,7 @@ impl Makers {
                 let handle = client
                     .create_resource::<QuireDesktopSpaceV1, SpaceData, D>(
                         display,
-                        manager.version(),
+                        manager.version().min(OBJECT_VERSION),
                         data,
                     )
                     .ok()?;

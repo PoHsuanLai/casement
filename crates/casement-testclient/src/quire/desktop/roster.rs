@@ -55,6 +55,9 @@ pub struct AppView {
     pub proof: Option<app::ProofKind>,
     /// What the app claims to be.
     pub claimed_id: String,
+    /// The program behind it as the compositor established it (`subject`, version 2); `None`
+    /// until that event arrives.
+    pub subject: Option<String>,
     /// Its life.
     pub life: Option<app::AppLifeKind>,
     /// Whether it is hidden.
@@ -336,6 +339,7 @@ impl Dispatch<QuireDesktopAppV1, ()> for Roster {
                 view.proof = known(proof);
                 view.claimed_id = claimed_id;
             }
+            app::Event::Subject { subject } => view.subject = Some(subject),
             app::Event::Life { state } => view.life = known(state),
             app::Event::Visibility { state } => view.visibility = known(state),
             app::Event::MenuSource { .. } => view.menu_sources += 1,

@@ -110,6 +110,19 @@ impl ClientStanding {
         }
     }
 
+    /// The program or app this connection is, as text: the image path of a program (or of a
+    /// service whose image is known), the id of a sandboxed app. Nothing for a connection that
+    /// cannot be named (an unverified program, a service whose image is not known).
+    pub fn subject_text(&self) -> Option<&str> {
+        match self {
+            ClientStanding::Service { exe: Some(exe), .. } | ClientStanding::Program { exe } => {
+                Some(exe.as_str())
+            }
+            ClientStanding::Sandboxed { app, .. } => Some(app.as_str()),
+            ClientStanding::Service { exe: None, .. } | ClientStanding::Unverified { .. } => None,
+        }
+    }
+
     /// The desktop service role of this connection, if it is one.
     pub fn service_role(&self) -> Option<&ServiceRole> {
         match self {
