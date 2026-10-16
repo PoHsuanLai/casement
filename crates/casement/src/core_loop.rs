@@ -170,6 +170,7 @@ pub fn frame(state: &mut State, output: &OutputKey) {
         titles,
         closing: leaving,
         minimise_effect: state.core.model.settings().windows.minimise_effect,
+        finish: crate::appearance::blur_finish(state.render.transparency, state.render.scheme),
         overview,
         backdrop: divider::backdrop(state, output),
         tile_preview: tile::preview(state, output),

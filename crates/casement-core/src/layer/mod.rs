@@ -1,6 +1,7 @@
 //! Layer-shell surfaces: the bar, the dock, wallpapers, overlays, and the area they leave.
 
 mod arrange;
+mod blur_strength;
 mod book;
 #[allow(
     clippy::module_inception,
@@ -9,6 +10,7 @@ mod book;
 mod layer;
 
 pub use arrange::{Arranged, place_in};
+pub use blur_strength::BlurStrength;
 pub use book::LayerBook;
 pub use layer::{
     Anchor, Anchors, ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerSpec, Margins,

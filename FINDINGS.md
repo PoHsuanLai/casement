@@ -3582,7 +3582,7 @@ the old renderer departure 4 (`OutputFrame.strip` was not applied).
 - **Region shape.** Clipped to ext-background-effect's rectangles exactly, with hard edges; a rounded region is whatever rectangle set
   the client sends (no anti-aliased corner mask). A rounded mask is a P4 item if sill sends rounded regions as one rectangle.
 - **Fallback.** Renderers without shaders keep the solid stand-in (`EffectSupport::Plain`, unchanged). The Reduce Transparency setting
-  (solid tint, vibrancy dropped) is not wired here: it needs a switch from the model to `with_look`/the stand-in.
+  is wired in cas31 (below).
 - **Departures.** Saturation 1.8 applies to every blur (window, panel, menu), not only widgets as sill asked for; macOS vibrancy
   saturates too. `Compositor::capture_blur_v0` gained a `blur` argument (the plan). Goldens: `blur-v0-1x` (tier L) is replaced by
   `blur-kawase-1x` and `blur-kawase-2x`; `blur-v0-stand-in-1x` (pixman) is unchanged. The scene's stripes are vertical and the region is
@@ -3597,6 +3597,40 @@ the old renderer departure 4 (`OutputFrame.strip` was not applied).
   render-level scenes are 320x200 (argument under 20000) and the intermediate levels are under 21000, so only the finish at full-HD
   coordinates hit it. The hash is now interleaved gradient noise (no `sin`) and runs only when `grain > 0`. The damage path was
   not at fault: smithay's tracker adds the whole element area to the damage whenever it captures, and the capture reads a fully drawn frame.
+
+## wave-2026-10-15/cas31-blurmat (blur strength per surface; Reduce transparency)
+
+- **Which material.** ext-background-effect carries no parameters and no protocol was added. A layer surface's strength comes from
+  the shell role sill already gave it through `quire_shell_v1` (`LayerSpec::role`): `BlurStrength::of(ShellRoleTag)` in
+  `casement-core::layer` (pure, table-tested over every `ShellRole`). Osd is `Light` (`BlurLook::LIGHT`, sigma 12, saturation 1.6),
+  Launcher and ControlCentre are `Strong` (sigma 32, saturation 1.8), everything else, and any layer with no role, is `Regular`, which is
+  `BlurLook::MATERIAL`, today's look. UNMEASURED: design/23 fixes only the widget's look (sigma 22, saturation 1.8, the Regular one); Light
+  and Strong are a judgement, one table row each, to be tuned by eye. A window's blur (xdg toplevel) is always `Regular`: casement
+  knows a window's app, not its material. If the shell later wants a per-region material, the protocol is an addition to
+  `quire_shell_v1` (a `set_blur_strength` on a shell surface), not a change to ext-background-effect.
+- **Plumbing.** `LayerDraw::blur_strengths` (per layer, filled by `layers_on` from the model) reaches `layer_elements` as an argument;
+  `behind`/`behind_scaled` take the `BlurLook`.
+- **Reduce transparency.** One desktop-wide setting, quire's `appearance.transparency` (`system` or `reduced`; a file without the key
+  is `system`), read from quire's `appearance.toml` the way `theme` is: `appearance::stored_in` at start, an `Input::Transparency` from
+  the file watch (live), `state.render.transparency` beside `state.render.scheme`. casement has no key of its own (an earlier cut of
+  this lane added `accessibility.reduce_transparency`; it is gone). `appearance::blur_finish(transparency, scheme)` makes the typed
+  `BlurFinish { Frosted, Solid(Rgba8) }`; `LayerDraw::finish` carries it and `under_finish` (applied to the frame's elements at the
+  end of `output_elements`) makes every `BlurV0Element` solid. A solid blur is not a framebuffer effect (no capture, no passes), and on
+  GLES its draw is `draw_stand_in` (the path `EffectSupport::Plain` takes on pixman). The colour is per scheme:
+  `casement_layout::reduced_stand_in(scheme)`, quire's `Paper` token (the Window material has no tint; its solid fallback is the page,
+  `#ECECEC` light, `#1E1E1E` dark) at alpha 245/255 (0.96, above quire's .94 floor, design/03 17.1). The element's commit includes the
+  colour, so a scheme change repaints. DEPENDS ON QUIRE: `ds_style::appearance::transparency::Transparency` (re-exported by
+  `casement-layout`) and `Appearance::transparency` do not exist until the quire lane lands, so casement-layout and casement do not
+  compile before then (the path follows `appearance::theme::Theme`; adjust the one `pub use` in `casement-layout/src/lib.rs` if quire
+  re-exports it elsewhere).
+- **Not done here.** The shell reads the same quire key itself for its own tints (`--m-tint-solid`); nothing for it lives in casement.
+- **Goldens.** None changes: `Regular` is the old look and `Frosted` the old behaviour; no scene sets a role or the finish. Nothing
+  compiled or run in this lane (no builds allowed): the tests added are `a_strength_picks_its_look_and_a_stronger_one_blurs_wider` and
+  `a_solid_blur_is_its_colour_and_a_new_commit` (`casement-render/tests/it/blur.rs`),
+  `a_shell_role_picks_the_strength_of_the_blur_behind_it` (`casement-core/tests/it/model_shell.rs`), the stand-in colours
+  (`casement-layout/src/look.rs`), and the file and `blur_finish` tests in `casement/src/appearance.rs`.
+  The GLES half (a solid blur drawing the stand-in on llvmpipe) has no golden; a `blur-kawase-reduced-1x` golden is the follow-up
+  for the orchestrator to bless.
 
 ## cas23-quit: quit, force quit, not responding (P3-QU, 2026-10-15)
 

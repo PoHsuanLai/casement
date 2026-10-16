@@ -1,5 +1,8 @@
-//! The person's light or dark scheme, read from quire's `appearance.toml` through ds-settings
-//! and followed while casement runs. The server-side window frame is drawn in it
+//! The person's light or dark scheme and their Reduce transparency choice, read from quire's
+//! `appearance.toml` through ds-settings and followed while casement runs. The transparency is
+//! quire's `appearance.transparency` (`system` or `reduced`; a file without it is `system`), the
+//! one desktop-wide setting the shell reads too: `reduced` draws every blur as its mostly opaque
+//! stand-in in the scheme's paper ([`blur_finish`]), at the next frame. The server-side window frame is drawn in it
 //! (`core_loop::frames::styles` reads `state.render.scheme` every frame, so a change shows at
 //! the next vblank).
 //!
@@ -14,7 +17,8 @@
 use crate::State;
 use crate::cli::ConfigHome;
 use casement_ipc::system_scheme::{DesktopScheme, SchemeWatch};
-use casement_layout::{Scheme, Theme, scheme_of};
+use casement_layout::{Scheme, Theme, Transparency, reduced_stand_in, scheme_of};
+use casement_render::{BlurFinish, Rgba8};
 use ds_core::spawner::Spawner;
 use ds_settings::{AppName, AppearanceFile, ConfigRoot, Store, SystemPrefsSource};
 use smithay::reexports::calloop::channel::{self, Event as ChannelEvent};
@@ -47,16 +51,47 @@ fn store_for(home: &ConfigHome) -> Store {
 /// assert_eq!(scheme_in(&nowhere), Scheme::Light);
 /// ```
 pub fn scheme_in(home: &ConfigHome) -> Scheme {
-    scheme_of(theme_in(home))
+    scheme_of(stored_in(home).theme)
 }
 
-/// The theme `home`'s appearance file stores (the default when there is no file or the key is bad).
-fn theme_in(home: &ConfigHome) -> Theme {
+/// What `home`'s appearance file stores that casement follows: the defaults when there is no file
+/// or a key is bad.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Stored {
+    theme: Theme,
+    transparency: Transparency,
+}
+
+fn stored_in(home: &ConfigHome) -> Stored {
     let loaded = store_for(home).load::<AppearanceFile>();
     for key in &loaded.invalid {
         tracing::warn!("appearance.toml: {key}");
     }
-    loaded.value.appearance.theme
+    Stored {
+        theme: loaded.value.appearance.theme,
+        transparency: loaded.value.appearance.transparency,
+    }
+}
+
+/// How a blur is drawn given the person's `transparency` choice and the `scheme` in force: only
+/// `reduced` replaces it, with the scheme's solid stand-in.
+///
+/// ```
+/// use casement::appearance::blur_finish;
+/// use casement_layout::{Scheme, Transparency};
+/// use casement_render::BlurFinish;
+///
+/// assert_eq!(blur_finish(Transparency::System, Scheme::Dark), BlurFinish::Frosted);
+/// assert!(matches!(
+///     blur_finish(Transparency::Reduced, Scheme::Dark),
+///     BlurFinish::Solid(_)
+/// ));
+/// ```
+pub fn blur_finish(transparency: Transparency, scheme: Scheme) -> BlurFinish {
+    match transparency {
+        Transparency::Reduced => BlurFinish::Solid(Rgba8::from(reduced_stand_in(scheme))),
+        _ => BlurFinish::Frosted,
+    }
 }
 
 /// Where the desktop's scheme is read from for `home`: the session bus for the real config tree,
@@ -93,25 +128,28 @@ pub fn resolve(theme: Theme, system: Scheme) -> Scheme {
     }
 }
 
-/// What reaches the loop: the stored theme changed, or the desktop's scheme did.
+/// What reaches the loop: the stored theme or transparency changed, or the desktop's scheme did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Input {
     Theme(Theme),
+    Transparency(Transparency),
     System(Scheme),
 }
 
-/// The two things the scheme is made of, as last heard.
+/// The things the scheme and the transparency are made of, as last heard.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Heard {
     theme: Theme,
+    transparency: Transparency,
     system: Scheme,
 }
 
 impl Heard {
     /// The state before the desktop has answered: its scheme is Light.
-    fn start(theme: Theme) -> Heard {
+    fn start(stored: Stored) -> Heard {
         Heard {
-            theme,
+            theme: stored.theme,
+            transparency: stored.transparency,
             system: Scheme::Light,
         }
     }
@@ -119,6 +157,10 @@ impl Heard {
     fn after(self, input: Input) -> Heard {
         match input {
             Input::Theme(theme) => Heard { theme, ..self },
+            Input::Transparency(transparency) => Heard {
+                transparency,
+                ..self
+            },
             Input::System(system) => Heard { system, ..self },
         }
     }
@@ -156,12 +198,14 @@ fn follow_desktop(
     }
 }
 
-/// Reads the scheme into `state` now, and again whenever the file (or, for `theme = "system"`,
-/// the desktop) changes. A file that cannot be watched is logged and the scheme read once is kept.
+/// Reads the scheme and the transparency into `state` now, and again whenever the file (or, for
+/// `theme = "system"`, the desktop) changes. A file that cannot be watched is logged and the scheme read once is kept.
 pub(crate) fn attach(state: &mut State, home: &ConfigHome) -> Result<(), crate::StartError> {
-    let theme = theme_in(home);
-    let mut heard = Heard::start(theme);
+    let stored = stored_in(home);
+    let theme = stored.theme;
+    let mut heard = Heard::start(stored);
     state.render.scheme = heard.scheme();
+    state.render.transparency = heard.transparency;
     let (sender, receiver) = channel::channel::<Input>();
     let source = system_source(home);
     let mut following = (theme == Theme::System)
@@ -171,10 +215,11 @@ pub(crate) fn attach(state: &mut State, home: &ConfigHome) -> Result<(), crate::
     let mut watch = store_for(home).watch::<AppearanceFile>(&ThreadSpawner);
     ThreadSpawner.spawn(Box::pin(async move {
         while let Some(loaded) = watch.changed().await {
-            if sender
-                .send(Input::Theme(loaded.value.appearance.theme))
-                .is_err()
-            {
+            let changes = [
+                Input::Theme(loaded.value.appearance.theme),
+                Input::Transparency(loaded.value.appearance.transparency),
+            ];
+            if changes.into_iter().any(|input| sender.send(input).is_err()) {
                 return;
             }
         }
@@ -191,6 +236,7 @@ pub(crate) fn attach(state: &mut State, home: &ConfigHome) -> Result<(), crate::
                 }
                 heard = heard.after(input);
                 state.render.scheme = heard.scheme();
+                state.render.transparency = heard.transparency;
             }
         })
         .map(|_| ())
@@ -316,12 +362,72 @@ mod tests {
             (Input::System(Scheme::Dark), Scheme::Dark),
             (Input::Theme(Theme::Dark), Scheme::Dark),
         ];
-        let mut heard = Heard::start(Theme::System);
+        let mut heard = Heard::start(Stored {
+            theme: Theme::System,
+            transparency: Transparency::System,
+        });
         assert_eq!(heard.scheme(), Scheme::Light, "before the desktop answers");
         for (input, want) in steps {
             heard = heard.after(input);
             assert_eq!(heard.scheme(), want, "{input:?}");
         }
+    }
+
+    #[test]
+    fn the_file_picks_the_transparency_and_a_missing_key_is_system() {
+        const CASES: &[(&str, &str, Transparency)] = &[
+            (
+                "reduced",
+                "[appearance]\ntransparency = \"reduced\"\n",
+                Transparency::Reduced,
+            ),
+            (
+                "system",
+                "[appearance]\ntransparency = \"system\"\n",
+                Transparency::System,
+            ),
+            (
+                "no key",
+                "[appearance]\ntheme = \"dark\"\n",
+                Transparency::System,
+            ),
+        ];
+        for (name, text, want) in CASES {
+            let home = tempfile::tempdir().expect("a scratch directory");
+            let dir = home.path().join("quire");
+            std::fs::create_dir_all(&dir).expect("a directory");
+            std::fs::write(dir.join("appearance.toml"), text).expect("a file");
+            let stored = stored_in(&ConfigHome::At(home.path().into()));
+            assert_eq!(stored.transparency, *want, "{name}");
+        }
+    }
+
+    #[test]
+    fn transparency_follows_the_file_whatever_the_scheme_does() {
+        let mut heard = Heard::start(Stored {
+            theme: Theme::Light,
+            transparency: Transparency::System,
+        });
+        heard = heard.after(Input::Transparency(Transparency::Reduced));
+        heard = heard.after(Input::System(Scheme::Dark));
+        assert_eq!(heard.transparency, Transparency::Reduced);
+        heard = heard.after(Input::Transparency(Transparency::System));
+        assert_eq!(heard.transparency, Transparency::System);
+    }
+
+    #[test]
+    fn only_reduced_replaces_the_blur_and_in_the_scheme_s_paper() {
+        for scheme in [Scheme::Light, Scheme::Dark] {
+            assert_eq!(
+                blur_finish(Transparency::System, scheme),
+                BlurFinish::Frosted
+            );
+        }
+        let light = blur_finish(Transparency::Reduced, Scheme::Light);
+        let dark = blur_finish(Transparency::Reduced, Scheme::Dark);
+        assert!(
+            matches!((light, dark), (BlurFinish::Solid(l), BlurFinish::Solid(d)) if l != d && l.a == 245 && d.a == 245)
+        );
     }
 
     #[test]
