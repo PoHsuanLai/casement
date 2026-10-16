@@ -2,7 +2,7 @@
 //! toplevel handle and captures the window through the same copy session output capture uses.
 //! The client side is `casement_testclient::capture::toplevel_source::WindowCapture`.
 
-use super::consent::{ScriptedShell, kept, program};
+use super::consent::{ScriptedShell, decided, kept, program};
 use crate::protocol::xdg_shell::{boot, map_toplevel, windows};
 use casement_core::geometry::{LogicalSize, PhysicalSize};
 use casement_core::policy::ConnectionRole;
@@ -287,6 +287,9 @@ fn asked_capture() -> AskedCapture {
     let window = windows(&fixture)[0];
     let asked = fixture.connect_via_ask();
     fixture.pump();
+    // Finding the window goes through the window list, which is its own power: the person has
+    // already allowed it, so the only question is the screen's.
+    decided(&mut fixture, Power::Windows, Verdict::Allow);
     let capture = opened(&mut fixture, asked, window);
     AskedCapture {
         fixture,
