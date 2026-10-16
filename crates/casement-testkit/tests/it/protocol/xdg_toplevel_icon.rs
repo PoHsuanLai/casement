@@ -137,3 +137,37 @@ fn a_replaced_buffer_may_be_destroyed_and_the_kept_one_may_not() {
         .expect("a protocol error");
     assert_eq!(error.code, IconError::NoBuffer as u32);
 }
+
+/// CASW-06: a client may hold `MAX_ICON_BUFFERS` icon buffers (every buffer destroy of every
+/// client scans the table they sit in); the next `add_buffer` cuts it with
+/// `wl_display.no_memory` (code 2).
+#[test]
+fn a_client_that_adds_icon_buffers_without_end_is_cut() {
+    let (mut fixture, id) = boot();
+    let icons = IconManager::bind(fixture.client(id));
+    let square = shm_buffer(
+        fixture.client(id),
+        PhysicalSize { w: 32, h: 32 },
+        Pattern::Gradient,
+    );
+    let mut made = Vec::new();
+    for _ in 0..casement_wayland::limits::MAX_ICON_BUFFERS {
+        let icon = icons.manager.create_icon(&fixture.client(id).qh(), ());
+        icon.add_buffer(square.buffer(), 1);
+        made.push(icon);
+    }
+    fixture.pump();
+    assert!(
+        fixture.client(id).protocol_error().is_none(),
+        "up to the cap is allowed"
+    );
+    let icon = icons.manager.create_icon(&fixture.client(id).qh(), ());
+    icon.add_buffer(square.buffer(), 1);
+    made.push(icon);
+    fixture.pump();
+    let error = fixture
+        .client(id)
+        .protocol_error()
+        .expect("the client past the cap is cut");
+    assert_eq!((error.interface.as_str(), error.code), ("wl_display", 2));
+}

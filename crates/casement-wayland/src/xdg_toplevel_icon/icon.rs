@@ -2,6 +2,7 @@
 //! must outlive it. The rules are pure functions over [`IconParts`]; the dispatch around them
 //! turns a refusal into the protocol error and returns.
 
+use crate::limits::{self, Limit, Standing};
 use smithay::reexports::wayland_protocols::xdg::toplevel_icon::v1::server::xdg_toplevel_icon_v1::{
     self, XdgToplevelIconV1,
 };
@@ -110,6 +111,14 @@ impl Registry {
             .retain(|(held, owner)| !(held == buffer && owner == icon));
     }
 
+    /// How many buffers the icons of `client` hold.
+    fn held_by(&self, client: &ClientId) -> usize {
+        self.held()
+            .iter()
+            .filter(|(_, owner)| owner.client().is_some_and(|c| c.id() == *client))
+            .count()
+    }
+
     fn forget(&self, icon: &XdgToplevelIconV1) {
         self.held().retain(|(_, owner)| owner != icon);
     }
@@ -179,10 +188,10 @@ where
     fn request(
         &self,
         _state: &mut D,
-        _client: &Client,
+        client: &Client,
         icon: &XdgToplevelIconV1,
         request: xdg_toplevel_icon_v1::Request,
-        _display: &DisplayHandle,
+        display: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
         use xdg_toplevel_icon_v1::Request;
@@ -198,25 +207,33 @@ where
         };
         match request {
             Request::SetName { icon_name } => parts.name = Some(icon_name),
-            Request::AddBuffer { buffer, scale } => match edge_of(&buffer) {
-                Ok(edge) => {
-                    let added = IconBuffer {
-                        buffer: buffer.clone(),
-                        edge,
-                        scale,
-                    };
-                    let (next, displaced) = std::mem::take(parts).with_buffer(added);
-                    *parts = next;
-                    if let Some(displaced) = displaced {
-                        self.registry.release(&displaced, icon);
-                    }
-                    self.registry.hold(buffer, icon);
+            Request::AddBuffer { buffer, scale } => {
+                // A client past its cap is cut (CASW-06): the table these sit in is scanned by
+                // every buffer destroy of every client.
+                let held = self.registry.held_by(&client.id());
+                if limits::admit(display, client, Limit::IconBuffers, held) == Standing::Over {
+                    return;
                 }
-                Err(refusal) => icon.post_error(
-                    xdg_toplevel_icon_v1::Error::InvalidBuffer,
-                    refusal.text().to_owned(),
-                ),
-            },
+                match edge_of(&buffer) {
+                    Ok(edge) => {
+                        let added = IconBuffer {
+                            buffer: buffer.clone(),
+                            edge,
+                            scale,
+                        };
+                        let (next, displaced) = std::mem::take(parts).with_buffer(added);
+                        *parts = next;
+                        if let Some(displaced) = displaced {
+                            self.registry.release(&displaced, icon);
+                        }
+                        self.registry.hold(buffer, icon);
+                    }
+                    Err(refusal) => icon.post_error(
+                        xdg_toplevel_icon_v1::Error::InvalidBuffer,
+                        refusal.text().to_owned(),
+                    ),
+                }
+            }
             Request::Destroy => {}
             _ => {}
         }

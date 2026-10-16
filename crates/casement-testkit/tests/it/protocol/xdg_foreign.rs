@@ -100,3 +100,29 @@ fn a_destroyed_exported_toplevel_destroys_its_imports() {
     assert!(fixture.client(owner).protocol_error().is_none());
     assert!(fixture.client(guest).protocol_error().is_none());
 }
+
+/// CASW-06: a client may hold `MAX_EXPORTS` exports; the next `export_toplevel` cuts it with
+/// `wl_display.no_memory` (code 2).
+#[test]
+fn a_client_that_exports_without_end_is_cut() {
+    let (mut fixture, owner) = boot();
+    let base = WmBase::bind(fixture.client(owner), 7);
+    let foreign = Foreign::bind(fixture.client(owner));
+    let parent = map_named(&mut fixture, owner, &base, (500, 400), Some(APP));
+    let mut made = Vec::new();
+    for _ in 0..casement_wayland::limits::MAX_EXPORTS {
+        made.push(foreign.export(fixture.client(owner), &parent));
+    }
+    fixture.pump();
+    assert!(
+        fixture.client(owner).protocol_error().is_none(),
+        "up to the cap is allowed"
+    );
+    made.push(foreign.export(fixture.client(owner), &parent));
+    fixture.pump();
+    let error = fixture
+        .client(owner)
+        .protocol_error()
+        .expect("the client past the cap is cut");
+    assert_eq!((error.interface.as_str(), error.code), ("wl_display", 2));
+}

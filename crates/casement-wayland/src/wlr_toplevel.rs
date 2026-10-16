@@ -12,6 +12,7 @@
 //! [`states_of`] and [`Diff`], pure; this file is the wire.
 
 use crate::foreign_toplevel_list::Disclosure;
+use crate::limits::{self, Limit, Standing};
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::policy::GlobalKind;
@@ -110,6 +111,14 @@ impl WlrToplevelPart {
         }
     }
 
+    /// How many managers `client` has bound.
+    pub fn managers_of(&self, client: &ClientId) -> usize {
+        self.managers
+            .iter()
+            .filter(|manager| manager.client().is_some_and(|owner| owner.id() == *client))
+            .count()
+    }
+
     /// The global, when it was created.
     pub fn global(&self) -> Option<&GlobalId> {
         self.global.as_ref()
@@ -158,13 +167,19 @@ where
     fn bind(
         &self,
         state: &mut D,
-        _handle: &DisplayHandle,
-        _client: &Client,
+        handle: &DisplayHandle,
+        client: &Client,
         resource: New<ZwlrForeignToplevelManagerV1>,
         data_init: &mut DataInit<'_, D>,
     ) {
         let manager = data_init.init(resource, WlrManagerData);
         let part = state.wlr_toplevel_part();
+        // Each bind lists every window again and hears every title change: a client that binds
+        // past its cap is cut (CASW-06) and gets no listing.
+        let held = part.managers_of(&client.id());
+        if limits::admit(handle, client, Limit::WindowListManagers, held) == Standing::Over {
+            return;
+        }
         part.managers.push(manager.clone());
         list_all_on(part, &manager);
     }

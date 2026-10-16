@@ -370,3 +370,39 @@ fn damage_is_in_the_pixels_of_the_copied_region() {
         "the cursor at (100, 100) is at (50, 50) of the region: {parts:?}"
     );
 }
+
+/// CASW-06: a client may have `MAX_PENDING_COPIES` copies waiting for a frame; past that it is
+/// cut with `wl_display.no_memory` (code 2), so a pile of `copy_with_damage` cannot make every
+/// presented frame cost a pile of read-backs.
+#[test]
+fn a_client_with_copies_piled_up_is_cut() {
+    let (mut fixture, client, _first, _pointer) = started(output_at(120));
+    let mut piled = Vec::new();
+    // The first `copy_with_damage` of a client is answered at once (it has had no frame of the
+    // output); each after it waits for a newer frame, and no frame is presented here.
+    let waiting_cap = casement_wayland::limits::MAX_PENDING_COPIES;
+    for _ in 0..waiting_cap + 3 {
+        let mut copy = ScreenCopy::start(fixture.client(client).globals()).expect("the manager");
+        settle(&mut fixture, &mut copy);
+        copy.capture("HEADLESS-1", CopyArea::Output, CursorMode::Painted)
+            .expect("a frame");
+        settle(&mut fixture, &mut copy);
+        let offer = *copy.offers().first().expect("the frame offered a buffer");
+        copy.copy(offer, CopyKind::WithDamage).expect("a copy");
+        fixture.pump();
+        piled.push(copy);
+        if fixture.client(client).protocol_error().is_some() {
+            break;
+        }
+    }
+    assert!(
+        piled.len() > waiting_cap,
+        "the cut came only past the cap, after {} copies",
+        piled.len()
+    );
+    let error = fixture
+        .client(client)
+        .protocol_error()
+        .expect("the client with copies piled up is cut");
+    assert_eq!((error.interface.as_str(), error.code), ("wl_display", 2));
+}

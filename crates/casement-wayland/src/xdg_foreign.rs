@@ -12,6 +12,7 @@ mod book;
 
 pub use book::Handle;
 
+use crate::limits::{self, Limit, Standing};
 use crate::states::GlobalFilter;
 use book::Shared;
 use smithay::reexports::wayland_protocols::xdg::foreign::zv2::server::zxdg_exported_v2::ZxdgExportedV2;
@@ -156,10 +157,10 @@ where
     fn request(
         &self,
         _state: &mut D,
-        _client: &Client,
+        client: &Client,
         exporter: &ZxdgExporterV2,
         request: zxdg_exporter_v2::Request,
-        _display: &DisplayHandle,
+        display: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
         let zxdg_exporter_v2::Request::ExportToplevel { id, surface } = request else {
@@ -178,6 +179,18 @@ where
             exporter.post_error(
                 zxdg_exporter_v2::Error::InvalidSurface,
                 "exported surface had an invalid role",
+            );
+            return;
+        }
+        // A client past its cap is cut (CASW-06); the new object still gets data, as above.
+        let held = self.book.lock().held_by(&client.id());
+        if limits::admit(display, client, Limit::Exports, held) == Standing::Over {
+            data_init.init(
+                id,
+                Exported {
+                    handle: Handle::none(),
+                    book: self.book.clone(),
+                },
             );
             return;
         }

@@ -4,6 +4,8 @@
 //! surfaces (a `WlSurface` cannot be made without a client).
 
 use smithay::reexports::wayland_protocols::xdg::foreign::zv2::server::zxdg_imported_v2::ZxdgImportedV2;
+use smithay::reexports::wayland_server::Resource;
+use smithay::reexports::wayland_server::backend::ClientId;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use std::collections::BTreeMap;
 use std::hash::BuildHasher;
@@ -97,6 +99,19 @@ impl Book {
             },
         );
         handle
+    }
+
+    /// How many toplevels exported by `client` are in the book.
+    pub(super) fn held_by(&self, client: &ClientId) -> usize {
+        self.exports
+            .values()
+            .filter(|export| {
+                export
+                    .surface
+                    .client()
+                    .is_some_and(|owner| owner.id() == *client)
+            })
+            .count()
     }
 
     /// The toplevel `handle` names.

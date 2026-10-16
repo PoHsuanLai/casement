@@ -20,6 +20,7 @@ mod wire;
 pub use region::physical_region;
 
 use crate::image_capture::CursorPaint;
+use crate::limits::{self, Limit, Standing};
 use crate::states::GlobalFilter;
 use casement_core::OutputKey;
 use casement_core::geometry::{PhysicalRect, PhysicalSize, Transform};
@@ -45,6 +46,11 @@ use std::sync::{Mutex, PoisonError};
 
 /// The version casement serves.
 pub const VERSION: u32 = 3;
+
+/// The most last-delivery notes kept. There is one per client and output that was ever given a
+/// frame, and a client that reconnects leaves its old one behind, so the oldest go first
+/// instead of the list growing for the session.
+const MAX_DELIVERIES: usize = 256;
 
 /// Whether a copy reports damage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -177,6 +183,18 @@ impl ScreencopyPart {
         self.pending.push(copy);
     }
 
+    /// How many copies `client` has waiting.
+    pub fn pending_of(&self, client: &ClientId) -> usize {
+        self.pending
+            .iter()
+            .filter(|copy| {
+                copy.frame
+                    .client()
+                    .is_some_and(|owner| owner.id() == *client)
+            })
+            .count()
+    }
+
     /// The instant of the frame `copy`'s client was last given of its output.
     pub fn last_delivery(&self, copy: &PendingCopy) -> Option<Mono> {
         let client = copy.frame.client()?.id();
@@ -201,6 +219,8 @@ impl ScreencopyPart {
         };
         self.delivered
             .retain(|d| !(d.client == client && d.output == copy.target.output));
+        let excess = (self.delivered.len() + 1).saturating_sub(MAX_DELIVERIES);
+        self.delivered.drain(..excess);
         self.delivered.push(Delivery {
             client,
             output: copy.target.output.clone(),
@@ -405,6 +425,7 @@ impl FrameData {
     fn copy<D: ScreencopyHandler>(
         &self,
         state: &mut D,
+        asked_by: (&Client, &DisplayHandle),
         frame: &ZwlrScreencopyFrameV1,
         buffer: WlBuffer,
         damage: Damage,
@@ -427,6 +448,12 @@ impl FrameData {
             );
             return;
         }
+        // A client with copies piled up is cut (CASW-06): each is a full read-back per frame.
+        let (client, display) = asked_by;
+        let waiting = state.screencopy_part().pending_of(&client.id());
+        if limits::admit(display, client, Limit::PendingCopies, waiting) == Standing::Over {
+            return;
+        }
         state.screencopy_part().keep(PendingCopy {
             frame: frame.clone(),
             buffer,
@@ -445,18 +472,18 @@ where
     fn request(
         &self,
         state: &mut D,
-        _client: &Client,
+        client: &Client,
         resource: &ZwlrScreencopyFrameV1,
         request: zwlr_screencopy_frame_v1::Request,
-        _handle: &DisplayHandle,
+        handle: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
         match request {
             zwlr_screencopy_frame_v1::Request::Copy { buffer } => {
-                self.copy(state, resource, buffer, Damage::Whole);
+                self.copy(state, (client, handle), resource, buffer, Damage::Whole);
             }
             zwlr_screencopy_frame_v1::Request::CopyWithDamage { buffer } => {
-                self.copy(state, resource, buffer, Damage::Fresh);
+                self.copy(state, (client, handle), resource, buffer, Damage::Fresh);
             }
             _ => {}
         }

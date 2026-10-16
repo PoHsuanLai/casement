@@ -83,6 +83,9 @@ impl SerialBook {
                 break;
             }
         }
+        // A client none of whose presses is remembered answers nothing: its note goes too, so
+        // the table holds at most `REMEMBERED` clients however many connect over a session.
+        latest.retain(|client, _| presses.values().any(|held| held.client == *client));
         SerialBook { presses, latest }
     }
 
@@ -174,6 +177,24 @@ mod tests {
         assert_eq!(book.answers(InputSerial(6), ClientKey(1)), None);
         assert!(book.answers(InputSerial(7), ClientKey(1)).is_some());
         assert!(book.answers(InputSerial(70), ClientKey(1)).is_some());
+    }
+
+    /// CASW-06: the per-client table does not grow with the clients that came and went.
+    #[test]
+    fn the_latest_input_of_clients_long_gone_is_forgotten() {
+        let book = (1..=200u32).fold(SerialBook::empty(), |book, n| {
+            book.record(InputSerial(n), press(u64::from(n)))
+        });
+        assert!(
+            book.latest.len() <= REMEMBERED,
+            "{} clients",
+            book.latest.len()
+        );
+        assert!(
+            book.answers_latest(InputSerial(200), ClientKey(200))
+                .is_some()
+        );
+        assert!(book.answers_latest(InputSerial(1), ClientKey(1)).is_none());
     }
 
     #[test]

@@ -367,3 +367,28 @@ fn the_listing_transcript_matches_its_golden() {
     let text = flow(&mut fixture, id, &["zwlr_foreign_toplevel_"], &["state"]);
     check_golden(&golden("wlr_toplevel-list.txt"), &text).expect("the listing flow");
 }
+
+/// CASW-06: a client may bind the window list `MAX_WINDOW_LIST_MANAGERS` times (each bind lists
+/// every window again and hears every title change); the next bind cuts it with
+/// `wl_display.no_memory` (code 2).
+#[test]
+fn a_client_that_binds_the_window_list_without_end_is_cut() {
+    let (mut fixture, id) = boot();
+    let cap = casement_wayland::limits::MAX_WINDOW_LIST_MANAGERS;
+    let mut watches = Vec::new();
+    for _ in 0..cap {
+        watches.push(ToplevelWatch::start(fixture.client(id).globals()).expect("the list"));
+        fixture.pump();
+    }
+    assert!(
+        fixture.client(id).protocol_error().is_none(),
+        "up to the cap is allowed"
+    );
+    watches.push(ToplevelWatch::start(fixture.client(id).globals()).expect("a bind"));
+    fixture.pump();
+    let error = fixture
+        .client(id)
+        .protocol_error()
+        .expect("the client past the cap is cut");
+    assert_eq!((error.interface.as_str(), error.code), ("wl_display", 2));
+}
