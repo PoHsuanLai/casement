@@ -103,12 +103,18 @@ pub struct OutputKey(String);
 impl OutputKey {
     /// The key of the display `facts` describe on connector `name`: `edid:<make>/<model>/<serial>`
     /// when the EDID carries a serial, else `connector:<name>` (two identical displays without
-    /// serials can only be told apart by where they are plugged).
+    /// serials can only be told apart by where they are plugged). `/` and `%` inside the make,
+    /// model and serial text are percent-encoded (`%2F`, `%25`) so the separators stay the only
+    /// slashes: make `a/b` + model `c` and make `a` + model `b/c` are different keys (CASC-08).
+    /// A key changes only for EDID text that holds one of those two characters.
     pub fn of(facts: &EdidFacts, name: &OutputName) -> OutputKey {
         match &facts.serial {
-            EdidSerial::Known(serial) => {
-                OutputKey(format!("edid:{}/{}/{}", facts.make, facts.model, serial))
-            }
+            EdidSerial::Known(serial) => OutputKey(format!(
+                "edid:{}/{}/{}",
+                key_text(&facts.make),
+                key_text(&facts.model),
+                key_text(serial)
+            )),
             EdidSerial::Unknown => OutputKey(format!("connector:{}", name.as_str())),
         }
     }
@@ -117,6 +123,19 @@ impl OutputKey {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+}
+
+/// `text` with the key's separator `/` and its escape `%` percent-encoded.
+fn key_text(text: &str) -> String {
+    text.chars()
+        .fold(String::with_capacity(text.len()), |mut out, c| {
+            match c {
+                '/' => out.push_str("%2F"),
+                '%' => out.push_str("%25"),
+                other => out.push(other),
+            }
+            out
+        })
 }
 
 /// Mints window, layer and lease ids in order, from one counter shared by all three so no two

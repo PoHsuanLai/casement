@@ -55,6 +55,49 @@ fn an_output_key_follows_the_display_not_the_connector() {
     );
 }
 
+/// CASC-08: a `/` or `%` inside the EDID text cannot make two displays share a key; text with
+/// neither keeps the key it always had.
+#[test]
+fn separators_inside_edid_text_are_encoded_so_distinct_displays_keep_distinct_keys() {
+    let facts = |make: &str, model: &str, serial: &str| EdidFacts {
+        make: make.to_owned(),
+        model: model.to_owned(),
+        serial: EdidSerial::Known(serial.to_owned()),
+    };
+    let dp1 = OutputName::parse("DP-1").expect("name");
+    let key = |make: &str, model: &str, serial: &str| {
+        casement_core::OutputKey::of(&facts(make, model, serial), &dp1)
+            .as_str()
+            .to_owned()
+    };
+    let cases = [
+        (
+            "plain text is unchanged",
+            ("Dell", "U2723QE", "7XK"),
+            "edid:Dell/U2723QE/7XK",
+        ),
+        ("a slash in the make", ("a/b", "c", "s"), "edid:a%2Fb/c/s"),
+        ("a slash in the model", ("a", "b/c", "s"), "edid:a/b%2Fc/s"),
+        ("a slash in the serial", ("a", "b", "c/d"), "edid:a/b/c%2Fd"),
+        ("a percent sign", ("100%", "m", "s"), "edid:100%25/m/s"),
+        (
+            "a literal escape is itself escaped",
+            ("a", "b%2Fc", "s"),
+            "edid:a/b%252Fc/s",
+        ),
+    ];
+    for (name, (make, model, serial), want) in cases {
+        assert_eq!(key(make, model, serial), want, "{name}");
+    }
+    assert_ne!(key("a/b", "c", "s"), key("a", "b/c", "s"));
+    assert_ne!(
+        key("a", "b/c", "s"),
+        key("a", "b%2Fc", "s"),
+        "an escape in the text is not a slash"
+    );
+    assert_ne!(key("a", "b", "c/d"), key("a", "b/c", "d"));
+}
+
 #[test]
 fn the_mint_never_repeats_across_kinds() {
     let (mint, w) = IdMint::start().window();
