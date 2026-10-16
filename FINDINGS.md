@@ -4554,3 +4554,98 @@ Crates `casement-ipc` and `casement-agent`. Written without a compiler (lane rul
   interface methods need it); that `Arc::new(BusPeers)` coerces at the closure return in `CallerSetup::with`; `tokio::spawn` of
   `privacy::follow` (needs `Served: Send`); `Connection::request_name_with_flags(.., DoNotQueue.into())` yields `NameTaken` for a held
   name; the FNV-1a test vector for "a"; that `ds-settings`' `live` feature unifies with the workspace's zbus `tokio` feature.
+
+## pa2-croot: the composition root for per-app consent (CASW-01, CASW-05, PORTAL-02, PORTAL-15; 2026-10-17)
+
+Crates `casement`, `casement-testkit`, `casementctl`, a new `casement-privacy`, and the small seams named below in `casement-ipc`.
+Written without a compiler (lane rules); the gate run is the first build of this branch, which merges the consent gates (`pa2-cwl`)
+and the caller identity (`pa2-cipc`). The contract is ARCHITECTURE.md "Consent for the privileged globals" ("The composition
+root's half"). Owner decisions carried out: per-app consent; the book is `$XDG_STATE_HOME/casement/privacy.toml`, written only by
+casement; the administrator's floor is `/etc/quire/privacy.toml` and `privacy.d/*.toml`, believed only when root-owned and not
+group/world writable; a user-writable program or an interpreter gets Allow Once and is never written to the book.
+
+- **What was done.**
+  - Compiles again after cipc: `attach_compositor` builds `CallerSetup::desktop(table).with_privacy(link)` (`.with_test_units` under
+    `debug-inject`; the old `with_debug_units` is gone); `connect.rs` reads `ask.caller` (`hand_out(&ask.role, &ask.caller.role)`,
+    `portal_may_connect(&ask.caller.role)`); `AgentState::handed` is `ClientKey -> AppKey`. The test kit's `FakeCgroups` is replaced by
+    `fakes::callers` (a `Proven` per caller); `connect_through_handout`, `connect_remote_eis`, `end_remote_eis` take a `&Proven`.
+  - `clients::insert_client(state, stream, role, peer, Standing)`; `Fixture::insert` calls it. `clients::Judge` holds, probes and judges
+    the process on the public socket at accept; `PinnedImage` is the `ImageWatch`.
+  - The files: new crate `casement-privacy` (store, floor files, load policy, `list`), `casement::privacy` (the model side: `start`,
+    `keep`, `edited`, `reload_floor`, `publish`), `seams.privacy`, `seams.wall` (`time::WallClock`), `seams.a11y`.
+  - `casementctl privacy list | reload`; `casement` hears `SIGHUP` (`hangup.rs`).
+  - Tests: `casement-privacy` (floor trust table, drop-ins, link refused, folder 0700, file 0600, damaged/oversized/non-text book set
+    aside whole, the load policy), `clients` (standing conversion table, scope name, a real probe of the test process, the image
+    watch), `consent_store.rs` end to end over real files in a scratch folder, `quire_window.rs` (the accessibility claim), `casementctl`
+    (the subcommand table), `wall.rs`.
+- **Decided here (not in the design).**
+  - *A new crate, `casement-privacy`.* `casementctl privacy list` has to read the two files the way casement does, and a dependency
+    on `casement` would make casementctl reach ds-settings and the text stack (boundary rows B13, B15). The crate has casement-core,
+    casement-protocols and ds-helpers (no features, no bus); the date and every folder are arguments (B8). Cargo.lock was edited by hand
+    for the new package and the new edges; the first cargo run normalises it.
+  - *A floor that cannot be believed is "ask for everything", the same as no floor.* A floor file that exists but does not parse, or is
+    not the administrator's alone (owner, group/other write bit, a link, or its folder), is skipped; the files that are believed are still
+    merged; one error line lists the files and reasons; every power is then explicitly `Fallback::Ask` at the most (`load_floor`). It is
+    not "deny": a broken floor must not lock the person out of their own programs, and an administrator's `deny` in the broken file is
+    lost until the file is fixed and `casementctl privacy reload` is run. Flip `asking_about_everything` to `Fallback::Deny` if the owner
+    prefers failing closed.
+  - *Ownership is checked on the open descriptor, plus the folder.* The file is judged by `fstat` of what is then read (no second open),
+    and so is its folder (`/etc/quire`, `privacy.d`). The whole path to `/` is not walked (a scratch folder under `/tmp` could never pass);
+    `/etc` itself is root's. The expected owner is an argument (`Owner::Root` in a real run; `Owner::User(uid)` only for `--system-dir`
+    in a build with `testing` or `debug-inject`), so the tests make a floor they own and also try a wrong owner.
+  - *`--system-dir DIR`* (`StartConfig::system_dir`, `RunConfig::with_system_dir`) is the injected place for a jail's floor, never an
+    environment variable. A build without `testing`/`debug-inject` still wants the administrator to own the files there.
+  - *`casementctl privacy list` reads the files; `reload` sends `SIGHUP`.* The list is the book and floor as stored (the book is
+    rewritten after every change, so it is current), computed with the same `Privilege::rows()` the Settings page shows; it never sets
+    a damaged book aside and says in a sentence what it could not read. `reload` asks the bus who holds `org.quire.Compositor1`, checks
+    `/proc/<pid>/comm` is `casement`, and sends `SIGHUP`. No new `Compositor1` method and no role for casementctl was needed. `SIGHUP` is
+    not heard in the vkms test mode (`--drm-node`), where it already means "read one frame back".
+  - *Pruning:* a book that is full (512 rows) forgets answers about programs no longer on disk when it is read (`Book::retained`); a
+    book with room forgets nothing, so a program on a disk that is not mounted at start keeps its answer.
+  - *`AppKey` of a public client:* `Proven` from a service's app (proof `Exe` or better), a sandbox's attested app (Flatpak) or the
+    launcher's scope name for a root-owned program; anything else is claimed. The scope name is a claim anyone can make, so it only
+    groups windows; consent binds to the image (`Subject`).
+  - *A service known by its control group alone* (`Proof::Cgroup`: image unreadable) is `Unverified`, not a `Service`: a same-user
+    process can move itself into a delegated cgroup, and `shell` is trusted with all seven powers.
+  - *The accessibility check needs a pid.* `Processes` records the pid of public connections only, so the hand-outs (shell, agent tier)
+    and sandboxes never verify a root: it stays `Unknown`, the safe default. A claimed root that cannot be queued stays `Unknown` too.
+  - *The edit path publishes after every edit*, even when the model changed nothing (a program whose answers are never kept), so the
+    board's optimistic list never outlives the model's.
+  - *The test kit's public clients now record their process* (`insert_client` does for every public client; the mirrored insert did
+    not). Force quit never signals this process (`signal_all` spares `own`).
+- **Seams touched outside the named crates.** `casement-ipc/src/dbus/mod.rs`: a `pub mod peer` re-exporting the caller-identity library
+  items the root needs to hold, probe and judge a peer (`Pinned`, `Prober`, `Facts`, `Exe`, `Standing`, `judge`, `roles`, ...), the same
+  reason `LoadError`/`TableFiles` are re-exported there; no other file. Workspace `Cargo.toml`: members and `ds-helpers`,
+  `casement-privacy`. Nothing in casement-core, casement-wayland or casement-agent.
+- **Deleted/replaced tests.** `FakeCgroups` and its unit test; the cases "a process nobody knows" in `remote_eis.rs` and
+  `quire_shell.rs` (the bus thread refuses it before the loop hears of it; `casement-ipc` tests that); the unit-name wording of the
+  hand-out tests. `quire_window::hints_apply_on_commit_and_are_forgotten_on_destroy` now expects an unverified root and then drives the
+  verdict.
+- **Not verified by reading (the gate run looks here).**
+  - Cargo: the hand-edited `Cargo.lock` (new package `casement-privacy`; `casementctl` gains `casement-privacy` and `rustix`);
+    `ds-helpers` with `default-features = false` resolving beside ds-settings' default one.
+  - `casement-ipc::dbus::peer` names: `Alive`, `PinError`, `Pinned`, `ProbeError`, `Prober` (peephole) and `AppKey`, `Engine`, `Exe`,
+    `ExePath`, `Facts`, `FileTrust`, `Pin`, `Proof`, `RoleName`, `Standing`, `Table`, `WhyNot`, `judge`, `roles` (peephole-core v0.1.1,
+    read from the checkout, not compiled). Tests build `Standing::Service/Program/Sandboxed/Unverified` and `Exe::Read` from outside
+    the defining crate (non-exhaustive enums; the variants are plain).
+  - `clients/standing.rs`: the match on a `#[non_exhaustive]` `Standing` with a guard (`*proof >= Proof::Exe`) falling through to `_`.
+  - `casement-privacy/store.rs`: `ReadError::NotText { path, source }` built by hand; `DirBuilder::mode(0o700).recursive(true)`
+    applying the mode to every folder it makes.
+  - `run.rs`: the `Channel<PrivacyEdit>` and `Channel<A11yVerdict>` made in casement-ipc inserted with smithay's calloop re-export
+    (the same assumption `connect::attach` already makes); `RunConfig::with_system_dir`'s struct update after a partial move.
+  - `state.rs`: `wl.quire_shell.wall = Box::new(seams.wall)` before the model is built.
+  - `casementctl`: `zbus::Connection::session()` with the workspace's feature set; `DBusProxy::get_connection_unix_process_id`.
+  - Tests that read real files assume a non-root user (they own their scratch folders); the `Judge` and `PinnedImage` tests read
+    `/proc/self` (a sandbox that hides it makes the second one fail: `moved()` needs a successful probe).
+  - A full book of long program paths can pass 64 KiB (the model's limit for the file, `MAX_FILE_BYTES`) before it holds 512 rows;
+    it would then be set aside at the next start. Core's lenient reader and its cap are ccore's; noted, not changed.
+- **Interface asks.**
+  - release lane: `desktop-callers.toml` rows (`shell`, `agent_tier`, `portal`, `settings`, `manager`) as pa2-cipc listed; no
+    `/etc/quire/privacy.toml` is shipped. The release notes and the user docs get the sentence from the design: "Programs that watch
+    the screen, type for you or read the clipboard now ask the first time; a program that exits before you answer (wtype) works the next
+    time you run it" (casement has no README to carry it).
+  - the desktop harness: scenarios that run `grim`/`wl-copy` start casement with `--system-dir` and a floor of `allow` rows
+    (design 3.8); the flag exists, the scenarios are theirs.
+  - sill: nothing new (the question is `quire_shell_v1` version 5, as cwl built it).
+  - still open from cwl: the four globals smithay serves whole (clipboard, input method, `ext_foreign_toplevel_list`); the fork change
+    is described in the pa2-cwl section.
