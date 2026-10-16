@@ -19,17 +19,7 @@ const EDGE_LIMIT: u32 = 4096;
 /// `edge` premultiplied pixels, kept in proportion and centred.
 pub fn load(path: &Path, edge: u32) -> Result<Pixels, IconError> {
     checked(edge)?;
-    let read = |source| IconError::Read {
-        path: path.to_path_buf(),
-        source,
-    };
-    let size = std::fs::metadata(path).map_err(read)?.len();
-    if size > FILE_LIMIT {
-        return Err(IconError::TooLarge {
-            path: path.to_path_buf(),
-        });
-    }
-    let bytes = std::fs::read(path).map_err(read)?;
+    let bytes = crate::read::plain_file(path, FILE_LIMIT)?;
     match path.extension().and_then(|ext| ext.to_str()) {
         Some(ext) if ext.eq_ignore_ascii_case("svg") => svg(&bytes, edge),
         _ => {
@@ -79,9 +69,22 @@ fn fitted(image: DynamicImage, edge: u32) -> Result<Pixels, IconError> {
     Pixels::from_straight(edge, &straight).ok_or(IconError::Edge(edge))
 }
 
+/// SVG options that load nothing from outside the SVG: an `<image href>` is a file path to
+/// usvg's default resolver, which would read it whole, device or pipe included. Data URLs inside
+/// the picture still work.
+fn no_outside_files() -> usvg::Options<'static> {
+    usvg::Options {
+        image_href_resolver: usvg::ImageHrefResolver {
+            resolve_string: Box::new(|_, _| None),
+            ..usvg::ImageHrefResolver::default()
+        },
+        ..usvg::Options::default()
+    }
+}
+
 /// An SVG drawn to fill `edge` by `edge`.
 fn svg(bytes: &[u8], edge: u32) -> Result<Pixels, IconError> {
-    let tree = usvg::Tree::from_data(bytes, &usvg::Options::default())
+    let tree = usvg::Tree::from_data(bytes, &no_outside_files())
         .map_err(|error| IconError::Decode(error.to_string()))?;
     let (w, h) = (tree.size().width(), tree.size().height());
     let side = edge as f32;

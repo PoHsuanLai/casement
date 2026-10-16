@@ -22,6 +22,13 @@ pub enum IconError {
         /// The file.
         path: PathBuf,
     },
+    /// The path is not a regular file (a device, a pipe, a folder): reading it could block or
+    /// never end.
+    #[error("the icon {path} is not a plain file")]
+    NotAFile {
+        /// The path.
+        path: PathBuf,
+    },
     /// The picture could not be decoded.
     #[error("cannot decode the icon: {0}")]
     Decode(String),

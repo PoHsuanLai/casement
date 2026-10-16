@@ -84,6 +84,28 @@ impl IconCache {
         }
     }
 
+    /// A fresh id, for a stand-in drawn while an answer is still being looked for. It is never
+    /// the id of a [`Slot`].
+    pub fn reserve(&mut self) -> u64 {
+        self.next += 1;
+        self.next
+    }
+
+    /// Keeps `pixels` (none when no icon was found) as the answer for `key` at `edge`, found
+    /// elsewhere (a lookup on another thread). An answer already kept stays.
+    pub fn fill(&mut self, key: IconKey, edge: u32, pixels: Option<Pixels>) -> &Slot {
+        match self.slots.entry((key, edge)) {
+            Entry::Occupied(kept) => kept.into_mut(),
+            Entry::Vacant(room) => {
+                self.next += 1;
+                room.insert(Slot {
+                    id: self.next,
+                    pixels,
+                })
+            }
+        }
+    }
+
     /// Forgets everything (the overview closed).
     pub fn clear(&mut self) {
         self.slots.clear();

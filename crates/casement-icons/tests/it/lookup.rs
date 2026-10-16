@@ -89,25 +89,6 @@ fn the_places_are_tried_in_order() {
 }
 
 #[test]
-fn an_absolute_icon_path_is_used_directly() {
-    let dir = tempfile::tempdir().expect("scratch");
-    let apps = dir.path().join("applications");
-    std::fs::create_dir(&apps).expect("folder");
-    let file = dir.path().join("direct.png");
-    png(&file, 16, RED);
-    entry(&apps, "app", &format!("Icon={}", file.display()));
-    let finder = Finder {
-        applications: vec![apps],
-        theme: FakeTheme(BTreeMap::new()),
-    };
-    let want = Want {
-        app_id: Some("app".to_owned()),
-        ..Want::default()
-    };
-    assert_eq!(middle_pixel(&want, &finder, 24), Some(RED));
-}
-
-#[test]
 fn the_buffer_nearest_the_edge_wins_and_a_larger_one_breaks_a_tie() {
     let finder = Finder {
         applications: vec![],

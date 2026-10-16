@@ -12,6 +12,7 @@ publish.workspace = true
 freedesktop-icons = { workspace = true }
 image = { workspace = true }
 resvg = { workspace = true }
+rustix = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

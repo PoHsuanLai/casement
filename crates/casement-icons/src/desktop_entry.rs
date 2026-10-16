@@ -65,8 +65,12 @@ pub fn entry_for(dirs: &[PathBuf], app_id: &str) -> Option<DesktopEntry> {
         })
 }
 
+/// The largest desktop entry read, in bytes. Real ones are a few kilobytes.
+const ENTRY_LIMIT: u64 = 256 * 1024;
+
 fn read(path: &Path) -> Option<DesktopEntry> {
-    std::fs::read_to_string(path).ok().map(|text| parse(&text))
+    let bytes = crate::read::plain_file(path, ENTRY_LIMIT).ok()?;
+    Some(parse(&String::from_utf8_lossy(&bytes)))
 }
 
 /// Every entry in `dirs` with its file stem: folders in the order given, files by name.

@@ -16,8 +16,10 @@ mod decode;
 mod desktop_entry;
 mod error;
 mod finder;
+mod name;
 mod pixels;
 mod plate;
+mod read;
 mod theme;
 mod want;
 
@@ -26,6 +28,7 @@ pub use decode::{load, scale_straight};
 pub use desktop_entry::{DesktopEntry, entry_for, parse as parse_desktop_entry};
 pub use error::IconError;
 pub use finder::Finder;
+pub use name::IconName;
 pub use pixels::Pixels;
 pub use plate::plate;
 pub use theme::{SystemTheme, ThemeLookup, theme_file, theme_named};

@@ -4,6 +4,7 @@
 
 pub(crate) mod book;
 mod search;
+mod worker;
 
 pub use book::IconBook;
 pub use search::IconSearch;

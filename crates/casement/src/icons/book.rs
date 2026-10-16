@@ -1,14 +1,15 @@
 //! The icons of the windows on show, found when Mission Control opens and dropped when it closes.
 
 use super::IconSearch;
+use super::worker::{Job, Worker};
 use casement_core::WindowId;
 use casement_core::geometry::{LogicalRect, buffer_size};
-use casement_icons::{Finder, IconCache, RgbaBuffer, SystemTheme, Want, plate};
+use casement_icons::{Finder, IconCache, IconKey, RgbaBuffer, Slot, SystemTheme, Want, plate};
 use casement_render::pass::ArgbImage;
 use casement_render::{OverviewIcon, TitleDraw};
 use casement_wayland::xdg_toplevel_icon::IconParts;
 use ds_core::geometry::scale::Scale;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 /// Whether Mission Control has been drawn since the book was last cleared.
@@ -20,7 +21,19 @@ enum Phase {
     Open,
 }
 
-/// The icons found for the windows of one Mission Control, by window and pixel edge.
+/// A question put to the icon thread whose answer has not come: the window shows its plate
+/// meanwhile.
+#[derive(Debug)]
+struct Waiting {
+    /// The question, to find its answer in the cache.
+    key: IconKey,
+    /// The plate drawn meanwhile, with an id of its own so it is uploaded once.
+    stand_in: TitleDraw,
+}
+
+/// The icons found for the windows of one Mission Control, by window and pixel edge. The files
+/// are read on a thread of their own: an icon not found yet is drawn as its plate, and replaces
+/// it the frame after it is.
 #[derive(Debug)]
 pub struct IconBook {
     /// Looks icons up; none when icons are off.
@@ -31,6 +44,12 @@ pub struct IconBook {
     phase: Phase,
     /// What the lookups found, by question and edge.
     cache: IconCache,
+    /// The thread that reads the files.
+    worker: Worker,
+    /// The questions put to the thread and not answered yet.
+    asked: BTreeSet<(IconKey, u32)>,
+    /// The windows drawn as their plate until their answer comes.
+    waiting: BTreeMap<(WindowId, u32), Waiting>,
     /// The raster each window draws, made from the cache.
     drawn: BTreeMap<(WindowId, u32), TitleDraw>,
     /// The icons last drawn, for the frames of the way out: the layout has no slots then, but
@@ -59,6 +78,9 @@ impl IconBook {
             config,
             phase: Phase::Closed,
             cache: IconCache::new(),
+            worker: Worker::default(),
+            asked: BTreeSet::new(),
+            waiting: BTreeMap::new(),
             drawn: BTreeMap::new(),
             shown: BTreeMap::new(),
         }
@@ -96,15 +118,49 @@ impl IconBook {
     pub fn clear(&mut self) {
         self.phase = Phase::Closed;
         self.cache.clear();
+        self.asked.clear();
+        self.waiting.clear();
         self.drawn.clear();
         self.shown.clear();
     }
 
-    /// The raster `window` draws for an icon of `icon` logical pixels at `scale`: found the first
-    /// time it is asked for (this reads files, so the loop asks when Mission Control opens, and a
-    /// window that appears later is found when it is first drawn) and kept after. `want` says what
-    /// to find; `plate_ink` is the straight RGBA of the plate drawn for an app with no icon.
-    /// Nothing when icons are off.
+    /// Files the answers the icon thread has given since the last call. An answer to a question
+    /// asked in a Mission Control that has closed since is dropped.
+    fn collect(&mut self) {
+        for found in self.worker.answers() {
+            if self.asked.remove(&(found.key.clone(), found.edge)) {
+                self.cache.fill(found.key, found.edge, found.pixels);
+            }
+        }
+    }
+
+    /// Puts `want` to the icon thread, once. A thread that cannot be reached answers "no icon"
+    /// at once, so the plate stays and the question is not asked again.
+    fn ask(&mut self, want: Want, key: &IconKey, edge: u32) {
+        let Some(finder) = self.finder.clone() else {
+            return;
+        };
+        if self.cache.get(key, edge).is_some() || !self.asked.insert((key.clone(), edge)) {
+            return;
+        }
+        let job = Job {
+            key: key.clone(),
+            want,
+            edge,
+            finder,
+        };
+        if self.worker.submit(job).is_err() {
+            self.asked.remove(&(key.clone(), edge));
+            self.cache.fill(key.clone(), edge, None);
+        }
+    }
+
+    /// The raster `window` draws for an icon of `icon` logical pixels at `scale`. The first time it
+    /// is asked for, the icon is looked for on the icon thread (the loop asks when Mission Control
+    /// opens, and a window that appears later is asked for when it is first drawn) and the plate
+    /// is drawn meanwhile; once it is found the icon replaces the plate and is kept. `want` says
+    /// what to find, and is called once per window and edge; `plate_ink` is the straight RGBA of
+    /// the plate drawn for an app with no icon. Nothing when icons are off.
     pub fn draw_of(
         &mut self,
         window: WindowId,
@@ -115,22 +171,70 @@ impl IconBook {
     ) -> Option<TitleDraw> {
         self.finder.as_ref()?;
         self.open();
-        let finder = self.finder.as_ref()?;
+        self.collect();
         let edge = buffer_size(icon.size, scale).w;
-        if let Some(kept) = self.drawn.get(&(window, edge)) {
+        let at = (window, edge);
+        if let Some(kept) = self.drawn.get(&at) {
             return Some(kept.clone());
         }
-        let slot = self.cache.ensure(&want(), edge, finder);
-        let pixels = slot.pixels.clone().or_else(|| plate(edge, plate_ink))?;
-        let draw = TitleDraw {
-            id: slot.id,
+        let key = match self.waiting.get(&at) {
+            Some(waiting) => waiting.key.clone(),
+            None => {
+                let want = want();
+                let key = want.key();
+                self.ask(want, &key, edge);
+                key
+            }
+        };
+        match self.cache.get(&key, edge) {
+            Some(slot) => {
+                let draw = draw_of_slot(slot, edge, plate_ink)?;
+                self.waiting.remove(&at);
+                self.drawn.insert(at, draw.clone());
+                Some(draw)
+            }
+            None => self.stand_in(at, key, edge, plate_ink),
+        }
+    }
+
+    /// The plate drawn for `at` while its icon is looked for.
+    fn stand_in(
+        &mut self,
+        at: (WindowId, u32),
+        key: IconKey,
+        edge: u32,
+        plate_ink: [u8; 4],
+    ) -> Option<TitleDraw> {
+        if let Some(waiting) = self.waiting.get(&at) {
+            return Some(waiting.stand_in.clone());
+        }
+        let pixels = plate(edge, plate_ink)?;
+        let stand_in = TitleDraw {
+            id: self.cache.reserve(),
             width: pixels.edge,
             height: pixels.edge,
             rgba: pixels.rgba,
         };
-        self.drawn.insert((window, edge), draw.clone());
-        Some(draw)
+        self.waiting.insert(
+            at,
+            Waiting {
+                key,
+                stand_in: stand_in.clone(),
+            },
+        );
+        Some(stand_in)
     }
+}
+
+/// The raster for `slot`: its icon, else the plate in `plate_ink`.
+fn draw_of_slot(slot: &Slot, edge: u32, plate_ink: [u8; 4]) -> Option<TitleDraw> {
+    let pixels = slot.pixels.clone().or_else(|| plate(edge, plate_ink))?;
+    Some(TitleDraw {
+        id: slot.id,
+        width: pixels.edge,
+        height: pixels.edge,
+        rgba: pixels.rgba,
+    })
 }
 
 /// What to find for a window with this `app_id` and the icon its toplevel set (if it did): the
@@ -199,6 +303,39 @@ mod tests {
         });
         assert!(again.is_some());
         assert_eq!(asked, 2);
+    }
+
+    #[test]
+    fn an_icon_replaces_its_plate_once_the_thread_has_found_it() {
+        let mut book = IconBook::new(IconSearch::Dirs {
+            applications: Vec::new(),
+            config: None,
+        });
+        let red = RgbaBuffer {
+            edge: 16,
+            rgba: [255, 0, 0, 255].repeat(16 * 16),
+        };
+        let want = || Want {
+            buffers: vec![red.clone()],
+            ..Want::default()
+        };
+        let draw = |book: &mut IconBook| {
+            book.draw_of(WindowId(1), icon(), Scale::ONE, [9, 9, 9, 255], want)
+                .expect("a draw")
+        };
+        let plate_first = draw(&mut book);
+        // The plate is the same raster until the answer comes.
+        assert_eq!(draw(&mut book).id, plate_first.id);
+        // Up to ten seconds for the thread; it takes a few milliseconds.
+        let found = (0..2000)
+            .find_map(|_| {
+                let now = draw(&mut book);
+                std::thread::sleep(std::time::Duration::from_millis(5));
+                (now.id != plate_first.id).then_some(now)
+            })
+            .expect("the icon never came");
+        let middle = (32 * found.width as usize + 32) * 4;
+        assert_eq!(&found.rgba[middle..middle + 4], &[255, 0, 0, 255]);
     }
 
     #[test]
