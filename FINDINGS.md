@@ -4039,3 +4039,51 @@ cancels on hardware; honour cursor-hidden in output captures") described the cod
   does not override `read_scene` (the default, unchanged but for its arguments).
 - **By hand.** `docs/manual-checks.md` "Capture on a real seat (KMS)": the eyedropper on hardware, `grim -c` / no `-c`, a 1 x 1
   region. Queue the first in `sill/docs/manual-checks.md` too, whose last line still says the tty has no read-back.
+
+## cas36-castframe: the screencast "EPIPE after the first frame" is not casement (2026-10-16)
+
+Read from `evidence/` (casement, transom and scenario logs of the `portal-quire` screencast chain) and the code; nothing was
+built or run. Report: casement does not close the client, panic, or hang. No casement source changed; two regression tests and a
+test-client helper pin the wire behaviour transom relies on.
+
+- **What casement does.** The first `capture()` of a session is answered from the last presented frame (whole damage, `ready`;
+  about 85 ms in the debug build, the CPU conversion of an 8 MB frame in `CapturedFrame::from_rgba`). The next `capture()` finds
+  `damage.since(output, last)` empty on a still output and is parked by `ImageCapturePart::wait_frame`
+  (`handlers/image_capture/frames.rs::capture`, "the first frame of a session is whole; the next waits for something to change").
+  That is what ext-image-copy-capture asks for (a frame is sent only when something changed), so casement logs nothing after it:
+  there is no later request to log. A headless output with no moving pointer and no client damage never presents damage, so the
+  parked frame stays parked. Nothing in casement posts a protocol error or kills a client for this path: `grep` for
+  `kill_client`/`post_error` in `casement-wayland/src/image_capture*` and `handlers/image_capture*` finds none; smithay's only
+  error there is `DuplicateFrame` (a `create_frame` while the previous frame is not destroyed), which transom's order
+  (`frame.destroy()` before `create_frame`) never triggers, and which would show as `wl_display.error` in `WAYLAND_DEBUG`.
+- **Where the EPIPE comes from.** transom's `Share::drop` (`crates/transom/src/screencast/run.rs`) calls
+  `Canceller::cancel` (`capture/mod.rs`), which does `shutdown(Both)` on a duplicate of its own Wayland socket to unblock
+  `Copier::frame`, then the next write on that connection fails with "Io error: Broken pipe". The timestamps prove it: in
+  `transom-wldebug.log` the second `capture()` is at 1422158.8 ms and the next line, `session.destroy()` from `Copier::drop`, at
+  1442123.6 ms, 19.96 s later. A connection the compositor had closed would have ended the pump thread (and dropped the
+  `Copier`) at once. The 20 s is `timeout 20` in `dev/lib/cast_check.sh::frames_of` plus `stop_cast`, after which the next cast
+  starts (the "later connection", 61 ms after the drop). That second connection's `capture()` is followed by the same
+  `Share::drop` 48 ms later (end of the script, `down.sh`), before casement's 85 ms answer could come: its log stops at
+  `capture()` for that reason, not because casement hung. `casement-wldebug.log` shows casement accepting the connection and
+  serving globals throughout, so the main thread was never blocked.
+- **The real failures, both on transom's side (not edited).** (1) `FAIL 3`: `pipewiresrc path=<node>` says "target not found",
+  so no consumer ever links to the node `Start` returned (`screencast/pipewire.rs` reads `stream.node_id()` at the first
+  Paused/Streaming state and the node is `Video/Source`, "not linked to anything"); check that the id is one `pipewiresrc`
+  accepts as `path` in this PipeWire (object.serial or node.name rather than the node id) and that the jail's session manager
+  sees the node. (2) Even with that fixed the acceptance script wants 5 buffers from a still output, and transom produces at
+  most one: `Copier::frame` blocks forever on a still source (its own doc: "a static picture yields none") and
+  `fill_next_buffer` writes only when a consumer buffer is free, so the first frame, pushed before any consumer exists, is
+  dropped. The fix is in transom: let `Copier::frame` wait with a timeout (poll the connection fd for the frame interval; on
+  timeout return the last frame again, or have `Pump` re-push the cached last frame at `max_framerate`), and keep the last frame
+  in the sink so a consumer that links late gets a buffer.
+- **A minor thing seen, not changed.** A frame parked in `waiting` whose client destroyed it stays there until the session's next
+  request replaces it or damage arrives; `release_waiting` then serves the dead frame once, which records `delivered` and so
+  swallows that damage for the session's next frame. Implementing `ImageCopyCaptureHandler::frame_aborted` to drop the parked
+  frame would close it; transom destroys a frame only after its outcome, so it does not hit this.
+- **Tests added** (`crates/casement-testkit/tests/it/protocol/image_capture.rs`): `a_session_serves_frame_after_frame_into_one_buffer`
+  (a whole first frame, then three frames each into the same buffer after a pointer move, the session and connection alive, the last
+  equal to the scanout) and `a_waiting_frame_does_not_hold_up_a_second_session` (a parked frame on one session; a second session
+  opened meanwhile gets a whole first frame; both are answered when the pointer moves; closing the first leaves the second
+  working). The test client gained `BufferAsk::Reuse` (`casement-testclient/src/capture/copy_session.rs`): the buffer of the
+  last request attached to the next frame, as transom does. **Unsure it compiles or passes** (written without a build): the
+  `Kept` refactor of `OutputCapture::request`, and the two tests' pump sequencing.

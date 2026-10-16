@@ -225,6 +225,129 @@ fn a_second_frame_waits_for_a_change_and_reports_it() {
     assert!(covers(100, 100), "the new place of the cursor");
 }
 
+/// Pumps the compositor and every capture until none of them moves.
+fn settle_all(fixture: &mut Fixture, captures: &mut [&mut OutputCapture]) {
+    for _ in 0..100 {
+        let mut pumped = fixture.pump();
+        for capture in captures.iter_mut() {
+            if capture.pump().expect("pump the capture") != Pumped::Quiet {
+                pumped = Pumped::Moved;
+            }
+        }
+        if pumped == Pumped::Quiet {
+            return;
+        }
+    }
+    panic!("the compositor and the captures did not go quiet");
+}
+
+/// A screen share keeps one buffer and asks frame after frame on one session: each frame is
+/// destroyed and the next created with the same buffer. Every one is answered, none ends the
+/// session or the connection, and the last equals the scanout.
+#[test]
+fn a_session_serves_frame_after_frame_into_one_buffer() {
+    let mut fixture = Fixture::start(small()).expect("fixture");
+    let pointer = pointer_at(&mut fixture, (500, 400));
+    let client = fixture.connect(ConnectionRole::Public);
+    fixture.frames(&name("HEADLESS-1"), FrameCount(2));
+    let mut capture = OutputCapture::start(fixture.client(client).globals()).expect("the managers");
+    settle(&mut fixture, &mut capture);
+    capture
+        .open("HEADLESS-1", CursorMode::Painted)
+        .expect("a session");
+    settle(&mut fixture, &mut capture);
+
+    capture.request(BufferAsk::Announced).expect("a frame");
+    settle(&mut fixture, &mut capture);
+    let mut last = capture.take().expect("answered").expect("a frame");
+    assert_eq!(last.damage.len(), 1, "the first frame is whole");
+
+    for at in [(100, 100), (300, 250), (500, 400)] {
+        capture.request(BufferAsk::Reuse).expect("the same buffer");
+        move_pointer(&mut fixture, pointer, at);
+        fixture.frames(&name("HEADLESS-1"), FrameCount(2));
+        settle(&mut fixture, &mut capture);
+        last = capture
+            .take()
+            .unwrap_or_else(|| panic!("no frame after the pointer went to {at:?}"))
+            .expect("a frame, not a failure");
+        assert!(!last.damage.is_empty(), "something changed at {at:?}");
+        assert!(!capture.is_stopped(), "the session goes on");
+    }
+    let scanout = fixture.shot(ShotTarget::Output(name("HEADLESS-1")));
+    assert_eq!(
+        last.to_rgba8().expect("argb8888 reads as rgba"),
+        scanout.into_raw(),
+        "the last frame equals the scanout"
+    );
+}
+
+/// A frame that waits for a change (a still desktop sends none) leaves the client connected and
+/// the compositor serving: a second session, opened while the first still waits, gets its own
+/// whole first frame, and both are answered when something moves. Closing the first leaves the
+/// second working.
+#[test]
+fn a_waiting_frame_does_not_hold_up_a_second_session() {
+    let mut fixture = Fixture::start(small()).expect("fixture");
+    let pointer = pointer_at(&mut fixture, (500, 400));
+    let client = fixture.connect(ConnectionRole::Public);
+    fixture.frames(&name("HEADLESS-1"), FrameCount(2));
+    let mut first = OutputCapture::start(fixture.client(client).globals()).expect("the managers");
+    settle_all(&mut fixture, &mut [&mut first]);
+    first
+        .open("HEADLESS-1", CursorMode::Painted)
+        .expect("a session");
+    settle_all(&mut fixture, &mut [&mut first]);
+    first.request(BufferAsk::Announced).expect("a frame");
+    settle_all(&mut fixture, &mut [&mut first]);
+    first.take().expect("answered").expect("a frame");
+
+    // The still desktop: the first session's next frame waits, and frames pass over it.
+    first.request(BufferAsk::Reuse).expect("the same buffer");
+    fixture.frames(&name("HEADLESS-1"), FrameCount(3));
+    settle_all(&mut fixture, &mut [&mut first]);
+    assert!(first.take().is_none(), "no change, no frame");
+    assert!(!first.is_stopped(), "waiting does not end the session");
+
+    let mut second = OutputCapture::start(fixture.client(client).globals()).expect("the managers");
+    settle_all(&mut fixture, &mut [&mut first, &mut second]);
+    second
+        .open("HEADLESS-1", CursorMode::Painted)
+        .expect("a second session");
+    settle_all(&mut fixture, &mut [&mut first, &mut second]);
+    second.request(BufferAsk::Announced).expect("a frame");
+    settle_all(&mut fixture, &mut [&mut first, &mut second]);
+    let whole = second.take().expect("answered").expect("a frame");
+    assert_eq!(whole.damage.len(), 1, "a session's first frame is whole");
+    assert_eq!((whole.damage[0].w, whole.damage[0].h), (640, 480));
+    assert!(first.take().is_none(), "the first still waits");
+
+    second.request(BufferAsk::Reuse).expect("the same buffer");
+    move_pointer(&mut fixture, pointer, (100, 100));
+    fixture.frames(&name("HEADLESS-1"), FrameCount(2));
+    settle_all(&mut fixture, &mut [&mut first, &mut second]);
+    first
+        .take()
+        .expect("the first session was answered once something moved")
+        .expect("a frame, not a failure");
+    second
+        .take()
+        .expect("the second session was answered")
+        .expect("a frame, not a failure");
+
+    first.close().expect("close the first session");
+    settle_all(&mut fixture, &mut [&mut first, &mut second]);
+    second.request(BufferAsk::Reuse).expect("the same buffer");
+    move_pointer(&mut fixture, pointer, (300, 250));
+    fixture.frames(&name("HEADLESS-1"), FrameCount(2));
+    settle_all(&mut fixture, &mut [&mut first, &mut second]);
+    second
+        .take()
+        .expect("the second session goes on after the first closed")
+        .expect("a frame, not a failure");
+    assert!(!second.is_stopped());
+}
+
 /// Two outputs side by side, a cursor session on the second.
 fn two_outputs(scale: u32) -> FixtureSpec {
     let first = format!("HEADLESS-1:640x480@60000:{scale}:0,0");

@@ -131,6 +131,17 @@ pub enum BufferAsk {
     /// An `argb8888` buffer of this size, whatever the session announced (to test the
     /// compositor's refusal).
     Sized(Size),
+    /// The buffer the last request attached, attached again to a new frame (what a screen
+    /// share does: one buffer, a frame after frame). Refused before any request.
+    Reuse,
+}
+
+/// A buffer a frame was asked into, kept so that a later request can attach it again.
+#[derive(Debug)]
+struct Kept {
+    file: File,
+    buffer: WlBuffer,
+    size: Size,
 }
 
 /// One capture session of one output, on a side queue of a test client.
@@ -144,6 +155,7 @@ pub struct OutputCapture {
     sources: ExtOutputImageCaptureSourceManagerV1,
     seat: Option<WlSeat>,
     live: Option<Live>,
+    kept: Option<Kept>,
 }
 
 /// The protocol objects of the open session.
@@ -200,6 +212,7 @@ impl OutputCapture {
             sources,
             seat,
             live: None,
+            kept: None,
         })
     }
 
@@ -291,6 +304,43 @@ impl OutputCapture {
     /// Asks for a frame into a buffer of `ask`. The session's constraints must have arrived.
     pub fn request(&mut self, ask: BufferAsk) -> Result<(), ClientError> {
         self.state.reopen();
+        let kept = match ask {
+            BufferAsk::Reuse => self.kept.take().ok_or_else(|| {
+                ClientError::Dispatch("no buffer has been attached yet".to_owned())
+            })?,
+            other => self.allocate(other)?,
+        };
+        let qh = self.queue.handle();
+        let (width, height) = (fits(kept.size.w)?, fits(kept.size.h)?);
+        let file = kept
+            .file
+            .try_clone()
+            .map_err(|error| ClientError::Dispatch(error.to_string()))?;
+        let live = self
+            .live
+            .as_mut()
+            .ok_or_else(|| ClientError::Dispatch("no session is open".to_owned()))?;
+        // A session has one frame at a time: the last one goes before the next is made.
+        if let Some(last) = live.frame.take() {
+            last.destroy();
+        }
+        let frame = live.session.create_frame(&qh, ());
+        frame.attach_buffer(&kept.buffer);
+        frame.damage_buffer(0, 0, width, height);
+        frame.capture();
+        live.frame = Some(frame);
+        self.state.buffer = Some(Pending {
+            file,
+            stride: kept.size.w.saturating_mul(4),
+            rows: kept.size.h,
+            _buffer: kept.buffer.clone(),
+        });
+        self.kept = Some(kept);
+        flush(&self.connection)
+    }
+
+    /// A new shared-memory buffer for `ask` (not [`BufferAsk::Reuse`]).
+    fn allocate(&self, ask: BufferAsk) -> Result<Kept, ClientError> {
         let session = self
             .session()
             .ok_or_else(|| ClientError::Dispatch("no session is open".to_owned()))?;
@@ -300,6 +350,7 @@ impl OutputCapture {
                 ShmFormat::pick(&session.formats).map(|f| f.code()),
             ),
             BufferAsk::Sized(size) => (Some(size), Some(ShmFormat::ARGB8888.code())),
+            BufferAsk::Reuse => (None, None),
         };
         let (Some(size), Some(code)) = (size, format) else {
             return Err(ClientError::Dispatch(
@@ -316,9 +367,6 @@ impl OutputCapture {
         );
         ftruncate(&file, length).map_err(|error| ClientError::Dispatch(error.to_string()))?;
         let qh = self.queue.handle();
-        let fits = |n: u32| {
-            i32::try_from(n).map_err(|_| ClientError::Dispatch("buffer too large".to_owned()))
-        };
         let pool = self.shm.create_pool(
             file.as_fd(),
             fits(u32::try_from(length).unwrap_or(u32::MAX))?,
@@ -335,26 +383,7 @@ impl OutputCapture {
             (),
         );
         pool.destroy();
-        let live = self
-            .live
-            .as_mut()
-            .ok_or_else(|| ClientError::Dispatch("no session is open".to_owned()))?;
-        // A session has one frame at a time: the last one goes before the next is made.
-        if let Some(last) = live.frame.take() {
-            last.destroy();
-        }
-        let frame = live.session.create_frame(&qh, ());
-        frame.attach_buffer(&buffer);
-        frame.damage_buffer(0, 0, fits(size.w)?, fits(size.h)?);
-        frame.capture();
-        live.frame = Some(frame);
-        self.state.buffer = Some(Pending {
-            file,
-            stride,
-            rows: size.h,
-            _buffer: buffer,
-        });
-        flush(&self.connection)
+        Ok(Kept { file, buffer, size })
     }
 
     /// The finished frame, or why it failed; `None` while it is still going. Takes it.
@@ -390,6 +419,11 @@ fn flush(connection: &Connection) -> Result<(), ClientError> {
     connection
         .flush()
         .map_err(|error| ClientError::Dispatch(error.to_string()))
+}
+
+/// `n` as a wire integer.
+fn fits(n: u32) -> Result<i32, ClientError> {
+    i32::try_from(n).map_err(|_| ClientError::Dispatch("buffer too large".to_owned()))
 }
 
 /// A wire enum's number, known or not.
