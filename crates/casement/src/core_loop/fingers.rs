@@ -47,7 +47,7 @@ pub(super) fn follow(state: &mut State) {
 fn spread_of(state: &State) -> Arrangement {
     match state.core.model.overview() {
         Overview::Entering | Overview::Open => state.core.arrangement.clone(),
-        Overview::Closed | Overview::Leaving => {
+        _ => {
             let spec =
                 spec_of_framed(&state.core.model, &frames::reserves(state)).in_mission_control();
             state.core.layout.arrange(&spec, &state.core.knobs)
