@@ -112,9 +112,10 @@ impl CaptureGpu for RealCaptureGpu {
         &mut self,
         output: &OutputName,
         cursor: CursorInclusion,
+        area: PhysicalRect,
     ) -> Result<CapturedFrame, BackendError> {
         let mut renderer = self.renderer()?;
-        self.store()?.read(&mut renderer, output, cursor)
+        self.store()?.read(&mut renderer, output, cursor, area)
     }
 
     fn forget_scene(&mut self, output: &OutputName) {

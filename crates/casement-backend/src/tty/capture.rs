@@ -162,15 +162,16 @@ impl TtyBackend {
         gpu.blit_scene(output, cursor, from, target)
     }
 
-    /// The frame last drawn for `output` on the display GPU, read back to the CPU (a
-    /// shared-memory buffer).
+    /// `area` of the frame last drawn for `output` on the display GPU, read back to the CPU (a
+    /// shared-memory buffer). Only `area` is copied: a one-pixel pick reads one pixel.
     pub fn read_output(
         &mut self,
         output: &OutputName,
         cursor: CursorInclusion,
+        area: PhysicalRect,
     ) -> Result<CapturedFrame, BackendError> {
         let mut gpu = self.devices.capture_gpu().ok_or(BackendError::NoFrame)?;
-        gpu.read_scene(output, cursor)
+        gpu.read_scene(output, cursor, area)
     }
 
     /// `output` is not watched any more: the display GPU frees its images.

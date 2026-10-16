@@ -136,13 +136,15 @@ pub(in crate::handlers) fn last_shown(
     }))
 }
 
-/// The frame `output` last presented, with or without the cursor as `paint` says, as a capture,
-/// and its instant; none while the output has presented none (or, on a real seat, the shadow
-/// has drawn none). A frame that stayed on the GPU is read back here: this is the read-back path.
+/// `area` of the frame `output` last presented, with or without the cursor as `paint` says, as a
+/// capture, and its instant; none while the output has presented none (or, on a real seat, the
+/// shadow has drawn none). A frame that stayed on the GPU is read back here, only `area` of it
+/// (a one-pixel pick copies one pixel): this is the read-back path.
 pub(in crate::handlers) fn last_frame(
     state: &mut State,
     output: &OutputKey,
     paint: CursorPaint,
+    area: PhysicalRect,
 ) -> Result<Option<(CapturedFrame, Mono)>, CaptureFailure> {
     let Some(shown) = last_shown(state, output)? else {
         return Ok(None);
@@ -152,8 +154,10 @@ pub(in crate::handlers) fn last_frame(
         Some(FramePixels::Resident(_))
     );
     let captured = match resident {
-        true => read_resident(state, output, paint)?,
-        false => read_shadow(state, output, paint)?,
+        true => read_resident(state, output, paint, area)?,
+        false => read_shadow(state, output, paint)?
+            .cropped(area)
+            .ok_or(CaptureFailure::BufferMismatch)?,
     };
     Ok(Some((captured, shown.at)))
 }
@@ -183,17 +187,18 @@ fn read_shadow(
     Ok(CapturedFrame::from_rgba(area, &pixels.bytes))
 }
 
-/// The frame the display GPU kept for `output`, read back to the CPU.
+/// `area` of the frame the display GPU kept for `output`, read back to the CPU.
 fn read_resident(
     state: &mut State,
     output: &OutputKey,
     paint: CursorPaint,
+    area: PhysicalRect,
 ) -> Result<CapturedFrame, CaptureFailure> {
     let name = output_name(state, output)?;
     let BackendKind::Tty(tty) = &mut state.backend else {
         return Err(CaptureFailure::Renderer);
     };
-    tty.read_output(&name, direct::inclusion(paint))
+    tty.read_output(&name, direct::inclusion(paint), area)
         .map_err(|error| {
             tracing::warn!(%error, "the capture frame was not read back from the GPU");
             CaptureFailure::Renderer
@@ -218,10 +223,7 @@ pub(in crate::handlers) fn write_output(
             }
         }
     }
-    let (captured, _) = last_frame(state, output, paint)?.ok_or(CaptureFailure::Renderer)?;
-    let part = captured
-        .cropped(area)
-        .ok_or(CaptureFailure::BufferMismatch)?;
+    let (part, _) = last_frame(state, output, paint, area)?.ok_or(CaptureFailure::Renderer)?;
     deliver(state, buffer, &part).map_err(|error| {
         tracing::warn!(%error, "a capture frame was not written");
         CaptureFailure::BufferMismatch

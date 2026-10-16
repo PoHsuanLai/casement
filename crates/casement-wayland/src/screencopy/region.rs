@@ -71,6 +71,14 @@ mod tests {
             ((0, 0, 0, 10), 120, None),
             ((0, 0, 10, -1), 120, None),
             ((-50, 0, 40, 10), 120, None),
+            // A one-pixel pick (a colour picker's `capture_output_region` of 1 x 1): one pixel at
+            // 1x, the square the logical pixel covers at 2x, one rounded pixel at 1.5x, and the
+            // last pixel of the output still maps.
+            ((5, 5, 1, 1), 120, Some((5, 5, 1, 1))),
+            ((5, 5, 1, 1), 240, Some((10, 10, 2, 2))),
+            ((5, 5, 1, 1), 180, Some((8, 8, 1, 1))),
+            ((639, 479, 1, 1), 120, Some((639, 479, 1, 1))),
+            ((640, 479, 1, 1), 120, None),
         ];
         for (rect, scale, expected) in table {
             assert_eq!(region(rect, scale), expected, "{rect:?} at {scale}");

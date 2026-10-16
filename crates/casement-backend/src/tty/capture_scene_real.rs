@@ -9,14 +9,16 @@ use crate::backend::BackendError;
 use crate::headless::{Cursorless, FrameSource, transform_of};
 use casement_core::OutputName;
 use casement_core::geometry::{PhysicalRect, PhysicalSize};
-use casement_render::pass::{CapturedFrame, CursorInclusion, blit_texture};
+use casement_render::pass::{
+    CaptureRequest, CapturedFrame, CursorInclusion, blit_texture, capture_output,
+};
 use casement_render::render_output;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
-use smithay::backend::renderer::{Bind, ExportMem, Offscreen};
-use smithay::utils::{Buffer, Rectangle, Size};
+use smithay::backend::renderer::{Bind, Offscreen};
+use smithay::utils::{Buffer, Size};
 use std::collections::BTreeMap;
 
 /// Every watched output's scenes.
@@ -76,26 +78,24 @@ impl SceneStore {
         blit_texture(renderer, &layer.texture, from, target).map_err(BackendError::from)
     }
 
-    /// The frame last drawn for `output`, read back.
+    /// `area` of the frame last drawn for `output`, read back: only those pixels are copied
+    /// off the GPU (`capture_output` reads the region, so a one-pixel pick copies one pixel).
     pub(super) fn read(
         &self,
         renderer: &mut GlesRenderer,
         output: &OutputName,
         cursor: CursorInclusion,
+        area: PhysicalRect,
     ) -> Result<CapturedFrame, BackendError> {
-        let (size, layer) = self.layer(output, cursor)?;
-        let region = Rectangle::<i32, Buffer>::from_size(buffer_size(size)?);
+        let scenes = self.scenes.get(output).ok_or(BackendError::NoFrame)?;
+        if !scenes.picture.holds(area) {
+            return Err(BackendError::NoFrame);
+        }
+        let (_, layer) = self.layer(output, cursor)?;
         let mut texture = layer.texture.clone();
         let framebuffer = renderer.bind(&mut texture)?;
-        let mapping = renderer.copy_framebuffer(&framebuffer, region, Fourcc::Abgr8888)?;
-        let rgba = renderer.map_texture(&mapping)?;
-        let area = PhysicalRect {
-            x: 0,
-            y: 0,
-            w: size.w,
-            h: size.h,
-        };
-        Ok(CapturedFrame::from_rgba(area, rgba))
+        capture_output(renderer, &framebuffer, &CaptureRequest::new(area, cursor))
+            .map_err(BackendError::from)
     }
 
     /// Frees `output`'s images.
