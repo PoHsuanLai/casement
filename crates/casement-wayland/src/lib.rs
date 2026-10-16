@@ -22,6 +22,7 @@
 //! ```
 
 pub mod client;
+pub mod client_file;
 pub mod convert;
 pub mod limits;
 pub mod serial;

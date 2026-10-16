@@ -68,3 +68,29 @@ fn virtual_keys_are_origin_virtual_and_count_as_activity() {
         }]
     );
 }
+
+/// CASW-09: a virtual keyboard may send `MAX_KEYMAPS` keymaps (each is compiled by libxkbcommon
+/// on the loop); the next one cuts its client with `wl_display.no_memory` (code 2).
+#[test]
+fn a_keyboard_that_sends_keymaps_without_end_is_cut() {
+    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let id = fixture.connect(ConnectionRole::Public);
+    fixture.pump();
+    let board = VirtualBoard::start(fixture.client(id).globals()).expect("the keyboard");
+    fixture.pump();
+    for _ in 0..casement_wayland::limits::MAX_KEYMAPS {
+        board.keymap(KEYMAP).expect("keymap");
+    }
+    fixture.pump();
+    assert!(
+        fixture.client(id).protocol_error().is_none(),
+        "up to the cap is allowed"
+    );
+    board.keymap(KEYMAP).expect("keymap");
+    fixture.pump();
+    let error = fixture
+        .client(id)
+        .protocol_error()
+        .expect("the client past the cap is cut");
+    assert_eq!((error.interface.as_str(), error.code), ("wl_display", 2));
+}

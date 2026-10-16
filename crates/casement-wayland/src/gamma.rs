@@ -9,6 +9,7 @@
 //! length is `invalid_gamma`, and a ramp is raised to at least an eighth of the identity curve
 //! (`GammaTable::floored`, so a client cannot black the screen out). Hidden from sandboxed clients (I7).
 
+use crate::client_file;
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::output::{GammaRamp, GammaTable};
 use casement_core::policy::GlobalKind;
@@ -164,7 +165,11 @@ fn read_ramp(fd: OwnedFd, size: GammaSize) -> Option<GammaRamp> {
     let steps = usize::try_from(size.0).ok()?;
     let length = steps.checked_mul(6)?;
     let file = File::from(fd);
-    if file.metadata().ok()?.len() != u64::try_from(length).ok()? {
+    // Only a memory file is read, and it is asked its length only then: a file a hostile
+    // process serves would block either on the loop (CASW-09).
+    if !client_file::is_memory(&file)
+        || file.metadata().ok()?.len() != u64::try_from(length).ok()?
+    {
         return None;
     }
     let mut bytes = vec![0; length];

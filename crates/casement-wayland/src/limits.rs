@@ -42,6 +42,10 @@ pub const MAX_ICON_BUFFERS: usize = 256;
 /// Foreign-toplevel exports (`zxdg_exporter_v2`) one client may hold.
 pub const MAX_EXPORTS: usize = 256;
 
+/// Keymaps one virtual keyboard may send: each is up to a mebibyte compiled by libxkbcommon on
+/// the loop, and a keyboard sets its keymap once or when the layout changes.
+pub const MAX_KEYMAPS: usize = 16;
+
 /// The objects whose count per client is capped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[non_exhaustive]
@@ -60,6 +64,8 @@ pub enum Limit {
     IconBuffers,
     /// `zxdg_exported_v2`.
     Exports,
+    /// `zwp_virtual_keyboard_v1.keymap` requests of one keyboard.
+    Keymaps,
 }
 
 /// Whether one more object fits.
@@ -82,6 +88,7 @@ impl Limit {
             Limit::WindowListManagers => MAX_WINDOW_LIST_MANAGERS,
             Limit::IconBuffers => MAX_ICON_BUFFERS,
             Limit::Exports => MAX_EXPORTS,
+            Limit::Keymaps => MAX_KEYMAPS,
         }
     }
 
@@ -95,6 +102,7 @@ impl Limit {
             Limit::WindowListManagers => "window list managers",
             Limit::IconBuffers => "icon buffers",
             Limit::Exports => "exported windows",
+            Limit::Keymaps => "keymaps",
         }
     }
 
@@ -145,6 +153,7 @@ mod tests {
             Limit::WindowListManagers,
             Limit::IconBuffers,
             Limit::Exports,
+            Limit::Keymaps,
         ];
         for limit in all {
             assert_eq!(limit.judge(0), Standing::Within, "{limit:?}");

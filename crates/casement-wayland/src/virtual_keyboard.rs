@@ -14,6 +14,8 @@
 //! different layout than the seat's types that layout's keys; and `modifiers` is checked but
 //! not applied (an on-screen keyboard sends its modifier keys as keys).
 
+use crate::client_file;
+use crate::limits::{self, Limit, Standing};
 use crate::states::GlobalFilter;
 use casement_core::input::DeviceClass;
 use casement_core::input::{Edge, InputEvent, InputKind, KeyCode, Origin};
@@ -34,7 +36,6 @@ use smithay::wayland::{Dispatch2, GlobalDispatch2};
 use std::collections::BTreeSet;
 use std::fs::File;
 use std::os::fd::OwnedFd;
-use std::os::unix::fs::FileExt;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 /// The version casement serves.
@@ -123,6 +124,7 @@ enum KeymapState {
 pub struct VirtualKeyboardData {
     device: DeviceId,
     keymap: Mutex<KeymapState>,
+    keymaps_sent: Mutex<usize>,
     pressed: Mutex<BTreeSet<KeyCode>>,
 }
 
@@ -131,6 +133,7 @@ impl VirtualKeyboardData {
         VirtualKeyboardData {
             device,
             keymap: Mutex::new(KeymapState::Missing),
+            keymaps_sent: Mutex::new(0),
             pressed: Mutex::new(BTreeSet::new()),
         }
     }
@@ -204,12 +207,14 @@ fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 /// The keymap text in `fd`, if it is at most [`KEYMAP_LIMIT`] bytes of UTF-8.
+///
+/// Only a memory file is read (`client_file`): a file a hostile process serves would block the
+/// read, and with it the loop (CASW-09).
 fn keymap_text(fd: OwnedFd, size: usize) -> Option<String> {
     if size == 0 || size > KEYMAP_LIMIT {
         return None;
     }
-    let mut bytes = vec![0; size];
-    File::from(fd).read_exact_at(&mut bytes, 0).ok()?;
+    let bytes = client_file::read_exactly(&File::from(fd), size)?;
     let text = String::from_utf8(bytes).ok()?;
     Some(text.trim_end_matches('\0').to_owned())
 }
@@ -268,6 +273,14 @@ where
 }
 
 impl VirtualKeyboardData {
+    /// Counts one more keymap request; a keyboard past [`Limit::Keymaps`] cuts its client.
+    fn keymap_over_the_cap(&self, client: &Client, handle: &DisplayHandle) -> Standing {
+        let mut sent = locked(&self.keymaps_sent);
+        let standing = limits::admit(handle, client, Limit::Keymaps, *sent);
+        *sent = sent.saturating_add(1);
+        standing
+    }
+
     /// Records `code`'s new edge and feeds the key to the model.
     fn key<D: VirtualKeyboardHandler>(&self, state: &mut D, code: KeyCode, edge: Edge) {
         if track(&mut locked(&self.pressed), code, edge) == Taken::No {
@@ -286,15 +299,18 @@ where
     fn request(
         &self,
         state: &mut D,
-        _client: &Client,
+        client: &Client,
         resource: &ZwpVirtualKeyboardV1,
         request: zwp_virtual_keyboard_v1::Request,
-        _handle: &DisplayHandle,
+        handle: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
         let keymap = *locked(&self.keymap);
         match request {
             zwp_virtual_keyboard_v1::Request::Keymap { format, fd, size } => {
+                if self.keymap_over_the_cap(client, handle) == Standing::Over {
+                    return;
+                }
                 let loaded = (format == KeymapFormat::XkbV1 as u32)
                     .then(|| keymap_text(fd, size as usize))
                     .flatten()
