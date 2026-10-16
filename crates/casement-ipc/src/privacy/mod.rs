@@ -15,10 +15,9 @@ mod write;
 
 pub use board::{EDIT_QUEUE, PrivacyBoard, PrivacyLink};
 pub use edit::PrivacyEdit;
-pub use keys::{
-    Listed, NOBODY_ASKED, OFF, ON, PRIVACY_PAGE, SET_BY_ADMINISTRATOR, Why, Write, listed,
-};
+pub use keys::{Listed, NOBODY_ASKED, OFF, ON, PRIVACY_PAGE, SET_BY_ADMINISTRATOR, listed};
 pub use module::{PRIVACY_PATH, PrivacyModule};
+pub use write::{Why, Write};
 
 pub(crate) use module::serve_privacy;
 

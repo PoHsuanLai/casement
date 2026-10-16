@@ -387,6 +387,7 @@ name = "casement-agent"
 version = "0.1.0"
 dependencies = [
  "casement-core",
+ "peephole-core",
  "reis",
  "smithay",
 ]
@@ -451,13 +452,17 @@ dependencies = [
  "calloop",
  "casement-backend",
  "casement-core",
+ "casement-protocols",
  "ds-core",
  "ds-settings",
+ "peephole-bus",
  "porter-core",
  "porter-dbus",
  "serde_json",
  "thiserror 2.0.21",
  "tokio",
+ "toml",
+ "tracing",
  "xkbcommon",
  "zbus",
 ]
@@ -2223,6 +2228,39 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
+name = "peephole"
+version = "0.1.1"
+source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.1#e1b1b6adaff180516f198cf5435e85e4dc36e971"
+dependencies = [
+ "peephole-core",
+ "rustix 1.1.5",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "peephole-bus"
+version = "0.1.1"
+source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.1#e1b1b6adaff180516f198cf5435e85e4dc36e971"
+dependencies = [
+ "futures-timer",
+ "peephole",
+ "peephole-core",
+ "thiserror 2.0.21",
+ "tokio",
+ "zbus",
+]
+
+[[package]]
+name = "peephole-core"
+version = "0.1.1"
+source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.1#e1b1b6adaff180516f198cf5435e85e4dc36e971"
+dependencies = [
+ "serde",
+ "thiserror 2.0.21",
+ "toml",
+]
+
+[[package]]
 name = "peniko"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2376,10 +2414,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "porter-daemon"
+version = "0.1.0"
+dependencies = [
+ "notify",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "porter-dbus"
 version = "0.1.0"
 dependencies = [
  "porter-core",
+ "porter-daemon",
  "serde",
  "serde_json",
  "thiserror 2.0.21",

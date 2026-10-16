@@ -46,13 +46,14 @@ pub struct RateLimit {
 impl RateLimit {
     /// Counts a call by `name` and says whether it is within the rate.
     pub fn admit(&mut self, name: &str) -> Admission {
+        let full = self.calls.len() >= TRACKED_CALLERS;
         match self.calls.get_mut(name) {
             Some(count) if *count >= CALLS_PER_WINDOW => Admission::Refuse,
             Some(count) => {
                 *count += 1;
                 Admission::Admit
             }
-            None if self.calls.len() >= TRACKED_CALLERS => Admission::Refuse,
+            None if full => Admission::Refuse,
             None => {
                 self.calls.insert(name.to_owned(), 1);
                 Admission::Admit

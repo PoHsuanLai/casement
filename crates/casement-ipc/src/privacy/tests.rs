@@ -176,6 +176,10 @@ async fn only_the_settings_app_may_write() {
         "off",
         "Settings reads its change back"
     );
+    assert_eq!(
+        set(&module, &grim, Value::from(7_i64)).await,
+        "org.quire.SettingsModule1.Error.BadValue"
+    );
     assert_eq!(set(&module, &forget, Value::from(true)).await, "granted");
     assert_eq!(
         channel.try_recv().ok(),
@@ -183,9 +187,5 @@ async fn only_the_settings_app_may_write() {
             subject: program("/usr/bin/grim"),
             power: Power::Screen
         })
-    );
-    assert_eq!(
-        set(&module, &grim, Value::from(7_i64)).await,
-        "org.quire.SettingsModule1.Error.BadValue"
     );
 }

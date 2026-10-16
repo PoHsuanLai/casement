@@ -17,10 +17,13 @@ use std::time::Duration;
 use zbus::Connection;
 use zbus::fdo::RequestNameFlags;
 
+/// Makes the caller check once the bus connection exists.
+type BuildCheck = Box<dyn FnOnce(&Connection) -> Arc<dyn CallerCheck> + Send>;
+
 /// How the callers of Compositor1 are told apart: made once the bus connection exists (the
 /// identifier asks the bus about its senders), and the window the rate limit counts in.
 pub struct CallerSetup {
-    build: Box<dyn FnOnce(&Connection) -> Arc<dyn CallerCheck> + Send>,
+    build: BuildCheck,
     window: Duration,
     privacy: Option<PrivacyLink>,
 }
