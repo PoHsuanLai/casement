@@ -400,3 +400,24 @@ fn unplugging_an_unknown_output_does_nothing() {
     assert_same_world(&again.model, &first.model, "unchanged");
     assert_eq!(last(&again), []);
 }
+
+/// CASC-13: a client that asks for Spaces in a loop stops at the Mac's limit; the Spaces
+/// already there stay.
+#[test]
+fn a_request_cannot_grow_an_outputs_desktops_past_the_limit() {
+    use casement_core::MAX_DESKTOPS_PER_OUTPUT;
+    use casement_core::space::WorkspaceRequest;
+    let key = headless("HEADLESS-1").key;
+    let ask = || {
+        Op::Event(Event::Workspace(WorkspaceRequest::Create {
+            output: key.clone(),
+            name: String::new(),
+        }))
+    };
+    let many = run(std::iter::once(plug("HEADLESS-1"))
+        .chain((0..MAX_DESKTOPS_PER_OUTPUT + 5).map(|_| ask()))
+        .collect());
+    assert_eq!(many.model.spaces().row(&key).len(), MAX_DESKTOPS_PER_OUTPUT);
+    let again = run_from(many.model.clone(), vec![ask()]);
+    assert_same_world(&again.model, &many.model, "one more desktop at the limit");
+}

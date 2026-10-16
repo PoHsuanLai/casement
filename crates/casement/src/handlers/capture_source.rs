@@ -15,6 +15,7 @@ mod render;
 use crate::state::State;
 use casement_core::WindowId;
 use casement_core::geometry::LogicalSize;
+use casement_core::lock::LockState;
 use casement_core::window::SpacePlace;
 use casement_render::pass::window_capture_size;
 use casement_wayland::capture_source::{
@@ -75,7 +76,13 @@ pub(crate) fn content_and_scale(state: &State, window: WindowId) -> Option<(Logi
 /// What a client must allocate to capture `window` now: its content size at the scale of the
 /// output it is on, in the two shared-memory formats every client has or the dma-buf formats the
 /// renderer draws into.
+///
+/// None while the session is locked: the cover hides the outputs, not a window drawn alone, so
+/// a locked session captures no window (the session is stopped, like one whose window closed).
 fn window_constraints(state: &State, window: WindowId) -> Option<BufferConstraints> {
+    if !matches!(state.core.model.lock(), LockState::Unlocked) {
+        return None;
+    }
     let (content, scale) = content_and_scale(state, window)?;
     let size = window_capture_size(content, scale);
     let side = |n: u32| i32::try_from(n).ok().filter(|n| *n > 0);
@@ -169,6 +176,18 @@ pub(super) fn committed(state: &mut State, surface: &WlSurface) {
     super::space_shot::committed(state, window);
     let sessions = state.wl.capture_source.book.sessions_of(window);
     if sessions.is_empty() {
+        return;
+    }
+    if !matches!(state.core.model.lock(), LockState::Unlocked) {
+        // A frame held for this window's next commit is not drawn under the lock.
+        for id in &sessions {
+            let _ = capture_source::apply_failed(
+                &mut state.wl.capture_source.book,
+                *id,
+                CaptureFailure::OutputGone,
+            );
+        }
+        state.wl.capture_source.stop(&sessions);
         return;
     }
     let wanted = window_constraints(state, window);

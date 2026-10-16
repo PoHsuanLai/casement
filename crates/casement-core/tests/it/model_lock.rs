@@ -3,6 +3,7 @@
 
 use crate::support;
 
+use casement_core::desktop::{DesktopRequest, WindowAsk};
 use casement_core::focus::TokenCheck;
 use casement_core::input::{InputTarget, InputUse, Origin, Reach, Refusal};
 use casement_core::layer::{
@@ -11,8 +12,12 @@ use casement_core::layer::{
 };
 use casement_core::lock::{LockEvent, LockReply, LockState, LockSurfaces};
 use casement_core::policy::ConnectionRole;
+use casement_core::space::WorkspaceRequest;
 use casement_core::time::TimerKey;
-use casement_core::{ClientKey, Effect, Event, KeyboardTarget, LayerKey, OutputKey, WindowId};
+use casement_core::window::WlrToplevelRequest;
+use casement_core::{
+    ClientKey, Effect, Event, KeyboardTarget, LayerKey, OutputKey, ToplevelRequest, WindowId,
+};
 use support::driver::{Op, assert_same_world, last, map, plug, run, run_from, unplug};
 use support::{headless, proven};
 
@@ -233,6 +238,138 @@ fn a_dead_locker_leaves_the_cover_and_another_locker_takes_over() {
         }
     );
     assert_eq!(last(&taken), [Effect::Lock(LockReply::SendLocked)]);
+}
+
+/// CASC-13: while the session is locked (or being locked), nothing a window, a window-list
+/// client, a workspace client or the shell's desktop manager asks reaches the desktop. The same
+/// asks change it when the session is open, so the lock is what stops them.
+#[test]
+fn nothing_asked_of_the_desktop_gets_through_a_lock() {
+    let mail = proven("org.quire.Mail");
+    let one = key("HEADLESS-1");
+    let open = run(vec![
+        plug("HEADLESS-1"),
+        map(1, &mail, TokenCheck::Valid),
+        map(2, &mail, TokenCheck::Valid),
+    ]);
+    let asks = [
+        (
+            "a window's own request",
+            Event::ToplevelRequest {
+                window: WindowId(1),
+                request: ToplevelRequest::Minimise,
+            },
+        ),
+        (
+            "a window-list client",
+            Event::WlrToplevel {
+                window: WindowId(1),
+                request: WlrToplevelRequest::Close,
+            },
+        ),
+        (
+            "a workspace client",
+            Event::Workspace(WorkspaceRequest::Create {
+                output: one.clone(),
+                name: String::new(),
+            }),
+        ),
+        (
+            "the desktop manager",
+            Event::Desktop(DesktopRequest::Window {
+                window: WindowId(1),
+                ask: WindowAsk::Close,
+            }),
+        ),
+    ];
+    let lock_states = [
+        ("being locked", vec![requested()]),
+        ("locked", vec![requested(), committed("HEADLESS-1")]),
+        (
+            "locked, the locker gone",
+            vec![
+                requested(),
+                committed("HEADLESS-1"),
+                lock(LockEvent::LockerGone),
+            ],
+        ),
+    ];
+    for (ask, event) in asks {
+        let ran = run_from(open.model.clone(), vec![Op::Event(event.clone())]);
+        assert!(!last(&ran).is_empty(), "{ask} does something when open");
+        for (state, steps) in &lock_states {
+            let locked = run_from(open.model.clone(), steps.clone());
+            let ran = run_from(locked.model.clone(), vec![Op::Event(event.clone())]);
+            assert_same_world(&ran.model, &locked.model, &format!("{ask}, {state}"));
+            assert_eq!(last(&ran), [], "{ask}, {state}");
+        }
+    }
+}
+
+/// CASC-17: the keyboard goes to the lock surface of the output the person works on (the key
+/// window's, else the first lit one), not to whichever output sorts first.
+#[test]
+fn the_keyboard_goes_to_the_lock_surface_of_the_output_in_use() {
+    use casement_core::output::{OutputChangeSet, OutputPower};
+    let (a, b) = ("HEADLESS-1", "HEADLESS-2");
+    let both = run(vec![
+        plug(a),
+        plug(b),
+        requested(),
+        committed(a),
+        committed(b),
+    ]);
+    assert_eq!(
+        both.model.keyboard_target(),
+        KeyboardTarget::LockSurface(key(a))
+    );
+    let dark = run_from(
+        both.model,
+        vec![Op::Event(Event::OutputRequested {
+            output: key(a),
+            change: OutputChangeSet::none().with_power(OutputPower::Off),
+        })],
+    );
+    assert_eq!(
+        dark.model.keyboard_target(),
+        KeyboardTarget::LockSurface(key(b)),
+        "the lit output hears the keys"
+    );
+    assert!(last(&dark).contains(&Effect::Keyboard(KeyboardTarget::LockSurface(key(b)))));
+}
+
+/// CASW-11: window-list clients are told what is open again when the lock begins (they hear no
+/// titles) and when it ends (they hear them back), for every window.
+#[test]
+fn locking_and_unlocking_list_every_window_again() {
+    let mail = proven("org.quire.Mail");
+    let open = run(vec![
+        plug("HEADLESS-1"),
+        map(1, &mail, TokenCheck::Valid),
+        map(2, &mail, TokenCheck::Valid),
+    ]);
+    let relisted = |run: &support::driver::Run| {
+        [WindowId(1), WindowId(2)].map(|id| {
+            let effects = last(run);
+            (
+                effects.contains(&Effect::ListWindow(id)),
+                effects.contains(&Effect::PublishToplevel(id)),
+            )
+        })
+    };
+    let locking = run_from(open.model, vec![requested()]);
+    assert_eq!(relisted(&locking), [(true, true), (true, true)], "locking");
+    let opened = run_from(locking.model, vec![lock(LockEvent::Unlocked)]);
+    assert_eq!(relisted(&opened), [(true, true), (true, true)], "unlocking");
+    let abandoned = run_from(
+        run_from(opened.model, vec![requested()]).model,
+        vec![lock(LockEvent::LockerGone)],
+    );
+    assert_eq!(
+        relisted(&abandoned),
+        [(true, true), (true, true)],
+        "abandoned"
+    );
 }
 
 fn surface_gone(output: &str) -> Op {

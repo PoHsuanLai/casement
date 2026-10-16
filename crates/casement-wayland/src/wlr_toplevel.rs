@@ -11,6 +11,7 @@
 //! a manager that binds late is sent every window as it now is. What each state means is in
 //! [`states_of`] and [`Diff`], pure; this file is the wire.
 
+use crate::foreign_toplevel_list::Disclosure;
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::policy::GlobalKind;
@@ -425,10 +426,11 @@ pub fn apply_toplevel(
     part: &mut WlrToplevelPart,
     window: &Window,
     outputs: &[Output],
+    disclosure: Disclosure,
 ) -> Result<(), WaylandFault> {
     let facts = Facts {
-        title: window.title.0.clone(),
-        app_id: window.claimed_id.as_str().to_owned(),
+        title: disclosure.text(&window.title.0).to_owned(),
+        app_id: disclosure.text(window.claimed_id.as_str()).to_owned(),
         states: states_of(window),
         outputs: outputs.to_vec(),
     };

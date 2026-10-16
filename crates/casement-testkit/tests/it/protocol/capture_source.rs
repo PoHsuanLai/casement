@@ -7,6 +7,7 @@ use casement_core::geometry::{LogicalSize, PhysicalSize};
 use casement_core::policy::ConnectionRole;
 use casement_core::{OutputName, WindowId};
 use casement_testclient::capture::toplevel_source::{CaptureFailure, CursorMode, WindowCapture};
+use casement_testclient::surface::lock::Locker;
 use casement_testclient::surface::toplevel::{Toplevel, WmBase};
 use casement_testclient::{Pattern, Pumped, shm_buffer};
 use casement_testkit::{ClientId, Fixture, FixtureSpec, FrameCount};
@@ -209,4 +210,58 @@ fn a_closed_window_ends_its_sessions() {
         .expect("a source from the old handle");
     settle(&mut fixture, &mut late);
     assert!(late.is_stopped(), "a handle that is gone has no window");
+}
+
+/// CASW-11: while the session is locked a window is not captured (the cover hides the output,
+/// not a window drawn alone) and a window list announces no title or app id; the person
+/// unlocking brings both back.
+#[test]
+fn a_locked_session_stops_window_capture_and_withholds_titles() {
+    let (mut fixture, id) = boot();
+    let locker_client = fixture.connect(ConnectionRole::Public);
+    fixture.pump();
+    let base = WmBase::bind(fixture.client(id), 7);
+    let top = map_toplevel(&mut fixture, id, &base, (320, 200));
+    top.set_title("Inbox");
+    fixture.pump();
+    let window = windows(&fixture)[0];
+    let mut capture = opened(&mut fixture, id, window);
+    capture.request().expect("a request");
+    settle(&mut fixture, &mut capture);
+    assert!(
+        capture.take().expect("answered").is_ok(),
+        "an open session captures"
+    );
+    assert_eq!(capture.windows()[0].title, "Inbox");
+
+    let locker = Locker::request(fixture.client(locker_client)).expect("a lock");
+    fixture.advance(std::time::Duration::from_secs(2));
+    assert!(locker.is_locked(), "the wait for a lock surface ran out");
+    settle(&mut fixture, &mut capture);
+    assert_eq!(capture.windows()[0].title, "", "no title while locked");
+    assert_eq!(capture.windows()[0].app_id, "", "no app id while locked");
+    capture.request().expect("a request");
+    settle(&mut fixture, &mut capture);
+    assert!(capture.is_stopped(), "the lock ends the session");
+    let mut late = WindowCapture::start(fixture.client(id).globals()).expect("the managers");
+    settle(&mut fixture, &mut late);
+    late.open(&identifier_of(window), CursorMode::Hidden)
+        .expect("a source");
+    settle(&mut fixture, &mut late);
+    assert!(
+        late.is_stopped(),
+        "a session opened under the lock is stopped at once"
+    );
+
+    locker.unlock(fixture.client(locker_client));
+    fixture.pump();
+    settle(&mut fixture, &mut capture);
+    assert_eq!(capture.windows()[0].title, "Inbox", "the title is back");
+    let mut again = opened(&mut fixture, id, window);
+    again.request().expect("a request");
+    settle(&mut fixture, &mut again);
+    assert!(
+        again.take().expect("answered").is_ok(),
+        "capture works again once unlocked"
+    );
 }

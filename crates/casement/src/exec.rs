@@ -23,6 +23,7 @@ use casement_core::output::OutputConfig;
 use casement_core::shell::ShellNote;
 use casement_core::{Cause, CoreNote, Effect, Event, KeyboardTarget, LayerKey, OutputKey};
 use casement_core::{InputSerial, geometry::LogicalSize, lock::LockReply};
+use casement_wayland::foreign_toplevel_list::Disclosure;
 use casement_wayland::output::OutputWire;
 use casement_wayland::{
     WaylandFault, foreign_toplevel_list, image_capture, layer_shell, output, pointer_constraints,
@@ -77,10 +78,12 @@ fn apply(state: &mut State, effect: Effect) {
             ));
         }
         Effect::ListWindow(window) => {
+            let disclosure = Disclosure::of(state.core.model.lock());
             if let Some(held) = state.core.model.windows().get(&window) {
                 log(foreign_toplevel_list::apply_toplevel(
                     &mut state.wl.foreign_toplevel_list,
                     held,
+                    disclosure,
                 ));
             }
         }

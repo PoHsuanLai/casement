@@ -3,6 +3,7 @@
 
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::WindowId;
+use casement_core::lock::LockState;
 use casement_core::policy::GlobalKind;
 use casement_core::window::Window;
 use smithay::reexports::wayland_protocols::ext::foreign_toplevel_list::v1::server::{
@@ -65,14 +66,47 @@ pub fn window_of_identifier(identifier: &str) -> Option<WindowId> {
     plain.then(|| digits.parse().ok().map(WindowId)).flatten()
 }
 
+/// How much of a window a list client is told. A locked session tells nothing of what is
+/// open: titles and app ids are the person's mail, documents and sites, and the window-list
+/// protocols are open to every client that binds them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Disclosure {
+    /// The title and the app id.
+    Shown,
+    /// Neither: both go out empty.
+    Withheld,
+}
+
+impl Disclosure {
+    /// What the session being in `lock` lets a list client be told.
+    pub fn of(lock: &LockState) -> Disclosure {
+        match lock {
+            LockState::Unlocked => Disclosure::Shown,
+            LockState::Locking { .. }
+            | LockState::Locked { .. }
+            | LockState::LockedWithoutSurface => Disclosure::Withheld,
+        }
+    }
+
+    /// `text` as a list client is told it.
+    pub fn text(self, text: &str) -> &str {
+        match self {
+            Disclosure::Shown => text,
+            Disclosure::Withheld => "",
+        }
+    }
+}
+
 /// Lists `window` (or sends its changed title and app id; nothing is sent when neither
-/// changed). A title the protocol cannot carry (the text is app-authored) goes out as given.
+/// changed). A title the protocol cannot carry (the text is app-authored) goes out as given;
+/// both are empty when `disclosure` withholds them.
 pub fn apply_toplevel(
     part: &mut ForeignToplevelListPart,
     window: &Window,
+    disclosure: Disclosure,
 ) -> Result<(), WaylandFault> {
-    let title = window.title.0.as_str();
-    let app_id = window.claimed_id.as_str();
+    let title = disclosure.text(window.title.0.as_str());
+    let app_id = disclosure.text(window.claimed_id.as_str());
     match part.handles.get(&window.id) {
         Some(handle) => {
             let changed = handle.title() != title || handle.app_id() != app_id;
@@ -111,6 +145,20 @@ pub fn apply_closed(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_locked_session_withholds_what_is_open() {
+        let locking = LockState::Locking {
+            since: casement_core::time::Mono(std::time::Duration::ZERO),
+        };
+        for (lock, want) in [
+            (LockState::Unlocked, "Inbox"),
+            (locking, ""),
+            (LockState::LockedWithoutSurface, ""),
+        ] {
+            assert_eq!(Disclosure::of(&lock).text("Inbox"), want, "{lock:?}");
+        }
+    }
 
     #[test]
     fn identifiers_are_stable_distinct_and_fit_the_protocol() {

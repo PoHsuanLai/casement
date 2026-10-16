@@ -41,6 +41,7 @@ impl Model {
     /// an output that is not plugged changes nothing, and no Space is made.
     pub(super) fn window_to_new_space(self, window: WindowId, output: &OutputKey) -> Moved {
         let movable = self.outputs.0.contains_key(output)
+            && self.has_room_for_desktop(output)
             && self
                 .windows
                 .get(&window)

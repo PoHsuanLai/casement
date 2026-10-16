@@ -43,6 +43,16 @@ impl Model {
         }
     }
 
+    /// `f` on the model while the session is open. A locked session (or one being locked)
+    /// ignores what clients ask of windows, Spaces and the desktop: they find it as they left
+    /// it when the person unlocks.
+    pub(super) fn unless_locked(self, f: impl FnOnce(Model) -> Moved) -> Moved {
+        match self.lock {
+            LockState::Unlocked => f(self),
+            _ => Moved::of(self),
+        }
+    }
+
     /// Whether `client` may take over a lock whose locker is gone: the shell may (it is the
     /// person's own locker), and so may the client that held the lock. Any other client is
     /// refused, so a program that waits for the locker to die cannot unlock the session.
@@ -86,6 +96,7 @@ impl Model {
     /// wait for, and the session is locked at once.
     fn begin_lock(self, client: ClientKey) -> Moved {
         let outputs: Vec<OutputKey> = self.outputs.0.keys().cloned().collect();
+        let relisted = self.relisted();
         if outputs.is_empty() {
             return self
                 .with_lock_by(
@@ -94,7 +105,8 @@ impl Model {
                     },
                     Some(client),
                 )
-                .with(Effect::Lock(LockReply::SendLocked));
+                .with(Effect::Lock(LockReply::SendLocked))
+                .with_all(relisted);
         }
         let since = self.now;
         let wait = Due {
@@ -104,6 +116,16 @@ impl Model {
         self.with_lock_by(LockState::Locking { since }, Some(client))
             .with_all(outputs.into_iter().map(show_cover))
             .with(Effect::ArmTimer(wait))
+            .with_all(relisted)
+    }
+
+    /// Every window listed and published again: window-list clients are told no titles while
+    /// the session is locked, and the real ones when it opens.
+    fn relisted(&self) -> Vec<Effect> {
+        self.windows
+            .keys()
+            .flat_map(|id| [Effect::ListWindow(*id), Effect::PublishToplevel(*id)])
+            .collect()
     }
 
     /// The locker has had its time to make a lock surface: every output is under the cover
@@ -177,8 +199,10 @@ impl Model {
     /// The locker unlocked: the covers come down and the keyboard goes back to the desktop.
     fn end_lock(self, state: &LockState) -> Moved {
         let covers = self.covers_for(state);
+        let relisted = self.relisted();
         self.with_lock_by(LockState::Unlocked, None)
             .with_all(covers.into_iter().map(hide_cover))
+            .with_all(relisted)
     }
 
     /// The locker is gone. Before `locked` was sent nothing was ever locked, so the session
@@ -203,9 +227,11 @@ impl Model {
     /// first surface ends, and the session is open.
     fn abandon_lock(self, state: &LockState) -> Moved {
         let covers = self.covers_for(state);
+        let relisted = self.relisted();
         self.with_lock_by(LockState::Unlocked, None)
             .with(Effect::CancelTimer(TimerKey::LockWait))
             .with_all(covers.into_iter().map(hide_cover))
+            .with_all(relisted)
     }
 
     /// An output left the lock's coverage.

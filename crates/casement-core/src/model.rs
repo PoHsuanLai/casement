@@ -61,6 +61,7 @@ use crate::time::{Mono, TimerBook};
 use moved::Moved;
 pub use overview::OverviewPick;
 pub use query::OpeningRoom;
+pub use spaces::MAX_DESKTOPS_PER_OUTPUT;
 use std::collections::{BTreeMap, BTreeSet};
 pub use swipe::{SpaceStrip, SwipeOwner};
 
@@ -199,7 +200,9 @@ impl Model {
             Event::ToplevelMapped(mapped) => self.map(mapped),
             Event::ToplevelUnmapped { window } => self.unmap(window),
             Event::ToplevelCommitted { window, size } => self.commit(window, size),
-            Event::ToplevelRequest { window, request } => self.request(window, request),
+            Event::ToplevelRequest { window, request } => {
+                self.unless_locked(|model| model.request(window, request))
+            }
             Event::ToplevelModality { window, modality } => self.modality(window, modality),
             Event::ToplevelMeta { window, meta } => self.meta(window, meta),
             Event::WindowDragged { window, rect } => self.dragged(window, rect),
@@ -222,10 +225,14 @@ impl Model {
             Event::OutputRequested { output, change } => self.request_output(output, change),
             Event::GammaSet { output, ramp } => self.set_gamma(output, ramp),
             Event::NightLightTick(minute) => self.night_tick(minute),
-            Event::WlrToplevel { window, request } => self.wlr_request(window, request),
-            Event::Workspace(request) => self.workspace_request(request),
+            Event::WlrToplevel { window, request } => {
+                self.unless_locked(|model| model.wlr_request(window, request))
+            }
+            Event::Workspace(request) => {
+                self.unless_locked(|model| model.workspace_request(request))
+            }
             Event::SpacesLoaded(file) => self.restore_spaces(*file),
-            Event::Desktop(request) => self.desktop_request(request),
+            Event::Desktop(request) => self.unless_locked(|model| model.desktop_request(request)),
             Event::Shell(request) => self.shell_request(request),
         }
     }

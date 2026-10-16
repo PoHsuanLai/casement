@@ -49,7 +49,8 @@ impl Model {
 
     /// A new desktop at the end of `output`'s row.
     fn created(self, output: &OutputKey) -> Moved {
-        match self.outputs.0.contains_key(output) {
+        let room = self.outputs.0.contains_key(output) && self.has_room_for_desktop(output);
+        match room {
             true => Moved::of(self.with_space(output, SpaceContent::Desktop).0),
             false => Moved::of(self),
         }

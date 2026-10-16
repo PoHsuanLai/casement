@@ -12,7 +12,23 @@ use crate::space::{Space, SpaceContent, SpaceIndex};
 use crate::window::SpacePlace;
 use porter_core::SpaceId;
 
+/// The most desktop Spaces a request from a client or the shell may leave one output with (the
+/// Mac's own limit): a client that asks for Spaces in a loop cannot grow the model, the Spaces
+/// file or Mission Control without bound.
+pub const MAX_DESKTOPS_PER_OUTPUT: usize = 16;
+
 impl Model {
+    /// Whether `output` may take one more desktop Space ([`MAX_DESKTOPS_PER_OUTPUT`]).
+    pub(super) fn has_room_for_desktop(&self, output: &OutputKey) -> bool {
+        let desktops = self
+            .spaces
+            .row(output)
+            .into_iter()
+            .filter(|space| matches!(space.content, SpaceContent::Desktop))
+            .count();
+        desktops < MAX_DESKTOPS_PER_OUTPUT
+    }
+
     /// A new Space holding `content` at the end of `output`'s row, and its id.
     pub(super) fn with_space(self, output: &OutputKey, content: SpaceContent) -> (Model, SpaceId) {
         let (seed, id) = self.seed.clone().next();

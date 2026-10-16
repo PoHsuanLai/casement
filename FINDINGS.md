@@ -4157,3 +4157,23 @@ Rows for the findings CASW-02/03/04/07/11/12/13/15/18/19, CASC-02/05/06/07/09/10
   `a_lock_surface_that_goes_puts_the_cover_back` (core), `a_destroyed_lock_surface_leaves_its_output_covered` and
   `an_unmapped_lock_surface_leaves_its_output_covered` (fixture, two outputs, a window on the first; the test client gained
   `Locker::cover_on`, `LockSurface::unmap` and `LockSurface::destroy`).
+- **CASC-13: nothing asked of windows, Spaces or the desktop reaches them under a lock.** `Model::unless_locked` wraps the four
+  routes (`ToplevelRequest`, `WlrToplevel`, `Workspace`, `Desktop`): while the lock is not `Unlocked` (being locked, locked, or
+  locked with the locker gone) they change nothing. Desktop Spaces per output stop at `MAX_DESKTOPS_PER_OUTPUT` (16, the
+  Mac's limit) for `Workspace::Create` and the shell's move-to-new-Space, so a client that asks in a loop cannot grow the model,
+  the Spaces file or Mission Control. Tests: `nothing_asked_of_the_desktop_gets_through_a_lock`,
+  `a_request_cannot_grow_an_outputs_desktops_past_the_limit`.
+- **CASC-17: the keyboard goes to the lock surface of the output in use.** While `Covering`, the target is the lock surface on
+  `working_output()` (the key window's output, else the first lit output) when the locker covers it, else the first covered
+  output as before. **Departure:** the audit asks for "the output under the pointer"; the model does not know the pointer
+  (it lives in the seat), so the key window's output and the first lit output stand in. A pointer-aware choice needs an
+  event carrying the pointer's output; not done. Test: `the_keyboard_goes_to_the_lock_surface_of_the_output_in_use`.
+- **CASW-11: a locked session captures no window and tells window-list clients no titles.** `window_constraints` (the one
+  place the window-capture handler asks what a session may be given) returns none under a lock, so new sessions are stopped at
+  once, a frame request stops its session, and `committed` stops the sessions of a committing window instead of releasing held
+  frames. `ListWindow`/`PublishToplevel` go out for every window when the lock begins and ends, and the edge sends
+  `foreign_toplevel_list::Disclosure::of(model.lock())`: an empty title and app id while locked, for the ext list and the
+  wlr list alike. **Departure:** the audit says "hide titles from non-shell clients"; both lists share one handle state across
+  clients (the ext list in smithay), so the blanking is for every list client, the shell included. The shell reads windows through
+  the desktop protocol, which is not blanked. Tests: `a_locked_session_stops_window_capture_and_withholds_titles` (fixture),
+  `locking_and_unlocking_list_every_window_again` (core), `a_locked_session_withholds_what_is_open`.

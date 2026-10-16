@@ -9,8 +9,9 @@ use crate::lock::{LockState, LockSurfaces};
 
 impl Model {
     /// Where keystrokes go now. While the session is locked that is the lock surface of the
-    /// first output the locker covers, or nothing before it has covered one; windows and
-    /// layers do not hear the keyboard until it is unlocked.
+    /// output the person is working on when the locker covers it (the key window's output, else
+    /// the first lit one), else of the first output it covers, or nothing before it has
+    /// covered one; windows and layers do not hear the keyboard until it is unlocked.
     pub fn keyboard_target(&self) -> KeyboardTarget {
         match &self.lock {
             LockState::Unlocked => self
@@ -20,9 +21,10 @@ impl Model {
                 .unwrap_or(KeyboardTarget::Nothing),
             LockState::Locked {
                 surfaces: LockSurfaces::Covering(outputs),
-            } => outputs
-                .first()
-                .cloned()
+            } => self
+                .working_output()
+                .filter(|working| outputs.contains(working))
+                .or_else(|| outputs.first().cloned())
                 .map_or(KeyboardTarget::Nothing, KeyboardTarget::LockSurface),
             LockState::Locking { .. }
             | LockState::Locked {

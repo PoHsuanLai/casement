@@ -63,5 +63,6 @@ pub use ids::{
 };
 pub use invariants::InvariantBreak;
 pub use model::{
-    Model, OpeningRoom, OutputBook, OutputState, OverviewPick, SpaceStrip, SwipeOwner,
+    MAX_DESKTOPS_PER_OUTPUT, Model, OpeningRoom, OutputBook, OutputState, OverviewPick, SpaceStrip,
+    SwipeOwner,
 };
