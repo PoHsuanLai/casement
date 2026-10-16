@@ -188,6 +188,21 @@ fn a_manager_made_while_asked_is_finished_when_refused() {
     );
 }
 
+/// A power the person takes back ends the manager the program already had: its device is
+/// finished. smithay registers the device and offers no way to end it for one client, so this
+/// waits for the revoke hook (FINDINGS: pa2-cwl2, "Revoked ends nothing smithay registered").
+#[test]
+#[ignore = "pa2-cwl2: smithay revoke hook"]
+fn a_manager_the_person_switches_off_is_finished() {
+    let (mut fixture, _shell, client) = asked_world();
+    decided(&mut fixture, Power::Clipboard, Verdict::Allow);
+    let _control = bind(&mut fixture, client);
+    assert_eq!(heard(&mut fixture, client, "finished"), 0);
+    decided(&mut fixture, Power::Clipboard, Verdict::Deny);
+    fixture.pump();
+    assert_eq!(heard(&mut fixture, client, "finished"), 1);
+}
+
 /// A client that hangs up while its manager waits is forgotten, and an answer that comes
 /// after it is gone changes nothing for anyone.
 #[test]

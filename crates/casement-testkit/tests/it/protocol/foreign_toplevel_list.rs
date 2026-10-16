@@ -176,6 +176,21 @@ fn a_list_bound_while_asked_is_finished_when_refused() {
     );
 }
 
+/// A power the person takes back ends the list the program already had: it is finished. Waits
+/// for the smithay revoke hook (FINDINGS: pa2-cwl2).
+#[test]
+#[ignore = "pa2-cwl2: smithay revoke hook"]
+fn a_list_the_person_switches_off_is_finished() {
+    let (mut fixture, _shell, asked, _top, _buffer) = asked_with_window();
+    decided(&mut fixture, Power::Windows, Verdict::Allow);
+    let mut list = watch(&mut fixture, asked);
+    settle(&mut fixture, &mut list);
+    assert!(!list.finished());
+    decided(&mut fixture, Power::Windows, Verdict::Deny);
+    settle(&mut fixture, &mut list);
+    assert!(list.finished());
+}
+
 /// A client that hangs up while its list waits is forgotten, and an answer that comes after it
 /// is gone changes nothing for anyone.
 #[test]
