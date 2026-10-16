@@ -188,6 +188,26 @@ fn a_manager_made_while_asked_is_finished_when_refused() {
     );
 }
 
+/// A power the person takes back ends the manager the program already had: its device is
+/// finished and the clipboard no longer reaches it (smithay's `DataControlState::revoke`).
+#[test]
+fn a_manager_the_person_switches_off_is_finished() {
+    let (mut fixture, _shell, client) = asked_world();
+    decided(&mut fixture, Power::Clipboard, Verdict::Allow);
+    let _control = bind(&mut fixture, client);
+    assert_eq!(heard(&mut fixture, client, "finished"), 0);
+    decided(&mut fixture, Power::Clipboard, Verdict::Deny);
+    fixture.pump();
+    assert_eq!(heard(&mut fixture, client, "finished"), 1);
+    let before = heard(&mut fixture, client, "selection");
+    let _owner = shell_copies(&mut fixture);
+    assert_eq!(
+        heard(&mut fixture, client, "selection"),
+        before,
+        "the clipboard no longer reaches it"
+    );
+}
+
 /// A client that hangs up while its manager waits is forgotten, and an answer that comes
 /// after it is gone changes nothing for anyone.
 #[test]

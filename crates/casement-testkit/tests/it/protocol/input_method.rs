@@ -140,9 +140,8 @@ fn an_input_method_made_while_asked_is_unavailable_when_refused() {
 }
 
 /// A power the person takes back ends the input method the program already had: it is told
-/// `unavailable`. Waits for the smithay revoke hook (FINDINGS: pa2-cwl2).
+/// `unavailable` (smithay's `InputMethodHandle::revoke`).
 #[test]
-#[ignore = "pa2-cwl2: smithay revoke hook"]
 fn an_input_method_the_person_switches_off_is_unavailable() {
     let (mut typing, _shell) = asked_typing(Some(Verdict::Allow));
     typing.ime.enable().expect("enable");

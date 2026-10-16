@@ -17,6 +17,8 @@ use casement_wayland::consent::{ConsentHandler, Ledger, release_gate};
 use casement_wayland::quire::shell_permission;
 use casement_wayland::{gamma, output_management, output_power, virtual_keyboard};
 use casement_wayland::{wlr_toplevel, workspace};
+use smithay::reexports::wayland_server::backend::ClientId;
+use smithay::wayland::input_method::InputMethodSeat;
 
 impl ConsentHandler for State {
     fn consent_ledger(&self) -> &Ledger {
@@ -58,11 +60,18 @@ pub(crate) fn resolved(state: &mut State, client: ClientKey, power: Power, outco
 }
 
 /// Settles what smithay holds for `client` in the protocols it serves whole: held objects are
-/// opened on an allow and refused on a refusal. A power taken back ends nothing smithay already
-/// registered (it has no hook for that); the next use asks again and the objects made after it
-/// are refused. Nothing happens for a client that never had anything on hold.
+/// opened on an allow and refused on a refusal. A power taken back also ends what smithay
+/// already registered for the client ([`end_served`]): the clipboard devices, the input method
+/// and the window lists are finished or made unavailable, and the objects made after it are
+/// refused until the next use asks again. Nothing happens for a client that never had anything
+/// on hold, unless its power was taken back (it may hold live objects without ever having waited).
 fn settle_served(state: &mut State, client: ClientKey, power: Power, outcome: PowerOutcome) {
-    let Some(id) = state.wl.clients.ledger().parked(client) else {
+    let ledger = state.wl.clients.ledger();
+    let known = match outcome {
+        PowerOutcome::Revoked => ledger.connection(client),
+        PowerOutcome::Allowed | PowerOutcome::Denied => ledger.parked(client),
+    };
+    let Some(id) = known else {
         return;
     };
     let gate = release_gate(outcome);
@@ -78,6 +87,29 @@ fn settle_served(state: &mut State, client: ClientKey, power: Power, outcome: Po
             .foreign_toplevel_list
             .state
             .release(&display, &id, gate),
+        Power::Screen | Power::Keys | Power::Lock | Power::Displays => {}
+    }
+    match outcome {
+        PowerOutcome::Revoked => end_served(state, power, &id),
+        PowerOutcome::Allowed | PowerOutcome::Denied => {}
+    }
+}
+
+/// Ends the objects smithay registered for the connection `id` in the protocols of `power`
+/// that it serves whole: the data devices of both clipboard managers are finished, the input
+/// method is told `unavailable` and leaves the seat, the window lists are finished. A
+/// selection the client already set stays until another replaces it.
+fn end_served(state: &mut State, power: Power, id: &ClientId) {
+    match power {
+        Power::Clipboard => {
+            state.wl.ext_data_control.state.revoke::<State>(id);
+            state.wl.wlr_data_control.state.revoke::<State>(id);
+        }
+        Power::TypingHelp => {
+            let method = state.wl.seat.seat.input_method().clone();
+            method.revoke::<State>(state, id);
+        }
+        Power::Windows => state.wl.foreign_toplevel_list.state.revoke(id),
         Power::Screen | Power::Keys | Power::Lock | Power::Displays => {}
     }
 }

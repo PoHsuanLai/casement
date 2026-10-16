@@ -63,6 +63,11 @@ impl GoneQueue {
         }
     }
 
+    /// `client` was inserted as connection `id`.
+    fn connected(&self, client: ClientKey, id: ClientId) {
+        self.ledger.connected(client, id);
+    }
+
     /// `client` went away.
     fn push(&self, client: ClientKey) {
         self.ledger.forget(client);
@@ -178,7 +183,9 @@ impl ClientState {
 }
 
 impl ClientData for ClientState {
-    fn initialized(&self, _client_id: ClientId) {}
+    fn initialized(&self, client_id: ClientId) {
+        self.gone.connected(self.key, client_id);
+    }
 
     fn disconnected(&self, _client_id: ClientId, _reason: DisconnectReason) {
         self.gone.push(self.key);

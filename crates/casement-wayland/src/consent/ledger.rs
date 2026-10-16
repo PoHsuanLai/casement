@@ -49,10 +49,15 @@ type Rows = BTreeMap<(ClientKey, Power), Word>;
 /// smithay serves whole (the clipboard managers, the input method, the window list of
 /// `ext_foreign_toplevel_list`): smithay settles what it holds by connection, the model answers
 /// by client key.
+///
+/// It also knows the connection of every client casement inserted ([`Ledger::connection`]), so a
+/// power taken back can end the objects smithay registered for a client that was allowed at once
+/// and never had anything on hold.
 #[derive(Debug, Clone, Default)]
 pub struct Ledger {
     rows: Arc<Mutex<Rows>>,
     parked: Arc<Mutex<BTreeMap<ClientKey, ClientId>>>,
+    connections: Arc<Mutex<BTreeMap<ClientKey, ClientId>>>,
 }
 
 impl PartialEq for Ledger {
@@ -71,6 +76,22 @@ impl Ledger {
 
     fn parked_ids(&self) -> MutexGuard<'_, BTreeMap<ClientKey, ClientId>> {
         self.parked.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn connection_ids(&self) -> MutexGuard<'_, BTreeMap<ClientKey, ClientId>> {
+        self.connections
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// `client` was inserted as connection `id`.
+    pub fn connected(&self, client: ClientKey, id: ClientId) {
+        self.connection_ids().insert(client, id);
+    }
+
+    /// The connection of `client`, while it is connected.
+    pub fn connection(&self, client: ClientKey) -> Option<ClientId> {
+        self.connection_ids().get(&client).cloned()
     }
 
     /// `client` (connection `id`) has objects on hold in a protocol smithay serves whole.
@@ -127,10 +148,11 @@ impl Ledger {
         word
     }
 
-    /// `client` disconnected: its rows and its parked connection go.
+    /// `client` disconnected: its rows, its connection and its parked connection go.
     pub fn forget(&self, client: ClientKey) {
         self.rows().retain(|(owner, _), _| *owner != client);
         self.parked_ids().remove(&client);
+        self.connection_ids().remove(&client);
     }
 
     /// How many rows there are (a client has at most one per power).
