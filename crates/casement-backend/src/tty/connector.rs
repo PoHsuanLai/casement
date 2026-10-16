@@ -3,7 +3,8 @@
 //! CRTC, variable refresh).
 
 use super::kms::{
-    ConnectorFacts, ConnectorStatus, CrtcFacts, CrtcId, KmsResources, OutputCommit, VrrState,
+    ConnectorFacts, ConnectorId, ConnectorStatus, CrtcFacts, CrtcId, KmsResources, OutputCommit,
+    VrrState,
 };
 use casement_core::OutputKey;
 use casement_core::OutputName;
@@ -88,15 +89,22 @@ fn descriptor_text(block: &[u8], tag: u8) -> Option<String> {
         .iter()
         .map(|start| &block[*start..*start + DESCRIPTOR_LEN])
         .find(|d| d[..3] == [0, 0, 0] && d[3] == tag)
-        .map(|d| {
-            let text: String = d[5..]
-                .iter()
-                .take_while(|byte| **byte != b'\n')
-                .map(|byte| char::from(*byte))
-                .collect();
-            text.trim().to_owned()
-        })
+        .map(|d| printable(&d[5..]))
         .filter(|text| !text.is_empty())
+}
+
+/// The text of a descriptor's 13 data bytes: up to the newline that ends it, printable ASCII
+/// only, trimmed. A NUL or any other control byte is dropped, and so is a byte above 0x7e: the
+/// text goes into `wl_output` strings (a NUL there aborts the compositor) and into output keys,
+/// and a monitor's EDID is whatever its firmware says.
+fn printable(data: &[u8]) -> String {
+    let text: String = data
+        .iter()
+        .take_while(|byte| **byte != b'\n')
+        .filter(|byte| matches!(**byte, 0x20..=0x7e))
+        .map(|byte| char::from(*byte))
+        .collect();
+    text.trim().to_owned()
 }
 
 /// The facts of an attached connector: its identity from the EDID (an unreadable one gives an
@@ -127,6 +135,50 @@ pub fn output_facts(connector: &ConnectorFacts) -> OutputFacts {
         modes: connector.modes.clone(),
         physical: connector.physical,
         vrr: connector.vrr,
+    }
+}
+
+/// The facts of every attached connector of `resources`, by connector, with keys that are all
+/// different. Two displays that report the same make, model and serial (a dock or a KVM that
+/// fakes the EDID, cheap clones) would share one key, and the second would never be set up.
+/// The one on the connector whose name sorts first keeps the EDID key, so the settings stored
+/// for it stay valid; each other one is keyed by its connector, as a display with no serial is.
+///
+/// ```
+/// use casement_backend::tty::{KmsResources, attached_outputs};
+///
+/// assert!(attached_outputs(&KmsResources::default()).is_empty());
+/// ```
+pub fn attached_outputs(resources: &KmsResources) -> BTreeMap<ConnectorId, OutputFacts> {
+    let mut attached: Vec<(ConnectorId, OutputFacts)> = resources
+        .connectors
+        .iter()
+        .filter(|c| c.status == ConnectorStatus::Connected)
+        .map(|c| (c.id, output_facts(c)))
+        .collect();
+    attached.sort_by(|(_, a), (_, b)| a.name.cmp(&b.name));
+    let mut taken: BTreeSet<OutputKey> = BTreeSet::new();
+    attached
+        .into_iter()
+        .map(|(id, facts)| {
+            let facts = match taken.insert(facts.key.clone()) {
+                true => facts,
+                false => keyed_by_connector(facts),
+            };
+            (id, facts)
+        })
+        .collect()
+}
+
+/// `facts` keyed by their connector, whatever serial the EDID reports.
+fn keyed_by_connector(facts: OutputFacts) -> OutputFacts {
+    let anonymous = EdidFacts {
+        serial: EdidSerial::Unknown,
+        ..facts.edid.clone()
+    };
+    OutputFacts {
+        key: OutputKey::of(&anonymous, &facts.name),
+        ..facts
     }
 }
 

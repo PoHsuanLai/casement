@@ -2,8 +2,8 @@
 //! the plug, change and unplug events the model hears, with no repeated events and none lost
 //! across a hundred plug cycles.
 
-use super::connector::output_facts;
-use super::kms::{ConnectorId, ConnectorStatus, KmsResources};
+use super::connector::attached_outputs;
+use super::kms::{ConnectorId, KmsResources};
 use crate::headless::ConnectorEvent;
 use casement_core::output::OutputFacts;
 use std::collections::BTreeMap;
@@ -27,12 +27,7 @@ pub fn reconcile(
     known: &KnownConnectors,
     now: &KmsResources,
 ) -> (KnownConnectors, Vec<ConnectorEvent>) {
-    let attached: BTreeMap<ConnectorId, OutputFacts> = now
-        .connectors
-        .iter()
-        .filter(|c| c.status == ConnectorStatus::Connected)
-        .map(|c| (c.id, output_facts(c)))
-        .collect();
+    let attached = attached_outputs(now);
     let gone = known
         .0
         .iter()

@@ -65,7 +65,9 @@ pub use capture_gpu::{
     BodyCopy, CaptureGpu, CaptureRoute, Picture, SceneSupport, body_copy, capture_fallback,
     capture_route, merged_formats, renderable_formats,
 };
-pub use connector::{EdidError, VrrPolicy, output_facts, parse_edid, plan_outputs, vrr_state};
+pub use connector::{
+    EdidError, VrrPolicy, attached_outputs, output_facts, parse_edid, plan_outputs, vrr_state,
+};
 pub use device::{Announced, OpenDevice, TtyDevices};
 pub use direct::{
     DirectSession, DriverRefusal, FixedNode, NoGpus, POLL_EVERY, VKMS_DRIVER, require_vkms,
