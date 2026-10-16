@@ -958,7 +958,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -1709,7 +1709,7 @@ dependencies = [
 [[package]]
 name = "keycap-client"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/keycap?rev=c1bbb675e40013d68ba0e51c58d10241f58677a6#c1bbb675e40013d68ba0e51c58d10241f58677a6"
+source = "git+https://github.com/PoHsuanLai/keycap?rev=b45d4c22ec22be1117ce451dcc0b4a1f63764515#b45d4c22ec22be1117ce451dcc0b4a1f63764515"
 dependencies = [
  "chordkit",
  "keycap-protocol",
@@ -1719,7 +1719,7 @@ dependencies = [
 [[package]]
 name = "keycap-protocol"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/keycap?rev=c1bbb675e40013d68ba0e51c58d10241f58677a6#c1bbb675e40013d68ba0e51c58d10241f58677a6"
+source = "git+https://github.com/PoHsuanLai/keycap?rev=b45d4c22ec22be1117ce451dcc0b4a1f63764515#b45d4c22ec22be1117ce451dcc0b4a1f63764515"
 dependencies = [
  "serde",
  "serde_json",
@@ -2677,7 +2677,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -3057,7 +3057,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.5",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
