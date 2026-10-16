@@ -34,8 +34,8 @@ use smithay::wayland::image_capture_source::ImageCaptureSourceHandler;
 use smithay::wayland::{Dispatch2, GlobalDispatch2};
 use std::collections::BTreeMap;
 
-/// The version casement serves.
-pub const VERSION: u32 = 5;
+/// The version casement serves (6: the display trial, `displays_trial` and its two siblings).
+pub const VERSION: u32 = 6;
 
 /// Whether the global is created yet (P2-Q2 flipped it).
 pub const GLOBAL: Advertised = Advertised::Yes;
