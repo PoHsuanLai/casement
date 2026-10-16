@@ -62,13 +62,10 @@ impl Model {
             WindowAsk::Unminimise => {
                 self.wlr_request(window, WlrToplevelRequest::Minimise(Toggle::Off))
             }
-            WindowAsk::FullScreen(toggle) => self.wlr_request(
-                window,
-                WlrToplevelRequest::FullScreen {
-                    toggle,
-                    output: None,
-                },
-            ),
+            WindowAsk::FullScreen(Toggle::On) => self
+                .unminimised(window)
+                .then(|model| model.full_screen_by_hand(window, Toggle::On)),
+            WindowAsk::FullScreen(Toggle::Off) => self.full_screen_by_hand(window, Toggle::Off),
             WindowAsk::Place(target) => self.place(&held, target),
             WindowAsk::ToSpace(space) => self.window_to_space(window, &space),
             WindowAsk::ToNewSpace(output) => self.window_to_new_space(window, &output),

@@ -176,6 +176,12 @@ fn note_of(note: &CoreNote) {
         CoreNote::RefusedActivation(window) => {
             tracing::debug!(window = window.0, "an activation was refused");
         }
+        CoreNote::RefusedFullScreen(window) => {
+            tracing::debug!(
+                window = window.0,
+                "a full-screen request from a window that is not key was refused"
+            );
+        }
         CoreNote::StaleTimer(key) => tracing::debug!(?key, "a timer fired for something gone"),
         CoreNote::UnknownWindow(window) => {
             tracing::debug!(window = window.0, "an event named an unknown window");

@@ -54,7 +54,7 @@ impl Model {
             SpacePlace::AllSpaces => None,
         };
         self.choice_over()
-            .then(|model| model.enter_full_screen(window, None))
+            .then(|model| model.full_screened(window, None))
             .then(|model| model.choosing(first, side, desktop))
     }
 

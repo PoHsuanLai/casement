@@ -3,14 +3,16 @@
 
 use crate::support;
 
+use casement_core::desktop::{DesktopRequest, WindowAsk};
 use casement_core::focus::TokenCheck;
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
-use casement_core::window::WindowState;
+use casement_core::shell::ShellRequest;
+use casement_core::window::{MenuEntry, WindowState};
 use casement_core::{
-    Cause, CoreNote, Effect, GrabSpec, InputSerial, ResizeEdges, ToplevelRequest, WindowId,
+    Cause, CoreNote, Effect, Event, GrabSpec, InputSerial, ResizeEdges, ToplevelRequest, WindowId,
 };
 use casement_protocols::vocab::{Attention, PlaceTarget, TileZone, Toggle};
-use support::driver::{Run, last, map, plug, request, run};
+use support::driver::{Op, Run, last, map, plug, request, run};
 use support::proven;
 
 fn state_of(run: &Run, n: u64) -> WindowState {
@@ -281,4 +283,75 @@ fn an_activation_without_a_valid_token_asks_for_attention_and_is_noted() {
             "{token:?}"
         );
     }
+}
+
+/// Window 1 is key; window 2 mapped without a token and is not.
+fn key_and_background() -> Vec<Op> {
+    let (mail, web) = (proven("org.quire.Mail"), proven("org.example.Web"));
+    vec![
+        plug("HEADLESS-1"),
+        map(1, &mail, TokenCheck::Valid),
+        map(2, &web, TokenCheck::Missing),
+    ]
+}
+
+fn full_screen_on() -> ToplevelRequest {
+    ToplevelRequest::FullScreen {
+        toggle: Toggle::On,
+        output: None,
+    }
+}
+
+/// CASC-07 (decided 2026-10-16): a window that is not key cannot take the screen.
+#[test]
+fn a_full_screen_request_from_a_window_that_is_not_key_is_refused() {
+    let mut ops = key_and_background();
+    ops.push(request(2, full_screen_on()));
+    let refused = run(ops.clone());
+    assert_eq!(refused.model.focus().key, Some(WindowId(1)));
+    assert!(
+        !matches!(state_of(&refused, 2), WindowState::FullScreen { .. }),
+        "the background window stays as it was"
+    );
+    assert_eq!(
+        refused
+            .model
+            .spaces()
+            .row(&support::headless("HEADLESS-1").key)
+            .len(),
+        1
+    );
+    assert!(last(&refused).contains(&Effect::Note(CoreNote::RefusedFullScreen(WindowId(2)))));
+
+    ops.pop();
+    ops.push(request(1, full_screen_on()));
+    let heard = run(ops);
+    assert!(matches!(
+        state_of(&heard, 1),
+        WindowState::FullScreen { .. }
+    ));
+}
+
+/// The person's own hand (the shell's window menu and desktop asks) is not gated on key.
+#[test]
+fn the_shells_full_screen_asks_are_not_refused_for_a_window_that_is_not_key() {
+    let mut menu = key_and_background();
+    menu.push(Op::Event(Event::Shell(ShellRequest::WindowMenuPick {
+        window: WindowId(2),
+        entry: MenuEntry::EnterFullScreen,
+    })));
+    assert!(matches!(
+        state_of(&run(menu), 2),
+        WindowState::FullScreen { .. }
+    ));
+
+    let mut desktop = key_and_background();
+    desktop.push(Op::Event(Event::Desktop(DesktopRequest::Window {
+        window: WindowId(2),
+        ask: WindowAsk::FullScreen(Toggle::On),
+    })));
+    assert!(matches!(
+        state_of(&run(desktop), 2),
+        WindowState::FullScreen { .. }
+    ));
 }

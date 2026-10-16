@@ -5,7 +5,6 @@
 use super::Model;
 use super::moved::Moved;
 use crate::effect::Effect;
-use crate::event::ToplevelRequest;
 use crate::geometry::LogicalPoint;
 use crate::ids::WindowId;
 use crate::shell::{ShellNote, WindowMenuShow};
@@ -37,13 +36,7 @@ impl Model {
             return Moved::of(self);
         }
         match entry.action() {
-            MenuAction::FullScreen(toggle) => self.request(
-                id,
-                ToplevelRequest::FullScreen {
-                    toggle,
-                    output: None,
-                },
-            ),
+            MenuAction::FullScreen(toggle) => self.full_screen_by_hand(id, toggle),
             MenuAction::Place(target) => self.place(&window, target),
             MenuAction::SplitTile(side) => self.split_view(&window, side),
         }

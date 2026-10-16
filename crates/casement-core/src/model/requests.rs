@@ -182,8 +182,31 @@ impl Model {
             .then(|model| model.relaid_out(window.id, Cause::Minimise(target)))
     }
 
-    /// The window takes a Space of its own on its output (or the output it asked for).
+    /// A window asked to go full screen. Only the key window is heard: a background app that
+    /// takes the screen with a fake dialog is the hole this closes (CASC-07, decided 2026-10-16),
+    /// so the ask is refused and noted. The person's own hand (the shell's window menu and desktop
+    /// asks, Split View) goes through `full_screened` and is never refused.
     pub(super) fn enter_full_screen(self, window: &Window, wanted: Option<OutputKey>) -> Moved {
+        match self.focus.key == Some(window.id) {
+            true => self.full_screened(window, wanted),
+            false => Moved::of(self).with(Effect::Note(CoreNote::RefusedFullScreen(window.id))),
+        }
+    }
+
+    /// The shell, on the person's behalf, asks `id` to go full screen or leave it (the window menu,
+    /// the desktop protocol): not gated on the window being key.
+    pub(super) fn full_screen_by_hand(self, id: WindowId, toggle: Toggle) -> Moved {
+        let Some(window) = self.windows.get(&id).cloned() else {
+            return Moved::of(self).with(Effect::Note(CoreNote::UnknownWindow(id)));
+        };
+        match toggle {
+            Toggle::On => self.full_screened(&window, None),
+            Toggle::Off => self.leave_full_screen(&window),
+        }
+    }
+
+    /// The window takes a Space of its own on its output (or the output it asked for).
+    pub(super) fn full_screened(self, window: &Window, wanted: Option<OutputKey>) -> Moved {
         let output = wanted
             .filter(|output| self.outputs.0.contains_key(output))
             .or_else(|| self.output_of(window));

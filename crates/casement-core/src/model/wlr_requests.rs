@@ -64,7 +64,7 @@ impl Model {
 
     /// A minimised window comes back from the dock (and is activated, as a click on its tile
     /// does); any other window is left alone.
-    fn unminimised(self, window: WindowId) -> Moved {
+    pub(super) fn unminimised(self, window: WindowId) -> Moved {
         let minimised = self
             .windows
             .get(&window)

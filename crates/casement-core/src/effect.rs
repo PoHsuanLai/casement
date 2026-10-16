@@ -240,6 +240,8 @@ pub enum ProtocolFault {
 pub enum CoreNote {
     /// A window's activation was refused (A7).
     RefusedActivation(WindowId),
+    /// A window that was not key asked to go full screen and was refused (CASC-07).
+    RefusedFullScreen(WindowId),
     /// A timer fired for something that is gone.
     StaleTimer(TimerKey),
     /// An event named a window the model does not know.
