@@ -156,27 +156,57 @@ fn an_applied_configuration_changes_the_mode() {
     assert!(fixture.client(id).protocol_error().is_none());
 }
 
-/// Disabling a head darkens the output (no frames), enabling it lights it again.
+/// Disabling a head darkens the output, enabling it lights it again; the other display stays lit.
 #[test]
 fn disabling_a_head_darkens_its_output() {
-    let (mut fixture, _, mut manager) = boot(&TWO[..1]);
-    assert!(fixture.advance(Duration::from_millis(100)).frames > 0);
+    let (mut fixture, _, mut manager) = boot(&TWO);
+    let lit = |manager: &OutputManager, name: &str| {
+        manager
+            .heads()
+            .iter()
+            .find(|head| head.name == name)
+            .map(|head| head.lit)
+    };
 
     let off = HeadPlan {
         name: "HEADLESS-1".to_owned(),
         setting: Setting::Disable,
     };
-    let first = manager.configure(None, &[off], Intent::Apply).expect("off");
+    // A configuration names every head; the other one stays as it is.
+    let other = plan("HEADLESS-2", Properties::default());
+    let first = manager
+        .configure(None, &[off, other.clone()], Intent::Apply)
+        .expect("off");
     settle(&mut fixture, &mut manager);
     assert_eq!(manager.answer(first), Some(Answer::Succeeded));
-    assert_eq!(manager.heads()[0].lit, Lit::Off);
+    assert_eq!(lit(&manager, "HEADLESS-1"), Some(Lit::Off));
+    assert_eq!(lit(&manager, "HEADLESS-2"), Some(Lit::On));
     assert_eq!(config_of(&fixture, "HEADLESS-1").power, OutputPower::Off);
-    assert_eq!(fixture.advance(Duration::from_millis(100)).frames, 0);
+    assert!(
+        fixture.advance(Duration::from_millis(100)).frames > 0,
+        "the other display draws"
+    );
 
     let on = plan("HEADLESS-1", Properties::default());
-    let second = manager.configure(None, &[on], Intent::Apply).expect("on");
+    let second = manager
+        .configure(None, &[on, other], Intent::Apply)
+        .expect("on");
     settle(&mut fixture, &mut manager);
     assert_eq!(manager.answer(second), Some(Answer::Succeeded));
+    assert_eq!(lit(&manager, "HEADLESS-1"), Some(Lit::On));
+}
+
+/// CASC-09: the only lit display cannot be disabled; the configuration fails and it keeps drawing.
+#[test]
+fn the_only_lit_head_cannot_be_disabled() {
+    let (mut fixture, _, mut manager) = boot(&TWO[..1]);
+    let off = HeadPlan {
+        name: "HEADLESS-1".to_owned(),
+        setting: Setting::Disable,
+    };
+    let refused = manager.configure(None, &[off], Intent::Apply).expect("off");
+    settle(&mut fixture, &mut manager);
+    assert_eq!(manager.answer(refused), Some(Answer::Failed));
     assert_eq!(manager.heads()[0].lit, Lit::On);
     assert!(fixture.advance(Duration::from_millis(100)).frames > 0);
 }

@@ -588,6 +588,7 @@ fn a_refused_takeover_does_not_become_the_holder() {
         connected(7, ConnectionRole::Public),
         connected(8, ConnectionRole::Public),
         requested_by(7),
+        committed("HEADLESS-1"),
         lock(LockEvent::LockerGone),
         requested_by(8),
         requested_by(8),
