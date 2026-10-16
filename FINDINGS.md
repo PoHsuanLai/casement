@@ -3909,3 +3909,30 @@ Written without a build or a run (rule of the lane).
   needs X-Resource 1.2 (Xwayland has it since 1.20); no `XResQueryVersion` is sent first.
   (4) The wait for the X server is a blocked loop turn of at most 750 ms, twice per force quit
   (the `SIGTERM` and the later `SIGKILL`).
+
+## cas32-shadow: shadow rendering follow-ups (2026-10-16)
+
+Written without a build or a run (rule of the lane); the orchestrator's run settles it.
+
+- **The two tracker items are the cas18 symptoms, already fixed in cas27; nothing in the code explains them any more.**
+  "Reads black instead of wallpaper" is `the shadow darkens the probe: 0 against 0` in cas18's `qtest.log`: the bare
+  desktop is black and so is the shadow, so the probe could not move. cas27 put a light wallpaper layer under the
+  window (`Desk::wallpaper`) and made `Desk::close` destroy the decoration first (a closing client lost its wallpaper
+  layer when casement dropped the connection). The "2x seam" was the same log's `the shadow is darker at the edge than
+  away from it` plus the pixman filtering of the one-pixel strips (8413b3a, `STRIP_ACROSS`). The blessed golden
+  `shadow-1600x1000-2x` is smooth along the bottom and right edges (read from its pixels: no step above 1 level on rows
+  4 and 14 logical pixels below the edge, nor on columns beside the right edge); the gradient into the corner tiles is
+  monotone. No `#[ignore]` is left anywhere in `crates` (`grep -rn '#\[ignore' crates`): the two shadow tests, the
+  lights-hover test and both minimise tests all run since c9ee390 / 9480c97. No probe needed changing.
+- **A latent seam fixed at fractional scales** (`element/frame/shadow_place.rs`, `frame.rs::element_at`). The shadow's
+  pieces share their edges in whole logical pixels, but each element was given its corner already rounded to a physical
+  pixel (`on_output`); smithay then rounds the far edge from that rounded corner (`round(corner + size * scale)`), which at
+  1.5x (odd widths: a corner 139 across, a strip 1321 wide) is a different pixel from the next piece's corner: a one pixel
+  gap, or two pieces blended over each other (a 2x band of darker shadow). Integer scales were not affected (every edge is
+  already whole), which is why 1x and 2x goldens do not move. `shadow_elements` now hands smithay the exact physical corner
+  (`shadow_place::exact`, `logical * numerator / 120` as `f64`); smithay rounds it with the same rule `on_output` used, so
+  every corner lands where it did, and the far edge is `round(logical_edge * scale)` for both neighbours. Unit test:
+  `shadow_place.rs` (edges shared at 1, 1.25, 1.5, 2, 2.5x). Titlebar and other elements still use `element` (rounded corner).
+- **Goldens.** None should change at 1x and 2x. At 1.5x the framed goldens (`minimise-scale-1.5x-mid`,
+  `minimise-genie-1.5x-mid`, `one-window-1.5x` if it is framed) may move by a pixel along shadow piece edges, or not at
+  all where every edge was whole: diff them before blessing.
