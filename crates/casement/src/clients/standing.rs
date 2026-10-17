@@ -22,12 +22,23 @@ pub(super) fn image_name(exe: &Exe) -> Option<String> {
     }
 }
 
-/// Whether a service's image was shown to be the one the table names (`Proof::Exe` or better).
-/// A test build (`testing`, `debug-inject`) also takes `Proof::Dev`, the proof of a row from the
-/// test caller file (`dev_callers`), which shows nothing about the image but is the point of that
-/// file; every other build has no such proof.
-fn shown(proof: Proof) -> bool {
-    proof >= Proof::Exe || is_test_row(proof)
+/// Whether a service claim holds well enough to trust the connection as the desktop's own
+/// (NEW-PI-3): only `Proof::Full`, which the library gives when the unit manager vouches for the
+/// unit and the unit clears every loader variable. A cgroup and an image alone (`Proof::Exe`)
+/// can be had by a same-user process that makes a control group of the right name and runs the
+/// real image under `LD_PRELOAD`, so on the public socket they trust nobody: the shell and the
+/// agent tier are handed their connections (`Compositor1.Connect`), which the bus proves at
+/// `Full`. A test build (`testing`, `debug-inject`) also takes `Proof::Dev`, the proof of a row
+/// from the test caller file (`dev_callers`), which shows nothing about the image but is the
+/// point of that file; every other build has no such proof.
+fn trusted(proof: Proof) -> bool {
+    proof >= Proof::Full || is_test_row(proof)
+}
+
+/// Whether the claim shows the process runs the root-owned image the table names (`Proof::Exe`
+/// or better): enough to know which app it is, not to trust it.
+fn image_shown(proof: Proof) -> bool {
+    proof >= Proof::Exe
 }
 
 /// Whether `proof` is the proof of a test caller row.
@@ -44,13 +55,14 @@ fn is_test_row(_proof: Proof) -> bool {
 
 /// How the model takes the program `standing` describes, whose image is `exe`.
 ///
-/// A desktop service counts as one only when its image was shown to be the one the table names
-/// (`Proof::Exe` or better); a service known by its control group alone, which a same-user
-/// process can move itself into, is nobody in particular. Anything the library could not
-/// vouch for is unverified, and unverified programs are asked every time.
+/// A desktop service counts as one only at `Proof::Full` ([`trusted`]). A service whose image
+/// was shown but not its unit (`Proof::Exe`) is a program like any other, known by its image, so
+/// per-app consent applies to it; a service known by its control group alone, which a same-user
+/// process can move itself into, is nobody in particular. Anything the library could not vouch
+/// for is unverified, and unverified programs are asked every time.
 pub fn client_standing(standing: &Standing, exe: &Exe) -> ClientStanding {
     match standing {
-        Standing::Service { role, proof, .. } if shown(*proof) => {
+        Standing::Service { role, proof, .. } if trusted(*proof) => {
             match ServiceRole::parse(role.as_str()) {
                 Ok(role) => ClientStanding::Service {
                     role,
@@ -58,6 +70,9 @@ pub fn client_standing(standing: &Standing, exe: &Exe) -> ClientStanding {
                 },
                 Err(_) => unverified(exe),
             }
+        }
+        Standing::Service { proof, .. } if image_shown(*proof) => {
+            image_path(exe).map_or_else(|| unverified(exe), |exe| ClientStanding::Program { exe })
         }
         Standing::Program { exe: path, .. } => match ProgramPath::parse(&path.to_text()) {
             Ok(exe) => ClientStanding::Program { exe },
@@ -97,7 +112,7 @@ fn engine_of(engine: peer::Engine) -> Option<Engine> {
 /// image, `Subject`). A program the library could not vouch for belongs to no proven app.
 pub fn peer_of(standing: &Standing) -> PeerIdentity {
     let proven = match standing {
-        Standing::Service { app, proof, .. } if shown(*proof) => {
+        Standing::Service { app, proof, .. } if image_shown(*proof) => {
             named(app.as_str(), Isolation::Unsandboxed)
         }
         Standing::Program {
@@ -160,11 +175,18 @@ mod tests {
                 },
             ),
             (
-                "a service shown by its image",
-                service("portal", Proof::Exe),
+                "a service vouched for by the unit manager",
+                service("portal", Proof::Full),
                 ClientStanding::Service {
                     role: ServiceRole::parse("portal").expect("a role"),
                     exe: ProgramPath::parse("/usr/bin/grim").ok(),
+                },
+            ),
+            (
+                "a service shown by its image and cgroup only is a program (NEW-PI-3)",
+                service("shell", Proof::Exe),
+                ClientStanding::Program {
+                    exe: ProgramPath::parse("/usr/bin/grim").expect("a path"),
                 },
             ),
             (
@@ -209,6 +231,23 @@ mod tests {
         for (case, standing, want) in cases {
             assert_eq!(client_standing(&standing, &grim), want, "{case}");
         }
+    }
+
+    /// NEW-PI-3: per proof level, whether a claim to be a desktop service is trusted as one.
+    #[test]
+    fn only_a_full_proof_makes_a_connection_a_desktop_service() {
+        let grim = exe("/usr/bin/grim");
+        let is_service = |proof: Proof| {
+            matches!(
+                client_standing(&service("shell", proof), &grim),
+                ClientStanding::Service { .. }
+            )
+        };
+        assert!(!is_service(Proof::Cgroup));
+        assert!(!is_service(Proof::Exe));
+        assert!(is_service(Proof::Full));
+        // The ladder's top is the only way in: nothing below it is a service.
+        assert!(Proof::Cgroup < Proof::Exe && Proof::Exe < Proof::Full);
     }
 
     #[test]
