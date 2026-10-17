@@ -11,7 +11,12 @@ use super::doc::{CasementDoc, store};
 use super::sections::PointerSection;
 use crate::cli::ConfigHome;
 use casement_core::settings::Enabled;
+use ds_helpers::{NewFileMode, ReadCap, read_text_capped, write_atomic};
 use serde::{Deserialize, Serialize};
+
+/// The largest settings file read here: the cap the settings library reads it with, and a FIFO or
+/// a device at the path is refused rather than waited on, so start-up cannot hang on it (CASB-13).
+const SETTINGS_FILE_CAP: ReadCap = ReadCap::mib(1);
 
 /// The version of the settings file; a file without the key is older than any version.
 ///
@@ -98,16 +103,16 @@ pub fn stamp_version(home: &ConfigHome) -> Result<Stamped, ConfigError> {
     let Some(path) = store.path::<CasementDoc>() else {
         return Ok(Stamped::Left);
     };
-    let Ok(text) = std::fs::read_to_string(&path) else {
+    let Ok(text) = read_text_capped(&path, SETTINGS_FILE_CAP) else {
         return Ok(Stamped::Left);
     };
     if store.load::<CasementDoc>().value.version.is_some() {
         return Ok(Stamped::Left);
     }
     let stamped = format!("version = {}\n{text}", Version::CURRENT.0);
-    let part = path.with_extension("part");
-    let unwritten = |error: std::io::Error| ConfigError::Settings(error.to_string());
-    std::fs::write(&part, stamped).map_err(unwritten)?;
-    std::fs::rename(&part, &path).map_err(unwritten)?;
+    // Quire's writer: a unique temporary file beside it, synced and renamed over it, the file's
+    // own permissions kept and a link at the path followed (a dotfile-managed file stays a link).
+    write_atomic(&path, stamped.as_bytes(), NewFileMode::OwnerOnly)
+        .map_err(|error| ConfigError::Settings(error.to_string()))?;
     Ok(Stamped::Written)
 }

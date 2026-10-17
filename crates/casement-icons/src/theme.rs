@@ -24,6 +24,11 @@ impl SystemTheme {
     }
 }
 
+/// The most bytes read of the GTK settings file (NEW-CASB-3): a settings file is a few hundred
+/// bytes, and any program of the person's can replace it, with a pipe nobody writes to or a file
+/// without end, which a plain read would wait on or fill memory with.
+const THEME_FILE_LIMIT: u64 = 64 * 1024;
+
 /// The file the desktop's icon theme is named in, under the config folder `config`: the GTK
 /// settings file, which sill reads too, so both follow one choice.
 pub fn theme_file(config: &Path) -> PathBuf {
@@ -52,8 +57,9 @@ impl SystemTheme {
     /// The lookup in the theme the desktop is set to (read from the settings file under the
     /// config folder `config`), or in `hicolor` when the file is missing or names none.
     pub fn of_desktop(config: &Path) -> SystemTheme {
-        let named = std::fs::read_to_string(theme_file(config))
+        let named = crate::read::plain_file(&theme_file(config), THEME_FILE_LIMIT)
             .ok()
+            .and_then(|bytes| String::from_utf8(bytes).ok())
             .and_then(|text| theme_named(&text));
         SystemTheme::new(named)
     }

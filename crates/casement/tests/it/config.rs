@@ -528,6 +528,40 @@ fn stamping_writes_only_the_version_and_only_once() {
     );
 }
 
+/// CASB-13, CASB-14: a pipe where the settings file should be is not waited on (start-up would
+/// hang before READY), and a settings file that is a link stays a link with its target stamped.
+#[test]
+fn stamping_never_waits_on_a_pipe_and_keeps_a_link_a_link() {
+    let (dir, home) = home_with("");
+    let file = dir.path().join("casement/settings.toml");
+    std::fs::remove_file(&file).expect("the empty file goes");
+    rustix::fs::mkfifoat(
+        rustix::fs::CWD,
+        &file,
+        rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR,
+    )
+    .expect("a pipe");
+    assert_eq!(stamp_version(&home).expect("stamp"), Stamped::Left);
+    std::fs::remove_file(&file).expect("the pipe goes");
+
+    let target = dir.path().join("dotfiles-settings.toml");
+    std::fs::write(&target, "[pointer]\nnatural_scroll = \"off\"\n").expect("a target");
+    std::os::unix::fs::symlink(&target, &file).expect("a link");
+    assert_eq!(stamp_version(&home).expect("stamp"), Stamped::Written);
+    assert!(
+        std::fs::symlink_metadata(&file)
+            .expect("there")
+            .file_type()
+            .is_symlink(),
+        "the link is still a link"
+    );
+    assert!(
+        std::fs::read_to_string(&target)
+            .expect("read")
+            .starts_with("version = 2\n")
+    );
+}
+
 #[test]
 fn stamping_a_missing_file_writes_nothing() {
     let dir = tempfile::tempdir().expect("temp dir");
