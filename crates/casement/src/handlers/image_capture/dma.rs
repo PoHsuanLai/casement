@@ -13,6 +13,7 @@ use casement_backend::{BackendError, BackendKind};
 use casement_core::geometry::PhysicalSize;
 use casement_render::pass::{ArgbImage, CapturedFrame, ReadError, ShmWriteError, write_frame};
 use casement_wayland::image_capture::dma_offer;
+use casement_wayland::limits::{CursorBuffer, judge_cursor_buffer};
 use smithay::backend::allocator::{Buffer as AllocBuffer, Format, Fourcc};
 use smithay::reexports::drm::node::DrmNode;
 use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
@@ -109,14 +110,33 @@ pub(in crate::handlers) enum CursorReadError {
     /// This backend has no renderer to read a dma-buf with.
     #[error("this backend reads no dma-bufs")]
     NoRenderer,
+    /// The buffer has no size to read (it is neither shared memory nor a dma-buf).
+    #[error("the buffer has no size to read")]
+    Unsized,
+    /// A side is over `limits::MAX_CURSOR_BUFFER_SIDE` (NEW-CASB-8): nothing was copied or allocated.
+    #[error("a cursor buffer of {w} x {h} pixels is over the cap on a side")]
+    TooLarge {
+        /// Its width.
+        w: u32,
+        /// Its height.
+        h: u32,
+    },
 }
 
 /// The pixels of the client's cursor `buffer`: shared memory directly, a dma-buf through the
-/// renderer.
+/// renderer. A buffer over `limits::MAX_CURSOR_BUFFER_SIDE` a side is refused first, before anything is
+/// copied or allocated for it (NEW-CASB-8).
 pub(in crate::handlers) fn read_cursor(
     state: &mut State,
     buffer: &WlBuffer,
 ) -> Result<ArgbImage, CursorReadError> {
+    let size = buffer_size(buffer).ok_or(CursorReadError::Unsized)?;
+    if judge_cursor_buffer(size) == CursorBuffer::TooLarge {
+        return Err(CursorReadError::TooLarge {
+            w: size.w,
+            h: size.h,
+        });
+    }
     let Ok(held) = get_dmabuf(buffer) else {
         return Ok(ArgbImage::from_shm(buffer)?);
     };

@@ -16,6 +16,7 @@
 
 use std::cell::RefCell;
 
+use casement_core::geometry::PhysicalSize;
 use smithay::reexports::wayland_server::backend::protocol::ProtocolError;
 use smithay::reexports::wayland_server::{Client, DisplayHandle};
 
@@ -73,6 +74,30 @@ pub const MAX_IDLE_INHIBITORS: usize = 16;
 /// window, so the walk is bounded however many clients each hold their share (CASC-03). Far
 /// above what a person keeps open.
 pub const MAX_WINDOWS: usize = 4096;
+
+/// The most pixels a client's cursor buffer may have per side when the compositor reads it back
+/// for a capture (NEW-CASB-8): twice the largest cursor surface that is drawn (256 logical
+/// pixels, `casement_render::MAX_CLIENT_CURSOR`), room for a 2x cursor. A viewport can show a
+/// small surface from a buffer of any size, so the surface cap alone does not bound the read;
+/// this one does, and is checked before a byte of the buffer is copied.
+pub const MAX_CURSOR_BUFFER_SIDE: u32 = 512;
+
+/// Whether a client's cursor buffer is small enough to read back.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CursorBuffer {
+    /// Neither side is over [`MAX_CURSOR_BUFFER_SIDE`].
+    Fits,
+    /// A side is over it: the buffer is not read.
+    TooLarge,
+}
+
+/// Whether a cursor buffer of `size` pixels may be read back.
+pub const fn judge_cursor_buffer(size: PhysicalSize) -> CursorBuffer {
+    match size.w <= MAX_CURSOR_BUFFER_SIDE && size.h <= MAX_CURSOR_BUFFER_SIDE {
+        true => CursorBuffer::Fits,
+        false => CursorBuffer::TooLarge,
+    }
+}
 
 /// The objects whose count per client is capped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -224,6 +249,34 @@ mod tests {
             assert_eq!(limit.judge(limit.cap() - 1), Standing::Within, "{limit:?}");
             assert_eq!(limit.judge(limit.cap()), Standing::Over, "{limit:?}");
             assert_eq!(limit.judge(usize::MAX), Standing::Over, "{limit:?}");
+        }
+    }
+
+    /// NEW-CASB-8: a cursor buffer is read back only when neither side is over the cap, however
+    /// small the surface a viewport shows it in.
+    #[test]
+    fn a_cursor_buffer_over_the_cap_on_either_side_is_not_read() {
+        let size = |w, h| PhysicalSize { w, h };
+        let side = MAX_CURSOR_BUFFER_SIDE;
+        let cases = [
+            ("a pointer", size(24, 24), CursorBuffer::Fits),
+            ("a 2x pointer", size(48, 48), CursorBuffer::Fits),
+            ("at the cap", size(side, side), CursorBuffer::Fits),
+            ("one too wide", size(side + 1, 24), CursorBuffer::TooLarge),
+            ("one too tall", size(24, side + 1), CursorBuffer::TooLarge),
+            (
+                "a pool-sized buffer",
+                size(8192, 8192),
+                CursorBuffer::TooLarge,
+            ),
+            (
+                "the widest",
+                size(u32::MAX, u32::MAX),
+                CursorBuffer::TooLarge,
+            ),
+        ];
+        for (case, got, want) in cases {
+            assert_eq!(judge_cursor_buffer(got), want, "{case}");
         }
     }
 }

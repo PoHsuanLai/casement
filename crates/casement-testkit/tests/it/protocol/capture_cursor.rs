@@ -346,11 +346,27 @@ enum Dress {
     Viewport,
     /// The buffer is declared turned half a circle.
     HalfTurn,
+    /// The buffer is `HUGE_BUFFER` pixels a side, shown 16 x 16 by a viewport: a small surface
+    /// over a pool-sized buffer.
+    HugeBuffer,
 }
+
+/// A side of the buffer `Dress::HugeBuffer` draws on, over the cursor buffer cap.
+const HUGE_BUFFER: u32 = 1024;
 
 /// The image a cursor session sends for a coordinate-encoded 16 x 16 cursor buffer (pixel
 /// (x, y) is red = x, green = y) that the client dressed with `dress`.
 fn dressed_cursor(dress: &Dress) -> (Size, Vec<u8>) {
+    with_dressed_session(dress, image_of)
+}
+
+/// Runs `then` on a cursor session on the output of a client whose 16 x 16 cursor surface is
+/// dressed with `dress`, ready to be asked for its image (the client's objects live until `then`
+/// returns).
+fn with_dressed_session<T>(
+    dress: &Dress,
+    then: impl FnOnce(&mut Fixture, &mut OutputCapture) -> T,
+) -> T {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
     let mouse = pointer_at(&mut fixture, (10, 10));
     let id = fixture.connect(ConnectionRole::Public);
@@ -369,11 +385,21 @@ fn dressed_cursor(dress: &Dress) -> (Size, Vec<u8>) {
         .enter_serial()
         .expect("the pointer entered the layer");
     let surface = fixture.client(id).create_surface().expect("a surface");
-    let art = shm_buffer(
-        fixture.client(id),
-        PhysicalSize { w: 16, h: 16 },
-        Pattern::CoordinateEncoding,
-    );
+    let art = match dress {
+        Dress::HugeBuffer => shm_buffer(
+            fixture.client(id),
+            PhysicalSize {
+                w: HUGE_BUFFER,
+                h: HUGE_BUFFER,
+            },
+            Pattern::Solid(0xff33_6699),
+        ),
+        Dress::Viewport | Dress::HalfTurn => shm_buffer(
+            fixture.client(id),
+            PhysicalSize { w: 16, h: 16 },
+            Pattern::CoordinateEncoding,
+        ),
+    };
     match dress {
         Dress::Viewport => {
             let viewporter = Viewporter::bind(fixture.client(id));
@@ -385,6 +411,15 @@ fn dressed_cursor(dress: &Dress) -> (Size, Vec<u8>) {
             viewport.destination(16, 16);
         }
         Dress::HalfTurn => surface.set_buffer_transform(Transform::_180),
+        Dress::HugeBuffer => {
+            let viewporter = Viewporter::bind(fixture.client(id));
+            let wrapped = Surface {
+                surface: surface.clone(),
+            };
+            viewporter
+                .viewport(fixture.client(id), &wrapped)
+                .destination(16, 16);
+        }
     }
     surface.attach(Some(art.buffer()), 0, 0);
     surface.commit();
@@ -395,7 +430,21 @@ fn dressed_cursor(dress: &Dress) -> (Size, Vec<u8>) {
     settle(&mut fixture, &mut capture);
     capture.open_cursor("HEADLESS-1").expect("a cursor session");
     settle(&mut fixture, &mut capture);
-    image_of(&mut fixture, &mut capture)
+    then(&mut fixture, &mut capture)
+}
+
+/// NEW-CASB-8: a cursor buffer over the cap is not read back, however small the surface a
+/// viewport shows it in: the frame fails and the session goes on, with nothing copied.
+#[test]
+fn a_cursor_buffer_over_the_cap_is_refused_before_it_is_read() {
+    with_dressed_session(&Dress::HugeBuffer, |fixture, capture| {
+        capture.request(BufferAsk::Announced).expect("a frame");
+        settle(fixture, capture);
+        assert!(
+            matches!(capture.take(), Some(Err(_))),
+            "the frame failed instead of reading the buffer"
+        );
+    });
 }
 
 /// A cursor with a viewport is captured as drawn: the cropped part, scaled to the shown size.
