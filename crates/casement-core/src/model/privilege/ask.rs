@@ -18,6 +18,20 @@ pub enum Asker {
     Connection(ClientKey),
 }
 
+/// Whom the pause before asking again belongs to (NEW-CAS-5). A question belongs to its
+/// connection when the program cannot be named, but the pause must not: a program that
+/// reconnects after "Don't Allow" would be asked again at once, forever.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Reask {
+    /// A program or app that can be named.
+    Subject(Subject),
+    /// A program that cannot be named but whose image has a file name: every program of that
+    /// name shares the pause.
+    Image(String),
+    /// A program that cannot be told from any other unnamed one: they all share one pause.
+    Anonymous,
+}
+
 /// What a question is for: one asker and one power.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AskKey {
@@ -43,6 +57,8 @@ pub struct OpenAsk {
     pub id: AskId,
     /// What it is for.
     pub key: AskKey,
+    /// Whom a dismissal pauses further questions for.
+    pub reask: Reask,
     /// What the shell is told of the program.
     pub subject: AskSubject,
     /// Whether an answer is kept.
@@ -73,7 +89,7 @@ pub struct AskView {
 pub struct Asks {
     next: Option<u32>,
     pub(super) open: Vec<OpenAsk>,
-    cooling: BTreeMap<AskKey, Mono>,
+    cooling: BTreeMap<(Reask, Power), Mono>,
 }
 
 impl Default for Asks {
@@ -127,6 +143,7 @@ impl Asks {
     pub(super) fn open_for(
         &mut self,
         key: AskKey,
+        reask: Reask,
         subject: AskSubject,
         memory: Memory,
         client: ClientKey,
@@ -136,6 +153,7 @@ impl Asks {
         self.open.push(OpenAsk {
             id,
             key,
+            reask,
             subject,
             memory,
             sheet: Sheet::Queued,
@@ -185,11 +203,11 @@ impl Asks {
             .for_each(|ask| ask.sheet = Sheet::Queued);
     }
 
-    /// `key` is not asked again before [`REASK_AFTER`] from `now`. The table is bounded: the
-    /// entry that ends soonest makes room.
-    pub(super) fn cool(&mut self, key: AskKey, now: Mono) {
+    /// `who` is not asked about `power` again before [`REASK_AFTER`] from `now`. The table is
+    /// bounded: the entry that ends soonest makes room.
+    pub(super) fn cool(&mut self, who: Reask, power: Power, now: Mono) {
         self.cooling.retain(|_, until| *until > now);
-        self.cooling.insert(key, now.after(REASK_AFTER));
+        self.cooling.insert((who, power), now.after(REASK_AFTER));
         while self.cooling.len() > MAX_COOLDOWNS {
             let soonest = self
                 .cooling
@@ -203,9 +221,11 @@ impl Asks {
         }
     }
 
-    /// Whether `key` was dismissed lately and is not asked again yet.
-    pub(super) fn is_cooling(&self, key: &AskKey, now: Mono) -> bool {
-        self.cooling.get(key).is_some_and(|until| *until > now)
+    /// Whether `who` was dismissed about `power` lately and is not asked again yet.
+    pub(super) fn is_cooling(&self, who: &Reask, power: Power, now: Mono) -> bool {
+        self.cooling
+            .get(&(who.clone(), power))
+            .is_some_and(|until| *until > now)
     }
 
     /// The questions as the outside sees them, in the order they were opened.

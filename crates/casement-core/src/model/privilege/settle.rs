@@ -65,7 +65,7 @@ impl Privilege {
             }
             (Answer::Allow, false) => self.settle(out, &ask, Settle::Once),
             (Answer::Deny, false) | (Answer::Dismissed, _) => {
-                self.asks.cool(ask.key.clone(), ctx.now);
+                self.asks.cool(ask.reask.clone(), ask.key.power, ctx.now);
                 self.settle(out, &ask, Settle::ByRecord);
             }
         }
@@ -247,7 +247,7 @@ impl Privilege {
             };
             if ask.sheet == Sheet::Shown {
                 out.push(Effect::WithdrawAsk { ask: ask.id });
-                self.asks.cool(ask.key.clone(), ctx.now);
+                self.asks.cool(ask.reask.clone(), ask.key.power, ctx.now);
             }
             self.settle(out, &ask, Settle::ByRecord);
         }

@@ -5,7 +5,7 @@
 //! again for a while; a client may open only a few different questions a minute; and only a
 //! few questions are open at once.
 
-use super::ask::{AskKey, Asker, Join};
+use super::ask::{AskKey, Asker, Join, Reask};
 use super::decide::Decision;
 use super::limits::{ASKS_PER_MINUTE, RATE_WINDOW, SHELL_WAIT};
 use super::standing::Identity;
@@ -59,6 +59,11 @@ impl Privilege {
             Identity::Named(subject) => Asker::Subject(subject),
             Identity::Unnamed => Asker::Connection(client),
         };
+        let reask = match (standing.identity(), standing.image_name()) {
+            (Identity::Named(subject), _) => Reask::Subject(subject),
+            (Identity::Unnamed, Some(name)) => Reask::Image(name.to_owned()),
+            (Identity::Unnamed, None) => Reask::Anonymous,
+        };
         let key = AskKey { asker, power };
         let refused = match (ctx.screen, self.shell) {
             (Screen::Covered, _) => true,
@@ -77,13 +82,13 @@ impl Privilege {
             }
             Join::NoSuchAsk => {}
         }
-        let admitted = !self.asks.is_cooling(&key, ctx.now)
+        let admitted = !self.asks.is_cooling(&reask, power, ctx.now)
             && self.within_rate(client, power, ctx)
             && self.asks.has_room();
         let opened = admitted
             .then(|| {
                 self.asks
-                    .open_for(key, standing.ask_subject(), memory, client, ctx.now)
+                    .open_for(key, reask, standing.ask_subject(), memory, client, ctx.now)
             })
             .flatten();
         if opened.is_none() {

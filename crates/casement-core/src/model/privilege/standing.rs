@@ -123,6 +123,16 @@ impl ClientStanding {
         }
     }
 
+    /// The file name of the image of a program nothing can name (it is only a name: any program
+    /// can have any file name), for the pause before it is asked again. Nothing for a program
+    /// that can be named, or whose image is unknown.
+    pub fn image_name(&self) -> Option<&str> {
+        match self {
+            ClientStanding::Unverified { exe_name } => exe_name.as_deref(),
+            _ => None,
+        }
+    }
+
     /// The desktop service role of this connection, if it is one.
     pub fn service_role(&self) -> Option<&ServiceRole> {
         match self {

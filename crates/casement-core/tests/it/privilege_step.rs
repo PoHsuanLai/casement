@@ -452,6 +452,60 @@ fn a_dismissed_question_is_not_asked_again_for_a_while() {
     assert_eq!(questions(&effects).len(), 1, "asked again after the pause");
 }
 
+/// NEW-CAS-5: the pause after "Don't Allow" belongs to the program, not to the connection it
+/// was on: reconnecting does not bring the question back, whether the image has a name or not.
+#[test]
+fn a_program_that_reconnects_after_a_refusal_is_not_asked_again() {
+    let nameless = ClientStanding::Unverified { exe_name: None };
+    for (name, standing) in [("a named image", unverified()), ("no name", nameless)] {
+        let mut desk = Desk::with_shell();
+        desk.public(1, standing.clone());
+        desk.uses(1, Power::Screen);
+        desk.answers(desk.shown(), Answer::Deny);
+        desk.send(Event::ClientGone {
+            client: ClientKey(1),
+        });
+
+        desk.public(2, standing.clone());
+        let effects = desk.uses(2, Power::Screen);
+        assert!(questions(&effects).is_empty(), "{name}: no question again");
+        assert_eq!(
+            outcome(&effects, 2, Power::Screen),
+            Some(PowerOutcome::Denied),
+            "{name}"
+        );
+        // Another power is a different question, and so is a program of another name.
+        assert_eq!(
+            questions(&desk.uses(2, Power::Keys)).len(),
+            1,
+            "{name}: another power"
+        );
+
+        desk.wait(REASK_AFTER);
+        desk.public(3, standing);
+        assert_eq!(
+            questions(&desk.uses(3, Power::Screen)).len(),
+            1,
+            "{name}: asked again after the pause"
+        );
+    }
+    let mut desk = Desk::with_shell();
+    desk.public(1, unverified());
+    desk.uses(1, Power::Screen);
+    desk.answers(desk.shown(), Answer::Deny);
+    desk.public(
+        2,
+        ClientStanding::Unverified {
+            exe_name: Some("payload".to_owned()),
+        },
+    );
+    assert_eq!(
+        questions(&desk.uses(2, Power::Screen)).len(),
+        1,
+        "a program of another name is asked"
+    );
+}
+
 #[test]
 fn a_question_nobody_answers_times_out_and_a_late_answer_changes_nothing() {
     let mut desk = Desk::with_shell();
