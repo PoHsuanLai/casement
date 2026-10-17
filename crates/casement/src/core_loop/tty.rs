@@ -115,8 +115,12 @@ fn input(state: &mut State) -> usize {
 pub(super) fn with_scroll_factor(state: &State, event: InputEvent) -> InputEvent {
     let pointer = &state.settings().pointer;
     let profile = match event.origin {
-        Origin::Physical(DeviceClass::Touchpad) => pointer.touchpad,
-        Origin::Physical(DeviceClass::Pointer) => pointer.mouse,
+        Origin::Physical(DeviceClass::Touchpad) | Origin::Virtual(DeviceClass::Touchpad) => {
+            pointer.touchpad
+        }
+        Origin::Physical(DeviceClass::Pointer) | Origin::Virtual(DeviceClass::Pointer) => {
+            pointer.mouse
+        }
         _ => return event,
     };
     InputEvent {

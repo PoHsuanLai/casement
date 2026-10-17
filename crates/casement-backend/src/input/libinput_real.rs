@@ -45,6 +45,9 @@ pub struct RealInputFeed {
 struct Known {
     device: libinput::Device,
     class: DeviceClass,
+    /// The vendor id it reports, which tells a device the desktop's device service made for
+    /// palmrest from the person's own (`Origin::of_kernel_device`).
+    vendor: u32,
 }
 
 impl RealInputFeed {
@@ -103,6 +106,7 @@ impl RealInputFeed {
                     Known {
                         device: device.clone(),
                         class,
+                        vendor: device.id_vendor(),
                     },
                 );
                 Some(FedInput::Appeared(FedDevice::new(
@@ -119,10 +123,11 @@ impl RealInputFeed {
             other => {
                 let device = device_of(other)?;
                 let id = self.id_of(&device);
-                let class = self.devices.get(&id)?.class;
+                let known = self.devices.get(&id)?;
+                let origin = Origin::of_kernel_device(known.class, known.vendor);
                 let kind = input_kind_of(other, context.extent)?;
                 Some(FedInput::Event(CoreEvent {
-                    origin: Origin::Physical(class),
+                    origin,
                     device: id,
                     at: context.now,
                     kind,

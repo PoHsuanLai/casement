@@ -121,7 +121,9 @@ impl Model {
         };
         let mut model = self;
         let ours = matches!(model.lock, LockState::Unlocked)
-            && (event.origin.is_physical() || matches!(event.origin, Origin::Feed(_)));
+            && (event.origin.is_physical()
+                || event.origin.is_pad()
+                || matches!(event.origin, Origin::Feed(_)));
         let (next, fate) = match ours {
             true => route(model.swipe.route, step, &model.settings.gestures),
             false => abandoned(model.swipe.route),

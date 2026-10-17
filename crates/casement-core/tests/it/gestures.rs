@@ -285,8 +285,18 @@ fn three_spaces(gestures: GestureSettings) -> Model {
 
 /// `model` after a swipe step at `at` ms, and its effects.
 fn swipe(model: Model, at: u64, step: GestureStep<SubPoint>) -> (Model, Vec<Effect>) {
+    swipe_from(Origin::Physical(DeviceClass::Touchpad), model, at, step)
+}
+
+/// `model` after a swipe step from `origin` at `at` ms, and its effects.
+fn swipe_from(
+    origin: Origin,
+    model: Model,
+    at: u64,
+    step: GestureStep<SubPoint>,
+) -> (Model, Vec<Effect>) {
     let event = InputEvent {
-        origin: Origin::Physical(DeviceClass::Touchpad),
+        origin,
         device: DeviceId(1),
         at: ms(at),
         kind: InputKind::Swipe(step),
@@ -352,6 +362,35 @@ fn a_far_swipe_left_follows_the_fingers_then_commits_to_the_next_space() {
         ms(T0 + 900),
     );
     assert_eq!(model.space_strip(ms(T0 + 900)), None, "at rest");
+}
+
+/// NEW-PI-4: palmrest's pad is not the person's hand (a consent sheet never hears it), but its
+/// swipes still move the Spaces; a device that is no pad does not take a swipe.
+#[test]
+fn a_swipe_from_palmrests_pad_drives_the_spaces_and_one_from_a_virtual_keyboard_does_not() {
+    let palmrest = Origin::of_kernel_device(DeviceClass::Touchpad, 0x0001);
+    assert!(!palmrest.is_physical());
+    for (origin, drives) in [
+        (palmrest, true),
+        (Origin::Virtual(DeviceClass::Keyboard), false),
+    ] {
+        let model = three_spaces(GestureSettings::defaults());
+        let (model, _) = [
+            (T0, begin(4)),
+            (T0 + 100, by(-60, 0)),
+            (T0 + 200, by(-60, 0)),
+        ]
+        .into_iter()
+        .fold((model, Vec::new()), |(model, _), (at, step)| {
+            swipe_from(origin, model, at, step)
+        });
+        let owner = if drives {
+            SwipeOwner::Desktop
+        } else {
+            SwipeOwner::Client
+        };
+        assert_eq!(model.swipe_owner(), owner, "{origin:?}");
+    }
 }
 
 #[test]
