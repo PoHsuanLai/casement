@@ -13,9 +13,9 @@ use casement_wayland::convert::{point_of, serial_of};
 use casement_wayland::limits::{self, Limit, Standing};
 use casement_wayland::serial::PressRecord;
 use casement_wayland::xdg_shell::{
-    self, GrabUse, edges_of, grab_proven, on_app_id, on_full_screen, on_maximise, on_minimise,
-    on_move, on_new_toplevel, on_parent, on_pong, on_resize, on_title, on_toplevel_destroyed,
-    on_window_menu,
+    self, GrabUse, edges_of, grab_proven, heaviest_holder, on_app_id, on_full_screen, on_maximise,
+    on_minimise, on_move, on_new_toplevel, on_parent, on_pong, on_resize, on_title,
+    on_toplevel_destroyed, on_window_menu,
 };
 use casement_wayland::{ClientState, xdg_foreign, xdg_toplevel_tag};
 use smithay::desktop::{PopupKind, find_popup_root_surface};
@@ -30,6 +30,14 @@ use smithay::wayland::shell::xdg::{
     Configure, PopupSurface, PositionerState, ShellClient, ToplevelSurface, XdgShellHandler,
     XdgShellState,
 };
+
+/// Who is cut when the session is out of room for a window.
+enum Cut {
+    /// The client that asked.
+    Asker,
+    /// Another client, the one holding the most windows.
+    Other(Client),
+}
 
 impl State {
     /// The next window id (minted here, where the toplevel is first seen).
@@ -64,6 +72,23 @@ impl State {
         };
         let record = self.wl.seat.serials.answers_latest(serial, key);
         grab_proven(record, GrabUse::AnyPress)
+    }
+
+    /// Who is cut because the session holds as many windows as it may and `asker` wants one more:
+    /// the client holding the most, or `asker` when it is that client (or cannot be told apart).
+    fn cut_for_room(&self, asker: &Client) -> Cut {
+        let Some(key) = ClientState::of(asker).map(|data| data.key) else {
+            return Cut::Asker;
+        };
+        let held = self.wl.xdg_shell.toplevels_by_client();
+        match heaviest_holder(&held, key) {
+            heaviest if heaviest == key => Cut::Asker,
+            heaviest => self
+                .wl
+                .xdg_shell
+                .connection_of(heaviest)
+                .map_or(Cut::Asker, Cut::Other),
+        }
     }
 
     /// The output a client's `wl_output` is, as the model keys it.
@@ -113,9 +138,19 @@ impl XdgShellHandler for State {
                 return;
             }
             // The whole session holds a bounded number too: every model step walks every window.
+            // When it is full, the client holding the most is the one cut, so a client that fills
+            // the session does not get the next innocent one cut at its first window; the asker
+            // is cut when it is that client, and then nothing is made for it. An innocent asker
+            // is let through: the cut of the largest holder is queued and takes its windows.
             let all = self.core.model.windows().len();
-            if limits::admit(&self.display, &client, Limit::Windows, all) == Standing::Over {
-                return;
+            if Limit::Windows.judge(all) == Standing::Over {
+                match self.cut_for_room(&client) {
+                    Cut::Other(heaviest) => limits::cut(&heaviest, Limit::Windows),
+                    Cut::Asker => {
+                        limits::cut(&client, Limit::Windows);
+                        return;
+                    }
+                }
             }
         }
         // No configure here: the initial configure goes out with the first commit.

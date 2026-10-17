@@ -27,7 +27,7 @@ pub use judge::{Arrival, Judge, desktop_table};
 pub use probes::begin as begin_probe;
 pub use probes::{MAX_PROBES, PROBE_DEADLINE, Probes};
 pub use processes::Processes;
-pub use roster::{Holder, MAX_CONNECTIONS, MAX_PER_HOLDER, Room, Roster};
+pub use roster::{Holder, MAX_CONNECTIONS, MAX_PER_HOLDER, RESERVED_FOR_PROVEN, Room, Roster};
 pub use standing::{client_standing, peer_of};
 
 /// How well the program behind a connection is known when it arrives.

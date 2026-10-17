@@ -3,7 +3,8 @@
 //! a program that opens connections without end would use up the descriptors, so the number of
 //! live connections is capped for the whole session and for each holder (an app when its name
 //! is proven, otherwise the process). A connection past a cap is refused at accept, closed
-//! before anything is read from the program behind it.
+//! before anything is read from the program behind it. The last few connections of the session
+//! are kept for apps and services whose name is proven ([`RESERVED_FOR_PROVEN`]).
 
 use casement_core::ClientKey;
 use porter_core::{AppId, PeerIdentity};
@@ -14,6 +15,14 @@ use std::os::unix::net::UnixStream;
 /// Live connections the session takes in all: two descriptors each (the socket and the held
 /// process), well under the soft limit `limits::raise_open_files` asks for.
 pub const MAX_CONNECTIONS: usize = 384;
+
+/// The last connections of the session's cap, kept for apps and services whose name is proven
+/// ("New 2"): a program nothing proves a name for is refused once the session holds
+/// `MAX_CONNECTIONS - RESERVED_FOR_PROVEN`, so a few hostile processes cannot fill the session
+/// and leave no room for the next program the person starts. The cap is still checked before
+/// anything is read from the program (it cannot yet be told apart then); the reserve is applied
+/// when its look has finished.
+pub const RESERVED_FOR_PROVEN: usize = 32;
 
 /// Live connections one app (or one process, when no name is proven) may hold: browsers and
 /// toolkits open a handful, a program that opens dozens more is looping.
@@ -77,16 +86,22 @@ impl Roster {
         }
     }
 
-    /// Whether the session takes one more connection from `holder`.
+    /// Whether the session takes one more connection from `holder`: the connections a program
+    /// nothing proves a name for may hold stop short of the reserve ([`RESERVED_FOR_PROVEN`]).
     pub fn room_for(&self, holder: &Holder) -> Room {
-        match self.room() {
-            Room::Free => {
+        let ceiling = match holder {
+            Holder::App(_) => MAX_CONNECTIONS,
+            Holder::Process(_) | Holder::Unknown => MAX_CONNECTIONS - RESERVED_FOR_PROVEN,
+        };
+        match (self.room(), self.held.len() < ceiling) {
+            (Room::Free, true) => {
                 match self.per_holder.get(holder).copied().unwrap_or(0) < MAX_PER_HOLDER {
                     true => Room::Free,
                     false => Room::HolderFull,
                 }
             }
-            full => full,
+            (Room::Free, false) => Room::SessionFull,
+            (full, _) => full,
         }
     }
 
@@ -173,6 +188,52 @@ mod tests {
         roster.leave(key(3));
         assert_eq!(roster.room(), Room::Free);
         assert_eq!(roster.len(), MAX_CONNECTIONS - 1);
+    }
+
+    /// "New 2": past `MAX_CONNECTIONS - RESERVED_FOR_PROVEN` only a proven app or service is taken
+    /// in, up to the session's cap; a process nothing proves a name for is refused.
+    #[test]
+    fn the_last_connections_are_kept_for_apps_whose_name_is_proven() {
+        let app = |name: &str| {
+            Holder::App(AppId {
+                name: porter_core::AppName::parse(name).expect("a reverse-DNS name"),
+                isolation: porter_core::Isolation::Unsandboxed,
+            })
+        };
+        let mut roster = Roster::default();
+        let open = MAX_CONNECTIONS - RESERVED_FOR_PROVEN;
+        for n in 0..open as u64 {
+            let pid = RawPid::try_from(n + 1).unwrap_or(1);
+            roster.join(key(n), Holder::Process(pid));
+        }
+        let cases = [
+            (
+                "a process nothing names",
+                Holder::Process(9_999),
+                Room::SessionFull,
+            ),
+            (
+                "a connection nothing could name",
+                Holder::Unknown,
+                Room::SessionFull,
+            ),
+            ("a proven app", app("org.example.Notes"), Room::Free),
+        ];
+        for (case, holder, want) in cases {
+            assert_eq!(roster.room_for(&holder), want, "{case}");
+        }
+        // The reserve fills with proven apps, then the session is full for everyone.
+        for n in 0..RESERVED_FOR_PROVEN as u64 {
+            let holder = app(&format!("org.example.App{n}"));
+            assert_eq!(
+                roster.room_for(&holder),
+                Room::Free,
+                "proven connection {n}"
+            );
+            roster.join(key(open as u64 + n), holder);
+        }
+        assert_eq!(roster.room_for(&app("org.example.Late")), Room::SessionFull);
+        assert_eq!(roster.len(), MAX_CONNECTIONS);
     }
 
     #[test]
