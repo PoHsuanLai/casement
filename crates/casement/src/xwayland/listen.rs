@@ -8,11 +8,11 @@
 use super::{DisplayName, Restarts, XwaylandError};
 use rustix::event::{PollFd, PollFlags, Timespec, poll};
 use rustix::net::{
-    AddressFamily, SocketAddrUnix, SocketFlags, SocketType, bind, listen, socket_with,
+    AddressFamily, SocketAddrUnix, SocketFlags, SocketType, bind, connect, listen, socket_with,
 };
 use std::os::fd::{AsFd, OwnedFd};
 use std::os::unix::fs::{FileTypeExt, MetadataExt};
-use std::os::unix::net::{UnixListener, UnixStream};
+use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 
 /// The directory X11 path sockets live in (`/tmp/.X11-unix` on a real system).
@@ -125,13 +125,28 @@ fn check_dir(dir: &Path) -> Result<(), XwaylandError> {
 /// again instead of the next one.
 fn clear_leftover(path: &Path) {
     let is_socket = std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_socket());
-    let refused = matches!(
-        UnixStream::connect(path),
-        Err(error) if error.kind() == std::io::ErrorKind::ConnectionRefused
-    );
-    if is_socket && refused {
+    if is_socket && nobody_listens(path) {
         let _ = std::fs::remove_file(path);
     }
+}
+
+/// Whether a connection to the socket at `path` is refused, which is what a socket file nobody
+/// listens on answers. The connect never waits (NEW-CASB-5): a listener whose backlog is full and
+/// never accepts would hold a blocking connect for ever, before READY; "would block" means
+/// somebody is there, so the display is taken.
+fn nobody_listens(path: &Path) -> bool {
+    let Ok(address) = SocketAddrUnix::new(path) else {
+        return false;
+    };
+    let Ok(fd) = socket_with(
+        AddressFamily::UNIX,
+        SocketType::STREAM,
+        SocketFlags::CLOEXEC | SocketFlags::NONBLOCK,
+        None,
+    ) else {
+        return false;
+    };
+    connect(&fd, &address) == Err(rustix::io::Errno::CONNREFUSED)
 }
 
 /// Binds display `number` in `dir`, or `None` when it is taken.
@@ -181,6 +196,41 @@ mod tests {
         assert!(leftover.exists());
         let again = Listening::bind(&X11Dir(dir.path().to_owned())).expect("a free display");
         assert_eq!(again.display(), &DisplayName(":0".to_owned()));
+    }
+
+    /// NEW-CASB-5: a listener that never accepts, with a full backlog, answers "would block" to a
+    /// connect, never refuses it; the check neither waits for it nor takes its display.
+    #[test]
+    fn a_listener_with_a_full_backlog_is_alive_and_the_check_does_not_wait() {
+        let dir = tempfile::tempdir().expect("a scratch folder");
+        let path = dir.path().join("X0");
+        let address = SocketAddrUnix::new(&path).expect("an address");
+        let listener = socket_with(
+            AddressFamily::UNIX,
+            SocketType::STREAM,
+            SocketFlags::CLOEXEC,
+            None,
+        )
+        .expect("a socket");
+        bind(&listener, &address).expect("bound");
+        listen(&listener, 0).expect("listening, with no room to wait");
+        // Fill the backlog with connections nobody accepts.
+        let mut waiting = Vec::new();
+        for _ in 0..4 {
+            let client = socket_with(
+                AddressFamily::UNIX,
+                SocketType::STREAM,
+                SocketFlags::CLOEXEC | SocketFlags::NONBLOCK,
+                None,
+            )
+            .expect("a socket");
+            let _ = connect(&client, &address);
+            waiting.push(client);
+        }
+        assert!(!nobody_listens(&path), "somebody is there, however busy");
+        assert!(path.exists());
+        drop(listener);
+        assert!(nobody_listens(&path), "a socket file nobody listens on");
     }
 
     #[test]
