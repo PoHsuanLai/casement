@@ -4214,6 +4214,26 @@ Rows for the findings CASW-02/03/04/07/11/12/13/15/18/19, CASC-02/05/06/07/09/10
   cross-check the peer's cgroup against `app-flatpak-<id>-*.scope` before it returns `Proven`, and decide how far same-UID
   spoofing is in scope (interface ask in the lane report). Test: `a_context_carries_at_most_its_creators_proof` (the
   fixture cannot connect a proven creator, so the table is on the pure function).
+- **CASW-04 (3) (decided, owner 2026-10-17): only the known Flatpak launcher may create a security context that gives its clients an
+  app.** Before, any `Proven` creator would do, and a root-owned image in a scope it named itself (`app-<id>-<rand>.scope`) is
+  `Proven(Unsandboxed)`, so a same-user program could create a context whose clients sat in a self-named `app-flatpak-<id>-<n>.scope`
+  and came out `Proven(Flatpak)` for any app id (a forged label for the Dock, `AppKey` and the PiP guess; powers stayed closed,
+  the clients are `ConnectionRole::Sandboxed` whoever made the context). Now `clients::maker_of` reads the creator's judged
+  standing: it is `Maker::SandboxLauncher` only as the table's `sandbox_launcher` row (`dist/desktop-callers.toml`:
+  `org.quire.Flatpak`, `/usr/bin/flatpak`, no unit) at `Proof::Exe` or a test caller row's `Proof::Dev`. `Judge::arrival` carries it
+  in `Standing::Judged { maker }`, `ClientState::maker` keeps it, and `identity_for_clients(creator, maker, facts)` lets the
+  context's facts count only for a launcher whose own peer is `Proven` (`peer_of` gives a launcher row's app at `Exe`); every other
+  creator, however well proven, and an unproven one, leaves the clients with no app, an unknown one. The creator's cap is
+  unchanged for the launcher. No table change was needed (the row and `roles::SANDBOX_LAUNCHER` already existed). Tests: in
+  `casement-wayland/src/security_context.rs` `only_the_sandbox_launcher_gives_a_contexts_clients_an_app` (launcher, another
+  proven program, an unproven creator; facts proving an app or nothing) and in `clients/standing.rs`
+  `only_the_launcher_row_makes_contexts_that_carry_an_app` (launcher by image, by control group alone, another row, a root-owned
+  program, one in a scope it named for a Flatpak app, a sandboxed app) and `the_launcher_is_a_proven_program_with_no_extra_power`
+  (its `ClientStanding` is the plain `Program`, so its powers do not change). Not tested end to end: the fixture connects no proven
+  creator. **Residual (stated plainly):** a public-socket peer reaches at most `Proof::Exe`, which is the root-owned image
+  and no unit facts, so "the launcher" here means "a process running the genuine `/usr/bin/flatpak` image". A same-user process can
+  run that genuine image under `LD_PRELOAD` (or ptrace it) and make a context in the launcher's name; `Exe` does not see that.
+  The effect is the same forged app label as before, now needing the real launcher image to be driven, and powers stay closed.
 - **CASC-02 (decided): only the shell's layer surfaces outrank the key window.** `LayerSpec` gained `owner: LayerOwner`
   (`Shell` when the surface's client came through the shell connection, set by the layer-shell handler from
   `ClientState::role`; `Client` otherwise). `LayerSpec::granted_keyboard` turns another client's `Exclusive` into `OnDemand`,
@@ -5113,8 +5133,7 @@ One commit per root cause on branch `pa3-cas`; nothing here was compiled or run 
   deferrals; no owner decision needed, work not done.
 - **CASC-15.** `Origin::Test` is used by tests in five crates and a doctest; gating it needs a `testing` feature on casement-core enabled by each.
 - **CASC-17.** The model does not know the pointer's output.
-- **CASW-04 (2).** A context's creator that is `Proven(Unsandboxed)` only by a scope name it made itself can still mint a Flatpak identity for
-  window grouping (powers are unaffected); closing it needs porter's cross-check (PR #38) and a decision on what proves a creator.
+- **CASW-04 (2): closed in casement, see "CASW-04 (3)" below.** The residual that stays is the launcher's own, named there.
 - **NEW-QDH-4 (checked, nothing to cap in casement).** casement never writes selection or drag data itself, so there is no write slot
   for a client's unread pipes to hold. `SelectionHandler for State` (`crates/casement/src/handlers/data_device.rs`) implements only
   `new_selection`; `send_selection`, the one hook that hands the compositor a client's fd to write into, is left at smithay's default, which

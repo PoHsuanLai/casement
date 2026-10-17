@@ -9,6 +9,7 @@ use casement_core::policy::ConnectionRole;
 use casement_core::privilege::ClientStanding;
 use casement_wayland::ClientState;
 use casement_wayland::consent::ImageWatch;
+use casement_wayland::security_context::Maker;
 use porter_core::PeerIdentity;
 use smithay::reexports::wayland_server::Client;
 use std::os::unix::net::UnixStream;
@@ -28,7 +29,7 @@ pub use probes::begin as begin_probe;
 pub use probes::{MAX_PROBES, PROBE_DEADLINE, Probes};
 pub use processes::Processes;
 pub use roster::{Holder, MAX_CONNECTIONS, MAX_PER_HOLDER, RESERVED_FOR_PROVEN, Room, Roster};
-pub use standing::{client_standing, peer_of};
+pub use standing::{client_standing, maker_of, peer_of};
 
 /// How well the program behind a connection is known when it arrives.
 #[derive(Debug, Clone)]
@@ -43,6 +44,9 @@ pub enum Standing {
         standing: ClientStanding,
         /// Whether it still runs the image it had then.
         watch: Arc<dyn ImageWatch>,
+        /// Whether it is the desktop's sandbox launcher (its security contexts give their
+        /// clients an app; no other program's do).
+        maker: Maker,
     },
 }
 
@@ -69,9 +73,14 @@ pub fn insert_client(
         .with_gone(state.wl.clients.gone_queue());
     let (data, judged) = match standing {
         Standing::Unjudged => (data, None),
-        Standing::Judged { standing, watch } => (
+        Standing::Judged {
+            standing,
+            watch,
+            maker,
+        } => (
             data.with_standing_under(state.core.model.privilege(), standing.clone())
-                .with_image_watch(watch),
+                .with_image_watch(watch)
+                .with_maker(maker),
             Some(standing),
         ),
     };

@@ -2,6 +2,7 @@
 //! smithay's per-client compositor state.
 
 use crate::consent::{ImageWatch, Ledger, Unwatched};
+use crate::security_context::Maker;
 use casement_core::ClientKey;
 use casement_core::policy::{ConnectionRole, PowerSet};
 use casement_core::privilege::{ClientStanding, Privilege};
@@ -100,6 +101,9 @@ pub struct ClientState {
     pub role: ConnectionRole,
     /// Who its process is, read once where the connection arrived.
     pub peer: PeerIdentity,
+    /// Whether it is the desktop's sandbox launcher: only that program's security contexts give
+    /// their clients an app (CASW-04).
+    pub maker: Maker,
     /// How well the compositor knows its program, as of accept. Unproven until the root says
     /// more ([`ClientState::with_standing`]); the model holds the same word
     /// (`Event::ClientStanding`).
@@ -125,6 +129,7 @@ impl ClientState {
             key,
             role,
             peer,
+            maker: Maker::Other,
             standing: ClientStanding::unproven(),
             hidden: PowerSet::default(),
             image: Arc::new(Unwatched),
@@ -132,6 +137,11 @@ impl ClientState {
             compositor: CompositorClientState::default(),
             gone: GoneQueue::default(),
         }
+    }
+
+    /// The same client, known as `maker` for the security contexts it creates.
+    pub fn with_maker(self, maker: Maker) -> ClientState {
+        ClientState { maker, ..self }
     }
 
     /// The same client, whose toplevels come from `origin`.

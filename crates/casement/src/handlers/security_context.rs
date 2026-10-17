@@ -7,7 +7,7 @@ use crate::core_loop;
 use crate::state::State;
 use casement_core::policy::ConnectionRole;
 use casement_wayland::ClientState;
-use casement_wayland::security_context::{identity_for_clients, on_create_listener};
+use casement_wayland::security_context::{Maker, identity_for_clients, on_create_listener};
 use porter_core::{CgroupPath, PeerFacts, PeerIdentity, SandboxFacts, identity_of};
 use rustix::net::sockopt::socket_peercred;
 use smithay::wayland::security_context::{
@@ -20,9 +20,10 @@ impl SecurityContextHandler for State {
         let (facts, events) = on_create_listener(&mut self.wl.security_context, &context);
         core_loop::feed(self, events);
         let role = ConnectionRole::Sandboxed(facts.clone());
-        // The creator's own proof caps what the context's facts may prove (CASW-04); a creator
-        // that is gone, or was not inserted by casement, proves nothing.
-        let creator = self
+        // Only the desktop's sandbox launcher can give a context's clients an app, and its own
+        // proof caps what the facts may prove (CASW-04); a creator that is gone, or was not
+        // inserted by casement, is no launcher and proves nothing.
+        let (creator, maker) = self
             .display
             .backend_handle()
             .get_client_data(context.creator_client_id.clone())
@@ -30,9 +31,9 @@ impl SecurityContextHandler for State {
             .and_then(|data| {
                 (*data)
                     .downcast_ref::<ClientState>()
-                    .map(|state| state.peer.clone())
+                    .map(|state| (state.peer.clone(), state.maker))
             })
-            .unwrap_or(PeerIdentity::Unproven);
+            .unwrap_or((PeerIdentity::Unproven, Maker::Other));
         let inserted = accept::insert(
             &self.event_loop,
             source,
@@ -41,7 +42,7 @@ impl SecurityContextHandler for State {
                 if clients::room_in_session(state) != Room::Free {
                     return;
                 }
-                let peer = identity_for_clients(&creator, peer_of(&stream, &facts));
+                let peer = identity_for_clients(&creator, maker, peer_of(&stream, &facts));
                 if clients::room_for_peer(state, &peer, &stream) != Room::Free {
                     return;
                 }

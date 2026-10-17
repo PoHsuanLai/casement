@@ -11,6 +11,7 @@ use casement::clients::{self, Standing};
 use casement_core::policy::ConnectionRole;
 use casement_core::privilege::{ClientStanding, ProgramPath, ServiceRole};
 use casement_wayland::consent::{ImageWatch, Unwatched};
+use casement_wayland::security_context::Maker;
 use porter_core::PeerIdentity;
 use smithay::reexports::wayland_server::Client;
 use std::os::unix::net::UnixStream;
@@ -77,6 +78,7 @@ impl Fixture {
             Some(standing) => Standing::Judged {
                 standing,
                 watch: watch.unwrap_or_else(|| Arc::new(Unwatched)),
+                maker: Maker::Other,
             },
             None => Standing::Unjudged,
         };

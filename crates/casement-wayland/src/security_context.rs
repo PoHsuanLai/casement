@@ -64,15 +64,33 @@ pub fn on_create_listener(
     (facts, Vec::new())
 }
 
+/// Who made a security context, as far as the desktop's caller table shows: the one program
+/// it lets create sandboxes, or any other program.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Maker {
+    /// The image of the table's `sandbox_launcher` row (`/usr/bin/flatpak`), root-owned.
+    SandboxLauncher,
+    /// Every other program, proven or not.
+    #[default]
+    Other,
+}
+
 /// What the clients of a context are known as. A context is its creator's claim about another
 /// process (any public client may make one, and the engine's name, app id and instance id are
-/// whatever it wrote), so it carries at most the creator's own proof: facts that would prove
-/// an app (`facts_prove`) count only when the creator is itself proven, and a context made by
-/// an unproven client leaves every client of its socket unproven (CASW-04).
-pub fn identity_for_clients(creator: &PeerIdentity, facts_prove: PeerIdentity) -> PeerIdentity {
-    match creator {
-        PeerIdentity::Proven(_) => facts_prove,
-        PeerIdentity::Unproven => PeerIdentity::Unproven,
+/// whatever it wrote), so only the known sandbox launcher can give its clients an app: facts
+/// that would prove an app (`facts_prove`) count only when the `maker` is the launcher and is
+/// itself proven. A context made by any other program, however well that program is proven
+/// (a root-owned image in a scope it named itself is proven), leaves every client of its
+/// socket with no app, an unknown one (CASW-04, owner decision 2026-10-17). The clients' powers
+/// do not depend on this: they are sandboxed whoever made the context.
+pub fn identity_for_clients(
+    creator: &PeerIdentity,
+    maker: Maker,
+    facts_prove: PeerIdentity,
+) -> PeerIdentity {
+    match (maker, creator) {
+        (Maker::SandboxLauncher, PeerIdentity::Proven(_)) => facts_prove,
+        _ => PeerIdentity::Unproven,
     }
 }
 
@@ -88,38 +106,62 @@ mod tests {
         })
     }
 
+    /// (case, creator's proof, who made it, what the facts prove, what the clients are)
     #[test]
-    fn a_context_carries_at_most_its_creators_proof() {
+    fn only_the_sandbox_launcher_gives_a_contexts_clients_an_app() {
         let firefox = proven("org.mozilla.firefox", Isolation::Flatpak);
-        let launcher = proven("org.example.Launcher", Isolation::Unsandboxed);
+        let flatpak = proven("org.quire.Flatpak", Isolation::Unsandboxed);
+        let other = proven("org.example.Tool", Isolation::Unsandboxed);
         let cases = [
             (
-                "unproven creator, facts prove an app",
+                "the launcher, facts prove an app",
+                flatpak.clone(),
+                Maker::SandboxLauncher,
+                firefox.clone(),
+                firefox.clone(),
+            ),
+            (
+                "the launcher, facts prove nothing",
+                flatpak,
+                Maker::SandboxLauncher,
                 PeerIdentity::Unproven,
+                PeerIdentity::Unproven,
+            ),
+            (
+                "the launcher row but the creator is not proven",
+                PeerIdentity::Unproven,
+                Maker::SandboxLauncher,
                 firefox.clone(),
                 PeerIdentity::Unproven,
             ),
             (
-                "unproven creator, facts prove nothing",
+                "another root-owned proven program, facts prove an app",
+                other.clone(),
+                Maker::Other,
+                firefox.clone(),
                 PeerIdentity::Unproven,
+            ),
+            (
+                "another proven program, facts prove nothing",
+                other,
+                Maker::Other,
                 PeerIdentity::Unproven,
                 PeerIdentity::Unproven,
             ),
             (
-                "proven creator, facts prove an app",
-                launcher.clone(),
-                firefox.clone(),
+                "an unproven creator, facts prove an app",
+                PeerIdentity::Unproven,
+                Maker::Other,
                 firefox,
-            ),
-            (
-                "proven creator, facts prove nothing",
-                launcher,
-                PeerIdentity::Unproven,
                 PeerIdentity::Unproven,
             ),
         ];
-        for (name, creator, proves, want) in cases {
-            assert_eq!(identity_for_clients(&creator, proves), want, "{name}");
+        for (name, creator, maker, proves, want) in cases {
+            assert_eq!(
+                identity_for_clients(&creator, maker, proves),
+                want,
+                "{name}"
+            );
         }
     }
 }

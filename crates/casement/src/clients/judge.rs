@@ -4,12 +4,13 @@
 
 use super::Standing;
 use super::image::PinnedImage;
-use super::standing::{client_standing, peer_of};
+use super::standing::{client_standing, maker_of, peer_of};
 use crate::privacy::{SystemDir, writable_image};
 use casement_core::privilege::{ClientStanding, Floor};
 use casement_ipc::dbus::peer::{Pinned, Prober, Table, judge};
 use casement_ipc::dbus::{RealProc, TableFiles};
 use casement_wayland::consent::Unwatched;
+use casement_wayland::security_context::Maker;
 use porter_core::PeerIdentity;
 use std::os::unix::net::UnixStream;
 use std::sync::Arc;
@@ -31,6 +32,7 @@ impl Arrival {
             standing: Standing::Judged {
                 standing: ClientStanding::unproven(),
                 watch: Arc::new(Unwatched),
+                maker: Maker::Other,
             },
         }
     }
@@ -121,6 +123,7 @@ impl Judge {
             standing: Standing::Judged {
                 standing,
                 watch: Arc::new(PinnedImage::new(pinned, self.prober.clone(), facts.exe)),
+                maker: maker_of(&found),
             },
         }
     }
@@ -137,7 +140,10 @@ mod tests {
     fn a_program_is_held_looked_at_and_judged_when_it_connects() {
         let (ours, _theirs) = UnixStream::pair().expect("a socket pair");
         let arrival = Judge::new(Table::empty(), SystemDir::Etc).arrival(&ours, &Floor::empty());
-        let Standing::Judged { standing, watch } = arrival.standing else {
+        let Standing::Judged {
+            standing, watch, ..
+        } = arrival.standing
+        else {
             panic!("a public client is always judged");
         };
         // This test binary is no desktop service (the table is empty): a program the system

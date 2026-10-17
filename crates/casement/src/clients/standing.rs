@@ -3,7 +3,8 @@
 //! to. Pure; `judge.rs` does the looking.
 
 use casement_core::privilege::{ClientStanding, Engine, ProgramPath, SandboxAppId, ServiceRole};
-use casement_ipc::dbus::peer::{self, Exe, Proof, Standing};
+use casement_ipc::dbus::peer::{self, Exe, Proof, Standing, roles};
+use casement_wayland::security_context::Maker;
 use porter_core::{AppId, AppName, Isolation, PeerIdentity};
 
 /// The path of the image a process runs, when it could be read.
@@ -127,6 +128,22 @@ pub fn peer_of(standing: &Standing) -> PeerIdentity {
         _ => None,
     };
     proven.map_or(PeerIdentity::Unproven, PeerIdentity::Proven)
+}
+
+/// Whether the program is the desktop's sandbox launcher, the one program whose security
+/// contexts give their clients an app (CASW-04): it stands as the table's `sandbox_launcher`
+/// row (`/usr/bin/flatpak`), which has no unit, so the most a public-socket peer shows is its
+/// root-owned image (`Proof::Exe`). A same-user process that runs that image under a preloaded
+/// library looks the same; the library cannot see that at this proof.
+pub fn maker_of(standing: &Standing) -> Maker {
+    match standing {
+        Standing::Service { role, proof, .. }
+            if *role == roles::SANDBOX_LAUNCHER && (image_shown(*proof) || is_test_row(*proof)) =>
+        {
+            Maker::SandboxLauncher
+        }
+        _ => Maker::Other,
+    }
 }
 
 fn named(app: &str, isolation: Isolation) -> Option<AppId> {
@@ -307,5 +324,76 @@ mod tests {
             why: WhyNot::ImageWritable,
         };
         assert!(!proven(&writable));
+    }
+
+    /// CASW-04: per standing, whether the program may make security contexts that carry an app.
+    /// Only the table's launcher row, shown by its image, does; any other row, any other
+    /// proven program and a scope that merely names a Flatpak app do not.
+    #[test]
+    fn only_the_launcher_row_makes_contexts_that_carry_an_app() {
+        let launcher = |proof: Proof| Standing::Service {
+            app: AppKey::new("org.quire.Flatpak").expect("an app"),
+            role: roles::SANDBOX_LAUNCHER,
+            proof,
+            pin: peer::Pin::Reopened,
+        };
+        let cases = [
+            (
+                "the launcher by its image",
+                launcher(Proof::Exe),
+                Maker::SandboxLauncher,
+            ),
+            (
+                "the launcher by its control group alone",
+                launcher(Proof::Cgroup),
+                Maker::Other,
+            ),
+            (
+                "another desktop row",
+                service("portal", Proof::Full),
+                Maker::Other,
+            ),
+            (
+                "a root-owned program",
+                program("/usr/bin/foot", None),
+                Maker::Other,
+            ),
+            (
+                "a root-owned program in a scope it named app-flatpak-*",
+                program("/usr/bin/foot", Some("org.mozilla.firefox")),
+                Maker::Other,
+            ),
+            (
+                "a sandboxed app",
+                Standing::Sandboxed {
+                    app: AppKey::new("org.mozilla.firefox").expect("an app"),
+                    engine: peer::Engine::Flatpak,
+                },
+                Maker::Other,
+            ),
+        ];
+        for (case, standing, want) in cases {
+            assert_eq!(maker_of(&standing), want, "{case}");
+        }
+    }
+
+    /// The launcher is proven as an app by its image, so its contexts are capped by a real proof,
+    /// and its powers are those of a program of the system (the standing is unchanged).
+    #[test]
+    fn the_launcher_is_a_proven_program_with_no_extra_power() {
+        let flatpak = exe("/usr/bin/flatpak");
+        let standing = Standing::Service {
+            app: AppKey::new("org.quire.Flatpak").expect("an app"),
+            role: roles::SANDBOX_LAUNCHER,
+            proof: Proof::Exe,
+            pin: peer::Pin::Reopened,
+        };
+        assert!(matches!(peer_of(&standing), PeerIdentity::Proven(_)));
+        assert_eq!(
+            client_standing(&standing, &flatpak),
+            ClientStanding::Program {
+                exe: ProgramPath::parse("/usr/bin/flatpak").expect("a path"),
+            }
+        );
     }
 }
