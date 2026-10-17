@@ -22,7 +22,7 @@ use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::policy::ConnectionRole;
 use casement_core::time::{IdleNotifierId, Mono};
 use casement_core::{ClientKey, Effect};
-use porter_core::{Isolation, PeerIdentity};
+use porter_core::PeerIdentity;
 use smithay::reexports::wayland_protocols::ext::idle_notify::v1::server::{
     ext_idle_notification_v1::{self, ExtIdleNotificationV1},
     ext_idle_notifier_v1::{self, ExtIdleNotifierV1},
@@ -44,17 +44,15 @@ pub const VERSION: u32 = 2;
 /// enough for a screensaver or a video player.
 pub const UNTRUSTED_MIN_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// The shortest timeout `role` and `peer` get: the shell and the agent tier any, a peer proven
-/// to be a native app any, and every other peer (sandboxed, or nothing proves who it is)
-/// [`UNTRUSTED_MIN_TIMEOUT`].
+/// The shortest timeout `role` and `peer` get: the shell and the agent tier any, and every
+/// other peer [`UNTRUSTED_MIN_TIMEOUT`] (NEW-CAS-7). A native peer proven only by the name of a
+/// launcher's scope is no exception: any program of the person's can make a scope of any name,
+/// so the name proves nothing about who it is.
 pub fn timeout_floor(role: &ConnectionRole, peer: &PeerIdentity) -> Duration {
-    match (role, peer) {
-        (ConnectionRole::Shell | ConnectionRole::Agent, _) => Duration::ZERO,
-        (ConnectionRole::Sandboxed(_), _) | (_, PeerIdentity::Unproven) => UNTRUSTED_MIN_TIMEOUT,
-        (ConnectionRole::Public, PeerIdentity::Proven(app)) => match app.isolation {
-            Isolation::Flatpak => UNTRUSTED_MIN_TIMEOUT,
-            _ => Duration::ZERO,
-        },
+    let _ = peer;
+    match role {
+        ConnectionRole::Shell | ConnectionRole::Agent => Duration::ZERO,
+        ConnectionRole::Sandboxed(_) | ConnectionRole::Public => UNTRUSTED_MIN_TIMEOUT,
     }
 }
 
@@ -295,7 +293,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_core::{AppId, AppName};
+    use porter_core::{AppId, AppName, Isolation};
 
     fn proven(isolation: Isolation) -> PeerIdentity {
         PeerIdentity::Proven(AppId {
@@ -316,10 +314,10 @@ mod tests {
                 true,
             ),
             (
-                "a public proven native peer",
+                "a public proven native peer (a scope name proves nothing)",
                 ConnectionRole::Public,
                 proven(Isolation::Unsandboxed),
-                false,
+                true,
             ),
             (
                 "a public proven Flatpak peer",
