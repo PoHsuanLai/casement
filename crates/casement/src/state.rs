@@ -55,6 +55,8 @@ pub struct State {
     pub ipc: IpcState,
     /// The session clock (the only clock, `time/`).
     pub clock: ClockSource,
+    /// What the timing lines (`timing`) remember between the moments.
+    pub timing: crate::timing::Timing,
     /// The injected file, bus and process seams (A1, A4, A5).
     pub seams: Seams,
     /// X11 clients through xwayland-satellite (P1-X1 starts it; off until then).
@@ -333,6 +335,7 @@ impl State {
             }
         };
         let clock = ClockSource::start(config.clock, event_loop)?;
+        let timing = crate::timing::Timing::new(crate::timing::Stamp(clock.monotonic_epoch_ns()));
         let entropy = config
             .entropy
             .bytes()
@@ -392,6 +395,7 @@ impl State {
                 board: None,
             },
             clock,
+            timing,
             seams,
             xwayland: XwaylandState::Off,
             start_mode: config.mode,

@@ -8,6 +8,7 @@
 
 mod calloop;
 mod local_minute;
+mod monotonic;
 mod source;
 mod virtual_clock;
 mod wall;
@@ -15,6 +16,7 @@ mod watchdog;
 
 pub use calloop::{after, arm};
 pub use local_minute::{minute_of, tick_every_minute, until_next_minute};
+pub use monotonic::monotonic_ns;
 pub use source::ClockSource;
 pub use virtual_clock::{SharedClock, VirtualTimerSource};
 pub use wall::WallClock;

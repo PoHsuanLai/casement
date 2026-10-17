@@ -5230,3 +5230,35 @@ wlcs went from 5 to 16 failures after two deliberate policy commits (bisected: b
   the window is restored; the window is still flying out of its Dock tile and takes no clicks until it lands, so the window below is
   hit. Bisected to c9ee390; kept (`# FLIGHT`).
 - wlcs phase run on d2c758c with this list: 906 passed, 0 unexpected failures.
+
+## wave-2026-10-17/timing: the four workflow timing lines
+
+`window-ready`, `key-window`, `xwayland-ready` and `session-ready`, as `~/rs-wt/workflow-spec.md` fixes them (field names unchanged).
+Code: `crates/casement/src/timing/` (pure records, table-tested; `Sink` is the one effect), clock read in `time/monotonic.rs` (B8).
+
+- **Log.** Plain `tracing` at INFO, target `timing`, message text `<name> key=value ...` (no structured fields, so the formatter
+  prints them as written). `log::init` is `tracing_subscriber::fmt` to stderr without the `ansi` feature; the default filter `info,...`
+  lets the target through, and `log::tests` asserts it. A real install's stderr is the session log file or the journal (`StandardError=`).
+  `CASEMENT_LOG=warn` (or `timing=off`) turns the lines off. Sample as printed:
+  `2026-10-17T12:00:00.123456Z  INFO timing: window-ready app_id=foot pid=4321 connected_at=... settled_at=...`.
+- **Clock.** The session's `Mono` counts from an `Instant` epoch; `Instant` is `CLOCK_MONOTONIC` on Linux, so `WallClock::start` reads
+  `CLOCK_MONOTONIC` once, minus the time since the epoch, and `Stamp = epoch + Mono` (a sum, no second clock). Virtual clocks have
+  epoch 0 (tests read `Mono` ns).
+- **Where each stamp comes from.** `connected_at`: the accept in `clients/probes.rs::begin` for public sockets (before the look at the
+  program), else `clients::insert_client`. `first_commit_at`: the `Event::ToplevelMapped` heard in `core_loop::feed` (the commit
+  handler feeds at once). `first_frame_at`: `core_loop::frame`, `PresentOutcome::Flipped`, the clock read as the flip is queued (the
+  glass shows it at the next vblank, up to one refresh later; the tty backend does not hand the flip's own time up). `settled_at`: the
+  first presented frame after which `MotionBook::window_is_moving` is false for the window (frame granularity). `key-window`: the
+  `Effect::Emphasis` that makes a window `Key`, in `exec`; `presented_at` is the next `Flipped` or `Unchanged` frame.
+  `xwayland-ready`: `requested_at` is the loop turn that started satellite (`xwayland::turn`); `ready_at` is satellite's Wayland
+  connection arriving, the nearest thing casement can see (satellite's own readiness is not visible to it). `session-ready`:
+  `started_at` is the clock epoch (casement's `State::new`, a few ms after exec), `shell_connected_at` the `Shell` connection,
+  `shell_ready_at` the first frame by which both a `Bar` and a `Dock` layer surface of the shell have been shown.
+- **Cause and `input_at`.** `Event::Input` presses are remembered (key, button). A change in a turn with a window or client arriving or
+  leaving is `other`; in a turn with an activation, shell, window-list or workspace request it is `request` (and `input_at` is the last
+  press within 2 s, else 0: a chord the shell took reaches casement a round trip later); otherwise a press within 250 ms is
+  `keyboard` or `pointer`. A switcher that commits on key release reports the earlier press only inside the 2 s.
+- **Departures from the spec.** `pid` is 0 for X11 windows (they share satellite's connection) and for non-public connections; an
+  empty app id prints as `-`. Pid and X11 identity are not improved here.
+- **Seen while reading.** `wp_presentation` advertises `CLOCK_MONOTONIC` but sends `Mono` (time since the session epoch), so a client
+  that compares presentation time with its own monotonic clock is off by the epoch. Not changed here.

@@ -30,6 +30,8 @@ pub enum ClockSource {
 #[derive(Debug, Clone)]
 pub struct WallClock {
     epoch: Instant,
+    /// `CLOCK_MONOTONIC` in nanoseconds at `epoch` (see [`ClockSource::monotonic_epoch_ns`]).
+    epoch_ns: u64,
     timers: Rc<RefCell<BTreeMap<TimerKey, Mono>>>,
     vblanks: Rc<RefCell<BTreeMap<OutputKey, u64>>>,
 }
@@ -37,8 +39,13 @@ pub struct WallClock {
 impl WallClock {
     /// A wall clock whose epoch is now.
     pub(super) fn start() -> WallClock {
+        let epoch = Instant::now();
+        // `Instant` is `CLOCK_MONOTONIC` on Linux, so the monotonic reading minus the time that
+        // has passed since the epoch was taken is the reading at the epoch itself.
+        let elapsed = u64::try_from(epoch.elapsed().as_nanos()).unwrap_or(0);
         WallClock {
-            epoch: Instant::now(),
+            epoch,
+            epoch_ns: super::monotonic_ns().saturating_sub(elapsed),
             timers: Rc::new(RefCell::new(BTreeMap::new())),
             vblanks: Rc::new(RefCell::new(BTreeMap::new())),
         }
@@ -101,6 +108,17 @@ impl ClockSource {
         match self {
             ClockSource::Monotonic(wall) => wall.now(),
             ClockSource::Virtual(clock) | ClockSource::Stepped(clock) => clock.now(),
+        }
+    }
+
+    /// What `CLOCK_MONOTONIC` read, in nanoseconds, at the instant `Mono` counts from: adding a
+    /// `Mono` to it gives the reading the same instant has on the clock a script reads
+    /// (`time.clock_gettime_ns(time.CLOCK_MONOTONIC)`). A virtual clock stands for no real
+    /// instant: its epoch is 0, so a test's stamps are its `Mono` in nanoseconds.
+    pub fn monotonic_epoch_ns(&self) -> u64 {
+        match self {
+            ClockSource::Monotonic(wall) => wall.epoch_ns,
+            ClockSource::Virtual(_) | ClockSource::Stepped(_) => 0,
         }
     }
 

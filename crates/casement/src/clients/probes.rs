@@ -11,7 +11,9 @@
 use super::{Arrival, Judge, Room, insert_client, room_for_peer};
 use crate::state::State;
 use crate::time;
+use crate::timing::Stamp;
 use casement_core::policy::ConnectionRole;
+use casement_wayland::ClientState;
 use smithay::reexports::calloop::channel::{Channel, Event as ChannelEvent, Sender, channel};
 use smithay::reexports::calloop::{Error as LoopError, LoopHandle};
 use std::collections::BTreeMap;
@@ -62,6 +64,8 @@ pub struct Looking {
     judge: Arc<Judge>,
     /// The connections waiting for their look, by look.
     pending: BTreeMap<ProbeId, UnixStream>,
+    /// When each waiting connection was accepted: the timing lines' "connected", before the look.
+    arrived: BTreeMap<ProbeId, Stamp>,
     next: u64,
     running: Arc<AtomicUsize>,
     done: Sender<Done>,
@@ -81,6 +85,7 @@ impl Probes {
         Ok(Probes::On(Looking {
             judge: Arc::new(judge),
             pending: BTreeMap::new(),
+            arrived: BTreeMap::new(),
             next: 0,
             running: Arc::new(AtomicUsize::new(0)),
             done,
@@ -90,15 +95,16 @@ impl Probes {
 
 /// A connection arrived on the public socket: look at its program, then take it in.
 pub fn begin(state: &mut State, stream: UnixStream) {
+    let accepted = state.timing.stamp(state.clock.now());
     let floor = state.core.model.privilege().floor().clone();
     let Probes::On(looking) = &mut state.probes else {
-        return admit(state, stream, Arrival::unknown());
+        return admit(state, stream, Arrival::unknown(), None);
     };
     if looking.running.load(Ordering::SeqCst) >= MAX_PROBES {
-        return admit(state, stream, Arrival::unknown());
+        return admit(state, stream, Arrival::unknown(), None);
     }
     let Ok(copy) = stream.try_clone() else {
-        return admit(state, stream, Arrival::unknown());
+        return admit(state, stream, Arrival::unknown(), None);
     };
     let id = ProbeId(looking.next);
     looking.next = looking.next.saturating_add(1);
@@ -118,6 +124,7 @@ pub fn begin(state: &mut State, stream: UnixStream) {
     match started {
         Ok(_) => {
             looking.pending.insert(id, stream);
+            looking.arrived.insert(id, accepted);
             let handle = state.event_loop.clone();
             time::after(&handle, PROBE_DEADLINE, move |state: &mut State| {
                 finish(state, id, Arrival::unknown());
@@ -126,7 +133,7 @@ pub fn begin(state: &mut State, stream: UnixStream) {
         Err(error) => {
             tracing::warn!(%error, "a program could not be looked at: no thread");
             // The closure with the counter guard was dropped with the failed spawn.
-            admit(state, stream, Arrival::unknown());
+            admit(state, stream, Arrival::unknown(), None);
         }
     }
 }
@@ -138,18 +145,24 @@ fn finish(state: &mut State, id: ProbeId, arrival: Arrival) {
         return;
     };
     if let Some(stream) = looking.pending.remove(&id) {
-        admit(state, stream, arrival);
+        let arrived = looking.arrived.remove(&id);
+        admit(state, stream, arrival, arrived);
     }
 }
 
 /// Takes the connection in as a public client, unless its program already holds as many
 /// connections as one may.
-fn admit(state: &mut State, stream: UnixStream, arrival: Arrival) {
+fn admit(state: &mut State, stream: UnixStream, arrival: Arrival, arrived: Option<Stamp>) {
     if room_for_peer(state, &arrival.peer, &stream) != Room::Free {
         return;
     }
     let role = ConnectionRole::Public;
-    if let Err(error) = insert_client(state, stream, role, arrival.peer, arrival.standing) {
-        tracing::warn!(%error, "a client could not be inserted");
+    match insert_client(state, stream, role, arrival.peer, arrival.standing) {
+        Ok(client) => {
+            if let (Some(at), Some(data)) = (arrived, ClientState::of(&client)) {
+                crate::timing::accepted_at(state, data.key, at);
+            }
+        }
+        Err(error) => tracing::warn!(%error, "a client could not be inserted"),
     }
 }

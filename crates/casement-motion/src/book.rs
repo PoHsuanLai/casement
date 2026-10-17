@@ -61,6 +61,13 @@ impl MotionBook {
         }
     }
 
+    /// Whether `window`'s legs are still moving at `now`; a window with no legs is at rest.
+    pub fn window_is_moving(&self, window: WindowId, now: Mono) -> bool {
+        self.legs
+            .get(&MotionKey::Window(window))
+            .is_some_and(|motion| motion.is_moving(now))
+    }
+
     /// Whether any leg is still moving at `now` (frames are wanted).
     pub fn is_moving(&self, now: Mono) -> bool {
         self.legs.values().any(|motion| motion.is_moving(now))

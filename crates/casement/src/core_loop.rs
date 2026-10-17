@@ -74,6 +74,7 @@ pub fn feed(state: &mut State, events: Vec<Event>) {
         return;
     }
     let now = state.clock.now();
+    let outer = crate::timing::enter(state, &events);
     note_settings(state, &events);
     let model = std::mem::replace(&mut state.core.model, standing_in(now));
     let events_seen = events.clone();
@@ -87,6 +88,7 @@ pub fn feed(state: &mut State, events: Vec<Event>) {
     );
     state.core.model = model;
     exec::exec(state, effects);
+    crate::timing::hear(state, &events_seen, now);
     surfaces::sync(state, &events_seen);
     crate::handlers::sync_outputs(state);
     fingers::follow(state);
@@ -102,6 +104,7 @@ pub fn feed(state: &mut State, events: Vec<Event>) {
         .for_each(|input| deliver::deliver(state, input));
     deliver::refocus(state);
     presence::update(state);
+    crate::timing::leave(state, outer);
 }
 
 /// The pointer has not moved but a commit may have changed what is under it (a layer's first
@@ -201,10 +204,12 @@ pub fn frame(state: &mut State, output: &OutputKey) {
         Ok(PresentOutcome::Flipped(seq)) => {
             state.render.frame_faults.clear(&name);
             presented(state, output, &frame, config, now, seq);
+            crate::timing::flipped(state, output, &frame, now);
         }
         Ok(PresentOutcome::Unchanged) => {
             state.render.frame_faults.clear(&name);
             send_callbacks(state, output, &frame, now);
+            crate::timing::unchanged(state);
         }
         Ok(_) => {}
         Err(error) => {

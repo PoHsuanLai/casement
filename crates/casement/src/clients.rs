@@ -85,7 +85,9 @@ pub fn insert_client(
             Some(standing),
         ),
     };
+    let origin = data.origin;
     let client = state.display.insert_client(stream, Arc::new(data))?;
+    crate::timing::connected(state, key, &role, origin);
     // Recorded here, not in `ClientData::initialized`: the system libwayland backend never calls it.
     state.wl.clients.ledger().connected(key, client.id());
     state.roster.join(key, holder);

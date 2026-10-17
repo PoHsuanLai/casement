@@ -138,6 +138,7 @@ A1: `Instant::now`, `SystemTime::now`, smithay's `Clock::now` and calloop's `Tim
 | reading an output's frame back | `casement-render::pass::capture_output` (P1-Z) |
 | virtual input devices and their events | `casement-backend::VirtualInput` |
 | the soft GPU pieces (A4) | `casement-backend::gpu::{SoftPixman, FixedUdmabuf}` |
+| the timing lines (`window-ready`, `key-window`, `xwayland-ready`, `session-ready`: target `timing`, INFO, `CLOCK_MONOTONIC` ns; workflow spec) | `casement::timing` (pure records and formatters; `Timing` in `State`; `hear` functions called at each moment); the clock reading is `casement::time::monotonic_ns` and `ClockSource::monotonic_epoch_ns` |
 | the session clock and the virtual clock's event source (A1) | `casement::time::{ClockSource, SharedClock, VirtualTimerSource}` |
 | carrying out an effect | `casement::exec::exec` (the one place) |
 | the stored settings document and its schema | `casement::config` |

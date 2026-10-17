@@ -107,6 +107,7 @@ fn apply(state: &mut State, effect: Effect) {
         }
         Effect::Keyboard(target) => keyboard(state, &target),
         Effect::Emphasis(list) => {
+            crate::timing::emphasis(state, &list);
             for (window, emphasis) in list {
                 log(quire_window::apply_emphasis(
                     &mut state.wl.quire_window,

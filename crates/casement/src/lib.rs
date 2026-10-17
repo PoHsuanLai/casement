@@ -72,6 +72,7 @@ pub mod stop;
 pub mod suspend;
 pub mod test_mode;
 pub mod time;
+pub mod timing;
 pub mod xwayland;
 
 pub use run::{CompositorBus, DebugBus, RunConfig, RunError, run};

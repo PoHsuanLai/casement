@@ -11,6 +11,7 @@
 mod handout;
 mod live;
 mod standing;
+mod timing;
 
 use standing::arriving_standing;
 pub use standing::{ASKED_PROGRAM, program_standing, trusted_standing};
@@ -242,6 +243,7 @@ impl Fixture {
             a11y,
             session: FakeSession::default(),
         };
+        fixture.keep_timing_lines();
         fixture.pump();
         Ok(fixture)
     }

@@ -684,3 +684,86 @@ fn a_client_that_makes_toplevels_without_end_is_cut() {
     fixture.pump();
     assert!(fixture.client(other).protocol_error().is_none());
 }
+
+/// The value of every `key=value` field of a timing line, by key.
+fn timing_fields(line: &str) -> std::collections::BTreeMap<&str, &str> {
+    line.split_whitespace()
+        .skip(1)
+        .filter_map(|field| field.split_once('='))
+        .collect()
+}
+
+/// The nanosecond fields `keys` of a timing line, in that order.
+fn stamps(line: &str, keys: &[&str]) -> Vec<u64> {
+    let fields = timing_fields(line);
+    keys.iter()
+        .map(|key| fields[key].parse().expect("a number"))
+        .collect()
+}
+
+/// The timing lines (workflow spec): a toplevel that maps writes one `window-ready` line, once,
+/// with its stamps in order and the app id as the client gave it (whitespace as `_`); the click
+/// that makes it key writes one `key-window` line whose input came before the change and the
+/// change before the frame that showed it. Later frames write nothing more.
+#[test]
+fn a_window_and_a_click_write_their_timing_lines() {
+    let (mut fixture, id) = boot();
+    let base = WmBase::bind(fixture.client(id), 6);
+    let top = map_named(
+        &mut fixture,
+        id,
+        &base,
+        (320, 200),
+        Some("org.example.timing app"),
+    );
+    let window = *windows(&fixture).first().expect("a window");
+    settle(&mut fixture);
+    let ready: Vec<String> = fixture
+        .timing_lines()
+        .iter()
+        .filter(|line| line.starts_with("window-ready "))
+        .cloned()
+        .collect();
+    assert_eq!(ready.len(), 1, "{ready:?}");
+    assert_eq!(timing_fields(&ready[0])["app_id"], "org.example.timing_app");
+    let times = stamps(
+        &ready[0],
+        &[
+            "connected_at",
+            "first_commit_at",
+            "first_frame_at",
+            "settled_at",
+        ],
+    );
+    assert!(times.windows(2).all(|pair| pair[0] <= pair[1]), "{times:?}");
+    assert!(times[2] > 0, "a frame was presented: {times:?}");
+    assert!(
+        fixture
+            .timing_lines()
+            .iter()
+            .all(|line| !line.starts_with("key-window "))
+    );
+
+    make_key(&mut fixture, window);
+    fixture.advance(Duration::from_millis(100));
+    settle(&mut fixture);
+    let keys: Vec<String> = fixture
+        .timing_lines()
+        .iter()
+        .filter(|line| line.starts_with("key-window "))
+        .cloned()
+        .collect();
+    assert_eq!(keys.len(), 1, "{keys:?}");
+    assert_eq!(timing_fields(&keys[0])["cause"], "pointer");
+    let times = stamps(&keys[0], &["input_at", "focused_at", "presented_at"]);
+    assert!(times[0] > 0, "the click is the input: {times:?}");
+    assert!(times.windows(2).all(|pair| pair[0] <= pair[1]), "{times:?}");
+    let count = fixture.timing_lines().len();
+    fixture.advance(Duration::from_secs(1));
+    assert_eq!(
+        fixture.timing_lines().len(),
+        count,
+        "idle frames write nothing"
+    );
+    drop(top);
+}

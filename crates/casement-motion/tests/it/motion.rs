@@ -3,8 +3,8 @@
 
 use crate::support;
 
-use casement_core::Cause;
 use casement_core::geometry::SubPx;
+use casement_core::{Cause, WindowId};
 use casement_motion::{MotionBook, Settled, retarget, sample};
 use ds_style::appearance::motion::MotionLevel;
 use std::time::Duration;
@@ -58,6 +58,10 @@ fn a_move_starts_where_it_was_and_ends_exactly_at_its_target() {
         at(10),
     );
     assert!(book.is_moving(at(10)));
+    // The timing lines ask about one window: the one that moves, and a window with no legs.
+    assert!(book.window_is_moving(WindowId(1), at(10)));
+    assert!(!book.window_is_moving(WindowId(2), at(10)));
+    assert!(!book.window_is_moving(WindowId(1), at(3_000)));
     assert_eq!(x_at(&book, 1, at(10)), 12_000, "starts at the old place");
     let (frame, settled) = sample(&book, &committed(&[(1, 400, 300)]), &looks(&[1]), at(3_000));
     assert_eq!(settled, Settled::Rest);

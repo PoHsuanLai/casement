@@ -345,9 +345,11 @@ pub fn turn(state: &mut State, config: &XwaylandConfig, wayland: &WaylandSocket)
     } = state;
     let now = clock.now();
     xwayland.reap(&seams.spawner.exited(now));
-    match xwayland.serve(config, seams.spawner.as_mut(), wayland, now) {
+    let served = xwayland.serve(config, seams.spawner.as_mut(), wayland, now);
+    match served {
         Ok(ServeStep::Started(process)) => {
             tracing::info!(pid = process.pid.0, "xwayland-satellite started");
+            crate::timing::satellite_started(state, now);
         }
         Ok(ServeStep::Held { until }) => {
             tracing::debug!(
