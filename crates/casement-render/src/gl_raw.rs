@@ -59,18 +59,27 @@ pub(crate) fn with_shm_pool_mut<T>(
     })
 }
 
-/// Runs `read` over the bytes of `buffer`'s shm pool, with the buffer's layout: the read-only twin
-/// of [`with_shm_pool_mut`], for a cursor a client drew itself.
+/// Runs `read` over a copy of the bytes of `buffer`'s shm pool that the buffer covers, with the
+/// buffer's layout (its offset is 0 in the copy): the read-only twin of [`with_shm_pool_mut`], for
+/// a cursor a client drew itself. The client may write the pool while it is read, which is the
+/// nature of shared memory, so the bytes are copied out once and nothing in the compositor holds
+/// a slice over memory another process can change (CASB-21).
 pub(crate) fn with_shm_pool<T>(
     buffer: &WlBuffer,
     read: impl FnOnce(&[u8], BufferData) -> T,
 ) -> Result<T, BufferAccessError> {
     with_buffer_contents(buffer, |pointer, length, data| {
-        // SAFETY: smithay lends `length` bytes at `pointer` for the length of this call and the
-        // compositor does not write the pool meanwhile; the client may write it, which is the
-        // nature of shared memory (smithay's own docs say the same), and a torn read of a
-        // cursor's pixels is a glitch, not a fault.
-        let pool = unsafe { std::slice::from_raw_parts(pointer, length) };
-        read(pool, data)
+        let start = usize::try_from(data.offset).unwrap_or(0).min(length);
+        let rows = usize::try_from(data.stride)
+            .unwrap_or(0)
+            .saturating_mul(usize::try_from(data.height).unwrap_or(0));
+        let end = start.saturating_add(rows).min(length);
+        let mut copy = vec![0_u8; end - start];
+        // SAFETY: smithay lends `length` bytes at `pointer` for the length of this call, and
+        // `start <= end <= length`, so the `end - start` bytes read lie inside them; `copy` is a
+        // fresh allocation of exactly that size, so the two cannot overlap. A client writing the
+        // pool meanwhile makes a torn copy of a cursor's pixels, a glitch and not a fault.
+        unsafe { std::ptr::copy_nonoverlapping(pointer.add(start), copy.as_mut_ptr(), copy.len()) };
+        read(&copy, BufferData { offset: 0, ..data })
     })
 }
