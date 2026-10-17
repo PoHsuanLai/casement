@@ -5098,5 +5098,14 @@ One commit per root cause on branch `pa3-cas`; nothing here was compiled or run 
 - **CASC-17.** The model does not know the pointer's output.
 - **CASW-04 (2).** A context's creator that is `Proven(Unsandboxed)` only by a scope name it made itself can still mint a Flatpak identity for
   window grouping (powers are unaffected); closing it needs porter's cross-check (PR #38) and a decision on what proves a creator.
-- **NEW-QDH-4.** `wl_data_offer.receive` is handled inside the smithay fork and casement sees neither the reader nor when a read ends (the
-  write end goes to the source's client), so a cap on unfinished reads needs a fork hook; see the report.
+- **NEW-QDH-4 (checked, nothing to cap in casement).** casement never writes selection or drag data itself, so there is no write slot
+  for a client's unread pipes to hold. `SelectionHandler for State` (`crates/casement/src/handlers/data_device.rs`) implements only
+  `new_selection`; `send_selection`, the one hook that hands the compositor a client's fd to write into, is left at smithay's default, which
+  drops the fd. It is reached only for a compositor-owned selection (fork `wayland/selection/offer.rs:185-186`), and casement sets none:
+  no `set_data_device_selection`, `set_primary_selection` or data-control `set_selection` call exists in `crates/`, and XWayland, the one
+  bridge that would write for a window, is off until the Q-C5 gate. For a client-owned selection `wl_data_offer.receive`, the primary
+  selection offer and both data-control offers pass the reader's fd straight to the source client (fork `data_device/mod.rs:285`,
+  `offer.rs:182`), so an unread pipe is held by the client that made it and by the source client's own queue, never by a casement slot or
+  thread. Drag and drop uses the same offer path (`dnd_requested` only starts the grab). When XWayland or a server-side clipboard lands,
+  its `send_selection` must go through a per-client limiter (a small typed cap, about 4 open writes, the write timeout); add it with that
+  change.

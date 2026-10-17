@@ -128,8 +128,8 @@ taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "4863877b9cab21645b
 # nested popup's keyboard grab alone, and the consent gates of the protocols smithay serves whole
 # (branch `lane/consent-gates`: `Gate` and a defaulted gate hook for data control, the input method and
 # the foreign toplevel list, with `release` on each state), and `revoke` on each of those states and on the
-# input method handle (branch `lane/revoke`, which ends the objects a power taken back leaves registered). Three more are written on the fork's branch `lane/wlcs-w3-w4-w7`
-# (wave 2 lane fork) and arrive with the next rev: `get_xdg_surface` raising `role` and
+# input method handle (branch `lane/revoke`, which ends the objects a power taken back leaves registered). Three more, from the fork's branch `lane/wlcs-w3-w4-w7`
+# (wave 2 lane fork), are carried in the fork's master, which this rev pins: `get_xdg_surface` raising `role` and
 # `invalid_surface_state`, `xdg_toplevel.wm_capabilities` at toplevel creation, and subsurface positions
 # as state of the parent with a sync subtree applying only what it committed. `wl_surface.damage` with a
 # negative size is ignored like `damage_buffer`, and `xdg_positioner.set_parent_size` with one too (fuzz seed 4 found both). Each patch is its own commit.
