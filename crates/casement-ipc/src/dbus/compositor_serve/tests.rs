@@ -210,3 +210,33 @@ async fn a_stalled_loop_holds_the_queue_and_drops_the_rest() {
     }
     assert_eq!((waiting, dropped), (CONNECT_QUEUE, 9 - CONNECT_QUEUE));
 }
+
+/// NEW-PI-8: when the portal's bus connection goes away, the event loop is asked to end every
+/// remote socket that connection asked for; another connection going changes nothing.
+#[tokio::test]
+async fn the_loop_is_told_when_the_portals_connection_leaves() {
+    let served = Served::start(WHOLE_TEST, Loop::Reads, None);
+    let portal = served.caller(service("portal", Proof::Full)).await;
+    let other = served.caller(service("portal", Proof::Full)).await;
+    let granted = portal
+        .call::<_, _, zbus::zvariant::OwnedFd>("ConnectEis", &(7_u64, 3_u32))
+        .await;
+    assert_eq!(outcome(granted), "granted");
+    drop(other);
+    let connection = portal.connection().clone();
+    let owner = connection
+        .unique_name()
+        .map(|name| name.as_str().to_owned())
+        .expect("a unique name");
+    drop(portal);
+    connection.close().await.expect("the connection closes");
+    let mut gone = None;
+    for _ in 0..100 {
+        gone = served.asks().into_iter().find_map(|ask| ask.gone);
+        if gone.is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(gone.map(|gone| gone.owner), Some(owner));
+}

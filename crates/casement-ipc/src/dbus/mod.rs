@@ -6,6 +6,7 @@ mod compositor1;
 mod compositor_serve;
 mod connect_ask;
 mod intake;
+mod portal_watch;
 
 pub use callers::{CallerCheck, DesktopCallers, WhoFuture, require, role_for_connection};
 pub use compositor_serve::{CallerSetup, serve_compositor_at};
@@ -14,7 +15,7 @@ pub use compositor1::{
     parse_connect_role,
 };
 pub use connect_ask::{
-    ConnectAsk, ConnectCall, ConnectRefusal, ConnectReply, EndAsk, NOT_THE_CALLER, Proven,
+    ConnectAsk, ConnectCall, ConnectRefusal, ConnectReply, EndAsk, GoneAsk, NOT_THE_CALLER, Proven,
     RemoteAsk,
 };
 pub use intake::{

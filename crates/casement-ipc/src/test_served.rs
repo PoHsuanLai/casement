@@ -68,7 +68,7 @@ impl StandInLoop {
 }
 
 fn decide(ask: &ConnectAsk) -> ConnectReply {
-    if ask.end.is_some() {
+    if ask.end.is_some() || ask.gone.is_some() {
         return ConnectReply::Ended;
     }
     match UnixStream::pair() {

@@ -12,6 +12,8 @@ use std::collections::BTreeMap;
 struct Open {
     handle: RemoteHandle,
     token: RegistrationToken,
+    /// The bus connection (its unique name) that asked for it, when known: the sockets go with it.
+    owner: Option<String>,
 }
 
 /// The slot mint and the open connections.
@@ -30,9 +32,22 @@ impl RemoteSessions {
         Some(slot)
     }
 
-    /// The connection `handle` is open, its source in the loop at `token`.
-    pub fn opened(&mut self, handle: RemoteHandle, token: RegistrationToken) {
-        self.open.insert(handle.slot(), Open { handle, token });
+    /// The connection `handle` is open, its source in the loop at `token`, asked for by the bus
+    /// connection `owner`.
+    pub fn opened(
+        &mut self,
+        handle: RemoteHandle,
+        token: RegistrationToken,
+        owner: Option<String>,
+    ) {
+        self.open.insert(
+            handle.slot(),
+            Open {
+                handle,
+                token,
+                owner,
+            },
+        );
     }
 
     /// The connection in `slot` ended by itself (the app hung up).
@@ -43,10 +58,23 @@ impl RemoteSessions {
     /// Takes every open connection of `session` out of the book: for each, the handle (to release
     /// what the app held) and the loop token (to remove the source).
     pub fn end(&mut self, session: PortalSessionId) -> Vec<(RemoteHandle, RegistrationToken)> {
+        self.take_where(|open| open.handle.session() == session)
+    }
+
+    /// Takes every open connection the bus connection `owner` asked for out of the book, as
+    /// [`RemoteSessions::end`] does (the portal's connection left the bus: NEW-PI-8).
+    pub fn end_owner(&mut self, owner: &str) -> Vec<(RemoteHandle, RegistrationToken)> {
+        self.take_where(|open| open.owner.as_deref() == Some(owner))
+    }
+
+    fn take_where(
+        &mut self,
+        wanted: impl Fn(&Open) -> bool,
+    ) -> Vec<(RemoteHandle, RegistrationToken)> {
         let slots: Vec<RemoteSlot> = self
             .open
             .iter()
-            .filter(|(_, open)| open.handle.session() == session)
+            .filter(|(_, open)| wanted(open))
             .map(|(slot, _)| *slot)
             .collect();
         slots

@@ -7,6 +7,7 @@ use super::callers::{CallerCheck, DesktopCallers};
 use super::compositor1::{BUS_NAME, Compositor1, OBJECT_PATH};
 use super::connect_ask::ConnectCall;
 use super::intake::{CONNECT_QUEUE, Intake, RATE_WINDOW};
+use super::portal_watch::{self, PortalWatch};
 use crate::IpcError;
 use crate::privacy::{PrivacyLink, serve_privacy};
 use calloop::channel::{Channel, SyncSender, sync_channel};
@@ -178,9 +179,15 @@ async fn connect(
     // The object first, then the name: no call can arrive before it is answered. Without
     // replacement and without a queue, two casements on one session is a misconfiguration: the
     // second must fail, not take over.
+    let portals = Arc::new(PortalWatch::default());
+    tokio::spawn(portal_watch::listen(
+        connection.clone(),
+        Arc::clone(&portals),
+        Arc::clone(&intake),
+    ));
     connection
         .object_server()
-        .at(OBJECT_PATH, Compositor1::new(intake, callers))
+        .at(OBJECT_PATH, Compositor1::new(intake, callers, portals))
         .await?;
     if let Some(link) = privacy {
         serve_privacy(&connection, for_privacy, link).await?;

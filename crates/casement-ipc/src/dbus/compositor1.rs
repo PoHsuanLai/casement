@@ -27,6 +27,7 @@
 use super::callers::{CallerCheck, require, role_for_connection};
 use super::connect_ask::{ConnectAsk, ConnectRefusal, ConnectReply, Proven};
 use super::intake::{ANSWER_WAIT, Intake};
+use super::portal_watch::{PortalWatch, Watching};
 use crate::IpcError;
 use casement_core::policy::ConnectionRole;
 use peephole_bus::peephole_core::{RoleName, roles};
@@ -46,12 +47,22 @@ pub const BUS_NAME: &str = "org.quire.Compositor1";
 pub struct Compositor1 {
     intake: Arc<Intake>,
     callers: Arc<dyn CallerCheck>,
+    portals: Arc<PortalWatch>,
 }
 
 impl Compositor1 {
-    /// The object over `intake`, proving callers through `callers`.
-    pub fn new(intake: Arc<Intake>, callers: Arc<dyn CallerCheck>) -> Compositor1 {
-        Compositor1 { intake, callers }
+    /// The object over `intake`, proving callers through `callers`, remembering which bus
+    /// connections asked for remote sockets in `portals`.
+    pub fn new(
+        intake: Arc<Intake>,
+        callers: Arc<dyn CallerCheck>,
+        portals: Arc<PortalWatch>,
+    ) -> Compositor1 {
+        Compositor1 {
+            intake,
+            callers,
+            portals,
+        }
     }
 }
 
@@ -101,7 +112,16 @@ impl Compositor1 {
         #[zbus(header)] header: Header<'_>,
     ) -> fdo::Result<zbus::zvariant::OwnedFd> {
         let caller = self.proven(&header, &roles::PORTAL).await?;
-        self.ask(ConnectAsk::remote_eis(session, devices, caller))
+        // The socket belongs to the portal's connection to the bus, not to the portal as a
+        // program: when that connection goes (a restart, a crash), so do its sockets.
+        let owner = header
+            .sender()
+            .map(|name| name.as_str().to_owned())
+            .ok_or_else(|| ConnectRefusal::NotTheCaller.to_error())?;
+        if self.portals.watch(&owner, &caller) == Watching::TableFull {
+            return Err(ConnectRefusal::TooMany.to_error());
+        }
+        self.ask(ConnectAsk::remote_eis(session, devices, caller).from_owner(&owner))
             .await
     }
 

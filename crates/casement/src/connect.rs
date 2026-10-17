@@ -12,18 +12,18 @@ use crate::State;
 use crate::clients::{Standing, insert_client};
 use crate::core_loop::{feed, tty::desktop_extent};
 use casement_agent::{
-    HandOut, RefuseWhy, RemoteEvent, RemoteKinds, RoleName, hand_out, open_remote_eis,
-    portal_may_connect,
+    HandOut, RefuseWhy, RemoteEvent, RemoteHandle, RemoteKinds, RoleName, hand_out,
+    open_remote_eis, portal_may_connect,
 };
 use casement_core::Event;
 use casement_core::input::{InputEvent, PortalSessionId};
 use casement_ipc::dbus::{
-    ConnectAsk, ConnectCall, ConnectRefusal, ConnectReply, EndAsk, RemoteAsk,
+    ConnectAsk, ConnectCall, ConnectRefusal, ConnectReply, EndAsk, GoneAsk, RemoteAsk,
 };
 use casement_wayland::ClientState;
 use porter_core::PeerIdentity;
 use smithay::reexports::calloop::channel::{Channel, Event as ChannelEvent};
-use smithay::reexports::calloop::{Error as LoopError, LoopHandle};
+use smithay::reexports::calloop::{Error as LoopError, LoopHandle, RegistrationToken};
 
 /// Starts answering `calls` on `handle`'s loop.
 pub fn attach(
@@ -46,8 +46,11 @@ pub fn attach(
 /// server end of a new socket pair is inserted as a client with that role (the model hears
 /// `ClientConnected`), and the client end is the reply.
 pub fn answer(state: &mut State, ask: ConnectAsk) -> ConnectReply {
+    if let Some(gone) = ask.gone {
+        return answer_gone(state, &gone);
+    }
     if let Some(remote) = ask.remote {
-        return answer_remote(state, remote, &ask.caller.role);
+        return answer_remote(state, remote, ask.owner, &ask.caller.role);
     }
     if let Some(end) = ask.end {
         return answer_end(state, end, &ask.caller.role);
@@ -103,7 +106,12 @@ fn portal_only(caller: &RoleName) -> Result<(), ConnectRefusal> {
 /// the server end becomes an event-loop source whose input is fed to the model tagged as the
 /// remote origin of portal session `remote.session`, with a device slot of its own (minted
 /// here, one per connection: CASW-19); the client end is the reply.
-pub fn answer_remote(state: &mut State, remote: RemoteAsk, caller: &RoleName) -> ConnectReply {
+pub fn answer_remote(
+    state: &mut State,
+    remote: RemoteAsk,
+    owner: Option<String>,
+    caller: &RoleName,
+) -> ConnectReply {
     if let Err(why) = portal_only(caller) {
         return ConnectReply::Refused(why);
     }
@@ -137,7 +145,7 @@ pub fn answer_remote(state: &mut State, remote: RemoteAsk, caller: &RoleName) ->
     );
     match inserted {
         Ok(token) => {
-            state.agent.remote.opened(grant.handle, token);
+            state.agent.remote.opened(grant.handle, token, owner);
             ConnectReply::Granted(grant.client)
         }
         Err(error) => {
@@ -155,14 +163,29 @@ pub fn answer_end(state: &mut State, end: EndAsk, caller: &RoleName) -> ConnectR
     if let Err(why) = portal_only(caller) {
         return ConnectReply::Refused(why);
     }
-    for (handle, token) in state.agent.remote.end(PortalSessionId(end.session)) {
+    let ended = state.agent.remote.end(PortalSessionId(end.session));
+    close(state, ended);
+    ConnectReply::Ended
+}
+
+/// The portal's bus connection `gone.owner` left the bus (a restart, a crash): every remote
+/// socket it asked for is closed and the keys and buttons held are let go, so an app does not
+/// keep injecting input into a session nobody is accounting for any more (NEW-PI-8).
+pub fn answer_gone(state: &mut State, gone: &GoneAsk) -> ConnectReply {
+    let ended = state.agent.remote.end_owner(&gone.owner);
+    close(state, ended);
+    ConnectReply::Ended
+}
+
+/// Takes `ended` out of the loop and lets go of what each held.
+fn close(state: &mut State, ended: Vec<(RemoteHandle, RegistrationToken)>) {
+    for (handle, token) in ended {
         state.event_loop.remove(token);
         for release in handle.release() {
             let at = state.clock.now();
             deliver_remote(state, release.at(at));
         }
     }
-    ConnectReply::Ended
 }
 
 /// One input event from a remote session into the model, by the path every input takes. Its

@@ -67,6 +67,19 @@ pub struct ConnectAsk {
     /// Set for `EndEis`: the question is to end a remote session, and neither `role` nor
     /// `remote` is read.
     pub end: Option<EndAsk>,
+    /// Set for `ConnectEis`: the unique bus name of the portal connection that asked, so its
+    /// sockets can be ended when that connection goes (NEW-PI-8).
+    pub owner: Option<String>,
+    /// Set when a portal connection left the bus (made by casement's own bus thread, never by a
+    /// caller): the question is to end every remote socket that connection asked for.
+    pub gone: Option<GoneAsk>,
+}
+
+/// A portal connection that left the bus.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GoneAsk {
+    /// Its unique bus name.
+    pub owner: String,
 }
 
 /// What the portal asked of `EndEis`.
@@ -103,6 +116,33 @@ impl ConnectAsk {
             caller,
             remote: None,
             end: None,
+            owner: None,
+            gone: None,
+        }
+    }
+
+    /// The same question, asked from the bus connection `owner` (its unique name).
+    #[must_use]
+    pub fn from_owner(self, owner: &str) -> ConnectAsk {
+        ConnectAsk {
+            owner: Some(owner.to_owned()),
+            ..self
+        }
+    }
+
+    /// The portal connection `owner` left the bus; `portal` is who it had proven to be. Only
+    /// casement's bus thread makes this.
+    pub fn owner_gone(owner: &str, portal: Proven) -> ConnectAsk {
+        ConnectAsk {
+            // Not read: `gone` decides.
+            role: ConnectionRole::Public,
+            caller: portal,
+            remote: None,
+            end: None,
+            owner: None,
+            gone: Some(GoneAsk {
+                owner: owner.to_owned(),
+            }),
         }
     }
 
@@ -124,6 +164,8 @@ impl ConnectAsk {
             caller,
             remote: Some(RemoteAsk { session, devices }),
             end: None,
+            owner: None,
+            gone: None,
         }
     }
 
@@ -144,6 +186,8 @@ impl ConnectAsk {
             caller,
             remote: None,
             end: Some(EndAsk { session }),
+            owner: None,
+            gone: None,
         }
     }
 }

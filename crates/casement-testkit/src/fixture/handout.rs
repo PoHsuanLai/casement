@@ -60,6 +60,34 @@ impl Fixture {
         }
     }
 
+    /// The same, asked from the bus connection `owner` (its unique name): its sockets go when
+    /// that connection does ([`Fixture::portal_left`]).
+    pub fn connect_remote_eis_from(
+        &mut self,
+        caller: &Proven,
+        owner: &str,
+        session: u64,
+        devices: u32,
+    ) -> Result<OwnedFd, ConnectRefusal> {
+        match connect::answer(
+            &mut self.state,
+            ConnectAsk::remote_eis(session, devices, caller.clone()).from_owner(owner),
+        ) {
+            ConnectReply::Granted(fd) => Ok(fd),
+            ConnectReply::Refused(why) => Err(why),
+            _ => Err(ConnectRefusal::Unavailable),
+        }
+    }
+
+    /// The portal's bus connection `owner` left the bus: the decision casement's loop makes when
+    /// the bus thread says so (`Compositor1`'s name watch).
+    pub fn portal_left(&mut self, portal: &Proven, owner: &str) {
+        let _ = connect::answer(
+            &mut self.state,
+            ConnectAsk::owner_gone(owner, portal.clone()),
+        );
+    }
+
     /// `caller` asking to end portal session `session`'s remote sockets (`EndEis`'s decision,
     /// `casement::connect::answer`). Granted, nothing; refused, the reason the D-Bus caller is
     /// told.

@@ -140,3 +140,35 @@ fn ending_a_session_closes_its_sockets_and_only_the_portal_may_ask() {
         "an unknown session"
     );
 }
+
+/// NEW-PI-8: the sockets a portal connection asked for go with that connection. A restarted
+/// portal (a new connection) does not strand the old one's sockets, and the new one's are left
+/// alone.
+#[test]
+fn a_portal_that_leaves_the_bus_takes_its_remote_sockets_with_it() {
+    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let portal = callers::portal();
+    let first = fixture
+        .connect_remote_eis_from(&portal, ":1.7", 1, 7)
+        .expect("granted");
+    let second = fixture
+        .connect_remote_eis_from(&portal, ":1.7", 2, 7)
+        .expect("granted");
+    let restarted = fixture
+        .connect_remote_eis_from(&portal, ":1.8", 3, 7)
+        .expect("granted");
+    let unowned = fixture.connect_remote_eis(&portal, 4, 7).expect("granted");
+
+    fixture.portal_left(&portal, ":1.7");
+    assert!(closed_by_the_compositor(first), "the old portal's first");
+    assert!(closed_by_the_compositor(second), "the old portal's second");
+    assert!(
+        !closed_by_the_compositor(restarted),
+        "the restarted portal's socket stays"
+    );
+    assert!(
+        !closed_by_the_compositor(unowned),
+        "a socket nobody owns is not ended by a name"
+    );
+    fixture.portal_left(&portal, ":1.7");
+}
