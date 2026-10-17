@@ -5,11 +5,13 @@
 //!
 //! Timers are the session's (`TimerKey::IdleNotify`), never smithay's wall-clock ones (A36).
 //! Activity is lazy: it only moves a watch's quiet-since mark, and a timer that fires early
-//! re-arms for what is left, so a stream of pointer motion arms nothing.
+//! re-arms for what is left, so a stream of pointer motion arms nothing and touches nothing: the
+//! book keeps one "last activity" instant, never a mark per watch, and the set of watches that
+//! are idle, which are the only ones activity has anything to tell (NEW-CAS-2).
 
 use casement_core::time::{Due, IdleNotifierId, Mono, TimerKey};
 use casement_core::{ClientKey, Effect};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 /// Whether a visible surface holds idleness off (`zwp_idle_inhibitor_v1`).
@@ -96,9 +98,20 @@ impl Moved {
 }
 
 /// Every watch, whether an inhibitor holds idleness off, and the next notifier id.
+///
+/// Activity is one instant (`active_at`): a quiet watch has been quiet since the later of its
+/// own mark and that instant. The watches that are idle are kept apart (`idle`), since they
+/// are the only ones activity has to tell. Both make an input event cost nothing when nothing
+/// is idle, however many watches there are.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct IdleBook {
     watches: BTreeMap<IdleNotifierId, Watch>,
+    /// The watches in [`Phase::Idle`].
+    idle: BTreeSet<IdleNotifierId>,
+    /// How many watches each client holds.
+    held: BTreeMap<ClientKey, usize>,
+    /// The latest input of any origin.
+    active_at: Option<Mono>,
     inhibited: Inhibited,
     next: u64,
 }
@@ -130,48 +143,49 @@ impl IdleBook {
         };
         let mut watches = self.watches;
         watches.insert(id, watch);
+        let mut held = self.held;
+        *held.entry(client).or_insert(0) += 1;
         let book = IdleBook {
             watches,
+            held,
             next: self.next.saturating_add(1),
-            inhibited: self.inhibited,
+            ..self
         };
         (book, id, moved)
     }
 
-    /// Input of any origin arrived at `now`: every quiet watch counts from here, every idle one
-    /// is told `resumed` and counts again (its timer was spent, so it is re-armed).
+    /// Input of any origin arrived at `now`: every quiet watch counts from here (one instant
+    /// moves, no watch is visited), every idle one is told `resumed` and counts again (its
+    /// timer was spent, so it is re-armed).
     pub fn activity(self, now: Mono) -> (IdleBook, Moved) {
-        let (watches, moved) = self.watches.into_iter().fold(
-            (BTreeMap::new(), Moved::default()),
-            |(mut kept, moved), (id, watch)| match watch.phase {
-                Phase::Quiet { .. } => {
-                    kept.insert(
-                        id,
-                        Watch {
-                            phase: Phase::Quiet { since: now },
-                            ..watch
-                        },
-                    );
-                    (kept, moved)
+        let IdleBook {
+            mut watches,
+            idle,
+            held,
+            inhibited,
+            next,
+            ..
+        } = self;
+        let moved = idle
+            .iter()
+            .fold(Moved::default(), |moved, id| match watches.get_mut(id) {
+                Some(watch) => {
+                    watch.phase = Phase::Quiet { since: now };
+                    moved
+                        .signal(Signal::Resumed(*id))
+                        .effect(watch.arm(*id, now))
                 }
-                Phase::Idle => {
-                    let moved = moved.signal(Signal::Resumed(id)).effect(watch.arm(id, now));
-                    kept.insert(
-                        id,
-                        Watch {
-                            phase: Phase::Quiet { since: now },
-                            ..watch
-                        },
-                    );
-                    (kept, moved)
-                }
-                Phase::Held => {
-                    kept.insert(id, watch);
-                    (kept, moved)
-                }
-            },
-        );
-        (IdleBook { watches, ..self }, moved)
+                None => moved,
+            });
+        let book = IdleBook {
+            watches,
+            idle: BTreeSet::new(),
+            held,
+            active_at: Some(now),
+            inhibited,
+            next,
+        };
+        (book, moved)
     }
 
     /// The timer of watch `id` of `client` fired at `now`. If the watch has been quiet for its
@@ -190,15 +204,31 @@ impl IdleBook {
         let Phase::Quiet { since } = watch.phase else {
             return (self, Moved::default());
         };
+        // Quiet since its own mark or the latest input, whichever is later.
+        let since = self.active_at.map_or(since, |active| since.max(active));
         let due = since.after(watch.timeout);
         let (phase, moved) = if now >= due {
             (Phase::Idle, Moved::default().signal(Signal::Idled(id)))
         } else {
-            (watch.phase, Moved::default().effect(watch.arm(id, since)))
+            (
+                Phase::Quiet { since },
+                Moved::default().effect(watch.arm(id, since)),
+            )
         };
+        let mut idle = self.idle;
+        if phase == Phase::Idle {
+            idle.insert(id);
+        }
         let mut watches = self.watches;
         watches.insert(id, Watch { phase, ..watch });
-        (IdleBook { watches, ..self }, moved)
+        (
+            IdleBook {
+                watches,
+                idle,
+                ..self
+            },
+            moved,
+        )
     }
 
     /// An inhibitor appeared or the last one went at `now`. Raised: watches that obey it are
@@ -207,12 +237,21 @@ impl IdleBook {
         if inhibited == self.inhibited {
             return (self, Moved::default());
         }
-        let (watches, moved) = self.watches.into_iter().fold(
+        let IdleBook {
+            watches,
+            mut idle,
+            held,
+            active_at,
+            next,
+            ..
+        } = self;
+        let (watches, moved) = watches.into_iter().fold(
             (BTreeMap::new(), Moved::default()),
             |(mut kept, moved), (id, watch)| {
                 let (phase, moved) = match (watch.honours, inhibited, watch.phase) {
                     (Honours::InputOnly, _, phase) => (phase, moved),
                     (Honours::Inhibitors, Inhibited::Yes, Phase::Idle) => {
+                        idle.remove(&id);
                         (Phase::Held, moved.signal(Signal::Resumed(id)))
                     }
                     (Honours::Inhibitors, Inhibited::Yes, Phase::Quiet { .. }) => (
@@ -232,8 +271,11 @@ impl IdleBook {
         (
             IdleBook {
                 watches,
+                idle,
+                held,
+                active_at,
                 inhibited,
-                next: self.next,
+                next,
             },
             moved,
         )
@@ -243,15 +285,37 @@ impl IdleBook {
     /// cancelled.
     pub fn forget(self, id: IdleNotifierId) -> (IdleBook, Moved) {
         let mut watches = self.watches;
+        let mut idle = self.idle;
+        let mut held = self.held;
+        idle.remove(&id);
         let moved = watches.remove(&id).map_or_else(Moved::default, |watch| {
+            if let Some(count) = held.get_mut(&watch.client) {
+                *count = count.saturating_sub(1);
+                if *count == 0 {
+                    held.remove(&watch.client);
+                }
+            }
             Moved::default().effect(Effect::CancelTimer(watch.key(id)))
         });
-        (IdleBook { watches, ..self }, moved)
+        (
+            IdleBook {
+                watches,
+                idle,
+                held,
+                ..self
+            },
+            moved,
+        )
     }
 
     /// Whether an inhibitor holds idleness off.
     pub fn inhibited(&self) -> Inhibited {
         self.inhibited
+    }
+
+    /// How many watches `client` holds (the per-client cap counts these).
+    pub fn held_by(&self, client: ClientKey) -> usize {
+        self.held.get(&client).copied().unwrap_or(0)
     }
 
     /// How many watches there are.
@@ -398,6 +462,58 @@ mod tests {
         let (book, id) = watching(1_000, Honours::Inhibitors, 0);
         let (_, moved) = book.fire(ClientKey(2), id, at(1_000));
         assert_eq!(moved, Moved::default());
+    }
+
+    /// Many quiet watches and a stream of input: activity visits none of them, and each still
+    /// goes idle exactly one timeout after the last input (the later of its mark and the input).
+    #[test]
+    fn many_quiet_watches_stay_lazy_under_input_and_still_go_idle_after_the_last_one() {
+        let mut book = IdleBook::default();
+        let mut ids = Vec::new();
+        for _ in 0..2_000 {
+            let (next, id, _) = book.watch(
+                CLIENT,
+                Duration::from_millis(1_000),
+                Honours::Inhibitors,
+                at(0),
+            );
+            book = next;
+            ids.push(id);
+        }
+        assert_eq!(book.held_by(CLIENT), 2_000);
+        for ms in (100..900).step_by(100) {
+            let (next, moved) = book.activity(at(ms));
+            book = next;
+            assert_eq!(
+                moved,
+                Moved::default(),
+                "input at {ms} tells and arms nothing"
+            );
+        }
+        let first = ids[0];
+        let (book, early) = book.fire(CLIENT, first, at(1_000));
+        assert!(early.signals.is_empty(), "input at 800 moved the mark");
+        assert_eq!(early.effects, vec![arm(first, 1_800)]);
+        let (_, due) = book.fire(CLIENT, first, at(1_800));
+        assert_eq!(due.signals, vec![Signal::Idled(first)]);
+    }
+
+    #[test]
+    fn the_per_client_count_follows_watches_made_and_destroyed() {
+        let (book, first) = watching(1_000, Honours::Inhibitors, 0);
+        let (book, second, _) =
+            book.watch(CLIENT, Duration::from_secs(1), Honours::Inhibitors, at(0));
+        let (book, _, _) = book.watch(
+            ClientKey(2),
+            Duration::from_secs(1),
+            Honours::Inhibitors,
+            at(0),
+        );
+        assert_eq!((book.held_by(CLIENT), book.held_by(ClientKey(2))), (2, 1));
+        let (book, _) = book.forget(first);
+        let (book, _) = book.forget(second);
+        let (book, _) = book.forget(second);
+        assert_eq!((book.held_by(CLIENT), book.held_by(ClientKey(2))), (0, 1));
     }
 
     #[test]

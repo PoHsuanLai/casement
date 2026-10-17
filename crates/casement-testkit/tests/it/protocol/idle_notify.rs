@@ -127,3 +127,41 @@ fn an_unproven_peer_asking_for_one_millisecond_is_told_after_five_seconds() {
     step(&mut fixture, &mut watch, Duration::from_millis(1));
     assert_eq!(watch.signals(), vec![IdleSignal::Idled]);
 }
+
+/// NEW-CAS-2: a client may hold `MAX_IDLE_WATCHES` notifications; the next is over the cap and
+/// the client is cut, so one client cannot make every input event walk a million watches.
+#[test]
+fn a_client_that_asks_for_idle_notifications_without_end_is_cut() {
+    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let client = fixture.connect(ConnectionRole::Public);
+    fixture.pump();
+    let mut made = Vec::new();
+    for _ in 0..casement_wayland::limits::MAX_IDLE_WATCHES {
+        made.push(
+            IdleWatch::start(
+                fixture.client(client).globals(),
+                IdleKind::Inhibitable,
+                Duration::from_secs(30),
+            )
+            .expect("a notification within the cap"),
+        );
+    }
+    fixture.pump();
+    assert!(
+        fixture.client(client).is_connected(),
+        "up to the cap is allowed"
+    );
+    made.push(
+        IdleWatch::start(
+            fixture.client(client).globals(),
+            IdleKind::Inhibitable,
+            Duration::from_secs(30),
+        )
+        .expect("the request is sent"),
+    );
+    fixture.pump();
+    assert!(
+        !fixture.client(client).is_connected(),
+        "the client past the cap is cut"
+    );
+}

@@ -28,6 +28,12 @@ pub(super) fn hear(state: &mut State, events: &[Event], now: Mono) {
 /// What the inhibitors say now: held off while one of them is visible. The idle machine hears
 /// only a change.
 pub(crate) fn sync_inhibitors(state: &mut State) {
+    // Nothing inhibits and nothing was held off: no input event pays for a walk (NEW-CAS-2).
+    let quiet =
+        state.wl.idle_inhibit.is_empty() && state.wl.idle_notify.book.inhibited() == Inhibited::No;
+    if quiet {
+        return;
+    }
     let now = state.clock.now();
     state.wl.idle_inhibit.forget_dead();
     let inhibited = visible_inhibitors(state);

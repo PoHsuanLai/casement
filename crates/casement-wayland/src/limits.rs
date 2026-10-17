@@ -60,6 +60,15 @@ pub const MAX_EXPORTS: usize = 256;
 /// the loop, and a keyboard sets its keymap once or when the layout changes.
 pub const MAX_KEYMAPS: usize = 16;
 
+/// Idle notifications (`ext_idle_notifier_v1.get_idle_notification`) one client may hold: a
+/// screen saver, a player and a chat app want one or two each, and every one is a timer and a
+/// `resumed` on the next input event while it is idle.
+pub const MAX_IDLE_WATCHES: usize = 32;
+
+/// Idle inhibitors (`zwp_idle_inhibit_manager_v1.create_inhibitor`) one client may hold: one
+/// per playing video is plenty, and every one is looked at whenever the windows change.
+pub const MAX_IDLE_INHIBITORS: usize = 16;
+
 /// The objects whose count per client is capped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[non_exhaustive]
@@ -80,6 +89,10 @@ pub enum Limit {
     Exports,
     /// `zwp_virtual_keyboard_v1.keymap` requests of one keyboard.
     Keymaps,
+    /// `ext_idle_notification_v1`.
+    IdleWatches,
+    /// `zwp_idle_inhibitor_v1`.
+    IdleInhibitors,
 }
 
 /// Whether one more object fits.
@@ -103,6 +116,8 @@ impl Limit {
             Limit::IconBuffers => MAX_ICON_BUFFERS,
             Limit::Exports => MAX_EXPORTS,
             Limit::Keymaps => MAX_KEYMAPS,
+            Limit::IdleWatches => MAX_IDLE_WATCHES,
+            Limit::IdleInhibitors => MAX_IDLE_INHIBITORS,
         }
     }
 
@@ -117,6 +132,8 @@ impl Limit {
             Limit::IconBuffers => "icon buffers",
             Limit::Exports => "exported windows",
             Limit::Keymaps => "keymaps",
+            Limit::IdleWatches => "idle notifications",
+            Limit::IdleInhibitors => "idle inhibitors",
         }
     }
 
@@ -189,6 +206,8 @@ mod tests {
             Limit::IconBuffers,
             Limit::Exports,
             Limit::Keymaps,
+            Limit::IdleWatches,
+            Limit::IdleInhibitors,
         ];
         for limit in all {
             assert_eq!(limit.judge(0), Standing::Within, "{limit:?}");

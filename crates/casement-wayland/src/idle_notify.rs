@@ -17,6 +17,7 @@ mod machine;
 pub use machine::{Honours, IdleBook, Inhibited, Moved, Signal};
 
 use crate::client::ClientState;
+use crate::limits::{self, Limit, Standing};
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::policy::ConnectionRole;
 use casement_core::time::{IdleNotifierId, Mono};
@@ -91,6 +92,10 @@ pub trait IdleNotifyHandler: Sized + 'static {
     /// Carries out timer effects (`casement::exec::exec`).
     fn idle_effects(&mut self, effects: Vec<Effect>);
 }
+
+/// The id of a notification object that watches nothing (its client went over the cap): ids
+/// are minted from 0 and cannot reach it.
+const UNWATCHED: IdleNotifierId = IdleNotifierId(u64::MAX);
 
 /// The global's data.
 #[derive(Debug, Clone, Copy, Default)]
@@ -227,7 +232,7 @@ where
         client: &Client,
         _resource: &ExtIdleNotifierV1,
         request: ext_idle_notifier_v1::Request,
-        _handle: &DisplayHandle,
+        handle: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
         let (new, timeout, honours) = match request {
@@ -243,6 +248,13 @@ where
             .map_or((ClientKey(0), UNTRUSTED_MIN_TIMEOUT), |data| {
                 (data.key, timeout_floor(&data.role, &data.peer))
             });
+        // A client past its cap is cut after this request (CASW-07's watch cap, NEW-CAS-2); the
+        // object it asked for is made inert, with an id no watch ever has.
+        let held = state.idle_notify_part().book.held_by(key);
+        if limits::admit(handle, client, Limit::IdleWatches, held) == Standing::Over {
+            data_init.init(new, IdleNotificationData { id: UNWATCHED });
+            return;
+        }
         let now = state.session_now();
         let watched = on_notification(
             state.idle_notify_part(),

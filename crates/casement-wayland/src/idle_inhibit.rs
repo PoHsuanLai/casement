@@ -5,9 +5,14 @@ use crate::idle_notify::Inhibited;
 use smithay::reexports::wayland_protocols::wp::idle_inhibit::zv1::server::zwp_idle_inhibit_manager_v1::ZwpIdleInhibitManagerV1;
 use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::reexports::wayland_server::{DisplayHandle, GlobalDispatch};
+use smithay::reexports::wayland_server::{Client, DisplayHandle, GlobalDispatch};
 use smithay::wayland::GlobalData;
 use smithay::wayland::idle_inhibit::{IdleInhibitHandler, IdleInhibitManagerState};
+
+/// Inhibitors the session counts in all, whoever holds them: each is looked at whenever the
+/// windows change, so the walk is bounded however many clients ask. One past it is not counted
+/// (a player never loses its connection over another client's inhibitors).
+pub const MAX_INHIBITORS: usize = 128;
 
 /// `zwp_idle_inhibit_manager_v1` and the surfaces that hold idleness off (one entry per live
 /// inhibitor, so a surface with two counts twice).
@@ -29,6 +34,28 @@ impl IdleInhibitPart {
             state: IdleInhibitManagerState::new::<D>(display),
             inhibitors: Vec::new(),
         }
+    }
+
+    /// How many inhibitors `client` holds.
+    pub fn held_by(&self, client: &Client) -> usize {
+        self.inhibitors
+            .iter()
+            .filter(|surface| {
+                surface
+                    .client()
+                    .is_some_and(|owner| owner.id() == client.id())
+            })
+            .count()
+    }
+
+    /// How many inhibitors are held.
+    pub fn len(&self) -> usize {
+        self.inhibitors.len()
+    }
+
+    /// Whether none is held (a loop turn with none has nothing to look at).
+    pub fn is_empty(&self) -> bool {
+        self.inhibitors.is_empty()
     }
 
     /// Drops the inhibitors whose surface is gone (their client hung up or destroyed the
@@ -68,7 +95,11 @@ impl IdleInhibitPart {
 /// `idle_notify::on_inhibit` instead of the core loop.
 pub fn on_inhibit(part: &mut IdleInhibitPart, surface: &WlSurface) -> Inhibited {
     part.forget_dead();
-    part.inhibitors.push(surface.clone());
+    if part.inhibitors.len() < MAX_INHIBITORS {
+        part.inhibitors.push(surface.clone());
+    } else {
+        tracing::warn!("too many idle inhibitors are held; one is not counted");
+    }
     part.inhibited()
 }
 
@@ -79,4 +110,15 @@ pub fn on_uninhibit(part: &mut IdleInhibitPart, surface: &WlSurface) -> Inhibite
     }
     part.forget_dead();
     part.inhibited()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The session-wide cap is a bound on the walk; the per-client cap is `limits::Limit`'s.
+    #[test]
+    fn the_session_cap_is_above_what_one_client_may_hold() {
+        assert!(MAX_INHIBITORS > crate::limits::MAX_IDLE_INHIBITORS);
+    }
 }

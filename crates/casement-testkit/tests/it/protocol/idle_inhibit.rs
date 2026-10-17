@@ -90,3 +90,26 @@ fn a_client_that_disconnects_stops_inhibiting() {
     step(&mut fixture, &mut watch, Duration::from_millis(1));
     assert_eq!(watch.signals(), vec![IdleSignal::Idled]);
 }
+
+/// NEW-CAS-2: a client may hold `MAX_IDLE_INHIBITORS` inhibitors; the next cuts it.
+#[test]
+fn a_client_that_inhibits_without_end_is_cut() {
+    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let client = fixture.connect(ConnectionRole::Public);
+    fixture.pump();
+    let mut holds = Vec::new();
+    for _ in 0..casement_wayland::limits::MAX_IDLE_INHIBITORS {
+        holds.push(InhibitHold::start(fixture.client(client).globals()).expect("an inhibitor"));
+    }
+    fixture.pump();
+    assert!(
+        fixture.client(client).is_connected(),
+        "up to the cap is allowed"
+    );
+    holds.push(InhibitHold::start(fixture.client(client).globals()).expect("the request is sent"));
+    fixture.pump();
+    assert!(
+        !fixture.client(client).is_connected(),
+        "the client past the cap is cut"
+    );
+}
