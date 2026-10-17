@@ -9,6 +9,7 @@ use casement_core::time::{Due, Millihertz, VblankClock};
 use casement_core::{Event, OutputKey};
 use smithay::reexports::calloop::LoopHandle;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
+use std::time::Duration;
 
 /// Arms `due` (`Effect::ArmTimer`) on the wall clock: when it fires, `Event::TimerFired(due.key)`
 /// is fed to the core loop, unless the timer was cancelled or armed again for another instant
@@ -25,6 +26,26 @@ pub fn arm(handle: &LoopHandle<'static, State>, wall: &WallClock, due: Due) {
     });
     if let Err(error) = inserted {
         tracing::warn!(%error, "a timer could not be armed");
+    }
+}
+
+/// Runs `then` once, on the loop, `delay` from now (a pause that is not the model's: a listener
+/// resting after a failed accept). The loop's data type is the caller's, so a test can use a
+/// bare one. A timer that cannot be armed is logged and `then` never runs.
+pub fn after<D: 'static>(
+    handle: &LoopHandle<'static, D>,
+    delay: Duration,
+    then: impl FnOnce(&mut D) + 'static,
+) {
+    let mut then = Some(then);
+    let inserted = handle.insert_source(Timer::from_duration(delay), move |_, (), data: &mut D| {
+        if let Some(then) = then.take() {
+            then(data);
+        }
+        TimeoutAction::Drop
+    });
+    if let Err(error) = inserted {
+        tracing::warn!(%error, "a pause could not be armed");
     }
 }
 

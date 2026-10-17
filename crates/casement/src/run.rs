@@ -317,6 +317,7 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
         #[cfg(feature = "debug-inject")]
         debug_peer_units,
     } = config;
+    crate::open_files::raise();
     let mut event_loop: EventLoop<'static, State> = EventLoop::try_new()?;
     let handle = event_loop.handle();
     let mut display: Display<State> = Display::new()?;
@@ -349,17 +350,28 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
     // looked at and judged against it, so who it is is known before it asks for anything.
     let table = clients::desktop_table(&system_dir);
     let judge = clients::Judge::new(table.clone(), system_dir);
-    handle
-        .insert_source(socket, move |stream, (), state: &mut State| {
+    // A failed accept (no descriptors left, a peer that gave up) rests the listener and never
+    // ends the session; a connection past a cap is closed before it is looked at.
+    clients::accept::insert(
+        &handle,
+        socket,
+        clients::accept::ACCEPT_REST,
+        move |stream, (), state: &mut State| {
+            if clients::room_in_session(state) != clients::Room::Free {
+                return;
+            }
             let role = casement_core::policy::ConnectionRole::Public;
             let arrival = judge.arrival(&stream, state.core.model.privilege().floor());
+            if clients::room_for_peer(state, &arrival.peer, &stream) != clients::Room::Free {
+                return;
+            }
             if let Err(error) =
                 clients::insert_client(state, stream, role, arrival.peer, arrival.standing)
             {
                 tracing::warn!(%error, "a client could not be inserted");
             }
-        })
-        .map_err(LoopError::from)?;
+        },
+    )?;
     #[cfg(feature = "debug-inject")]
     let debug = attach_debug(&mut state, &handle, &debug_bus)?;
     #[cfg(not(feature = "debug-inject"))]

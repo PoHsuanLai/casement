@@ -55,6 +55,7 @@ pub mod keymap;
 pub mod lock_marker;
 pub mod log;
 pub mod notify;
+pub mod open_files;
 pub mod privacy;
 #[cfg(feature = "testing")]
 pub mod relax;

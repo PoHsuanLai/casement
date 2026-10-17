@@ -63,6 +63,8 @@ pub struct State {
     pub start_mode: StartMode,
     /// The process behind each public connection, for force quit.
     pub processes: crate::clients::Processes,
+    /// Who holds each live connection, for the connection caps.
+    pub roster: crate::clients::Roster,
     /// The display, for creating globals, inserting clients and sending events. (Not in the
     /// plan's sketch; the handlers need it: FINDINGS.)
     pub display: DisplayHandle,
@@ -391,6 +393,7 @@ impl State {
             xwayland: XwaylandState::Off,
             start_mode: config.mode,
             processes: crate::clients::Processes::default(),
+            roster: crate::clients::Roster::default(),
             display: dh,
             event_loop: event_loop.clone(),
             #[cfg(feature = "testing")]
