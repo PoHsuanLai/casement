@@ -367,6 +367,7 @@ dependencies = [
  "casement-wayland",
  "chordkit",
  "ds-core",
+ "ds-helpers",
  "ds-settings",
  "jiff",
  "keycap-client",
