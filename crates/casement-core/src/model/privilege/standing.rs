@@ -94,6 +94,16 @@ impl ClientStanding {
         ClientStanding::Unverified { exe_name: None }
     }
 
+    /// The desktop portal as the bus proved it, for the connection casement hands it: the
+    /// standing a portal proven at `Full` has on the public socket, with no image to name it by.
+    /// Trusted for the powers `trusted_powers` gives the `portal` role, asked about the rest.
+    pub fn portal() -> ClientStanding {
+        ClientStanding::Service {
+            role: ServiceRole("portal".to_owned()),
+            exe: None,
+        }
+    }
+
     /// Whom decisions about this connection are about.
     pub fn identity(&self) -> Identity {
         match self {

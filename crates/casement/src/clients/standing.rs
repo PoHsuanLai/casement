@@ -26,9 +26,9 @@ pub(super) fn image_name(exe: &Exe) -> Option<String> {
 /// (NEW-PI-3): only `Proof::Full`, which the library gives when the unit manager vouches for the
 /// unit and the unit clears every loader variable. A cgroup and an image alone (`Proof::Exe`)
 /// can be had by a same-user process that makes a control group of the right name and runs the
-/// real image under `LD_PRELOAD`, so on the public socket they trust nobody: the shell and the
-/// agent tier are handed their connections (`Compositor1.Connect`), which the bus proves at
-/// `Full`. A test build (`testing`, `debug-inject`) also takes `Proof::Dev`, the proof of a row
+/// real image under `LD_PRELOAD`, so on the public socket they trust nobody: the shell, the
+/// agent tier and the portal are handed their connections (`Compositor1.Connect`), which the bus
+/// proves at `Full` (NEW-FA-2). A test build (`testing`, `debug-inject`) also takes `Proof::Dev`, the proof of a row
 /// from the test caller file (`dev_callers`), which shows nothing about the image but is the
 /// point of that file; every other build has no such proof.
 fn trusted(proof: Proof) -> bool {

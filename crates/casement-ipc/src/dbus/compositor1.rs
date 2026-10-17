@@ -1,9 +1,10 @@
 //! `org.quire.Compositor1` at `/org/quire/Compositor1` (the session bus; casement owns the
-//! name): the way the shell and the agent tier get their privileged Wayland connections.
+//! name): the way the shell, the agent tier and the portal get their privileged Wayland
+//! connections.
 //!
 //! ```text
-//! Connect(role: s) -> (h)    role is "shell" or "agent"; the reply is the client end of a
-//!                            new connection that has that role (I7)
+//! Connect(role: s) -> (h)    role is "shell", "agent" or "portal"; the reply is the client end
+//!                            of a new connection that has that role (I7)
 //! ConnectEis(session: t, devices: u) -> (h)
 //!                            only the desktop portal may ask: the reply is the client end of
 //!                            an EIS socket whose input arrives tagged as remote input of
@@ -17,7 +18,8 @@
 //!
 //! Who asks is decided on the bus thread, before anything reaches the event loop (CASW-05):
 //! a caller is counted against its rate, proven to hold the role the method answers (the shell
-//! for the shell, the agent tier for the agent tier, the portal for the portal's two) through
+//! for the shell, the agent tier for the agent tier, the portal for its connection and its two
+//! EIS calls) through
 //! the caller-identity library, and only then is the question put in a queue of
 //! [`CONNECT_QUEUE`](super::CONNECT_QUEUE) for casement's event loop, which makes the socket pair and inserts the
 //! server end into the display (`casement_agent::hand_out`). A call beyond the rate or the
@@ -66,7 +68,7 @@ impl Compositor1 {
     }
 }
 
-/// The role a `Connect(role)` call names: `shell` or `agent`, nothing else.
+/// The role a `Connect(role)` call names: `shell`, `agent` or `portal`, nothing else.
 ///
 /// ```
 /// use casement_core::policy::ConnectionRole;
@@ -79,14 +81,15 @@ pub fn parse_connect_role(text: &str) -> Result<ConnectionRole, IpcError> {
     match text {
         "shell" => Ok(ConnectionRole::Shell),
         "agent" => Ok(ConnectionRole::Agent),
+        "portal" => Ok(ConnectionRole::Portal),
         other => Err(IpcError::BadRole(other.to_owned())),
     }
 }
 
 #[zbus::interface(name = "org.quire.Compositor1")]
 impl Compositor1 {
-    /// `Connect(role: s) -> h`: a new Wayland connection with the role `role` (`shell` or
-    /// `agent`), when the caller holds the role that stands for it. The reply is the client end
+    /// `Connect(role: s) -> h`: a new Wayland connection with the role `role` (`shell`, `agent`
+    /// or `portal`), when the caller holds the role that stands for it. The reply is the client end
     /// of a socket.
     async fn connect(
         &self,
@@ -173,7 +176,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_shell_and_agent_can_be_asked_for() {
+    fn only_shell_agent_and_portal_can_be_asked_for() {
         assert_eq!(
             parse_connect_role("shell").expect("shell"),
             ConnectionRole::Shell
@@ -181,6 +184,10 @@ mod tests {
         assert_eq!(
             parse_connect_role("agent").expect("agent"),
             ConnectionRole::Agent
+        );
+        assert_eq!(
+            parse_connect_role("portal").expect("portal"),
+            ConnectionRole::Portal
         );
         for text in ["", "Shell", "public", "sandboxed", "shell "] {
             assert!(parse_connect_role(text).is_err(), "{text:?}");

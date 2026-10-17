@@ -41,7 +41,8 @@ where
 pub type DesktopCallers = BusPeers<RealProc, Tokio, ManagerLink<RealProc>>;
 
 /// The role a caller must hold to be handed a connection with `role`: the shell's for the
-/// shell, the agent tier's for the agent tier, none for any other kind of connection.
+/// shell, the agent tier's for the agent tier, the portal's for the portal, none for any other
+/// kind of connection.
 ///
 /// ```
 /// use casement_core::policy::ConnectionRole;
@@ -49,12 +50,14 @@ pub type DesktopCallers = BusPeers<RealProc, Tokio, ManagerLink<RealProc>>;
 /// use peephole_bus::peephole_core::roles;
 ///
 /// assert_eq!(role_for_connection(&ConnectionRole::Shell), Some(roles::SHELL));
+/// assert_eq!(role_for_connection(&ConnectionRole::Portal), Some(roles::PORTAL));
 /// assert!(role_for_connection(&ConnectionRole::Public).is_none());
 /// ```
 pub fn role_for_connection(role: &ConnectionRole) -> Option<RoleName> {
     match role {
         ConnectionRole::Shell => Some(roles::SHELL),
         ConnectionRole::Agent => Some(roles::AGENT_TIER),
+        ConnectionRole::Portal => Some(roles::PORTAL),
         _ => None,
     }
 }

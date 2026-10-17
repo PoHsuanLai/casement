@@ -15,6 +15,10 @@ pub enum ConnectionRole {
     Shell,
     /// A connection handed to the agent tier (cuad).
     Agent,
+    /// A connection handed to the desktop portal (transom) for its screenshots and recordings:
+    /// it sees what the public socket sees and is trusted for the screen and the windows
+    /// (`trusted_powers`), nothing more.
+    Portal,
     /// A security-context socket of this sandbox.
     Sandboxed(SandboxFacts),
 }
@@ -245,7 +249,7 @@ fn by_role(global: GlobalKind, role: &ConnectionRole) -> Advertise {
             Tier::ShellOnly => Advertise::No,
             Tier::ShellAndAgent | Tier::Everyone => Advertise::Yes,
         },
-        ConnectionRole::Public => match tier_of(global) {
+        ConnectionRole::Public | ConnectionRole::Portal => match tier_of(global) {
             Tier::ShellOnly | Tier::ShellAndAgent => Advertise::No,
             Tier::Everyone => Advertise::Yes,
         },

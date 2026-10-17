@@ -1,6 +1,7 @@
 //! The hand-out of privileged connections (C20, I7): `org.quire.Compositor1.Connect(role)`
 //! answers with a connected socket whose client is inserted with that role, after checking
-//! the role the caller proved. The only place a `Shell` or `Agent` connection is made (B14).
+//! the role the caller proved. The only place a `Shell`, `Agent` or `Portal` connection is made
+//! (B14).
 //!
 //! This crate decides and makes the socket pair; the composition root inserts the server end
 //! into the Wayland display as a client of the granted role (`casement::connect`), because
@@ -69,12 +70,13 @@ pub fn hand_out(wanted: &ConnectionRole, held: &RoleName) -> HandOut {
 }
 
 /// The connection role a proven caller role stands for: the shell the shell's, the agent tier
-/// the agent's, every other role none. The role comes from the shipped caller table (the
-/// caller-identity library), never from a unit name.
+/// the agent's, the portal the portal's, every other role none. The role comes from the shipped
+/// caller table (the caller-identity library), never from a unit name.
 pub fn connection_role(held: &RoleName) -> Option<ConnectionRole> {
     match held {
         held if *held == roles::SHELL => Some(ConnectionRole::Shell),
         held if *held == roles::AGENT_TIER => Some(ConnectionRole::Agent),
+        held if *held == roles::PORTAL => Some(ConnectionRole::Portal),
         _ => None,
     }
 }
@@ -88,19 +90,17 @@ mod tests {
     }
 
     #[test]
-    fn only_the_shell_and_the_agent_tier_stand_for_privileged_roles() {
+    fn only_the_shell_the_agent_tier_and_the_portal_stand_for_privileged_roles() {
         assert_eq!(connection_role(&roles::SHELL), Some(ConnectionRole::Shell));
         assert_eq!(
             connection_role(&roles::AGENT_TIER),
             Some(ConnectionRole::Agent)
         );
-        for other in [
-            "portal",
-            "settings",
-            "compositor",
-            "companion",
-            "shell_helper",
-        ] {
+        assert_eq!(
+            connection_role(&roles::PORTAL),
+            Some(ConnectionRole::Portal)
+        );
+        for other in ["settings", "compositor", "companion", "shell_helper"] {
             assert_eq!(connection_role(&role(other)), None, "{other}");
         }
     }
@@ -134,9 +134,27 @@ mod tests {
                 Some(RefuseWhy::RoleNotAllowed),
             ),
             (
+                "the portal asks for the portal",
+                roles::PORTAL,
+                ConnectionRole::Portal,
+                None,
+            ),
+            (
                 "the portal asks for the shell",
                 roles::PORTAL,
                 ConnectionRole::Shell,
+                Some(RefuseWhy::RoleNotAllowed),
+            ),
+            (
+                "the shell asks for the portal",
+                roles::SHELL,
+                ConnectionRole::Portal,
+                Some(RefuseWhy::RoleNotAllowed),
+            ),
+            (
+                "the settings app asks for the portal",
+                role("settings"),
+                ConnectionRole::Portal,
                 Some(RefuseWhy::UnknownUnit),
             ),
         ];

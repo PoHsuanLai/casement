@@ -59,8 +59,9 @@ pub fn answer(state: &mut State, ask: ConnectAsk) -> ConnectReply {
         HandOut::Granted(handed) => handed,
         HandOut::Refused(why) => return ConnectReply::Refused(refusal_of(why)),
     };
-    // A handed-out connection is the shell's or the agent tier's, trusted by how it was
-    // obtained; its peer stays unproven (the app it belongs to is `ask.caller.app`, kept below).
+    // A handed-out connection is the shell's, the agent tier's or the portal's, trusted by how it
+    // was obtained (the portal's only for the screen and the windows: `Class::of`); its peer stays
+    // unproven (the app it belongs to is `ask.caller.app`, kept below).
     let client = match insert_client(
         state,
         handed.server,

@@ -31,9 +31,10 @@ impl Requester {
     pub fn of(role: &ConnectionRole) -> Requester {
         match role {
             ConnectionRole::Shell => Requester::Shell,
-            ConnectionRole::Agent | ConnectionRole::Public | ConnectionRole::Sandboxed(_) => {
-                Requester::Program
-            }
+            ConnectionRole::Agent
+            | ConnectionRole::Public
+            | ConnectionRole::Portal
+            | ConnectionRole::Sandboxed(_) => Requester::Program,
         }
     }
 }

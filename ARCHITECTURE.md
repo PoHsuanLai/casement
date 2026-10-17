@@ -91,7 +91,7 @@ A1: `Instant::now`, `SystemTime::now`, smithay's `Clock::now` and calloop's `Tim
 | the closed sets of inputs and outputs of the model | `casement-core::{Event, Effect}` |
 | what the shell asks of the desktop (apps, windows, Spaces) and what the model says back | `casement-core::desktop::{DesktopRequest, AppAsk, WindowAsk, SpaceAsk, DesktopNote, DesktopRef}` (P2-Z) |
 | what the shell says of its surfaces and what it is told | `casement-core::shell::{ShellRequest, ShellNote}` (P2-Z) |
-| who may have a `Shell` or `Agent` connection, and the socket pair | `casement-ipc::dbus` proves the caller (role `shell`, `agent_tier` or `portal`, all the way: image and unit as the manager states it) before the loop hears of the call; `casement-agent::{connection_role, hand_out}` (the only hand-out, B14) checks the proven role again; inserted by `casement::connect`. Remote EIS socket for the portal (role `portal`): `casement-agent::open_remote_eis`, `Compositor1.ConnectEis`, fed by `casement::connect::answer_remote`; each connection has its own device slot (`casement-agent::RemoteSlots`, minted in `connect.rs`, CASW-19) and `Compositor1.EndEis(session)` (`connect::answer_end`, same caller check) closes every socket of a portal session through `casement::remote_sessions::RemoteSessions` |
+| who may have a `Shell`, `Agent` or `Portal` connection, and the socket pair | `casement-ipc::dbus` proves the caller (role `shell`, `agent_tier` or `portal`, all the way: image and unit as the manager states it) before the loop hears of the call; `casement-agent::{connection_role, hand_out}` (the only hand-out, B14) checks the proven role again; inserted by `casement::connect`. The `Portal` connection (NEW-FA-2, `Connect("portal")`, role `portal`) is how transom captures: it sees the globals the public socket sees (never `quire_shell_v1` or `quire_desktop_manager_v1`) and its model class is the standing of a `Full` portal on the public socket (`ClientStanding::portal()`), trusted for the screen and the windows (`trusted_powers`) and asked about the rest. Remote EIS socket for the portal (role `portal`): `casement-agent::open_remote_eis`, `Compositor1.ConnectEis`, fed by `casement::connect::answer_remote`; each connection has its own device slot (`casement-agent::RemoteSlots`, minted in `connect.rs`, CASW-19) and `Compositor1.EndEis(session)` (`connect::answer_end`, same caller check) closes every socket of a portal session through `casement::remote_sessions::RemoteSessions` |
 | `org.quire.Compositor1` | `casement-ipc::dbus::Compositor1` (the object), answered by `casement::connect::answer` |
 | Settings > Privacy (the list of programs and their powers) | `casement-ipc::privacy` (keys from `Privilege::rows()`; writes are `PrivacyEdit`s the root turns into `PrivilegeGranted`/`PrivilegeRevoked`/`PrivilegeForgotten`); read by `settings` and `shell`, written by `settings` only |
 | whether a window's accessibility root is its own program's | `casement-ipc::a11y::{A11yWorker, A11yAsk, A11yVerdict}` |
@@ -155,7 +155,11 @@ A program on the public socket may use seven powers only with the person's conse
 "ask per app", like the Mac's privacy prompts): see the screen, type and click for them, help them
 type, read and replace the clipboard, lock the screen, change the displays, see and manage the
 windows. The shell, the portal and the desktop's own services are trusted by identity and never
-asked. The consent machine is pure; this is the contract between it and the composition root and
+asked. The portal gets that trust through its own connection: transom asks `org.quire.Compositor1.Connect("portal")`
+on the session bus, where the bus proves it at `Full`, and captures on the connection casement hands back
+(`ConnectionRole::Portal`: the public socket's globals, the screen and the windows trusted, nothing more). On
+the public socket a peer reaches at most `Proof::Exe`, so a portal that connects there is an ordinary program
+and is asked (NEW-FA-2). The consent machine is pure; this is the contract between it and the composition root and
 the protocol layer (wave 2: `pa2-ccore` is this half, the others follow it).
 
 - **The seam for who is asking.** `Event::ClientStanding { client, standing: ClientStanding }` is
@@ -380,7 +384,7 @@ pub fn apply_window_gone(book, window) -> Vec<ToplevelSessionId>;
 pub fn capture_size(logical: LogicalSize, scale: Scale) -> PhysicalSize;  // implemented: round(l x s)
 
 // casement-agent: the role check on what the bus thread proved, and the socket pair (the root inserts the server end)
-pub fn connection_role(held: &RoleName) -> Option<ConnectionRole>;         // shell -> Shell, agent_tier -> Agent
+pub fn connection_role(held: &RoleName) -> Option<ConnectionRole>;         // shell -> Shell, agent_tier -> Agent, portal -> Portal
 pub fn hand_out(wanted: &ConnectionRole, held: &RoleName) -> HandOut;      // Granted(Handed { role, server, client }) | Refused(RefuseWhy)
 pub fn portal_may_connect(held: &RoleName) -> bool;                        // role portal
 

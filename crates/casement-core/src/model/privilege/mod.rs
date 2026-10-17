@@ -77,6 +77,10 @@ impl Class {
             ConnectionRole::Shell | ConnectionRole::Agent => Class::Trusted,
             ConnectionRole::Sandboxed(_) => Class::Sandboxed,
             ConnectionRole::Public => Class::Public(ClientStanding::unproven()),
+            // The bus proved it is the portal, at `Full`: the standing a Full portal has on
+            // the public socket (`trusted_powers`), without the image, which a handed-out
+            // connection does not read.
+            ConnectionRole::Portal => Class::Public(ClientStanding::portal()),
         }
     }
 }
@@ -181,9 +185,10 @@ impl Privilege {
                     .filter(|power| self.decision_for(&class, *power) == Decision::Closed)
                     .collect()
             }
-            ConnectionRole::Shell | ConnectionRole::Agent | ConnectionRole::Sandboxed(_) => {
-                PowerSet::default()
-            }
+            ConnectionRole::Shell
+            | ConnectionRole::Agent
+            | ConnectionRole::Portal
+            | ConnectionRole::Sandboxed(_) => PowerSet::default(),
         }
     }
 

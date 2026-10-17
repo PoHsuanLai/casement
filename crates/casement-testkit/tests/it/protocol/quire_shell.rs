@@ -94,8 +94,9 @@ pub(super) fn shell_client(fixture: &mut Fixture) -> (ClientId, ShellHandle) {
 }
 
 /// A program is given the connection its role may have (`Connect`, with the caller as the bus
-/// thread proved it): the shell gets `quire_shell_v1`, the agent tier does not, and anything else
-/// is refused with the reason the D-Bus caller is told.
+/// thread proved it): the shell gets `quire_shell_v1`, the agent tier and the portal do not
+/// (nor does the portal see `quire_desktop_manager_v1`, which is the shell's and the agent's),
+/// and anything else is refused with the reason the D-Bus caller is told (NEW-FA-2).
 #[test]
 fn the_proven_role_decides_which_connection_a_program_is_handed() {
     let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
@@ -106,13 +107,37 @@ fn the_proven_role_decides_which_connection_a_program_is_handed() {
         .connect_through_handout(&callers::agent_tier(), ConnectionRole::Agent)
         .expect("cuad gets the agent tier");
     assert!(sees(&mut fixture, shell, INTERFACE), "the shell");
+    let portal = fixture
+        .connect_through_handout(&callers::portal(), ConnectionRole::Portal)
+        .expect("transom gets the portal connection");
     assert!(!sees(&mut fixture, agent, INTERFACE), "the agent tier");
+    assert!(!sees(&mut fixture, portal, INTERFACE), "the portal");
+    assert!(
+        !sees(&mut fixture, portal, "quire_desktop_manager_v1"),
+        "the portal is not shown the desktop model"
+    );
+    assert!(
+        sees(&mut fixture, portal, "ext_image_copy_capture_manager_v1"),
+        "the portal is shown what every client is"
+    );
     // (case, the caller, the role asked, what comes back)
     let refused = [
         (
             "sill asks for the agent tier",
             callers::shell(),
             ConnectionRole::Agent,
+            ConnectRefusal::RoleNotAllowed,
+        ),
+        (
+            "the portal asks for the shell",
+            callers::portal(),
+            ConnectionRole::Shell,
+            ConnectRefusal::RoleNotAllowed,
+        ),
+        (
+            "sill asks for the portal connection",
+            callers::shell(),
+            ConnectionRole::Portal,
             ConnectRefusal::RoleNotAllowed,
         ),
         (

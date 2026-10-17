@@ -34,8 +34,8 @@ pub use standing::{client_standing, peer_of};
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum Standing {
-    /// Not judged: a connection handed out to the shell or the agent tier (trusted by how it
-    /// was obtained), a sandbox's, or one nobody looked at.
+    /// Not judged: a connection handed out to the shell, the agent tier or the portal (trusted
+    /// by how it was obtained), a sandbox's, or one nobody looked at.
     Unjudged,
     /// A program on the public socket, judged against the desktop's caller table.
     Judged {

@@ -52,7 +52,9 @@ pub fn timeout_floor(role: &ConnectionRole, peer: &PeerIdentity) -> Duration {
     let _ = peer;
     match role {
         ConnectionRole::Shell | ConnectionRole::Agent => Duration::ZERO,
-        ConnectionRole::Sandboxed(_) | ConnectionRole::Public => UNTRUSTED_MIN_TIMEOUT,
+        ConnectionRole::Sandboxed(_) | ConnectionRole::Public | ConnectionRole::Portal => {
+            UNTRUSTED_MIN_TIMEOUT
+        }
     }
 }
 

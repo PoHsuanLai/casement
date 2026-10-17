@@ -12,6 +12,7 @@ use casement_testclient::Pumped;
 use casement_testclient::capture::{
     BufferAsk, CaptureFailure, CursorEvent, CursorMode, OutputCapture, Size,
 };
+use casement_testkit::fakes::callers;
 use casement_testkit::{
     ASKED_PROGRAM, ClientId, Fixture, FixtureSpec, FrameCount, ShotTarget, TestOrigin,
 };
@@ -514,6 +515,33 @@ fn a_frame_waits_for_the_answer_and_is_made_on_allow() {
         kept(&fixture, ASKED_PROGRAM, Power::Screen),
         Some(Verdict::Allow)
     );
+}
+
+/// NEW-FA-2: the portal's own connection (handed out to the bus-proven portal) is trusted for the
+/// screen: its frame is made at once and the shell is never asked, while the same capture from a
+/// program is.
+#[test]
+fn a_handed_out_portal_connection_captures_the_screen_without_a_question() {
+    let mut fixture = Fixture::start(small()).expect("fixture");
+    let shell = ScriptedShell::start(&mut fixture);
+    let client = fixture
+        .connect_through_handout(&callers::portal(), ConnectionRole::Portal)
+        .expect("the portal is handed its connection");
+    fixture.frames(&name("HEADLESS-1"), FrameCount(2));
+    let mut capture = OutputCapture::start(fixture.client(client).globals()).expect("the managers");
+    settle(&mut fixture, &mut capture);
+    capture
+        .open("HEADLESS-1", CursorMode::Hidden)
+        .expect("a session on the output");
+    settle(&mut fixture, &mut capture);
+    capture.request(BufferAsk::Announced).expect("a frame");
+    settle(&mut fixture, &mut capture);
+    let frame = capture
+        .take()
+        .expect("answered at once")
+        .expect("a frame, not a failure");
+    assert_eq!((frame.size.w, frame.size.h), (640, 480));
+    assert!(shell.asked().is_empty(), "no sheet for the portal");
 }
 
 /// Don't Allow fails the frame that waited and stops the session.

@@ -42,6 +42,24 @@ async fn connect_is_decided_by_who_the_caller_proves_to_be() {
             "granted",
         ),
         (
+            "the portal, proven all the way (NEW-FA-2)",
+            service("portal", Proof::Full),
+            "portal",
+            "granted",
+        ),
+        (
+            "the portal, shown by its image and control group only (NEW-FA-2)",
+            service("portal", Proof::Exe),
+            "portal",
+            DENIED,
+        ),
+        (
+            "the shell asks for the portal",
+            service("shell", Proof::Full),
+            "portal",
+            DENIED,
+        ),
+        (
             "the shell asks for the agent tier",
             service("shell", Proof::Full),
             "agent",
@@ -96,11 +114,17 @@ async fn connect_is_decided_by_who_the_caller_proves_to_be() {
         assert_eq!(connect_as(&proxy, role).await, want, "{case}");
     }
     let asks = served.asks();
-    assert_eq!(asks.len(), 2, "only the two proven callers reach the loop");
+    assert_eq!(
+        asks.len(),
+        3,
+        "only the three proven callers reach the loop"
+    );
     assert_eq!(asks[0].role, ConnectionRole::Shell);
     assert_eq!(asks[0].caller.role.as_str(), "shell");
     assert_eq!(asks[1].role, ConnectionRole::Agent);
     assert_eq!(asks[1].caller.role.as_str(), "agent_tier");
+    assert_eq!(asks[2].role, ConnectionRole::Portal);
+    assert_eq!(asks[2].caller.role.as_str(), "portal");
 }
 
 /// A refused caller learns one sentence and nothing about which check failed.

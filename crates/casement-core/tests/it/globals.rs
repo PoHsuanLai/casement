@@ -100,7 +100,12 @@ fn a_refused_power_hides_its_globals_from_a_public_client_only() {
                 (_, seen) => seen,
             };
             assert_eq!(public, want, "{kind:?} without {power:?}");
-            for role in [ConnectionRole::Shell, ConnectionRole::Agent, sandbox()] {
+            for role in [
+                ConnectionRole::Shell,
+                ConnectionRole::Agent,
+                ConnectionRole::Portal,
+                sandbox(),
+            ] {
                 assert_eq!(
                     advertised_to(kind, &role, &hidden),
                     advertised(kind, &role),
@@ -108,6 +113,26 @@ fn a_refused_power_hides_its_globals_from_a_public_client_only() {
                 );
             }
         }
+    }
+}
+
+/// NEW-FA-2: the portal's own connection is shown what the public socket is shown and nothing the
+/// shell or the agent tier alone are: not `quire_shell_v1`, not `quire_desktop_manager_v1`.
+#[test]
+fn the_portal_is_shown_what_every_client_is_and_not_the_shell_or_agent_globals() {
+    for &kind in GlobalKind::ALL {
+        assert_eq!(
+            advertised(kind, &ConnectionRole::Portal),
+            advertised(kind, &ConnectionRole::Public),
+            "{kind:?}"
+        );
+    }
+    for kind in [GlobalKind::QuireShell, GlobalKind::QuireDesktop] {
+        assert_eq!(
+            advertised(kind, &ConnectionRole::Portal),
+            Advertise::No,
+            "{kind:?}"
+        );
     }
 }
 

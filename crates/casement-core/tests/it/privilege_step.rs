@@ -285,6 +285,22 @@ fn the_portal_is_trusted_for_the_screen_and_windows_and_asked_for_the_rest() {
     assert_eq!(asked[0].2.text, "/usr/libexec/transom");
 }
 
+/// NEW-FA-2: the connection casement hands the bus-proven portal is trusted for the screen and the
+/// windows at once, with no question, and for nothing else.
+#[test]
+fn a_handed_out_portal_connection_has_the_portals_standing_and_no_more() {
+    let mut desk = Desk::with_shell();
+    desk.connect(1, ConnectionRole::Portal);
+    for power in [Power::Screen, Power::Windows] {
+        let effects = desk.uses(1, power);
+        assert_eq!(outcome(&effects, 1, power), Some(PowerOutcome::Allowed));
+        assert!(questions(&effects).is_empty(), "{power:?}");
+    }
+    let effects = desk.uses(1, Power::Keys);
+    assert_eq!(outcome(&effects, 1, Power::Keys), None, "keys wait");
+    assert_eq!(questions(&effects).len(), 1);
+}
+
 /// NEW-FA-2: a portal image the library showed only as a program (`Proof::Exe` reaches the model as
 /// a `Program`, not a `Service`) gets no trust: the screen and the windows are asked for like
 /// any program's, and the one question names its image.

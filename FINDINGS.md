@@ -5059,14 +5059,18 @@ One commit per root cause on branch `pa3-cas`; nothing here was compiled or run 
 - **NEW-PI-3.** On the public socket only `Proof::Full` makes a desktop service. A service at `Proof::Exe` is an ordinary program known by its
   image, asked per app; the shell and the agent tier use the handed-out connection. `Judge` probes without the unit manager, so on the public
   socket `Full` is not reachable today; that is the point (no cgroup-and-image-only trust). Table test per proof level in `standing.rs`.
-- **NEW-FA-2 (open, stopped on the proof).** transom captures on the public socket, so after NEW-PI-3 it is a `Program` and its first
-  screenshot or share raises casement's own Screen sheet over the portal's chooser. The model side is done and pinned by tests: a service
-  proven `Full` as the `portal` row is trusted for the screen and the windows and nothing else (`trusted_powers`); one shown only at
-  `Proof::Exe` is asked like any program (`standing.rs`, `privilege_step.rs`). What is missing is a `Full` proof for a Wayland-socket peer:
-  `Judge::arrival` probes without the unit manager (`probe(&pinned, None)`), and peephole v0.1.4 offers no public way to ask the manager
-  about a held process (`BusPeers::standing`, `unit_facts` and `manager_is_real` are private to the bus crate). It needs an owner call on
-  where that lookup lives (a peephole API that takes a `Pinned`, or a unit-manager connection owned by `Judge`). `desktop/harness/lib/casement-floor.sh`
-  gives transom an allow row, which hides this in the gate.
+- **NEW-FA-2 (fixed: a portal connection handed out over the bus).** transom captured on the public socket, where a peer is shown at
+  most as `Proof::Exe` (`Judge::arrival` probes without the unit manager), so after NEW-PI-3 it was a `Program` and its first
+  screenshot or share raised casement's own Screen sheet over the portal's chooser. The fix does not need a `Full` proof on the
+  public socket: `org.quire.Compositor1.Connect("portal")` hands the caller proven `Full` as the `portal` role (peephole-bus and the
+  unit manager, the same proof as the shell's and the agent tier's) a connection of its own, `ConnectionRole::Portal`
+  (`casement-agent::connection_role`, `casement-ipc::parse_connect_role`). Its model class is the standing a `Full` portal has on the
+  public socket (`ClientStanding::portal()`): trusted for the screen and the windows and nothing else (`trusted_powers`), asked about
+  the rest. It is shown the globals every client is shown and not the shell's or the agent tier's (`globals.rs`). A portal role at
+  `Exe` or less is refused on the bus thread like any other role. Tests: `socket.rs` (role table), `compositor_serve/tests.rs`
+  (Full is granted, Exe refused), `globals.rs` and `privilege_step.rs` (core), `quire_shell.rs` (hand-out, globals) and
+  `image_capture.rs` (a frame with no sheet). transom asks for this connection first and falls back to the public socket when there
+  is no casement to ask. `desktop/harness/lib/casement-floor.sh` `floor_powers` can drop its allow row for transom once both land.
 - **NEW-CASB-7 (open, stopped).** `Processes::handle_of` opens a pidfd by the pid in `SO_PEERCRED` and reads the credentials again, which
   cannot tell a recycled pid from the connector: the credentials were fixed at `connect()`. peephole's `Pinned::of_stream` has the same
   weakness (its docs say so) and hides its descriptor, so casement cannot reuse it. The fix is `SO_PEERPIDFD` (Linux 6.5): rustix 1.1 has no
