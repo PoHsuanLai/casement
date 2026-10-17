@@ -4457,7 +4457,7 @@ first. The contract it implements is ARCHITECTURE.md "Consent at the wire". The 
     the design's "sends every open ask again" is what core's `pump` does one by one after `ShellReady`.
   - The date stamped on an answer is a `WallSeconds` field of `QuireShellPart` (placeholder: the epoch) because `State` and
     `src/time/` are the root lane's.
-  - `ext_image_copy_capture` cursor sessions (`cursor_frame`) are not gated: they carry the cursor image and position over the
+  - (Superseded by pa3-cas NEW-CAS-4: cursor sessions are gated by the Screen power now.) `ext_image_copy_capture` cursor sessions (`cursor_frame`) were not gated: they carry the cursor image and position over the
     capture source, not the screen's contents. The shell's own Space pictures are gated like any frame; the shell is trusted, so the
     model answers them at once.
 - **Closed (pa2-cgate): the globals smithay serves entirely.** `ext_data_control_manager_v1`, `zwlr_data_control_manager_v1`
@@ -4950,8 +4950,8 @@ foreign toplevel list state); `casement-protocols` is a path dependency (no rev 
   - A trial is opened per `OutputRequested` event, so an `apply` of a configuration that changes two heads sends the shell `displays_trial`
     twice with the same id (the second restarts the time); the shell treats an id it shows as the same question.
   - **Decided (orchestrator, 2026-10-17): a change by a program that only lights or darkens a display is not a trial.** It is applied
-    like the compositor's own restoring (`output_requests.rs::trial_of` maps it to `Requester::Restore`): no setting is lost, any input
-    lights the display again, and an idle daemon's blank must not come back after 15 s. Mode, scale, transform and position changes stay
+    like the compositor's own restoring (`output_requests.rs::trial_of` maps it to `Requester::Restore`): no setting is lost, the program
+    lights the display again (casement does not wake it on input: pa3-cas NEW-CAS-6), and an idle daemon's blank must not come back after 15 s. Mode, scale, transform and position changes stay
     trials. Test `a_program_that_only_darkens_a_display_is_never_asked`. Unchanged: `keeps_one_lit` still refuses a program darkening
     the last lit display, so an outside idle daemon cannot blank a single-display desktop through `zwlr_output_power` (casement's own
     idle policy does that).
@@ -5036,3 +5036,67 @@ foreign toplevel list state); `casement-protocols` is a path dependency (no rev 
   `dev_callers.rs` matches as a pattern (non-exhaustive enum, struct variant); that the Cargo.lock refresh to v0.1.4 brings no
   other API change into casement-agent/casement-ipc; the `dev_callers.rs` tests under the jail check (a test binary that pins its own
   socket peer); that `--all-features` workspace tests still deny `Proof::Exe`/`Cgroup` callers.
+
+## pa3-cas: the re-audit fixes (2026-10-17)
+
+One commit per root cause on branch `pa3-cas`; nothing here was compiled or run by the lane (LANE-RULES), so the gate run is the first.
+
+- **NEW-CAS-1, NEW-CASB-1, CASC-03 (connections).** `clients/accept.rs` wraps both listeners (the public socket and each security-context
+  socket): an accept error is logged, the listener is switched off for `ACCEPT_REST` (250 ms, a timer from `time::after`) and switched on again,
+  so `EMFILE` never reaches calloop's `run`. `clients/roster.rs` caps live connections at `MAX_CONNECTIONS` 384 in all and
+  `MAX_PER_HOLDER` 48 per holder (the proven app, else the process by pid), checked at accept before the program is looked at (session) and
+  after (holder); refusals are logged at each doubling. `open_files::raise` lifts the soft `RLIMIT_NOFILE` to 8192 or the hard limit if lower
+  (not to the hard limit itself: every program casement starts inherits the soft limit, and a huge one slows programs that close every
+  descriptor up to it); `dist/casement.service` sets `LimitNOFILE=65536`. Tests: `accept.rs` (an `EMFILE` three times, the loop keeps going,
+  the connection behind it is taken), `roster.rs` (per-holder and session caps), `open_files.rs`.
+- **NEW-CAS-2.** Idle notifications are capped at 32 per client and idle inhibitors at 16 per client and 128 in all (`limits::Limit`); a client
+  over its cap is cut. `IdleBook` keeps one `active_at` and the set of idle watches, so an input event touches nothing unless a watch is idle;
+  `sync_inhibitors` returns at once with no inhibitors. Tests in `machine.rs` and the protocol tests `idle_notify.rs`, `idle_inhibit.rs`.
+- **CASB-05.** `FlipWatch::asked` starts the starvation clock on a frame that fails to queue; `ScanoutSet::health_of` counts an enabled output
+  with no scanout as starved. Still true (owner policy line missing): the display is frozen only when every enabled output is starved, so one
+  dead display among several is not noticed.
+- **NEW-PI-3.** On the public socket only `Proof::Full` makes a desktop service. A service at `Proof::Exe` is an ordinary program known by its
+  image, asked per app; the shell and the agent tier use the handed-out connection. `Judge` probes without the unit manager, so on the public
+  socket `Full` is not reachable today; that is the point (no cgroup-and-image-only trust). Table test per proof level in `standing.rs`.
+- **NEW-PI-4 (casement half).** A kernel device that reports vendor `0x0001` (what turnstile gives palmrest's devices) is `Origin::Virtual`
+  (`Origin::of_kernel_device`). It still moves the pointer, fires bindings and drives swipes (`Origin::is_pad`), but trusted surfaces, the lock
+  surface and VT switching never hear it. Consequence to decide: with palmrest's pad grabbing the real touchpad, the person cannot click a
+  consent sheet or the lock with that pad; the keyboard or another mouse does. Other uinput devices (turnstile's fallbacks, keycap standalone,
+  a `uinput` group member) are still physical: casement cannot tell a uinput device from a kernel one by vendor alone (udev's
+  `/devices/virtual/input` path would, if the owner wants every virtual device refused: an ask).
+- **NEW-PI-8 (casement half).** `ConnectEis` records the asking bus connection's unique name; `portal_watch.rs` listens for the bus's
+  `NameOwnerChanged` and asks the loop (`ConnectAsk::owner_gone`) to close every socket that connection asked for. Transom half: seed
+  session numbers from the clock so a restarted portal does not reuse ids (not casement's).
+- **CASC-03 (rest).** `MAX_WINDOWS` 4096 bounds the per-step walk; key-repeat, idle and IME timers and the night-light tick skip the two
+  snapshots. A real delta publish (no clone per window per step) is not done: it needs dirty tracking in every transition.
+- **CASW-08.** The cursor cap measures the bounding box of the whole surface tree. No separate drag-icon size cap exists in casement (the
+  DnD icon is drawn by the scene, not capped here); not changed.
+- **CASC-11, NEW-CAS-5, NEW-CAS-4, NEW-CAS-7, NEW-CAS-6, CASC-12, CASC-19 (profile).** As the commit messages say. CASC-19 lints
+  (`unwrap_used`, `indexing_slicing`) are not added: tests use `expect` throughout and the lane cannot run clippy.
+- **NEW-CAS-3, NEW-CASB-2, 4, 5, CASB-13, 14, NEW-CASB-3, CASW-17.** The privacy book and the Spaces file are written by `LatestWriter`
+  (quire's atomic writer); the Spaces file and `settings.toml` are read through quire's capped reader; the version stamp is written with quire's
+  writer; the GTK settings file is read with the icon crate's non-blocking capped reader; the X11 socket probe never blocks; the accept-time
+  look runs on a thread with a 2 s deadline; the dma-buf size is asked only of a dma-buf or memory file.
+- **CASB-20, CASB-21.** Force quit signals through a pidfd opened at accept; the cursor pool is read from a copy.
+
+### Deferred, with the reason
+
+- **NEW-CASB-3, the move onto the icon thread.** The theme read is capped and non-blocking now (a pipe or a huge file is hicolor); it still
+  runs on the loop when Mission Control opens, and `IconBook::theme()` and its test read the result synchronously. Moving it to the worker
+  means an answer type for the theme and a rewrite of that test.
+- **NEW-CAS-3, `moved()` at first use.** `PinnedImage::moved` repeats the probe (a stat of `/proc/<pid>/exe`'s target) on the loop. An ask to
+  peephole: `Prober::image_path(&Pinned) -> Result<Exe, ProbeError>` that reads only the `/proc/<pid>/exe` link (no stat of the target) for
+  the comparison.
+- **CASB-07 (software renderer for `--safe`).** Not contained: the tty scanout path is GLES only (`surface_real.rs`, `bridge_real.rs`), and a
+  pixman scanout needs dumb-buffer allocation and page flips for it. Plan: a `PixmanScanout: ScanoutSurface` over `drm` dumb buffers in
+  `casement-backend/src/tty/`, chosen when `StartMode::Safe` or a render failure; the soft renderer already exists for the headless backend.
+- **CASB-12.** The smithay fork's `libseat.rs` `unwrap()`s (interface ask in the report).
+- **CASB-25** (`keymap::live::load_bindings` is synchronous, bounded by keycap-client's 2 s), **CASB-26** (`test_mode` is compiled in: gating
+  it by a feature needs the desktop's vkms scripts to build with it), **CASB-28** (no vkms fault-injection gate for the real adapters): lane
+  deferrals; no owner decision needed, work not done.
+- **CASC-15.** `Origin::Test` is used by tests in five crates and a doctest; gating it needs a `testing` feature on casement-core enabled by each.
+- **CASC-17.** The model does not know the pointer's output.
+- **CASW-04 (2).** A context's creator that is `Proven(Unsandboxed)` only by a scope name it made itself can still mint a Flatpak identity for
+  window grouping (powers are unaffected); closing it needs porter's cross-check (PR #38) and a decision on what proves a creator.
+- **NEW-QDH-4.** `wl_data_offer.receive` is handled inside the smithay fork and casement sees neither the reader nor when a read ends (the
+  write end goes to the source's client), so a cap on unfinished reads needs a fork hook; see the report.
