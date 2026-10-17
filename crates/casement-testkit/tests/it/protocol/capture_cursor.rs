@@ -10,7 +10,7 @@ use casement_testclient::capture::{BufferAsk, CursorEvent, CursorMode, OutputCap
 use casement_testclient::misc::viewporter::Viewporter;
 use casement_testclient::seat::pointer::Pointer;
 use casement_testclient::surface::layer::Layer;
-use casement_testclient::surface::subsurface::Surface;
+use casement_testclient::surface::subsurface::{Subcompositor, Surface};
 use casement_testclient::{Pattern, Pumped, shm_buffer};
 use casement_testkit::{Fixture, FixtureSpec, FrameCount};
 use wayland_client::protocol::wl_output::Transform;
@@ -134,6 +134,71 @@ fn a_cursor_surface_over_the_cap_is_the_arrow() {
         session_size,
         Some(Size::new(24, 24)),
         "the arrow's size, not the surface's"
+    );
+}
+
+/// CASW-08: the cap measures the whole surface tree. A 1 x 1 root with a small subsurface far
+/// off to the side passes a root-only check and is drawn over the screen; the tree's extent
+/// is over the cap, so it is the arrow.
+#[test]
+fn a_cursor_whose_subsurface_reaches_past_the_cap_is_the_arrow() {
+    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let mouse = pointer_at(&mut fixture, (10, 10));
+    let id = fixture.connect(ConnectionRole::Public);
+    fixture.pump();
+    let pointer = Pointer::bind(fixture.client(id)).expect("a pointer");
+    let _layer = map(&mut fixture, id, &focused(Layer::Top, "canvas"));
+    fixture.input().pointer_to(
+        mouse,
+        LogicalPoint {
+            x: REST.0,
+            y: REST.1,
+        },
+    );
+    fixture.pump();
+    let serial = pointer
+        .enter_serial()
+        .expect("the pointer entered the layer");
+
+    let root = fixture.client(id).create_surface().expect("a surface");
+    let child = fixture.client(id).create_surface().expect("a surface");
+    let dot = shm_buffer(
+        fixture.client(id),
+        PhysicalSize { w: 1, h: 1 },
+        Pattern::Solid(0xff33_6699),
+    );
+    let patch = shm_buffer(
+        fixture.client(id),
+        PhysicalSize { w: 16, h: 16 },
+        Pattern::Solid(0xff99_6633),
+    );
+    let wrapped_root = Surface {
+        surface: root.clone(),
+    };
+    let wrapped_child = Surface {
+        surface: child.clone(),
+    };
+    let subcompositor = Subcompositor::bind(fixture.client(id), 1);
+    let sub = subcompositor.subsurface(fixture.client(id), &wrapped_child, &wrapped_root);
+    let far = i32::try_from(casement_render::MAX_CLIENT_CURSOR).expect("a small cap") + 44;
+    sub.set_position(far, far);
+    child.attach(Some(patch.buffer()), 0, 0);
+    child.commit();
+    root.attach(Some(dot.buffer()), 0, 0);
+    root.commit();
+    pointer.pointer().set_cursor(serial, Some(&root), 0, 0);
+    fixture.pump();
+    fixture.frames(&name("HEADLESS-1"), FrameCount(2));
+
+    let mut capture = OutputCapture::start(fixture.client(id).globals()).expect("the managers");
+    settle(&mut fixture, &mut capture);
+    capture.open_cursor("HEADLESS-1").expect("a cursor session");
+    settle(&mut fixture, &mut capture);
+    let session_size = capture.session().and_then(|session| session.size);
+    assert_eq!(
+        session_size,
+        Some(Size::new(24, 24)),
+        "the arrow's size, not the tree's"
     );
 }
 

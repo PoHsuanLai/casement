@@ -8,6 +8,7 @@ use crate::texture_book::TextureBook;
 use casement_core::geometry::{LogicalPoint, LogicalSize};
 use ds_core::geometry::scale::Scale;
 use smithay::backend::renderer::utils::RendererSurfaceStateUserData;
+use smithay::desktop::utils::bbox_from_surface_tree;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::wayland::compositor::with_states;
 
@@ -102,8 +103,20 @@ pub fn cursor_pixels(chrome: &ChromeLayer, scale: Scale) -> Option<Vec<u8>> {
     }
 }
 
-/// The size a surface is shown at, from its renderer state.
+/// The size of what is drawn for a cursor surface: its whole tree, subsurfaces included
+/// (CASW-08), from the renderer state of each. A root with no size yet (nothing committed) has
+/// none, whatever hangs off it.
 fn surface_size(surface: &WlSurface) -> Option<LogicalSize> {
+    root_size(surface)?;
+    let tree = bbox_from_surface_tree(surface, (0, 0));
+    Some(LogicalSize {
+        w: u32::try_from(tree.size.w).ok()?,
+        h: u32::try_from(tree.size.h).ok()?,
+    })
+}
+
+/// The size the root surface alone is shown at, from its renderer state.
+fn root_size(surface: &WlSurface) -> Option<LogicalSize> {
     with_states(surface, |states| {
         let data = states.data_map.get::<RendererSurfaceStateUserData>()?;
         let dst = data.lock().ok()?.view()?.dst;
