@@ -8,6 +8,7 @@ pub mod gesture_route;
 mod key;
 mod keysym_names;
 pub mod lift;
+mod maker;
 mod origin;
 mod reach;
 
@@ -20,9 +21,8 @@ pub use event::{
     LidState, PinchDelta, SwitchStep, TabletState, TouchStep,
 };
 pub use key::{ButtonCode, KeyCode, Keysym};
-pub use origin::{
-    BUS_VIRTUAL, DeviceClass, FeedSource, KernelIds, Origin, PALMREST_VENDOR, PortalSessionId,
-};
+pub use maker::Maker;
+pub use origin::{BUS_VIRTUAL, DeviceClass, FeedSource, KernelIds, Origin, PortalSessionId};
 pub use reach::{InputTarget, InputUse, Reach, ReachFacts, Refusal, reach};
 
 #[cfg(test)]

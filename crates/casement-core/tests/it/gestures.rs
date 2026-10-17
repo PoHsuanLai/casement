@@ -9,7 +9,7 @@ use casement_core::input::gesture_route::{Axis, Drive, Fate, Route, route};
 use casement_core::input::lift::{Intent, Lift, LiftIn, LiftOut, Verdict};
 use casement_core::input::{
     BUS_VIRTUAL, DesktopCommand, DeviceClass, GestureEnd, GestureStep, InputEvent, InputKind,
-    KernelIds, Origin, PALMREST_VENDOR,
+    KernelIds, Maker, Origin,
 };
 use casement_core::overview::Overview;
 use casement_core::settings::{CasementSettings, Enabled, GestureSettings, SwipeFingers};
@@ -365,15 +365,16 @@ fn a_far_swipe_left_follows_the_fingers_then_commits_to_the_next_space() {
     assert_eq!(model.space_strip(ms(T0 + 900)), None, "at rest");
 }
 
-/// NEW-PI-4: palmrest's pad is not the person's hand (a consent sheet never hears it), but its
-/// swipes still move the Spaces; a device that is no pad does not take a swipe.
+/// NEW-PI-4, NEW-FA-4: palmrest's pad (made for the pad daemon) is not the person's hand (a consent
+/// sheet never hears it), but its swipes still move the Spaces; a device that is no pad does not
+/// take a swipe.
 #[test]
 fn a_swipe_from_palmrests_pad_drives_the_spaces_and_one_from_a_virtual_keyboard_does_not() {
     let palmrest = Origin::of_kernel_device(
         DeviceClass::Touchpad,
         KernelIds {
             bus: Some(BUS_VIRTUAL),
-            vendor: PALMREST_VENDOR,
+            maker: Some(Maker::PadDaemon),
         },
     );
     assert!(!palmrest.is_physical());

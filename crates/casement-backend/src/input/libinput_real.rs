@@ -14,7 +14,7 @@ use super::convert::input_kind_of;
 use super::devices::{Applied, DeviceSetting, DeviceSettings, InputDevices, InputError};
 use super::feed::{FedDevice, FedInput, InputFeed, PollContext};
 use casement_core::DeviceId;
-use casement_core::input::{DeviceClass, InputEvent as CoreEvent, KernelIds, Origin};
+use casement_core::input::{DeviceClass, InputEvent as CoreEvent, KernelIds, Maker, Origin};
 use casement_core::settings::{AccelProfile, Enabled};
 use smithay::backend::input::{Event, InputEvent};
 use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface};
@@ -45,17 +45,27 @@ pub struct RealInputFeed {
 struct Known {
     device: libinput::Device,
     class: DeviceClass,
-    /// The bus and vendor ids it reports, which tell a device the desktop's device service made
-    /// for palmrest from the person's own (`Origin::of_kernel_device`).
+    /// Its bus type and the label the desktop's device service wrote into it, which tell a device
+    /// made for a service from the person's own (`Origin::of_kernel_device`).
     ids: KernelIds,
 }
 
-/// The bus type the kernel gives `sysname` (`event5`), from sysfs: libinput only reports it from
-/// 1.26, newer than Ubuntu 24.04's. `None` when it cannot be read or parsed.
+/// The text of one attribute the kernel keeps for `sysname` (`event5`) under its `device` folder,
+/// from sysfs. `None` when it cannot be read.
+fn attribute_of(sysname: &str, attribute: &str) -> Option<String> {
+    std::fs::read_to_string(format!("/sys/class/input/{sysname}/device/{attribute}")).ok()
+}
+
+/// The bus type the kernel gives `sysname`: libinput only reports it from 1.26, newer than Ubuntu
+/// 24.04's. `None` when it cannot be read or parsed.
 fn bus_of(sysname: &str) -> Option<u16> {
-    let path = format!("/sys/class/input/{sysname}/device/id/bustype");
-    let text = std::fs::read_to_string(path).ok()?;
-    u16::from_str_radix(text.trim(), 16).ok()
+    u16::from_str_radix(attribute_of(sysname, "id/bustype")?.trim(), 16).ok()
+}
+
+/// Whom the device service made `sysname` for, from the `phys` it wrote. `None` when there is no
+/// such label or `phys` cannot be read: unlabelled.
+fn maker_of(sysname: &str) -> Option<Maker> {
+    Maker::parse(&attribute_of(sysname, "phys")?)
 }
 
 impl RealInputFeed {
@@ -116,7 +126,7 @@ impl RealInputFeed {
                         class,
                         ids: KernelIds {
                             bus: bus_of(device.sysname()),
-                            vendor: device.id_vendor(),
+                            maker: maker_of(device.sysname()),
                         },
                     },
                 );

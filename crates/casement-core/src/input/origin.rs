@@ -1,5 +1,6 @@
 //! Where an input event came from (C19): set where it enters, never changed downstream.
 
+use super::maker::Maker;
 use crate::ids::LeaseId;
 use serde::{Deserialize, Serialize};
 
@@ -21,39 +22,35 @@ pub enum Origin {
     Test,
 }
 
-/// The vendor id the device service (turnstile) gives the devices it makes for palmrest, the
-/// touchpad, wheel and key daemon. Kernel drivers use it too (a laptop's built-in AT keyboard is
-/// `Bus=0011 Vendor=0001`), so it only names palmrest's device together with [`BUS_VIRTUAL`].
-pub const PALMREST_VENDOR: u32 = 0x0001;
-
 /// The bus type of a device made through uinput, as turnstile makes every device.
 pub const BUS_VIRTUAL: u16 = 0x06;
 
-/// What a kernel input device says it is: its bus type (`None` when it could not be read) and
-/// its vendor id.
+/// What a kernel input device says it is: its bus type and, for a virtual one, the label the
+/// device service wrote into it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KernelIds {
     /// The bus type (`BUS_USB` 0x03, `BUS_I8042` 0x11, [`BUS_VIRTUAL`]), `None` when unreadable.
     pub bus: Option<u16>,
-    /// The vendor id.
-    pub vendor: u32,
+    /// Whom the device service made it for (`phys`), `None` when there is no such label or it
+    /// could not be read.
+    pub maker: Option<Maker>,
 }
 
 impl Origin {
-    /// The origin of events from a kernel input device casement opened itself, by the bus and
-    /// vendor ids it reports (NEW-PI-4, INPUT-02). A device the desktop's device service made for
-    /// palmrest is not the person's hand: the service admits palmrest by a name a same-user process can
-    /// borrow, so a forged "pad" could click a consent sheet or the lock. Its events still move
-    /// the pointer, fire bindings and drive swipes like a pad's, but are [`Origin::Virtual`], so
-    /// the trusted surfaces and the lock never hear them. Only a virtual-bus device with
-    /// palmrest's vendor is; every other device is physical, the laptop keyboard that shares the
-    /// vendor id and keycap's virtual keyboard (another vendor) among them.
+    /// The origin of events from a kernel input device casement opened itself, by the bus type it
+    /// reports and the label of its maker (NEW-PI-4, INPUT-02, NEW-FA-4). Every device that is not on
+    /// the virtual bus is physical, the laptop's built-in keyboard among them. A virtual-bus
+    /// device is the person's hand only when the device service labelled it for a service that
+    /// replays their own hardware ([`Maker::origin`]); any other (no label, another label: ydotool,
+    /// a `uinput` group member, a forged "pad") is [`Origin::Virtual`], so the trusted surfaces,
+    /// the lock and VT switching never hear it. Virtual events still move the pointer, fire bindings
+    /// and drive swipes.
     pub fn of_kernel_device(class: DeviceClass, ids: KernelIds) -> Origin {
         match ids {
             KernelIds {
                 bus: Some(BUS_VIRTUAL),
-                vendor: PALMREST_VENDOR,
-            } => Origin::Virtual(class),
+                maker,
+            } => maker.map_or(Origin::Virtual(class), |m| m.origin(class)),
             _ => Origin::Physical(class),
         }
     }
@@ -127,57 +124,87 @@ pub struct PortalSessionId(pub u64);
 mod tests {
     use super::*;
 
-    /// NEW-PI-4: which kernel devices count as the person's hands. A laptop's built-in AT
-    /// keyboard shares palmrest's vendor id on another bus (final audit), and keycap's keyboard is
-    /// on the virtual bus with another vendor: both are the person's.
+    /// NEW-PI-4, NEW-FA-4: which kernel devices count as the person's hands. Only a virtual-bus
+    /// device is ever in doubt; there, the label turnstile wrote decides (never the vendor id).
     #[test]
-    fn only_a_virtual_bus_device_with_palmrests_vendor_is_not_physical() {
+    fn a_virtual_device_is_the_persons_hand_only_when_made_for_keycap() {
         const USB: Option<u16> = Some(0x03);
         const I8042: Option<u16> = Some(0x11);
         const VIRTUAL: Option<u16> = Some(BUS_VIRTUAL);
-        let ids = |bus, vendor| KernelIds { bus, vendor };
+        let ids = |bus, label: &str| KernelIds {
+            bus,
+            maker: Maker::parse(label),
+        };
         let cases = [
-            (
-                "a USB keyboard",
-                DeviceClass::Keyboard,
-                ids(USB, 0x05ac),
-                true,
-            ),
-            (
-                "a USB touchpad",
-                DeviceClass::Touchpad,
-                ids(USB, 0x046d),
-                true,
-            ),
             (
                 "a laptop's AT keyboard",
                 DeviceClass::Keyboard,
-                ids(I8042, PALMREST_VENDOR),
+                ids(I8042, "isa0060/serio0/input0"),
+                true,
+            ),
+            (
+                "a USB mouse",
+                DeviceClass::Pointer,
+                ids(USB, "usb-0000:00:14.0-2/input0"),
                 true,
             ),
             (
                 "keycap's keyboard",
                 DeviceClass::Keyboard,
-                ids(VIRTUAL, 0x4b43),
+                ids(VIRTUAL, "turnstile/keymap_daemon"),
                 true,
             ),
             (
-                "an unreadable bus",
-                DeviceClass::Keyboard,
-                ids(None, PALMREST_VENDOR),
+                "keycap's pointer",
+                DeviceClass::Pointer,
+                ids(VIRTUAL, "turnstile/keymap_daemon\n"),
                 true,
             ),
+            // palmrest turns gestures into synthetic key chords (see `Maker::origin`).
             (
                 "palmrest's touchpad",
                 DeviceClass::Touchpad,
-                ids(VIRTUAL, PALMREST_VENDOR),
+                ids(VIRTUAL, "turnstile/pad_daemon"),
                 false,
             ),
             (
                 "palmrest's keys",
                 DeviceClass::Keyboard,
-                ids(VIRTUAL, PALMREST_VENDOR),
+                ids(VIRTUAL, "turnstile/pad_daemon"),
                 false,
+            ),
+            (
+                "an unlabelled virtual keyboard (ydotool)",
+                DeviceClass::Keyboard,
+                ids(VIRTUAL, ""),
+                false,
+            ),
+            (
+                "a label that only starts with turnstile",
+                DeviceClass::Keyboard,
+                ids(VIRTUAL, "turnstile/settings"),
+                false,
+            ),
+            (
+                "a label with more after the role",
+                DeviceClass::Keyboard,
+                ids(VIRTUAL, "turnstile/keymap_daemon/2"),
+                false,
+            ),
+            (
+                "a keycap label on a USB device",
+                DeviceClass::Keyboard,
+                ids(USB, "turnstile/keymap_daemon"),
+                true,
+            ),
+            (
+                "an unreadable bus",
+                DeviceClass::Keyboard,
+                KernelIds {
+                    bus: None,
+                    maker: None,
+                },
+                true,
             ),
         ];
         for (name, class, ids, physical) in cases {
@@ -185,8 +212,17 @@ mod tests {
             assert_eq!(origin.is_physical(), physical, "{name}");
             // Whatever its maker, it fires bindings, and no kernel device is a remote session.
             assert!(origin.fires_bindings(), "{name}");
+            assert_eq!(origin.switches_vt(), physical, "{name}");
         }
-        let palmrest = ids(VIRTUAL, PALMREST_VENDOR);
+    }
+
+    /// palmrest's pad is virtual but still a pad: its swipes drive the Spaces.
+    #[test]
+    fn palmrests_pad_still_drives_swipes() {
+        let palmrest = KernelIds {
+            bus: Some(BUS_VIRTUAL),
+            maker: Some(Maker::PadDaemon),
+        };
         assert!(Origin::of_kernel_device(DeviceClass::Touchpad, palmrest).is_pad());
         assert!(!Origin::of_kernel_device(DeviceClass::Pointer, palmrest).is_pad());
     }

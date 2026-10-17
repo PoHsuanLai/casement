@@ -75,7 +75,7 @@ A1: `Instant::now`, `SystemTime::now`, smithay's `Clock::now` and calloop's `Tim
 | Spaces and their ids (casement mints, C16) | `casement-core::space` (`SpaceSeed`, `mint_space_id`) |
 | the usable area after layer exclusive zones | `LayerBook::usable_area` |
 | focus, key and main windows, press routing | `casement-core::focus` (03 §1.2) |
-| where input came from, and what it may reach | `casement-core::input::{Origin, reach}` (C19, I3, I8) |
+| where input came from, and what it may reach | `casement-core::input::{Origin, reach}` (C19, I3, I8); a virtual device is the person's hand only when turnstile labelled it (`phys`) for keycap (`Maker`, `Origin::of_kernel_device`; never by bus alone or vendor id) |
 | key bindings and their resolution | `casement-core::input::{Bindings, resolve}`; the shell's own chords come from the desktop keymap, `casement::keymap` (chordkit layers through keycap-client's `KeycapSource`), behind casement's `[bindings]` entries |
 | first-sight scale, mode choice, output placement | `casement-core::output` |
 | the ramp an output is driven with by night light, and which outputs it leaves alone (`night_light.skip_outputs`: a connector name or an output key) | `casement-core::settings::NightLightSettings::{warming_of, ramp_for}` (pure); driven by `Model` (`model/night_light.rs`) from `Event::NightLightTick(MinuteOfDay)` as `Effect::SetGamma`; a gamma-control client that holds an output with a table of its own wins until it lets go |

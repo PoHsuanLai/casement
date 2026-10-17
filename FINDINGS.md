@@ -5096,12 +5096,27 @@ One commit per root cause on branch `pa3-cas`; nothing here was compiled or run 
   weakness (its docs say so) and hides its descriptor, so casement cannot reuse it. The fix is `SO_PEERPIDFD` (Linux 6.5): rustix 1.1 has no
   safe wrapper and every crate forbids `unsafe`, so it needs either a peephole release whose `Pinned` makes its pin `AtConnect` and lends the
   pidfd (`as_fd`), or a decision on a new dependency that wraps the option.
-- **NEW-PI-4 (casement half).** A kernel device that reports vendor `0x0001` (what turnstile gives palmrest's devices) is `Origin::Virtual`
-  (`Origin::of_kernel_device`). It still moves the pointer, fires bindings and drives swipes (`Origin::is_pad`), but trusted surfaces, the lock
-  surface and VT switching never hear it. Consequence to decide: with palmrest's pad grabbing the real touchpad, the person cannot click a
-  consent sheet or the lock with that pad; the keyboard or another mouse does. Other uinput devices (turnstile's fallbacks, keycap standalone,
-  a `uinput` group member) are still physical: casement cannot tell a uinput device from a kernel one by vendor alone (udev's
-  `/devices/virtual/input` path would, if the owner wants every virtual device refused: an ask).
+- **NEW-PI-4 (casement half), as replaced by NEW-FA-4 below.** A virtual-bus device is `Origin::Virtual` unless the device service made it
+  for keycap (`Origin::of_kernel_device`). A virtual device still moves the pointer, fires bindings and drives swipes (`Origin::is_pad`),
+  but trusted surfaces, the lock surface and VT switching never hear it.
+- **NEW-FA-4 (decided by the owner, 2026-10-17): a virtual device is trusted by who turnstile made it for, not by a guess.** The old rule
+  read the bus type and the vendor id (`0x0001`) and wrongly caught a laptop's AT keyboard (`Bus=0011 Vendor=0001`; first fixed by also
+  requiring `BUS_VIRTUAL`); the vendor is gone from the decision. turnstile is the only process that can create a uinput device
+  (`dist/72-turnstile.rules`: root-only, no `uaccess`) and proves which service each device is for, so it writes `turnstile/pad_daemon` (palmrest)
+  or `turnstile/keymap_daemon` (keycap) into the device's `phys`. `RealInputFeed` reads `/sys/class/input/<sysname>/device/phys` next to the bus
+  type (`maker_of`; unreadable reads as unlabelled) and `Maker::parse` (`casement-core/src/input/maker.rs`) reads it. A virtual-bus device
+  labelled for keycap is `Origin::Physical` (keycap only replays the person's own keyboard and mouse); one labelled for palmrest, one with no label
+  (ydotool, a `uinput` group member) and one with any other label (a label that merely starts with `turnstile/`) is `Origin::Virtual`.
+  Every device off the virtual bus is physical, as before. casement links nothing of turnstile, so `Maker::parse` is its own copy of
+  turnstile-wire's `Maker`; `origin.rs` and `maker.rs` tests pin the same strings as turnstile's `maker` test: change one side and change both.
+  **palmrest stays `Virtual`** (`Maker::origin`). Read in palmrest (origin/master): its gesture actions press synthetic key chords
+  (`action.rs:129` `key_of`, `tracker/out.rs:45`, `daemon/dispatch.rs:25`, `outputs/events.rs:81`), `Back` is Alt+Left by default, and the shell's
+  `UserConfig` (`socket/client.rs:137`) can map a gesture to any chord with ctrl, alt or super, `Ctrl+Alt+F3` included (`keys.rs:125`); as a
+  physical keyboard that would switch the VT and answer a consent sheet. Its pad is two-contact scroll strokes at the pad's centre, never a click or a
+  single-contact move (`outputs/pad.rs:1-8`). The consequence the audit feared (NEW-FA-4: a Magic Mouse user cannot click a consent sheet or the lock) does
+  not arise from this: palmrest only reads the mouse and never grabs it (`daemon/evdev.rs:11,140`), so the mouse's own clicks and motion come from its
+  kernel device, a non-virtual one, and are physical. Closes if palmrest stops pressing key chords, or the owner decides they are the person's hand:
+  then `Maker::PadDaemon` maps to `Origin::Physical` in `Maker::origin` and its test row flips.
 - **NEW-PI-8 (casement half).** `ConnectEis` records the asking bus connection's unique name; `portal_watch.rs` listens for the bus's
   `NameOwnerChanged` and asks the loop (`ConnectAsk::owner_gone`) to close every socket that connection asked for. Transom half: seed
   session numbers from the clock so a restarted portal does not reuse ids (not casement's).
