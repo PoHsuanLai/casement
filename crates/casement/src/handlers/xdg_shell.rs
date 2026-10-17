@@ -112,6 +112,11 @@ impl XdgShellHandler for State {
             if limits::admit(&self.display, &client, Limit::Toplevels, held) == Standing::Over {
                 return;
             }
+            // The whole session holds a bounded number too: every model step walks every window.
+            let all = self.core.model.windows().len();
+            if limits::admit(&self.display, &client, Limit::Windows, all) == Standing::Over {
+                return;
+            }
         }
         // No configure here: the initial configure goes out with the first commit.
         let window = self.mint_window();

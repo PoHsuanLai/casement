@@ -60,7 +60,7 @@ use crate::output::{OutputConfig, OutputFacts};
 use crate::overview::Overview;
 use crate::settings::CasementSettings;
 use crate::space::{SpaceBook, SpaceFile, SpaceSeed};
-use crate::time::{Mono, TimerBook};
+use crate::time::{Mono, TimerBook, TimerKey};
 use moved::Moved;
 pub use overview::OverviewPick;
 use privilege::{Input, Privilege};
@@ -191,6 +191,12 @@ impl Model {
         // they were the cost a client with thousands of windows could stall the loop with.
         let watch = match &event {
             Event::Input(input) if !matches!(input.kind, InputKind::Swipe(_)) => Watch::Nothing,
+            // Timers and ticks that change nothing a client is shown, at key-repeat and idle
+            // rates (CASC-03).
+            Event::TimerFired(
+                TimerKey::KeyRepeat(_) | TimerKey::IdleNotify(..) | TimerKey::ImeHold,
+            )
+            | Event::NightLightTick(_) => Watch::Nothing,
             // Consent changes nothing a window-list or desktop client is shown.
             Event::ClientStanding { .. }
             | Event::PrivilegeUse { .. }

@@ -69,6 +69,11 @@ pub const MAX_IDLE_WATCHES: usize = 32;
 /// per playing video is plenty, and every one is looked at whenever the windows change.
 pub const MAX_IDLE_INHIBITORS: usize = 16;
 
+/// Toplevels the whole session holds: every model step compares the published state of every
+/// window, so the walk is bounded however many clients each hold their share (CASC-03). Far
+/// above what a person keeps open.
+pub const MAX_WINDOWS: usize = 4096;
+
 /// The objects whose count per client is capped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[non_exhaustive]
@@ -89,6 +94,8 @@ pub enum Limit {
     Exports,
     /// `zwp_virtual_keyboard_v1.keymap` requests of one keyboard.
     Keymaps,
+    /// `xdg_toplevel`, counted over the whole session.
+    Windows,
     /// `ext_idle_notification_v1`.
     IdleWatches,
     /// `zwp_idle_inhibitor_v1`.
@@ -116,6 +123,7 @@ impl Limit {
             Limit::IconBuffers => MAX_ICON_BUFFERS,
             Limit::Exports => MAX_EXPORTS,
             Limit::Keymaps => MAX_KEYMAPS,
+            Limit::Windows => MAX_WINDOWS,
             Limit::IdleWatches => MAX_IDLE_WATCHES,
             Limit::IdleInhibitors => MAX_IDLE_INHIBITORS,
         }
@@ -132,6 +140,7 @@ impl Limit {
             Limit::IconBuffers => "icon buffers",
             Limit::Exports => "exported windows",
             Limit::Keymaps => "keymaps",
+            Limit::Windows => "windows in the session",
             Limit::IdleWatches => "idle notifications",
             Limit::IdleInhibitors => "idle inhibitors",
         }
@@ -206,6 +215,7 @@ mod tests {
             Limit::IconBuffers,
             Limit::Exports,
             Limit::Keymaps,
+            Limit::Windows,
             Limit::IdleWatches,
             Limit::IdleInhibitors,
         ];
