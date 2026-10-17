@@ -84,7 +84,7 @@ impl TtyBackend {
         config: &OutputConfig,
         now: Mono,
     ) -> Result<Lighting, BackendError> {
-        if self.seat == super::SeatState::Lent {
+        if self.seat != super::SeatState::Held {
             return Ok(Lighting::Deferred);
         }
         let (path, connector) = self.driver_of(name)?;

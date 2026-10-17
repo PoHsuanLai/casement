@@ -180,6 +180,8 @@ pub enum Health {
     Alive,
     /// Every output that should show frames has shown none for [`STARVED_AFTER`].
     Frozen,
+    /// The seat is gone for good: nothing will be shown again.
+    SeatLost,
 }
 
 #[cfg(test)]

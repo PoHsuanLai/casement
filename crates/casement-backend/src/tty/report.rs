@@ -81,6 +81,7 @@ impl KmsReport {
     pub fn json_line(&self) -> String {
         let seat = match self.seat {
             SeatState::Held => "held",
+            SeatState::Gone => "gone",
             _ => "lent",
         };
         let outputs: Vec<String> = self.outputs.iter().map(output_json).collect();

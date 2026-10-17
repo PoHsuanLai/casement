@@ -102,6 +102,7 @@ fn note_of(event: SeatEvent) -> SessionNote {
     match event {
         SeatEvent::PauseSession => SessionNote::Paused,
         SeatEvent::ActivateSession => SessionNote::Activated,
+        SeatEvent::SessionLost => SessionNote::Lost,
     }
 }
 

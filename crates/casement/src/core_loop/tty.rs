@@ -12,7 +12,8 @@ use casement_backend::input::{
     Applied, FedDevice, FedInput, PollContext, device_settings, scaled_scroll,
 };
 use casement_backend::tty::{
-    Health, PresentOutcome, SessionNote, TtyBackend, TtyNote, VtHeld, VtNumber, Watch, vt_of_chord,
+    Health, PresentOutcome, SeatState, SessionNote, TtyBackend, TtyNote, VtHeld, VtNumber, Watch,
+    vt_of_chord,
 };
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::input::{DeviceClass, Edge, InputEvent, Keysym, Origin};
@@ -69,6 +70,16 @@ pub(crate) fn display_health(state: &State) -> Health {
     match &state.backend {
         BackendKind::Tty(tty) => tty.health(state.clock.now()),
         _ => Health::Alive,
+    }
+}
+
+/// Whether the session holds its seat. Only the tty backend can lose one; any other is taken as
+/// holding it. Once it is [`SeatState::Gone`] the loop stops and casement exits with an error, so
+/// the service manager or the display manager starts a new session (NEW-CASB-6).
+pub(crate) fn seat(state: &State) -> SeatState {
+    match &state.backend {
+        BackendKind::Tty(tty) => tty.seat,
+        _ => SeatState::Held,
     }
 }
 

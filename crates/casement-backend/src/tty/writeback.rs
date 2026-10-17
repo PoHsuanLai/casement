@@ -147,7 +147,7 @@ impl TtyBackend {
         if self.seams.writeback.is_none() {
             return Err(WritebackError::NotEnabled);
         }
-        if self.seat == SeatState::Lent {
+        if self.seat != SeatState::Held {
             return Err(WritebackError::SeatLent);
         }
         if self.writeback_job != WritebackJob::Idle {

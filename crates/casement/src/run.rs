@@ -12,6 +12,7 @@ use crate::space_sync::SpaceSync;
 use crate::spawn::{ProcessSpawner, Scopes};
 use crate::test_mode::{HookError, TestHooks};
 use crate::{StartError, State, cli, clients, core_loop};
+use casement_backend::tty::SeatState;
 use casement_ipc::IpcError;
 use casement_ipc::dbus::{CallerSetup, CallerTable};
 use casement_ipc::privacy::{PrivacyEdit, PrivacyLink};
@@ -179,6 +180,10 @@ pub enum RunError {
     /// A build with Debug1 was given no bus address.
     #[error("the debug bus address is not set")]
     NoDebugBus,
+    /// The seat was taken away for good (seatd stopped, or the session was revoked), so nothing
+    /// can be drawn or read again.
+    #[error("the seat is gone: seatd stopped or the session was revoked")]
+    SeatLost,
     /// A build that can mint test input refused to start outside the jail.
     #[cfg(any(feature = "testing", feature = "debug-inject"))]
     #[error("{0}")]
@@ -441,6 +446,9 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
             stop.stop();
         }
         core_loop::turn(state);
+        if core_loop::tty::seat(state) == SeatState::Gone {
+            stop.stop();
+        }
         state.seams.space_sync.poll();
         hooks.turn(state);
         crate::xwayland::turn(state, &xwayland_config, &wayland);
@@ -451,5 +459,9 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
     if let Err(error) = state.seams.notify.send(&Notice::Stopping) {
         tracing::warn!(%error, "the service manager could not be told casement is stopping");
     }
-    Ok(ran?)
+    ran?;
+    match core_loop::tty::seat(&state) {
+        SeatState::Gone => Err(RunError::SeatLost),
+        _ => Ok(()),
+    }
 }

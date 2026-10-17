@@ -17,6 +17,9 @@ pub enum SessionNote {
     Activated,
     /// The person asked for this VT (a `Ctrl+Alt+Fn` chord).
     VtSwitch(u32),
+    /// The seat is gone for good (seatd stopped, the session was revoked): the devices are
+    /// unusable and no `Activated` follows (NEW-CASB-6).
+    Lost,
 }
 
 /// The session casement runs in. Real: `session_real.rs` over libseat; fake:
@@ -62,6 +65,8 @@ pub enum SeatState {
     Held,
     /// Another VT, or a suspend, has the seat.
     Lent,
+    /// The seat is gone for good: nothing gives it back, so the compositor stops.
+    Gone,
 }
 
 impl SeatState {
@@ -73,12 +78,15 @@ impl SeatState {
     /// assert_eq!(SeatState::Held.after(SessionNote::Paused), SeatState::Lent);
     /// assert_eq!(SeatState::Lent.after(SessionNote::Activated), SeatState::Held);
     /// assert_eq!(SeatState::Lent.after(SessionNote::VtSwitch(2)), SeatState::Lent);
+    /// assert_eq!(SeatState::Held.after(SessionNote::Lost), SeatState::Gone);
+    /// assert_eq!(SeatState::Gone.after(SessionNote::Activated), SeatState::Gone);
     /// ```
     #[must_use]
     pub fn after(self, note: SessionNote) -> SeatState {
-        match note {
-            SessionNote::Paused => SeatState::Lent,
-            SessionNote::Activated => SeatState::Held,
+        match (self, note) {
+            (SeatState::Gone, _) | (_, SessionNote::Lost) => SeatState::Gone,
+            (_, SessionNote::Paused) => SeatState::Lent,
+            (_, SessionNote::Activated) => SeatState::Held,
             _ => self,
         }
     }
@@ -130,9 +138,11 @@ impl SeatCauses {
         }
     }
 
-    /// Whether this session holds the seat: only when no cause lends it.
+    /// Whether this session holds the seat: only when no cause lends it, and gone once either
+    /// lost it.
     pub fn seat(self) -> SeatState {
         match (self.session, self.sleep) {
+            (SeatState::Gone, _) | (_, SeatState::Gone) => SeatState::Gone,
             (SeatState::Held, SeatState::Held) => SeatState::Held,
             _ => SeatState::Lent,
         }

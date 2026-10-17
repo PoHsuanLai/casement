@@ -327,6 +327,43 @@ fn a_session_that_returns_during_sleep_gets_the_seat_when_the_machine_wakes() {
 }
 
 #[test]
+fn a_lost_seat_lets_the_devices_go_once_starves_the_watchdog_and_never_comes_back() {
+    // name, the notes before the loss
+    let cases = [
+        ("lost while held", vec![]),
+        ("lost while another VT has it", vec![SessionNote::Paused]),
+    ];
+    for (name, before) in cases {
+        let mut rig = rig(&[]);
+        for note in before {
+            rig.session.seat(note);
+        }
+        rig.backend.dispatch();
+        rig.session.seat(SessionNote::Lost);
+        assert_eq!(
+            session_notes(&rig.backend.dispatch()),
+            [SessionNote::Lost],
+            "{name}"
+        );
+        assert_eq!(rig.backend.seat, SeatState::Gone, "{name}");
+        assert_eq!(
+            rig.kms.seat_changes(),
+            (1, 0),
+            "{name}: master given up once"
+        );
+        assert_eq!(rig.backend.health(at(0)), Health::SeatLost, "{name}");
+        rig.session.seat(SessionNote::Activated);
+        rig.session.sleep(SessionNote::Activated);
+        assert!(session_notes(&rig.backend.dispatch()).is_empty(), "{name}");
+        assert_eq!(
+            rig.backend.seat,
+            SeatState::Gone,
+            "{name}: nothing gives it back"
+        );
+    }
+}
+
+#[test]
 fn a_device_that_cannot_take_master_back_is_asked_again_and_draws_nothing_meanwhile() {
     let mut rig = rig(&[]);
     let lit = rig.modes[1];

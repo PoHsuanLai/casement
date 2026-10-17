@@ -389,6 +389,13 @@ impl TtyBackend {
                     self.resumed();
                     notes.push(TtyNote::Session(SessionNote::Activated));
                 }
+                (SeatState::Held, SeatState::Gone) => {
+                    self.paused();
+                    notes.push(TtyNote::Session(SessionNote::Lost));
+                }
+                (SeatState::Lent, SeatState::Gone) => {
+                    notes.push(TtyNote::Session(SessionNote::Lost));
+                }
                 _ => {}
             }
             if let SessionNote::VtSwitch(vt) = note {
@@ -609,7 +616,7 @@ impl TtyBackend {
             .lit
             .get(output)
             .is_some_and(|lit| lit.power() == OutputPower::Off);
-        if self.seat == SeatState::Lent || dark {
+        if self.seat != SeatState::Held || dark {
             return Ok(PresentOutcome::Waiting);
         }
         self.retry_master(now);
@@ -669,6 +676,7 @@ impl TtyBackend {
                 self.scanouts.health_of(now, &enabled)
             }
             SeatState::Lent => Health::Alive,
+            SeatState::Gone => Health::SeatLost,
         }
     }
 

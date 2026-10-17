@@ -29,6 +29,9 @@ pub fn ping_every(handle: &LoopHandle<'static, State>, every: Duration) {
                         "no screen has shown a frame for a long while; the watchdog is not fed"
                     );
                 }
+                Health::SeatLost => {
+                    tracing::error!("the seat is gone; the watchdog is not fed");
+                }
             }
             TimeoutAction::ToDuration(every)
         },
