@@ -183,16 +183,34 @@ impl FilePrivacyStore {
         FilePrivacyStore { files }
     }
 
+    /// Where the book is written: a handle that writes the book from any thread (the loop
+    /// hands it to a thread of its own, since a durable write waits for the disk).
+    pub fn book_sink(&self) -> BookSink {
+        BookSink {
+            book: self.files.book.clone(),
+        }
+    }
+}
+
+/// The person's book as a place to write: its folder made private, the file replaced durably.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BookSink {
+    book: PathBuf,
+}
+
+impl BookSink {
+    /// Replaces the book with `text`, atomically; the file is the person's alone.
+    pub fn write(&self, text: &str) -> Result<(), StoreError> {
+        self.private_folder()?;
+        write_atomic(&self.book, text.as_bytes(), NewFileMode::OwnerOnly)?;
+        Ok(())
+    }
+
     /// The folder the book is in, private to the person (0700). A folder open to others is
     /// closed; one that cannot be made private is an error, because the book lists what their
     /// programs may do.
     fn private_folder(&self) -> Result<(), StoreError> {
-        let Some(dir) = self
-            .files
-            .book
-            .parent()
-            .filter(|dir| !dir.as_os_str().is_empty())
-        else {
+        let Some(dir) = self.book.parent().filter(|dir| !dir.as_os_str().is_empty()) else {
             return Ok(());
         };
         let folder = |source: std::io::Error| StoreError::Io {
@@ -238,9 +256,7 @@ impl PrivacyStore for FilePrivacyStore {
     }
 
     fn write_book(&mut self, text: &str) -> Result<(), StoreError> {
-        self.private_folder()?;
-        write_atomic(&self.files.book, text.as_bytes(), NewFileMode::OwnerOnly)?;
-        Ok(())
+        self.book_sink().write(text)
     }
 
     fn read_floor(&mut self) -> Vec<FloorText> {

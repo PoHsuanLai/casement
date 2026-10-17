@@ -21,8 +21,12 @@ mod writer;
 pub use writer::BackgroundSpaceStore;
 
 use casement_core::space::{SpaceFile, SpaceFileError};
-use std::io::Write;
+use ds_helpers::{NewFileMode, ReadCap, read_text_capped};
 use std::path::{Path, PathBuf};
+
+/// The largest Spaces file read: a few hundred Spaces are tens of kilobytes, and a file past this
+/// is not ours (a FIFO or a device at the path is refused too, so start-up cannot hang on it).
+const SPACES_FILE_CAP: ReadCap = ReadCap::kib(512);
 
 /// The directory casement keeps its state files in (`$XDG_STATE_HOME/casement`).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -127,12 +131,12 @@ impl FileSpaceStore {
 
 impl SpaceStore for FileSpaceStore {
     fn read(&self) -> Result<Option<String>, SpaceStoreError> {
-        match std::fs::read_to_string(&self.path) {
+        match read_text_capped(&self.path, SPACES_FILE_CAP) {
             Ok(text) => Ok(Some(text)),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(source) => Err(SpaceStoreError::Io {
+            Err(error) if error.is_missing() => Ok(None),
+            Err(error) => Err(SpaceStoreError::Io {
                 path: self.path.clone(),
-                source,
+                source: std::io::Error::other(error.to_string()),
             }),
         }
     }
@@ -142,34 +146,22 @@ impl SpaceStore for FileSpaceStore {
     }
 }
 
-/// Writes `text` to `path` atomically and durably: a temporary file in the same folder, synced,
-/// renamed over `path`, and the folder synced, so a crash or a power cut leaves the old file or
-/// the new one and never half of either.
+/// Writes `text` to `path` atomically and durably, readable by the person only: quire's writer
+/// (a temporary file beside it, synced, renamed over it, and the folder synced), so a crash or a
+/// power cut leaves the old file or the new one and never half of either.
 pub(crate) fn write_atomic(path: &Path, text: &str) -> Result<(), SpaceStoreError> {
-    let io = |at: &Path| {
-        let path = at.to_path_buf();
-        move |source| SpaceStoreError::Io { path, source }
-    };
-    let dir = path.parent().unwrap_or(Path::new("."));
-    std::fs::create_dir_all(dir).map_err(io(dir))?;
-    let temporary = path.with_extension("toml.tmp");
-    let written = (|| {
-        let mut file = std::fs::File::create(&temporary)?;
-        file.write_all(text.as_bytes())?;
-        file.sync_all()
-    })();
-    written.map_err(io(&temporary))?;
-    std::fs::rename(&temporary, path).map_err(|source| {
-        let _ = std::fs::remove_file(&temporary);
-        SpaceStoreError::Io {
-            path: path.to_path_buf(),
+    if let Some(dir) = path.parent().filter(|dir| !dir.as_os_str().is_empty()) {
+        std::fs::create_dir_all(dir).map_err(|source| SpaceStoreError::Io {
+            path: dir.to_path_buf(),
             source,
+        })?;
+    }
+    ds_helpers::write_atomic(path, text.as_bytes(), NewFileMode::OwnerOnly).map_err(|error| {
+        SpaceStoreError::Io {
+            path: error.path,
+            source: error.source,
         }
-    })?;
-    // The rename is in the folder's entry: sync the folder so it survives a power cut.
-    std::fs::File::open(dir)
-        .and_then(|folder| folder.sync_all())
-        .map_err(io(dir))
+    })
 }
 
 /// A store that keeps nothing: reads find no file, writes are dropped.

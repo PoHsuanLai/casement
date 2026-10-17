@@ -6,10 +6,12 @@
 //! and the file is rewritten after every change. The floor is read at start and again when
 //! casement is told to (`casementctl privacy reload`, which sends `SIGHUP`).
 
+mod background;
 mod host;
 #[cfg(any(feature = "testing", feature = "debug-inject"))]
 mod injected;
 
+pub use background::BackgroundPrivacyStore;
 pub use casement_privacy::{
     FilePrivacyStore, FloorFiles, FloorOnlyStore, FloorText, Listing, NoPrivacyStore, Owner,
     PrivacyFiles, PrivacyStore, StoreError, SystemDir, list, load_book, load_floor, save_book,

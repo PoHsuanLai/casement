@@ -32,6 +32,7 @@ casement-ipc = { workspace = true }
 casement-privacy = { workspace = true }
 casement-protocols = { workspace = true, features = ["server"] }
 porter-core = { workspace = true }
+ds-helpers = { workspace = true }
 ds-core = { workspace = true }
 ds-settings = { workspace = true }
 chordkit = { workspace = true }

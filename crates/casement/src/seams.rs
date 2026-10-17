@@ -8,7 +8,7 @@ use crate::a11y::{A11yChecks, NoA11y};
 use crate::lock_marker::{FileLockMarker, LockMarker, NoLockMarker};
 use crate::notify::{NoNotify, Notify};
 use crate::privacy::{
-    FilePrivacyStore, FloorOnlyStore, NoPrivacyStore, PrivacyFiles, PrivacyStore, SystemDir,
+    BackgroundPrivacyStore, FloorOnlyStore, NoPrivacyStore, PrivacyFiles, PrivacyStore, SystemDir,
 };
 use crate::space_store::{BackgroundSpaceStore, EphemeralSpaceStore, SpaceStore, StateHome};
 use crate::space_sync::SpaceSync;
@@ -134,7 +134,7 @@ impl Seams {
             StateHome::Ephemeral => Box::new(NoLockMarker),
         };
         let privacy: Box<dyn PrivacyStore> = match home {
-            StateHome::At(dirs) => Box::new(FilePrivacyStore::new(PrivacyFiles {
+            StateHome::At(dirs) => Box::new(BackgroundPrivacyStore::new(PrivacyFiles {
                 book: dirs.privacy_file(),
                 floor: crate::privacy::floor_in(system),
             })),
