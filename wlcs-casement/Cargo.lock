@@ -1697,7 +1697,7 @@ dependencies = [
 [[package]]
 name = "keycap-client"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/keycap?rev=9c85e76d95a84ec681bc14375c397d670331f6ac#9c85e76d95a84ec681bc14375c397d670331f6ac"
+source = "git+https://github.com/PoHsuanLai/keycap?rev=b04bf0696a7af0b2086d5930bf821b092e34cd6d#b04bf0696a7af0b2086d5930bf821b092e34cd6d"
 dependencies = [
  "chordkit",
  "keycap-protocol",
@@ -1707,7 +1707,7 @@ dependencies = [
 [[package]]
 name = "keycap-protocol"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/keycap?rev=9c85e76d95a84ec681bc14375c397d670331f6ac#9c85e76d95a84ec681bc14375c397d670331f6ac"
+source = "git+https://github.com/PoHsuanLai/keycap?rev=b04bf0696a7af0b2086d5930bf821b092e34cd6d#b04bf0696a7af0b2086d5930bf821b092e34cd6d"
 dependencies = [
  "serde",
  "serde_json",
