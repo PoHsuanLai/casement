@@ -165,10 +165,8 @@ mod tests {
     }
 
     /// CASW-04 (porter PR #38): sandbox metadata alone does not prove a Flatpak app; the
-    /// peer's cgroup must be that app's own `app-flatpak-<id>-<n>.scope`. Ignored until casement's
-    /// porter pin moves to a porter that checks.
+    /// peer's cgroup must be that app's own `app-flatpak-<id>-<n>.scope`.
     #[test]
-    #[ignore = "porter #38: the pin moves, then this runs"]
     fn flatpak_metadata_under_a_session_scope_is_not_proven() {
         let peer = facts("/user.slice/session-3.scope", flatpak("org.gnome.Calc"));
         let claimed = ClaimedId::parse("calc").expect("claimed id");
