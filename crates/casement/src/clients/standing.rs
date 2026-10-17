@@ -112,7 +112,8 @@ fn engine_of(engine: peer::Engine) -> Option<Engine> {
 /// image, `Subject`). A program the library could not vouch for belongs to no proven app.
 pub fn peer_of(standing: &Standing) -> PeerIdentity {
     let proven = match standing {
-        Standing::Service { app, proof, .. } if image_shown(*proof) => {
+        // A test caller row names its app as the image would (the point of that file).
+        Standing::Service { app, proof, .. } if image_shown(*proof) || is_test_row(*proof) => {
             named(app.as_str(), Isolation::Unsandboxed)
         }
         Standing::Program {

@@ -150,8 +150,14 @@ async fn the_remote_input_calls_are_the_portals_alone() {
     assert_eq!(end(portal, 7).await, "ended");
     assert_eq!(end(shell, 8).await, DENIED);
     assert_eq!(end(half, 9).await, DENIED);
-    let asks = served.asks();
-    assert_eq!(asks.len(), 2);
+    // The portal's connection leaving may add a `gone` ask by now (NEW-PI-8, tested in the
+    // testkit's remote_eis); this test is about the calls.
+    let asks: Vec<_> = served
+        .asks()
+        .into_iter()
+        .filter(|ask| ask.gone.is_none())
+        .collect();
+    assert_eq!(asks.len(), 2, "{asks:?}");
     assert_eq!(
         asks[0].remote,
         Some(crate::dbus::RemoteAsk {
