@@ -13,6 +13,7 @@ use casement_core::policy::GlobalKind;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::{Buffer, Format, Fourcc, Modifier};
 use smithay::reexports::rustix::fs::{SeekFrom, seek};
+use std::os::fd::{AsRawFd, BorrowedFd};
 use smithay::reexports::wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_v1::TrancheFlags;
 use smithay::reexports::wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1;
 use smithay::reexports::wayland_server::{DisplayHandle, GlobalDispatch};
@@ -262,11 +263,24 @@ fn linear_planes_fit(dmabuf: &Dmabuf) -> bool {
         .zip(dmabuf.strides())
         .map(|(offset, stride)| Plane { offset, stride })
         .collect();
-    let sizes: Vec<Option<u64>> = dmabuf
-        .handles()
-        .map(|fd| seek(fd, SeekFrom::End(0)).ok())
-        .collect();
+    let sizes: Vec<Option<u64>> = dmabuf.handles().map(memory_file_size).collect();
     planes_fit(&planes, &sizes, dmabuf.height())
+}
+
+/// The size of `fd`, when it is a file in kernel memory (a dma-buf, or a memory file standing in
+/// for one); nothing for any other, and no call is made on it. `lseek` on a file of a FUSE or a
+/// network mount asks the file system's daemon, which can be a program of the client's own that
+/// never answers, on the loop (NEW-CAS-3). The kind is read from the descriptor's link name in
+/// `/proc/self/fd`, a read that reaches no file system.
+fn memory_file_size(fd: BorrowedFd<'_>) -> Option<u64> {
+    let link = std::fs::read_link(format!("/proc/self/fd/{}", fd.as_raw_fd())).ok()?;
+    let in_memory = is_memory_file(&link.to_string_lossy());
+    in_memory.then(|| seek(fd, SeekFrom::End(0)).ok()).flatten()
+}
+
+/// Whether a descriptor's link name (`/proc/self/fd/N`) is that of a dma-buf or a memory file.
+fn is_memory_file(link: &str) -> bool {
+    link.starts_with("/dmabuf:") || link.starts_with("/memfd:")
 }
 
 /// Where a plane starts in its file and how far apart its rows are.
@@ -345,6 +359,24 @@ mod tests {
     use smithay::backend::allocator::dmabuf::DmabufFlags;
     use smithay::reexports::rustix::fs::{MemfdFlags, ftruncate, memfd_create};
     use std::os::fd::OwnedFd;
+
+    /// NEW-CAS-3: only kernel-memory files are asked their size; a file of a mounted file system
+    /// (whose daemon may never answer) is not, and so does not fit.
+    #[test]
+    fn only_a_dmabuf_or_a_memory_file_is_asked_its_size() {
+        assert!(is_memory_file("/dmabuf:"));
+        assert!(is_memory_file("/memfd:buffer (deleted)"));
+        assert!(!is_memory_file("/mnt/fuse/file"));
+        assert!(!is_memory_file("/tmp/regular"));
+        assert!(!is_memory_file("pipe:[1234]"));
+        let file = std::fs::File::open("/proc/self/exe").expect("a regular file");
+        assert_eq!(memory_file_size(std::os::fd::AsFd::as_fd(&file)), None);
+        let memory = sized_file(4096);
+        assert_eq!(
+            memory_file_size(std::os::fd::AsFd::as_fd(&memory)),
+            Some(4096)
+        );
+    }
 
     /// A 64 x 64 buffer of `code` with a plane of 256-byte rows in a memory file of the whole
     /// buffer's size (a file standing in for the GPU's: `lseek(SEEK_END)` reads its size).
