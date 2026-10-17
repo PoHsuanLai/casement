@@ -5221,7 +5221,12 @@ wlcs went from 5 to 16 failures after two deliberate policy commits (bisected: b
   `ForeignToplevelManagerTest.detects_toplevel_closed` and `TextInputV3WithInputMethodV2Test.input_method_can_be_enabled` failed. wlcs tests
   protocol conformance, not consent (casement's own tests cover consent). `Fixture::adopt_socket` (casement-testkit, a test crate) now gives
   an adopted public client the standing `Fixture::connect` gives it (`trusted_standing`, a desktop service the table trusts), through the
-  same `insert` door; nothing in the compositor changed and no switch exists outside the test kit. Not run: the lane does not build.
-- **Exclusive keyboard (b5ab695: CASC-02), kept as an expected failure.** `LayerSurfaceTest.takes_keyboard_focus_with_exclusive_keyboard_interactivity`:
-  only the shell's own layer surfaces take the keyboard by mapping; wlcs clients are public, not the shell, and are not made the shell.
-  Listed in `dev/wlcs/expected-failures.txt` as `# CASC-02`.
+  same `insert` door; nothing in the compositor changed and no switch exists outside the test kit. All ten pass again (run 2026-10-17).
+- **Layer keyboard (b5ab695: CASC-02), six expected failures.** Only the shell's own layer surfaces take the keyboard by mapping or by an
+  interactivity change; another program's takes it only when the person presses it. wlcs clients are public, not the shell, and are not
+  made the shell, so five `LayerSurfaceTest` keyboard tests and `LayerShellPopup/XdgPopupTest.non_grabbed_popup_does_not_get_keyboard_focus/0`
+  fail (all six pass at c0f55a6, the commit before). Listed in `dev/wlcs/expected-failures.txt` as `# CASC-02`.
+- **Restore flight (c9ee390), one expected failure.** `ForeignToplevelHandleTest.can_unminimize_foreign` moves the pointer the moment
+  the window is restored; the window is still flying out of its Dock tile and takes no clicks until it lands, so the window below is
+  hit. Bisected to c9ee390; kept (`# FLIGHT`).
+- wlcs phase run on d2c758c with this list: 906 passed, 0 unexpected failures.

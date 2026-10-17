@@ -109,10 +109,15 @@
 #     a compositor that sends the parent and the popup no configure at all in that window passes;
 #     that would break the protocol (and every wlcs test that reads the first configure). Kept.
 # CASC-02: policy wlcs cannot know about (commit b5ab695, wave 2026-10-16). Only the shell's own layer
-#     surfaces take the keyboard by mapping (exclusive interactivity); every other program's is
-#     refused exclusive. wlcs clients connect on the public socket (ConnectionRole::Public) and are
-#     not made the shell, so
-#     LayerSurfaceTest.takes_keyboard_focus_with_exclusive_keyboard_interactivity cannot pass.
+#     surfaces take the keyboard by mapping or by asking (exclusive or on-demand interactivity);
+#     every other program's exclusive request counts as on-demand, and its layer surface takes the
+#     keyboard only when the person presses it. wlcs clients connect on the public socket
+#     (ConnectionRole::Public) and are not made the shell, so the six layer-keyboard tests below,
+#     which expect focus on map or on an interactivity change, cannot pass.
+# FLIGHT: a window restored from the Dock flies out of its tile (commit c9ee390) and takes no clicks
+#     until it lands, so a pointer over it mid-flight still hits the window below. wlcs moves the
+#     pointer right after unset_minimized; the shim's clock only moves on wlcs' placement events, so
+#     ForeignToplevelHandleTest.can_unminimize_foreign sees the window below. Kept.
 # W13: FIXED in the shim (casement was right: a toplevel unmapped by a null buffer is configured again
 #     and maps again with fresh state; xdg_toplevel's "Unmapping" says it returns to its initial state).
 #     wlcs puts the surface back where it was and re-attaches at once; the shim now remembers where
@@ -120,6 +125,12 @@
 #     casement-testkit/tests/relax.rs (passes with and without the shim: casement needed no change).
 
 CopyCutPaste.given_sink_has_focus_when_source_makes_offer_sink_sees_offer  # W12
+ForeignToplevelHandleTest.can_unminimize_foreign  # FLIGHT
+LayerShellPopup/XdgPopupTest.non_grabbed_popup_does_not_get_keyboard_focus/0  # CASC-02
+LayerSurfaceTest.can_lose_keyboard_focus_with_on_demand_keyboard_interactivity  # CASC-02
+LayerSurfaceTest.does_not_lose_keyboard_focus_with_exclusive_keyboard_interactivity  # CASC-02
+LayerSurfaceTest.loses_keybaord_focus_when_interactivity_changes_to_none  # CASC-02
+LayerSurfaceTest.takes_keyboard_focus_when_interactivity_changes_to_exclusive  # CASC-02
 LayerSurfaceTest.takes_keyboard_focus_with_exclusive_keyboard_interactivity  # CASC-02
 PrimarySelection.sink_can_listen  # W12
 PrimarySelection.sink_can_request  # W12
