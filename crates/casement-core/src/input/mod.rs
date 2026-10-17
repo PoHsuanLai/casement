@@ -20,7 +20,9 @@ pub use event::{
     LidState, PinchDelta, SwitchStep, TabletState, TouchStep,
 };
 pub use key::{ButtonCode, KeyCode, Keysym};
-pub use origin::{DeviceClass, FeedSource, Origin, PortalSessionId};
+pub use origin::{
+    BUS_VIRTUAL, DeviceClass, FeedSource, KernelIds, Origin, PALMREST_VENDOR, PortalSessionId,
+};
 pub use reach::{InputTarget, InputUse, Reach, ReachFacts, Refusal, reach};
 
 #[cfg(test)]

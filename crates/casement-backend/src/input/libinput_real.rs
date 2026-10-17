@@ -14,7 +14,7 @@ use super::convert::input_kind_of;
 use super::devices::{Applied, DeviceSetting, DeviceSettings, InputDevices, InputError};
 use super::feed::{FedDevice, FedInput, InputFeed, PollContext};
 use casement_core::DeviceId;
-use casement_core::input::{DeviceClass, InputEvent as CoreEvent, Origin};
+use casement_core::input::{DeviceClass, InputEvent as CoreEvent, KernelIds, Origin};
 use casement_core::settings::{AccelProfile, Enabled};
 use smithay::backend::input::{Event, InputEvent};
 use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface};
@@ -45,9 +45,17 @@ pub struct RealInputFeed {
 struct Known {
     device: libinput::Device,
     class: DeviceClass,
-    /// The vendor id it reports, which tells a device the desktop's device service made for
-    /// palmrest from the person's own (`Origin::of_kernel_device`).
-    vendor: u32,
+    /// The bus and vendor ids it reports, which tell a device the desktop's device service made
+    /// for palmrest from the person's own (`Origin::of_kernel_device`).
+    ids: KernelIds,
+}
+
+/// The bus type the kernel gives `sysname` (`event5`), from sysfs: libinput only reports it from
+/// 1.26, newer than Ubuntu 24.04's. `None` when it cannot be read or parsed.
+fn bus_of(sysname: &str) -> Option<u16> {
+    let path = format!("/sys/class/input/{sysname}/device/id/bustype");
+    let text = std::fs::read_to_string(path).ok()?;
+    u16::from_str_radix(text.trim(), 16).ok()
 }
 
 impl RealInputFeed {
@@ -106,7 +114,10 @@ impl RealInputFeed {
                     Known {
                         device: device.clone(),
                         class,
-                        vendor: device.id_vendor(),
+                        ids: KernelIds {
+                            bus: bus_of(device.sysname()),
+                            vendor: device.id_vendor(),
+                        },
                     },
                 );
                 Some(FedInput::Appeared(FedDevice::new(
@@ -124,7 +135,7 @@ impl RealInputFeed {
                 let device = device_of(other)?;
                 let id = self.id_of(&device);
                 let known = self.devices.get(&id)?;
-                let origin = Origin::of_kernel_device(known.class, known.vendor);
+                let origin = Origin::of_kernel_device(known.class, known.ids);
                 let kind = input_kind_of(other, context.extent)?;
                 Some(FedInput::Event(CoreEvent {
                     origin,

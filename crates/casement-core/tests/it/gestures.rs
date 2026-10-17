@@ -8,7 +8,8 @@ use casement_core::geometry::{SubPoint, SubPx};
 use casement_core::input::gesture_route::{Axis, Drive, Fate, Route, route};
 use casement_core::input::lift::{Intent, Lift, LiftIn, LiftOut, Verdict};
 use casement_core::input::{
-    DesktopCommand, DeviceClass, GestureEnd, GestureStep, InputEvent, InputKind, Origin,
+    BUS_VIRTUAL, DesktopCommand, DeviceClass, GestureEnd, GestureStep, InputEvent, InputKind,
+    KernelIds, Origin, PALMREST_VENDOR,
 };
 use casement_core::overview::Overview;
 use casement_core::settings::{CasementSettings, Enabled, GestureSettings, SwipeFingers};
@@ -368,7 +369,13 @@ fn a_far_swipe_left_follows_the_fingers_then_commits_to_the_next_space() {
 /// swipes still move the Spaces; a device that is no pad does not take a swipe.
 #[test]
 fn a_swipe_from_palmrests_pad_drives_the_spaces_and_one_from_a_virtual_keyboard_does_not() {
-    let palmrest = Origin::of_kernel_device(DeviceClass::Touchpad, 0x0001);
+    let palmrest = Origin::of_kernel_device(
+        DeviceClass::Touchpad,
+        KernelIds {
+            bus: Some(BUS_VIRTUAL),
+            vendor: PALMREST_VENDOR,
+        },
+    );
     assert!(!palmrest.is_physical());
     for (origin, drives) in [
         (palmrest, true),
