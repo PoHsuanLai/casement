@@ -317,7 +317,7 @@ impl ScanoutSet {
         let starved = |name: &OutputName| {
             self.outputs
                 .get(name)
-                .map_or(true, |scanout| scanout.starved(now) == Starved::Yes)
+                .is_none_or(|scanout| scanout.starved(now) == Starved::Yes)
         };
         match !enabled.is_empty() && enabled.iter().all(starved) {
             true => Health::Frozen,
