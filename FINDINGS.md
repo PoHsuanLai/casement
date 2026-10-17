@@ -5067,6 +5067,11 @@ One commit per root cause on branch `pa3-cas`; nothing here was compiled or run 
   about a held process (`BusPeers::standing`, `unit_facts` and `manager_is_real` are private to the bus crate). It needs an owner call on
   where that lookup lives (a peephole API that takes a `Pinned`, or a unit-manager connection owned by `Judge`). `desktop/harness/lib/casement-floor.sh`
   gives transom an allow row, which hides this in the gate.
+- **NEW-CASB-7 (open, stopped).** `Processes::handle_of` opens a pidfd by the pid in `SO_PEERCRED` and reads the credentials again, which
+  cannot tell a recycled pid from the connector: the credentials were fixed at `connect()`. peephole's `Pinned::of_stream` has the same
+  weakness (its docs say so) and hides its descriptor, so casement cannot reuse it. The fix is `SO_PEERPIDFD` (Linux 6.5): rustix 1.1 has no
+  safe wrapper and every crate forbids `unsafe`, so it needs either a peephole release whose `Pinned` makes its pin `AtConnect` and lends the
+  pidfd (`as_fd`), or a decision on a new dependency that wraps the option.
 - **NEW-PI-4 (casement half).** A kernel device that reports vendor `0x0001` (what turnstile gives palmrest's devices) is `Origin::Virtual`
   (`Origin::of_kernel_device`). It still moves the pointer, fires bindings and drives swipes (`Origin::is_pad`), but trusted surfaces, the lock
   surface and VT switching never hear it. Consequence to decide: with palmrest's pad grabbing the real touchpad, the person cannot click a
