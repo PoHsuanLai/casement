@@ -251,6 +251,46 @@ mod tests {
         assert!(Proof::Cgroup < Proof::Exe && Proof::Exe < Proof::Full);
     }
 
+    /// NEW-FA-2: the portal's own capture is trusted (no sheet of casement's) only when the
+    /// library proves it at `Full` as the portal's row; a lesser proof is a program the person is
+    /// asked about, and a control group alone is nobody. Which powers the portal role is trusted
+    /// with is `trusted_powers`' to say (the screen and the windows, nothing more).
+    #[test]
+    fn the_portal_is_trusted_only_when_proven_full_and_otherwise_asked_like_a_program() {
+        let transom = exe("/usr/libexec/transom");
+        let path = ProgramPath::parse("/usr/libexec/transom").expect("a path");
+        let portal = ServiceRole::parse("portal").expect("a role");
+        let cases = [
+            (
+                "proven at Full",
+                Proof::Full,
+                ClientStanding::Service {
+                    role: portal,
+                    exe: Some(path.clone()),
+                },
+            ),
+            (
+                "shown by image and control group only",
+                Proof::Exe,
+                ClientStanding::Program { exe: path },
+            ),
+            (
+                "known by its control group alone",
+                Proof::Cgroup,
+                ClientStanding::Unverified {
+                    exe_name: Some("transom".to_owned()),
+                },
+            ),
+        ];
+        for (case, proof, want) in cases {
+            assert_eq!(
+                client_standing(&service("portal", proof), &transom),
+                want,
+                "{case}"
+            );
+        }
+    }
+
     #[test]
     fn a_scope_name_groups_windows_but_only_for_a_program_the_system_owns() {
         let proven = |standing: &Standing| matches!(peer_of(standing), PeerIdentity::Proven(_));

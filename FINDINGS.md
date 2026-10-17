@@ -5059,6 +5059,14 @@ One commit per root cause on branch `pa3-cas`; nothing here was compiled or run 
 - **NEW-PI-3.** On the public socket only `Proof::Full` makes a desktop service. A service at `Proof::Exe` is an ordinary program known by its
   image, asked per app; the shell and the agent tier use the handed-out connection. `Judge` probes without the unit manager, so on the public
   socket `Full` is not reachable today; that is the point (no cgroup-and-image-only trust). Table test per proof level in `standing.rs`.
+- **NEW-FA-2 (open, stopped on the proof).** transom captures on the public socket, so after NEW-PI-3 it is a `Program` and its first
+  screenshot or share raises casement's own Screen sheet over the portal's chooser. The model side is done and pinned by tests: a service
+  proven `Full` as the `portal` row is trusted for the screen and the windows and nothing else (`trusted_powers`); one shown only at
+  `Proof::Exe` is asked like any program (`standing.rs`, `privilege_step.rs`). What is missing is a `Full` proof for a Wayland-socket peer:
+  `Judge::arrival` probes without the unit manager (`probe(&pinned, None)`), and peephole v0.1.4 offers no public way to ask the manager
+  about a held process (`BusPeers::standing`, `unit_facts` and `manager_is_real` are private to the bus crate). It needs an owner call on
+  where that lookup lives (a peephole API that takes a `Pinned`, or a unit-manager connection owned by `Judge`). `desktop/harness/lib/casement-floor.sh`
+  gives transom an allow row, which hides this in the gate.
 - **NEW-PI-4 (casement half).** A kernel device that reports vendor `0x0001` (what turnstile gives palmrest's devices) is `Origin::Virtual`
   (`Origin::of_kernel_device`). It still moves the pointer, fires bindings and drives swipes (`Origin::is_pad`), but trusted surfaces, the lock
   surface and VT switching never hear it. Consequence to decide: with palmrest's pad grabbing the real touchpad, the person cannot click a

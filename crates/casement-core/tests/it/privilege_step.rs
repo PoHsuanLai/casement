@@ -285,6 +285,27 @@ fn the_portal_is_trusted_for_the_screen_and_windows_and_asked_for_the_rest() {
     assert_eq!(asked[0].2.text, "/usr/libexec/transom");
 }
 
+/// NEW-FA-2: a portal image the library showed only as a program (`Proof::Exe` reaches the model as
+/// a `Program`, not a `Service`) gets no trust: the screen and the windows are asked for like
+/// any program's, and the one question names its image.
+#[test]
+fn the_portals_image_known_only_as_a_program_is_asked_for_the_screen_and_windows() {
+    for power in [Power::Screen, Power::Windows] {
+        let mut desk = Desk::with_shell();
+        desk.public(
+            1,
+            ClientStanding::Program {
+                exe: path("/usr/libexec/transom"),
+            },
+        );
+        let effects = desk.uses(1, power);
+        assert_eq!(outcome(&effects, 1, power), None, "{power:?} waits");
+        let asked = questions(&effects);
+        assert_eq!(asked.len(), 1, "{power:?}");
+        assert_eq!(asked[0].2.text, "/usr/libexec/transom");
+    }
+}
+
 #[test]
 fn a_program_is_asked_once_and_the_answer_is_kept() {
     let mut desk = Desk::with_shell();
