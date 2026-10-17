@@ -12,6 +12,7 @@ mod handout;
 mod live;
 mod standing;
 
+use standing::arriving_standing;
 pub use standing::{ASKED_PROGRAM, program_standing, trusted_standing};
 
 use crate::fakes::{
@@ -292,11 +293,7 @@ impl Fixture {
     /// desktop service the table trusts ([`trusted_standing`]), so what it uses is not asked
     /// about; [`Fixture::connect_via_ask`] connects one that is.
     pub fn connect(&mut self, role: ConnectionRole) -> ClientId {
-        let standing = match role {
-            ConnectionRole::Public => Some(trusted_standing()),
-            _ => None,
-        };
-        self.join(role, standing, None)
+        self.join(role.clone(), arriving_standing(&role), None)
     }
 
     /// A new client of `role`, whose program is taken to be `standing` when it is given.

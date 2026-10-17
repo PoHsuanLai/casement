@@ -5211,3 +5211,17 @@ driver that crashes does not take the safe session with it. Nothing was compiled
   (pixman shadow). A GPU crash that is a process crash (a segfault inside the driver at `gbm_create_device`) in `Gpu` mode is not
   survivable by the fallback, which only sees errors: that is what `--safe` is for, and what the crash guard's three-strikes rule starts
   it for (`dist/casement.service`).
+
+## wave-2026-10-15/wlcs: the shim's clients are consented, and the one policy wlcs cannot know (2026-10-17)
+
+wlcs went from 5 to 16 failures after two deliberate policy commits (bisected: b5ab695 and edf6e55). The compositor is right; the harness adapts.
+
+- **Per-app consent (edf6e55: CASW-01, CASC-01, PORTAL-02).** wlcs' clients were adopted as unjudged public clients, so every gated power
+  (the window list, typing help, virtual keys) waited on a question nothing answers: eight `ForeignToplevelHandleTest.*`,
+  `ForeignToplevelManagerTest.detects_toplevel_closed` and `TextInputV3WithInputMethodV2Test.input_method_can_be_enabled` failed. wlcs tests
+  protocol conformance, not consent (casement's own tests cover consent). `Fixture::adopt_socket` (casement-testkit, a test crate) now gives
+  an adopted public client the standing `Fixture::connect` gives it (`trusted_standing`, a desktop service the table trusts), through the
+  same `insert` door; nothing in the compositor changed and no switch exists outside the test kit. Not run: the lane does not build.
+- **Exclusive keyboard (b5ab695: CASC-02), kept as an expected failure.** `LayerSurfaceTest.takes_keyboard_focus_with_exclusive_keyboard_interactivity`:
+  only the shell's own layer surfaces take the keyboard by mapping; wlcs clients are public, not the shell, and are not made the shell.
+  Listed in `dev/wlcs/expected-failures.txt` as `# CASC-02`.

@@ -108,6 +108,11 @@
 #     precedes `enter(parent)`. The text-input `enter` itself does arrive in the right place. Only
 #     a compositor that sends the parent and the popup no configure at all in that window passes;
 #     that would break the protocol (and every wlcs test that reads the first configure). Kept.
+# CASC-02: policy wlcs cannot know about (commit b5ab695, wave 2026-10-16). Only the shell's own layer
+#     surfaces take the keyboard by mapping (exclusive interactivity); every other program's is
+#     refused exclusive. wlcs clients connect on the public socket (ConnectionRole::Public) and are
+#     not made the shell, so
+#     LayerSurfaceTest.takes_keyboard_focus_with_exclusive_keyboard_interactivity cannot pass.
 # W13: FIXED in the shim (casement was right: a toplevel unmapped by a null buffer is configured again
 #     and maps again with fresh state; xdg_toplevel's "Unmapping" says it returns to its initial state).
 #     wlcs puts the surface back where it was and re-attaches at once; the shim now remembers where
@@ -115,6 +120,7 @@
 #     casement-testkit/tests/relax.rs (passes with and without the shim: casement needed no change).
 
 CopyCutPaste.given_sink_has_focus_when_source_makes_offer_sink_sees_offer  # W12
+LayerSurfaceTest.takes_keyboard_focus_with_exclusive_keyboard_interactivity  # CASC-02
 PrimarySelection.sink_can_listen  # W12
 PrimarySelection.sink_can_request  # W12
 PrimarySelection.source_can_supply_request  # W12

@@ -4,8 +4,7 @@
 //! the two things the model owns that a client cannot reach: which window a surface is
 //! ([`Fixture::toplevel_of`]) and where it sits ([`Fixture::place_window`]).
 
-use super::{ClientId, Fixture};
-use casement::clients::{self, Standing};
+use super::{ClientId, Fixture, arriving_standing};
 use casement::core_loop;
 use casement_core::ToplevelRequest;
 use casement_core::focus::TokenCheck;
@@ -13,7 +12,6 @@ use casement_core::geometry::{LogicalPoint, LogicalRect};
 use casement_core::policy::ConnectionRole;
 use casement_core::{Event, LayerKey, WindowId};
 use casement_layout::{LayoutKnobs, RustScene, SceneLayout, frame_metrics, spec_of_framed};
-use porter_core::PeerIdentity;
 use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use std::collections::BTreeMap;
@@ -25,20 +23,16 @@ impl Fixture {
     /// A new client of `role` whose end of the socket pair is handed to the caller, who drives
     /// it from elsewhere: no [`TestClient`](casement_testclient::TestClient) is made, so the
     /// fixture's pump has nothing to dispatch for it. The fixture pumps once so the compositor
-    /// has seen it arrive.
+    /// has seen it arrive. It arrives with the standing [`Fixture::connect`] gives a client of
+    /// its role (a public one is a desktop service the table trusts), so what it uses is not
+    /// asked about: a driven client such as wlcs tests the protocols, not the consent flow.
     pub fn adopt_socket(&mut self, role: ConnectionRole) -> (ClientId, OwnedFd) {
         let (server, client) = UnixStream::pair().expect("a socket pair for the adopted client");
         server
             .set_nonblocking(true)
             .expect("a non-blocking server end");
-        let held = clients::insert_client(
-            &mut self.state,
-            server,
-            role,
-            PeerIdentity::Unproven,
-            Standing::Unjudged,
-        )
-        .expect("the compositor takes the client");
+        let standing = arriving_standing(&role);
+        let held = self.insert(server, role, standing, None);
         let id = ClientId(self.next_client);
         self.servers.insert(id, held);
         self.next_client += 1;

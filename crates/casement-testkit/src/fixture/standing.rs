@@ -32,6 +32,15 @@ pub fn program_standing(path: &str) -> ClientStanding {
     }
 }
 
+/// The standing a client of `role` arrives with when the test names none: a public client is a
+/// desktop service the table trusts, any other role is not judged.
+pub(super) fn arriving_standing(role: &ConnectionRole) -> Option<ClientStanding> {
+    match role {
+        ConnectionRole::Public => Some(trusted_standing()),
+        _ => None,
+    }
+}
+
 /// The program [`Fixture::connect_via_ask`] connects as.
 pub const ASKED_PROGRAM: &str = "/usr/bin/grim";
 
