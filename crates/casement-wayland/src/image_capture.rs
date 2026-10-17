@@ -18,8 +18,8 @@ mod gate;
 
 pub use book::CaptureBook;
 pub use cursor::{
-    CursorBook, CursorHold, CursorSessionId, CursorView, Placement, image_size, place,
-    sent_image_size,
+    CursorBook, CursorHold, CursorSessionId, CursorView, ParkedCursor, Placement, image_size,
+    place, sent_image_size,
 };
 pub use damage::{DamageLog, DamageLogs, Since};
 pub use dma::dma_offer;

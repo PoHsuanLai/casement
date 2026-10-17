@@ -12,10 +12,13 @@
 
 use super::dma::{deliver, offer, read_cursor};
 use crate::state::State;
-use casement_core::OutputKey;
 use casement_core::geometry::{PhysicalRect, PhysicalSize, Transform as CoreTransform};
+use casement_core::privilege::PowerOutcome;
+use casement_core::{ClientKey, OutputKey};
+use casement_protocols::vocab::Power;
 use casement_render::pass::{ArgbImage, CapturedFrame, DrawnView, SourceRect};
 use casement_render::{ChromeLayer, CursorDraw, CursorShape, cursor_face, cursor_pixels};
+use casement_wayland::consent::{self, Admission};
 use casement_wayland::image_capture::{
     CaptureFailure, CaptureSourceId, CursorSessionId, CursorView, image_size, place,
     sent_image_size,
@@ -63,12 +66,48 @@ pub(super) fn constraints(state: &State, source: &ImageCaptureSource) -> Option<
     constraints_for(state, &output)
 }
 
-/// A client made a cursor session: it is held and told where the cursor is.
+/// A client made a cursor session. It is the screen's pointer (where it is, what it looks like,
+/// whichever window has focus), so it is the Screen power's like any capture (NEW-CAS-4): held
+/// and told where the cursor is when the client may capture, parked until the person answers
+/// when it is being asked, and dropped (the client hears `stopped`) when it may not.
 pub(super) fn new_session(state: &mut State, session: CursorSession) {
     let Some(output) = output_of(state, &session.source()) else {
         // Dropping the session ends it.
         return;
     };
+    let Some(client) = session.client() else {
+        return;
+    };
+    match consent::admit(state, &client, Power::Screen) {
+        Admission::Go => start(state, session, output),
+        Admission::Hold => {
+            if let Some(key) = consent::key_of(&client) {
+                state.wl.image_capture.cursors.park(key, session, output);
+            }
+        }
+        Admission::Refuse => {}
+    }
+}
+
+/// The answer about `client`'s screen came out: the cursor sessions that waited start, or are
+/// dropped with every other cursor session of the client when it is refused or taken back.
+pub(in crate::handlers) fn resolved(state: &mut State, client: ClientKey, outcome: PowerOutcome) {
+    let parked = state.wl.image_capture.cursors.take_parked(client);
+    match outcome {
+        PowerOutcome::Allowed => {
+            for held in parked {
+                start(state, held.session, held.output);
+            }
+        }
+        PowerOutcome::Denied | PowerOutcome::Revoked => {
+            drop(parked);
+            state.wl.image_capture.cursors.stop_client(client);
+        }
+    }
+}
+
+/// Holds `session`, which watches `output`, and tells it where the cursor is.
+fn start(state: &mut State, session: CursorSession, output: OutputKey) {
     let id = state.wl.image_capture.cursors.hold(session, output.clone());
     if let Some(hold) = state.wl.image_capture.cursors.get(id) {
         hold.session.user_data().insert_if_missing_threadsafe(|| id);

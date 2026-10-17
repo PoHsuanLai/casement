@@ -554,3 +554,54 @@ fn a_power_taken_back_stops_a_session_in_use() {
     settle(&mut fixture, &mut capture);
     assert!(capture.is_stopped(), "the session stopped mid-use");
 }
+
+/// A fixture with the scripted shell, a pointer at (300, 200), a client that is a program asked
+/// about its powers, and a cursor session on `HEADLESS-1` opened and settled.
+fn asked_cursor() -> (Fixture, ScriptedShell, OutputCapture) {
+    let mut fixture = Fixture::start(small()).expect("fixture");
+    let shell = ScriptedShell::start(&mut fixture);
+    let _pointer = pointer_at(&mut fixture, (300, 200));
+    let client = fixture.connect_via_ask();
+    fixture.frames(&name("HEADLESS-1"), FrameCount(2));
+    let mut capture = OutputCapture::start(fixture.client(client).globals()).expect("the managers");
+    settle(&mut fixture, &mut capture);
+    capture.open_cursor("HEADLESS-1").expect("a cursor session");
+    settle(&mut fixture, &mut capture);
+    (fixture, shell, capture)
+}
+
+/// NEW-CAS-4: a cursor session says where the pointer is on the screen whatever has focus, so it
+/// is the screen's power like a frame: nothing is sent, not even a position, until the person
+/// allows, and then the session starts.
+#[test]
+fn a_cursor_session_hears_nothing_until_the_person_allows_the_screen() {
+    let (mut fixture, shell, mut capture) = asked_cursor();
+    assert!(
+        capture.take_cursor_events().is_empty(),
+        "no position before the answer"
+    );
+    let asked = shell.asked();
+    assert_eq!(asked.len(), 1);
+    assert_eq!(asked[0].power, Power::Screen);
+
+    shell.answer(&mut fixture, shell.only_ask(), Answer::Allow);
+    settle(&mut fixture, &mut capture);
+    assert!(
+        !capture.take_cursor_events().is_empty(),
+        "allowed, the session is told where the pointer is"
+    );
+}
+
+/// NEW-CAS-4: Don't Allow keeps the position from a cursor session for good.
+#[test]
+fn a_refused_cursor_session_never_hears_the_pointer() {
+    let (mut fixture, shell, mut capture) = asked_cursor();
+    shell.answer(&mut fixture, shell.only_ask(), Answer::Deny);
+    settle(&mut fixture, &mut capture);
+    fixture.frames(&name("HEADLESS-1"), FrameCount(2));
+    settle(&mut fixture, &mut capture);
+    assert!(
+        capture.take_cursor_events().is_empty(),
+        "a refused session is told nothing"
+    );
+}

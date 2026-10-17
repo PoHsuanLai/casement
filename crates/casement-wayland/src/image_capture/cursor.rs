@@ -3,12 +3,14 @@
 //! module keeps the sessions ([`CursorBook`]) and says where the cursor is on the output's
 //! frame ([`place`], pure).
 
-use casement_core::OutputKey;
+use crate::consent::{self, Held, Mortal, Pushed};
 use casement_core::geometry::{
     LogicalPoint, LogicalRect, LogicalSize, PhysicalSize, Transform, buffer_size, to_physical,
     turn_point, turn_size,
 };
+use casement_core::{ClientKey, OutputKey};
 use ds_core::geometry::scale::Scale;
+use smithay::utils::IsAlive;
 use smithay::wayland::image_copy_capture::{CursorSession, Frame};
 use std::collections::BTreeMap;
 
@@ -165,15 +167,62 @@ pub struct CursorHold {
     pub shown: Option<Vec<u8>>,
 }
 
+/// A cursor session that waits for the person's answer about the client's screen: nothing is
+/// told to it, not even where the pointer is, until they allow it (NEW-CAS-4).
+#[derive(Debug)]
+#[non_exhaustive]
+pub struct ParkedCursor {
+    /// The session.
+    pub session: CursorSession,
+    /// The output it watches.
+    pub output: OutputKey,
+}
+
+impl Mortal for ParkedCursor {
+    fn alive(&self) -> bool {
+        self.session.alive()
+    }
+}
+
 /// The cursor sessions held, and the frame requests that wait for the image to change.
 #[derive(Debug, Default)]
 pub struct CursorBook {
     held: BTreeMap<CursorSessionId, CursorHold>,
     waiting: BTreeMap<CursorSessionId, Frame>,
+    parked: Held<ParkedCursor>,
     next: u64,
 }
 
 impl CursorBook {
+    /// Keeps `session` for `client` until the answer about its screen comes out; a client with
+    /// too many waiting has it dropped (the client hears `stopped`).
+    pub fn park(&mut self, client: ClientKey, session: CursorSession, output: OutputKey) {
+        if let Pushed::Full(refused) = self.parked.push(client, ParkedCursor { session, output }) {
+            drop(refused);
+        }
+    }
+
+    /// The sessions `client` has waiting, oldest first.
+    pub fn take_parked(&mut self, client: ClientKey) -> Vec<ParkedCursor> {
+        self.parked.take(client)
+    }
+
+    /// Drops every session of `client`, held ones included: each tells its client `stopped`
+    /// (the power was refused or taken back).
+    pub fn stop_client(&mut self, client: ClientKey) {
+        let ended: Vec<CursorSessionId> = self
+            .held
+            .iter()
+            .filter(|(_, hold)| {
+                hold.session.client().as_ref().and_then(consent::key_of) == Some(client)
+            })
+            .map(|(id, _)| *id)
+            .collect();
+        for id in ended {
+            self.release(id);
+        }
+    }
+
     /// Keeps `session`, which watches `output`.
     pub fn hold(&mut self, session: CursorSession, output: OutputKey) -> CursorSessionId {
         let id = CursorSessionId(self.next);
