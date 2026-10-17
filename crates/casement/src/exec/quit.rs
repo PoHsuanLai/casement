@@ -16,27 +16,23 @@ use std::collections::BTreeSet;
 
 /// Signals the processes of `stop`'s connections.
 pub(super) fn terminate(state: &mut State, stop: Termination) {
-    let pids = pids_of(state, &stop);
     let signal = match stop.signal {
         StopSignal::Term => Signal::TERM,
         StopSignal::Kill => Signal::KILL,
     };
-    let sent = signal_all(&pids, getpid().as_raw_pid(), signal);
-    tracing::debug!(app = %stop.app.wire(), signal = ?stop.signal, sent, "an app was force quit");
-}
-
-/// The processes behind the connections of `stop`: those that came through the public socket,
-/// as recorded when they connected, except xwayland-satellite's (its one connection carries
-/// every X11 program's windows, so signalling it would end all of them and X11 for the
-/// session), plus the processes the X server names for the app's X11 windows when the model
-/// names some.
-fn pids_of(state: &State, stop: &Termination) -> BTreeSet<RawPid> {
+    let own = getpid().as_raw_pid();
     let satellite = state.xwayland.satellite_pid();
-    let wayland = state
+    // The connections' own processes through the handles held since they connected (CASB-20),
+    // then the X11 programs the X server names, by pid, minus those already reached.
+    let reached = state
         .processes
-        .of(&stop.clients)
-        .filter(|pid| Some(*pid) != satellite);
-    wayland.chain(x11_pids_of(state, stop, satellite)).collect()
+        .signal(&stop.clients, signal, own, satellite);
+    let x11: BTreeSet<RawPid> = x11_pids_of(state, &stop, satellite)
+        .difference(&reached)
+        .copied()
+        .collect();
+    let sent = reached.len() + signal_all(&x11, own, signal);
+    tracing::debug!(app = %stop.app.wire(), signal = ?stop.signal, sent, "an app was force quit");
 }
 
 /// The processes that own the X11 windows of `stop`'s app, when it has some and X11 is being

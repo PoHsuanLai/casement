@@ -7,17 +7,46 @@
 
 use casement_core::ClientKey;
 use casement_core::window::WindowOrigin;
-use rustix::process::RawPid;
-use std::collections::BTreeMap;
+use rustix::process::{
+    Pid, PidfdFlags, RawPid, Signal, kill_process, pidfd_open, pidfd_send_signal,
+};
+use std::collections::{BTreeMap, BTreeSet};
+use std::os::fd::OwnedFd;
 use std::os::unix::net::UnixStream;
 
+/// An app's process behind a connection: its pid, and a handle on that very process when one
+/// could be opened at accept (CASB-20). A signal sent through the handle can only reach the
+/// process the connection had; a signal by pid, minutes later, can reach whatever took the
+/// number after it exited.
+#[derive(Debug)]
+struct Held {
+    pid: RawPid,
+    handle: Option<OwnedFd>,
+}
+
 /// What is on the other end of a public connection.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug)]
 enum Peer {
     /// An app's own process.
-    App(RawPid),
+    App(Held),
     /// xwayland-satellite, whose one connection carries every X11 program's windows.
     Satellite,
+}
+
+/// A handle on the process `pid` behind `stream`, when it is the one the socket names now as well
+/// (a pid read from the socket and opened later could be another process that took the number).
+fn handle_of(stream: &UnixStream, pid: RawPid) -> Option<OwnedFd> {
+    let handle = pidfd_open(Pid::from_raw(pid)?, PidfdFlags::empty()).ok()?;
+    let again = rustix::net::sockopt::socket_peercred(stream).ok()?;
+    (again.pid.as_raw_pid() == pid).then_some(handle)
+}
+
+/// Sends `signal` to the process `held` names; whether it arrived.
+fn reach(held: &Held, signal: Signal) -> bool {
+    match &held.handle {
+        Some(handle) => pidfd_send_signal(handle, signal).is_ok(),
+        None => Pid::from_raw(held.pid).is_some_and(|pid| kill_process(pid, signal).is_ok()),
+    }
 }
 
 /// The process of each public connection still open.
@@ -35,7 +64,10 @@ impl Processes {
             .map(|peer| peer.pid.as_raw_pid())
             .map(|pid| match Some(pid) == satellite {
                 true => Peer::Satellite,
-                false => Peer::App(pid),
+                false => Peer::App(Held {
+                    pid,
+                    handle: handle_of(stream, pid),
+                }),
             });
         if let Some(peer) = peer {
             self.0.insert(client, peer);
@@ -52,9 +84,32 @@ impl Processes {
         clients
             .iter()
             .filter_map(|client| match self.0.get(client) {
-                Some(Peer::App(pid)) => Some(*pid),
+                Some(Peer::App(held)) => Some(held.pid),
                 Some(Peer::Satellite) | None => None,
             })
+    }
+
+    /// Sends `signal` to the processes of `clients`, except init, `own` and `spared` (the
+    /// satellite): through the handle held since the connection was accepted where there is one,
+    /// by pid otherwise. The pids reached.
+    pub fn signal(
+        &self,
+        clients: &[ClientKey],
+        signal: Signal,
+        own: RawPid,
+        spared: Option<RawPid>,
+    ) -> BTreeSet<RawPid> {
+        clients
+            .iter()
+            .filter_map(|client| match self.0.get(client) {
+                Some(Peer::App(held)) => Some(held),
+                Some(Peer::Satellite) | None => None,
+            })
+            .filter(|held| held.pid != own && Some(held.pid) != spared)
+            .filter(|held| Pid::from_raw(held.pid).is_some_and(|pid| !pid.is_init()))
+            .filter(|held| reach(held, signal))
+            .map(|held| held.pid)
+            .collect()
     }
 
     /// Where the toplevels of `client` come from: X11 when it is the connection
@@ -86,6 +141,43 @@ mod tests {
         );
         processes.forget(ClientKey(7));
         assert_eq!(processes.of(&[ClientKey(7)]).count(), 0);
+    }
+
+    /// CASB-20: the signal goes through the handle held since accept, so it reaches the process
+    /// the connection had; init, this process and the spared one are left alone.
+    #[test]
+    fn a_connections_process_is_signalled_through_its_handle_and_others_are_spared() {
+        use std::os::unix::process::ExitStatusExt;
+        let mut child = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .expect("sleep starts");
+        // The socket's peer credentials name this process, not the child: record the child's
+        // connection by hand, with a handle on it, as `record` would have.
+        let pid = RawPid::try_from(child.id()).expect("a pid fits");
+        let handle = pidfd_open(Pid::from_raw(pid).expect("a pid"), PidfdFlags::empty()).ok();
+        assert!(handle.is_some(), "a pidfd can be opened for a child");
+        let mut processes = Processes::default();
+        processes
+            .0
+            .insert(ClientKey(5), Peer::App(Held { pid, handle }));
+        let own = getpid().as_raw_pid();
+        let reached = processes.signal(&[ClientKey(5), ClientKey(6)], Signal::KILL, own, None);
+        assert_eq!(reached, BTreeSet::from([pid]));
+        assert_eq!(child.wait().expect("ends").signal(), Some(9));
+        // A spared pid is not signalled, nor a connection nothing is recorded for.
+        let mut kept = Processes::default();
+        kept.0.insert(
+            ClientKey(1),
+            Peer::App(Held {
+                pid: own,
+                handle: None,
+            }),
+        );
+        assert!(
+            kept.signal(&[ClientKey(1)], Signal::TERM, own, None)
+                .is_empty()
+        );
     }
 
     #[test]
