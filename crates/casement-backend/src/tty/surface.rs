@@ -73,7 +73,8 @@ impl Presented {
     }
 }
 
-/// One output's scanout. Real: `surface_real.rs` over the device crates' compositor; fake:
+/// One output's scanout. Real: `surface_real.rs` over the device crates' compositor with a GPU, or
+/// `soft_real.rs` over dumb buffers and pixman when no GPU is used (`render_mode.rs`); fake:
 /// `casement_testkit::fakes::FakeScanout`.
 pub trait ScanoutSurface: std::fmt::Debug {
     /// Queues `frame` for the next vblank.

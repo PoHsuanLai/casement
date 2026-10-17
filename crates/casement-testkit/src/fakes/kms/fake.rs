@@ -1,16 +1,17 @@
 //! `FakeKms`: `Kms` over a shared world a test scripts.
 
-use super::super::scanout::{FakeScanout, GlassHandle};
+use super::super::scanout::GlassHandle;
 use super::capture_gpu::FakeCaptureGpu;
+use super::maker::FakeMaker;
 use super::topology::SyntheticTopology;
 use casement_backend::headless::ConnectorEvent;
 use casement_backend::tty::{
-    CaptureGpu, CommitVerdict, ConnectorFacts, ConnectorId, ConnectorStatus, DevicePath, Kms,
-    KmsCommit, KmsError, KmsOpener, KmsRefusal, KmsResources, Lit, ScanoutSurface, judge,
-    output_facts,
+    CaptureGpu, CommitVerdict, ConnectorFacts, ConnectorId, ConnectorStatus, DevicePath, Drawing,
+    Kms, KmsCommit, KmsError, KmsOpener, KmsRefusal, KmsResources, Lit, RenderMode, Routes,
+    ScanoutSurface, judge, output_facts,
 };
 use casement_core::output::{GammaRamp, Mode, OutputConfig, OutputPower};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 /// How a monitor's link behaves after a commit.
@@ -52,6 +53,14 @@ pub struct KmsWorld {
     pub resumes: u32,
     /// The renderer it lends to draw captures (none: it lends nothing).
     pub capture_gpu: Option<FakeCaptureGpu>,
+    /// Which way each output is drawn: the GPU, or the CPU alone (`--safe`).
+    pub routes: Routes,
+    /// The connectors whose GPU surface the device cannot make.
+    pub gpu_refuses: BTreeSet<ConnectorId>,
+    /// How many times a GPU surface was asked for.
+    pub gpu_asked: u32,
+    /// What drew the surface last handed out for each connector.
+    pub drawn: BTreeMap<ConnectorId, Drawing>,
 }
 
 /// A fake display device.
@@ -77,6 +86,28 @@ impl FakeKms {
         let kms = FakeKms::with(topology.resources());
         kms.world().link = topology.link();
         kms
+    }
+
+    /// The same device drawing as `mode` says: [`RenderMode::Software`] asks the GPU for nothing.
+    #[must_use]
+    pub fn drawing(self, mode: RenderMode) -> FakeKms {
+        self.world().routes = Routes::new(mode);
+        self
+    }
+
+    /// The device cannot make a GPU surface for `connector`.
+    pub fn refuse_gpu_on(&self, connector: ConnectorId) {
+        self.world().gpu_refuses.insert(connector);
+    }
+
+    /// How many times a GPU surface was asked for.
+    pub fn gpu_asked(&self) -> u32 {
+        self.world().gpu_asked
+    }
+
+    /// What drew the surface last handed out for `connector`.
+    pub fn drawn_by(&self, connector: ConnectorId) -> Option<Drawing> {
+        self.world().drawn.get(&connector).copied()
     }
 
     /// The world, locked.
@@ -239,14 +270,19 @@ impl Kms for FakeKms {
         connector: ConnectorId,
         config: &OutputConfig,
     ) -> Result<Box<dyn ScanoutSurface>, KmsError> {
-        let _ = config;
-        let mut world = self.world();
+        let mut guard = self.world();
+        let world = &mut *guard;
         if !world.lit.contains_key(&connector) {
             return Err(KmsError::UnknownConnector(connector));
         }
-        let glass = GlassHandle::new(FakeScanout::following());
-        world.glass.insert(connector, glass.clone());
-        Ok(Box::new(glass))
+        let mut maker = FakeMaker {
+            refuses: &world.gpu_refuses,
+            asked: &mut world.gpu_asked,
+            glass: &mut world.glass,
+        };
+        let opened = world.routes.open(&mut maker, connector, config)?;
+        world.drawn.insert(connector, opened.drawing);
+        Ok(opened.surface)
     }
 
     fn capture_gpu(&self) -> Option<Box<dyn CaptureGpu>> {

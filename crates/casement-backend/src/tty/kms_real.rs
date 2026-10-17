@@ -11,6 +11,11 @@
 //! for a connector whose surface is out (re-applied after a VT switch) changes nothing: the
 //! compositor that owns the surface keeps its mode, and a new mode is a new surface (the
 //! backend drops the old one first).
+//!
+//! An output is drawn by the GPU (GLES, `surface_real.rs`) or by the CPU (pixman over dumb
+//! buffers, `soft_real.rs`); [`Routes`] chooses (`render_mode.rs`, CASB-07) and
+//! `kms_real/makers.rs` makes the surface. A device opened for software drawing opens no GBM
+//! device at all.
 
 use super::capture_gpu::CaptureGpu;
 use super::capture_gpu_real::RealCaptureGpu;
@@ -24,8 +29,10 @@ use super::kms::{
     VrrState,
 };
 use super::render_hub_real::RenderHub;
+use super::render_mode::{RenderMode, Routes};
+use super::soft_real::SharedPixman;
 use super::surface::ScanoutSurface;
-use super::surface_real::{DeviceShare, Feed, Flips, RealScanout};
+use super::surface_real::{Feed, Flips};
 use super::udev::DevicePath;
 use crate::headless::ConnectorEvent;
 use casement_core::OutputName;
@@ -50,6 +57,10 @@ use std::io;
 use std::os::fd::OwnedFd;
 use std::rc::{Rc, Weak};
 
+mod makers;
+
+use makers::Makers;
+
 /// Where a device's file descriptor comes from: the seat session (logind or seatd), which alone
 /// may open a DRM node without root. `session_real.rs` provides the implementation.
 pub trait FdSource: std::fmt::Debug {
@@ -61,7 +72,15 @@ pub trait FdSource: std::fmt::Debug {
 #[derive(Debug)]
 pub struct RealKms {
     device: DrmDevice,
-    gbm: GbmDevice<DrmDeviceFd>,
+    /// The device's descriptor, which the software surfaces allocate dumb buffers on.
+    fd: DrmDeviceFd,
+    /// The GBM device GLES surfaces allocate on; none in software mode, and none when it could
+    /// not be opened (every output is then drawn by the CPU).
+    gbm: Option<GbmDevice<DrmDeviceFd>>,
+    /// Which way each output is drawn.
+    routes: Routes,
+    /// The CPU's renderer, made for the first software surface and shared by the rest.
+    pixman: Option<SharedPixman>,
     flips: Rc<RefCell<Flips>>,
     /// The device's renderer, made for the first scanout and shared by the rest.
     renderer: Option<Rc<RefCell<GlesRenderer>>>,
@@ -97,6 +116,20 @@ fn io_error(error: impl std::error::Error + Send + Sync + 'static) -> KmsError {
     KmsError::Io(io::Error::other(error))
 }
 
+fn io_error_text(text: &str) -> KmsError {
+    KmsError::Io(io::Error::other(text.to_owned()))
+}
+
+/// The GBM device on `fd`; none (said in the log) when it cannot be opened, and every output of
+/// the device is then drawn by the CPU.
+fn open_gbm(fd: &DrmDeviceFd) -> Option<GbmDevice<DrmDeviceFd>> {
+    GbmDevice::new(fd.clone())
+        .inspect_err(|error| {
+            tracing::warn!(%error, "no GBM device on the display device; its outputs are drawn by the CPU");
+        })
+        .ok()
+}
+
 impl RealKms {
     /// Wraps the device behind `fd`: reads its resources, takes master, and has `handle`'s loop
     /// read the device's vblank events.
@@ -104,20 +137,26 @@ impl RealKms {
         fd: OwnedFd,
         handle: &LoopHandle<'static, D>,
     ) -> Result<RealKms, KmsError> {
-        RealKms::open_routed(fd, handle, None)
+        RealKms::open_routed(fd, handle, None, RenderMode::Gpu)
     }
 
     /// The same, with the render GPU's hub: the device draws as the plan's route for its GPU
-    /// says (a frame drawn on the render GPU and copied across when another GPU renders).
+    /// says (a frame drawn on the render GPU and copied across when another GPU renders). In
+    /// [`RenderMode::Software`] no GBM device is opened and the hub is never asked for a
+    /// renderer.
     pub fn open_routed<D: 'static>(
         fd: OwnedFd,
         handle: &LoopHandle<'static, D>,
         hub: Option<Rc<RenderHub>>,
+        mode: RenderMode,
     ) -> Result<RealKms, KmsError> {
         let node = render_node_of(&fd);
         let fd = DrmDeviceFd::new(DeviceFd::from(fd));
         let (device, notifier) = DrmDevice::new(fd.clone(), false).map_err(io_error)?;
-        let gbm = GbmDevice::new(fd)?;
+        let gbm = match mode {
+            RenderMode::Software => None,
+            RenderMode::Gpu => open_gbm(&fd),
+        };
         let flips = Rc::new(RefCell::new(Flips::default()));
         let into = Rc::clone(&flips);
         handle
@@ -132,7 +171,10 @@ impl RealKms {
         let known = reconcile(&KnownConnectors::default(), &last).0;
         Ok(RealKms {
             device,
+            fd,
             gbm,
+            routes: Routes::new(mode),
+            pixman: None,
             flips,
             renderer: None,
             scenes: Rc::default(),
@@ -153,6 +195,13 @@ impl RealKms {
         self.hub.as_ref()?.route_of_device(self.node?)
     }
 
+    /// The GBM device GLES surfaces allocate on.
+    fn gbm(&self) -> Result<&GbmDevice<DrmDeviceFd>, KmsError> {
+        self.gbm
+            .as_ref()
+            .ok_or_else(|| io_error_text("this device has no GBM device"))
+    }
+
     /// The device's GLES renderer, made on first use. The render GPU's device shares the
     /// hub's renderer (the one every copy route draws with); any other makes its own.
     fn renderer(&mut self) -> Result<Rc<RefCell<GlesRenderer>>, KmsError> {
@@ -160,9 +209,9 @@ impl RealKms {
             return Ok(Rc::clone(renderer));
         }
         let shared = match (&self.hub, self.route()) {
-            (Some(hub), Some(OutputRoute::Direct { .. })) => hub.renderer(Some(&self.gbm))?,
+            (Some(hub), Some(OutputRoute::Direct { .. })) => hub.renderer(Some(self.gbm()?))?,
             _ => {
-                let renderer = casement_render::gles_on(self.gbm.clone())
+                let renderer = casement_render::gles_on(self.gbm()?.clone())
                     .map_err(|error| KmsError::Io(io::Error::other(error.to_string())))?;
                 Rc::new(RefCell::new(renderer))
             }
@@ -344,26 +393,12 @@ impl Kms for RealKms {
         connector: ConnectorId,
         config: &OutputConfig,
     ) -> Result<Box<dyn ScanoutSurface>, KmsError> {
-        let surface = self
-            .surfaces
-            .remove(&connector)
-            .ok_or(KmsError::UnknownConnector(connector))?;
-        let feed = self.feed()?;
-        let claim = Rc::new(());
-        self.out.insert(connector, Rc::downgrade(&claim));
-        let scanout = RealScanout::open(
-            connector,
-            surface,
-            DeviceShare {
-                gbm: &self.gbm,
-                feed,
-                cursor: self.device.cursor_size(),
-                flips: Rc::clone(&self.flips),
-            },
-            claim,
-            config,
-        )?;
-        Ok(Box::new(scanout))
+        let mut routes = std::mem::take(&mut self.routes);
+        let opened = routes.open(&mut Makers { kms: self }, connector, config);
+        self.routes = routes;
+        let opened = opened?;
+        tracing::debug!(?connector, drawing = ?opened.drawing, "a scanout surface was made");
+        Ok(opened.surface)
     }
 
     fn pause(&mut self) {
@@ -538,6 +573,7 @@ pub struct RealKmsOpener<D: 'static> {
     handle: LoopHandle<'static, D>,
     virtual_displays: VirtualDisplays,
     hub: Option<Rc<RenderHub>>,
+    mode: RenderMode,
 }
 
 /// Whether a virtual test display (a device whose DRM driver is vkms) may be opened.
@@ -558,7 +594,15 @@ impl<D: 'static> RealKmsOpener<D> {
             handle,
             virtual_displays: VirtualDisplays::Allow,
             hub: None,
+            mode: RenderMode::Gpu,
         }
+    }
+
+    /// The same, drawing every output as `mode` says: [`RenderMode::Software`] opens no GBM
+    /// device and no GPU renderer on any device (`--safe`).
+    #[must_use]
+    pub fn drawing(self, mode: RenderMode) -> RealKmsOpener<D> {
+        RealKmsOpener { mode, ..self }
     }
 
     /// The same, drawing as the plan behind `hub` says (the render GPU renders every output).
@@ -598,6 +642,7 @@ impl<D: 'static> KmsOpener for RealKmsOpener<D> {
             fd,
             &self.handle,
             self.hub.clone(),
+            self.mode,
         )?))
     }
 }

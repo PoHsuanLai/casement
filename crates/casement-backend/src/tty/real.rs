@@ -4,8 +4,10 @@
 
 use super::SysDeviceKinds;
 use super::TtySeams;
+use super::direct::NoGpus;
 use super::kms_real::RealKmsOpener;
 use super::render_hub_real::RenderHub;
+use super::render_mode::RenderMode;
 use super::session_real::RealSession;
 use super::udev_real::RealUdev;
 use crate::backend::BackendError;
@@ -18,11 +20,17 @@ use smithay::backend::session::libseat::LibSeatSession;
 use smithay::reexports::calloop::LoopHandle;
 
 /// The seams of the machine casement runs on, with `root` as its `/sys` and `/dev`, `choice` as
-/// the `gpu.render` setting, and `handle`'s loop reading the seat, the udev monitor, the display
-/// devices and the input devices.
+/// the `gpu.render` setting, `mode` as how outputs are drawn, and `handle`'s loop reading the
+/// seat, the udev monitor, the display devices and the input devices.
+///
+/// In [`RenderMode::Software`] (`--safe`) the GPUs are not enumerated, no render plan is made,
+/// no format source is given (the formats would be read through a GBM device and an EGL
+/// display), and the display devices open no GBM device: nothing in the session loads a GPU
+/// driver's userspace.
 pub fn real_seams<D: 'static>(
     root: SysRoot,
     choice: GpuChoice,
+    mode: RenderMode,
     handle: &LoopHandle<'static, D>,
 ) -> Result<TtySeams, BackendError> {
     let session = RealSession::open(handle)?;
@@ -31,10 +39,33 @@ pub fn real_seams<D: 'static>(
     let udev = RealUdev::watch(&seat, handle)
         .map_err(|error| SessionFault::Unavailable(format!("udev: {error}")))?;
     let fds = session.fds();
-    let formats = RealFormats::new(root.clone());
     let kinds = SysDeviceKinds::new(root.clone());
+    let opener = RealKmsOpener::new(Box::new(fds), handle.clone())
+        .refusing_virtual()
+        .drawing(mode);
+    let seams = match mode {
+        RenderMode::Gpu => on_gpus(Box::new(session), Box::new(udev), opener, root, choice),
+        RenderMode::Software => on_cpu(Box::new(session), Box::new(udev), opener, choice),
+    };
+    with_input(
+        seams.with_kinds(Box::new(kinds)),
+        &seat,
+        input_session,
+        handle,
+    )
+}
+
+/// The seams of a session drawn by the GPUs: the render plan (when the GPUs were found) routes
+/// each output, and the formats each GPU draws into are offered to clients.
+fn on_gpus<D: 'static>(
+    session: Box<RealSession>,
+    udev: Box<RealUdev>,
+    opener: RealKmsOpener<D>,
+    root: SysRoot,
+    choice: GpuChoice,
+) -> TtySeams {
+    let formats = RealFormats::new(root.clone());
     let nodes = SysRenderNodes::new(root.clone());
-    let opener = RealKmsOpener::new(Box::new(fds), handle.clone()).refusing_virtual();
     let opener = match plan_for(&nodes.nodes(), &choice) {
         Ok(plan) => {
             tracing::info!(render = ?plan.render, routes = ?plan.routes(), "the render GPU and each output's route");
@@ -45,16 +76,20 @@ pub fn real_seams<D: 'static>(
             opener
         }
     };
-    let seams = TtySeams::new(
-        Box::new(session),
-        Box::new(udev),
-        Box::new(opener),
-        Box::new(nodes),
-        choice,
-    )
-    .with_formats(Box::new(formats))
-    .with_kinds(Box::new(kinds));
-    with_input(seams, &seat, input_session, handle)
+    TtySeams::new(session, udev, Box::new(opener), Box::new(nodes), choice)
+        .with_formats(Box::new(formats))
+}
+
+/// The seams of a session drawn by the CPU: no GPU is enumerated, so there is no plan and clients
+/// are offered shared memory only.
+fn on_cpu<D: 'static>(
+    session: Box<RealSession>,
+    udev: Box<RealUdev>,
+    opener: RealKmsOpener<D>,
+    choice: GpuChoice,
+) -> TtySeams {
+    tracing::warn!("safe mode: every output is drawn by the CPU; no GPU driver is loaded");
+    TtySeams::new(session, udev, Box::new(opener), Box::new(NoGpus), choice)
 }
 
 /// The seat's input devices, opened through its session.

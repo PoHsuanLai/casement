@@ -9,3 +9,4 @@ mod kms;
 mod recovery;
 mod scanout;
 mod session;
+mod software;

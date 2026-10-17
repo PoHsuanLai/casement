@@ -9,9 +9,9 @@
 //! ```
 //!
 //! `--outputs` takes `casement_backend::VirtualOutputSpec`'s grammar, several separated by `;`
-//! or given as several flags. `--safe` is pixman, no effects, one output (the session's crash
-//! guard). The defaults are the headless backend, the wall clock, pixman, no dma-buf and one
-//! 1920x1080 output at scale 1.
+//! or given as several flags. `--safe` is pixman (on a seat: pixman into dumb buffers, no GPU
+//! opened), no effects, one output (the session's crash guard). The defaults are the headless
+//! backend, the wall clock, pixman, no dma-buf and one 1920x1080 output at scale 1.
 //!
 //! `--drm-node`, `--kms-report` and `--writeback-raw` are the test mode of `dev/vkms/accept.sh`
 //! ([`TtyMode::Direct`]): they need `--backend tty` and each other (the last two need
@@ -131,7 +131,8 @@ pub enum StartMode {
     Normal,
     /// `--safe`: the settings file ignored (defaults, the render GPU chosen automatically), no
     /// effects (materials opaque, the plainest minimise), no X11 apps, no icons, one display;
-    /// on the headless backend also the pixman renderer.
+    /// on the headless backend also the pixman renderer, and on a seat every output is drawn by
+    /// the CPU into dumb buffers with no GPU driver loaded (CASB-07).
     Safe,
 }
 

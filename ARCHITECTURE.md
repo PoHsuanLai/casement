@@ -417,7 +417,7 @@ P1-Z adds these seams. Every one has a thin real implementation and a fake expor
 a `#[derive(Debug)]` struct.
 
 ```rust
-// casement-backend::tty (real: kms_real.rs, surface_real.rs, session_real.rs, udev_real.rs under
+// casement-backend::tty (real: kms_real.rs, surface_real.rs, soft_real.rs, session_real.rs, udev_real.rs under
 // feature `tty`; fakes: FakeKms, FakeScanout, FakeSession, FakeUdev)
 pub trait Kms: Debug {
     fn resources(&self) -> KmsResources;
@@ -432,6 +432,12 @@ pub trait Kms: Debug {
     fn resume(&mut self) -> Result<(), KmsError>;
 }
 pub trait KmsOpener: Debug { fn open(&mut self, path: &DevicePath) -> Result<Box<dyn Kms>, KmsError>; }
+// CASB-07: what draws an output. `RenderMode::{Gpu, Software}` is how the session draws (`--safe` is `Software`:
+// pixman into dumb buffers, no GBM, EGL or GLES is ever opened, no render plan, no dma-buf offer, no hardware cursor).
+// `Routes::open` is the one selection over `ScanoutMaker { gpu, software }`: Software and an output whose GPU surface
+// failed before get `software` (soft_real.rs, `DrmCompositor` over `DumbAllocator` + `PixmanRenderer`); otherwise `gpu`
+// (surface_real.rs), and a failure falls back to `software` for that output alone, said once in the log. The flip
+// count both real surfaces share is the pure `Pace`. Fakes: `FakeKms::drawing(mode)` runs `Routes` over a fake maker.
 pub trait ScanoutSurface: Debug {
     fn queue(&mut self, frame: QueuedFrame) -> QueueOutcome;
     fn presented(&mut self, now: Mono) -> Option<Presented>;

@@ -8,6 +8,7 @@ use super::TtySeams;
 use super::direct::{DirectSession, FixedNode, NoGpus, require_vkms};
 use super::kms::KmsError;
 use super::kms_real::{FdSource, RealKmsOpener};
+use super::render_mode::RenderMode;
 use super::udev::DevicePath;
 use super::writeback::WritebackMode;
 use super::writeback_real::RealWriteback;
@@ -52,11 +53,13 @@ fn device_on(fd: &OwnedFd) -> io::Result<DrmDeviceFd> {
 
 /// The seams of `--drm-node node`: the node opened directly and checked to be vkms, a session
 /// that moves only on the edge's word, the node as the one display device, no GPUs and no
-/// input; with the writeback connector when `writeback` asks. `handle`'s loop is woken whenever
+/// input; with the writeback connector when `writeback` asks. `mode` says how the node's outputs
+/// are drawn (`--safe`: by the CPU, with no GBM device opened). `handle`'s loop is woken whenever
 /// the edge sends a note.
 pub fn direct_seams<D: 'static>(
     node: &Path,
     writeback: WritebackMode,
+    mode: RenderMode,
     handle: &LoopHandle<'static, D>,
 ) -> Result<TtySeams, BackendError> {
     let unavailable = |why: String| SessionFault::Unavailable(why);
@@ -95,7 +98,7 @@ pub fn direct_seams<D: 'static>(
     let seams = TtySeams::new(
         Box::new(DirectSession::new(move || ping.ping())),
         Box::new(FixedNode::new(path)),
-        Box::new(RealKmsOpener::new(Box::new(fds), handle.clone())),
+        Box::new(RealKmsOpener::new(Box::new(fds), handle.clone()).drawing(mode)),
         Box::new(NoGpus),
         GpuChoice::Auto,
     );

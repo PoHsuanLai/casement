@@ -12,6 +12,9 @@
 //!   seat and hotplug; [`TtyBackend::poll_input`] reads the seat's input devices;
 //!   [`TtyBackend::dmabuf_feedback`] is what clients are offered; a suspend arrives through a
 //!   [`SleepLink`].
+//! * [`RenderMode`] says what draws the outputs: the GPU (GLES, with the CPU as the fallback for
+//!   an output whose GPU surface fails) or the CPU alone (`--safe`: pixman into dumb buffers, no
+//!   GBM or EGL opened); [`Routes`] chooses per output (`render_mode.rs`).
 //! * The pure scheduler maths and GPU plan are in `casement_core::{frame, gpu}`.
 //!
 //! The adapters are the only files that name the device crates (row B7).
@@ -30,7 +33,9 @@ mod kms;
 mod lit;
 mod master;
 mod offer;
+mod pace;
 mod readback;
+mod render_mode;
 mod report;
 mod scanouts;
 mod session;
@@ -57,6 +62,8 @@ mod real;
 mod render_hub_real;
 #[cfg(feature = "tty")]
 mod session_real;
+#[cfg(feature = "tty")]
+mod soft_real;
 #[cfg(feature = "tty")]
 mod surface_real;
 #[cfg(feature = "tty")]
@@ -88,7 +95,9 @@ pub use kms::{
 pub use lit::{Lighting, LitOutput};
 pub use master::{Master, MasterWatch, RETRY_EVERY};
 pub use offer::scanout_formats;
+pub use pace::{Pace, Turn};
 pub use readback::{Readback, Residence, Watch};
+pub use render_mode::{Drawing, Opened, RenderMode, Routes, ScanoutMaker};
 pub use report::{Due, KmsReport, REPORT_EVERY, ReportPacer, ReportedOutput};
 pub use scanouts::{Flow, FrameTally, PresentOutcome, Scanout, ScanoutSet};
 pub use session::{SeatCauses, SeatSource, SeatState, SessionNote, TtySession};
@@ -112,6 +121,8 @@ pub use real::real_seams;
 pub use render_hub_real::RenderHub;
 #[cfg(feature = "tty")]
 pub use session_real::RealSession;
+#[cfg(feature = "tty")]
+pub use soft_real::SoftScanout;
 #[cfg(feature = "tty")]
 pub use surface_real::RealScanout;
 #[cfg(feature = "tty")]

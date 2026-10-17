@@ -5,7 +5,7 @@ use crate::config::{self, CasementDoc, ConfigError};
 use crate::seams::Seams;
 use crate::time::ClockSource;
 use crate::xwayland::XwaylandState;
-use casement_backend::tty::TtySeams;
+use casement_backend::tty::{RenderMode, TtySeams};
 use casement_backend::{
     BackendChoice, BackendError, BackendKind, DmabufMode, HeadlessBackend, HeadlessConfig,
     TtyBackend, WinitBackend,
@@ -325,6 +325,7 @@ impl State {
                     event_loop,
                     &settings.gpu.render,
                     &config.tty,
+                    render_mode_of(config.mode),
                 )?;
                 let mut tty = TtyBackend::start(seams)?;
                 offer_dmabuf(&mut wl.dmabuf, &dh, &mut tty)?;
@@ -444,17 +445,27 @@ fn offer_dmabuf(
     Ok(())
 }
 
+/// How a run in `mode` draws on a seat: `--safe` survives a broken GPU driver, so it draws every
+/// output with the CPU and opens no GPU at all (CASB-07); a normal run uses the GPU.
+fn render_mode_of(mode: StartMode) -> RenderMode {
+    match mode {
+        StartMode::Normal => RenderMode::Gpu,
+        StartMode::Safe => RenderMode::Software,
+    }
+}
+
 /// The seams the tty backend starts over: the injected ones (a test), else the machine's own.
 fn tty_seams(
     injected: Option<TtySeams>,
     handle: &LoopHandle<'static, State>,
     render: &GpuChoice,
     mode: &TtyMode,
+    drawing: RenderMode,
 ) -> Result<TtySeams, StartError> {
     match (injected, mode) {
         (Some(seams), _) => Ok(seams),
-        (None, TtyMode::Direct(direct)) => direct_tty_seams(handle, direct),
-        (None, _) => real_tty_seams(handle, render),
+        (None, TtyMode::Direct(direct)) => direct_tty_seams(handle, direct, drawing),
+        (None, _) => real_tty_seams(handle, render, drawing),
     }
 }
 
@@ -463,6 +474,7 @@ fn tty_seams(
 fn direct_tty_seams(
     handle: &LoopHandle<'static, State>,
     direct: &DirectTty,
+    drawing: RenderMode,
 ) -> Result<TtySeams, StartError> {
     let writeback = match direct.writeback_raw {
         Some(_) => casement_backend::tty::WritebackMode::Enabled,
@@ -471,6 +483,7 @@ fn direct_tty_seams(
     Ok(casement_backend::tty::direct_seams(
         &direct.node,
         writeback,
+        drawing,
         handle,
     )?)
 }
@@ -480,8 +493,9 @@ fn direct_tty_seams(
 fn direct_tty_seams(
     handle: &LoopHandle<'static, State>,
     direct: &DirectTty,
+    drawing: RenderMode,
 ) -> Result<TtySeams, StartError> {
-    let _ = (handle, direct);
+    let _ = (handle, direct, drawing);
     Err(StartError::NotYet(
         "this build has no tty backend (feature `tty`)",
     ))
@@ -492,11 +506,13 @@ fn direct_tty_seams(
 fn real_tty_seams(
     handle: &LoopHandle<'static, State>,
     render: &GpuChoice,
+    drawing: RenderMode,
 ) -> Result<TtySeams, StartError> {
     let root = casement_backend::gpu::SysRoot::host();
     Ok(casement_backend::tty::real_seams(
         root,
         render.clone(),
+        drawing,
         handle,
     )?)
 }
@@ -506,8 +522,9 @@ fn real_tty_seams(
 fn real_tty_seams(
     handle: &LoopHandle<'static, State>,
     render: &GpuChoice,
+    drawing: RenderMode,
 ) -> Result<TtySeams, StartError> {
-    let _ = (handle, render);
+    let _ = (handle, render, drawing);
     Err(StartError::NotYet(
         "this build has no tty backend (feature `tty`)",
     ))
@@ -517,6 +534,12 @@ fn real_tty_seams(
 mod tests {
     use super::*;
     use casement_core::settings::MinimiseEffect;
+
+    #[test]
+    fn a_safe_run_draws_with_the_cpu_and_a_normal_run_with_the_gpu() {
+        assert_eq!(render_mode_of(StartMode::Safe), RenderMode::Software);
+        assert_eq!(render_mode_of(StartMode::Normal), RenderMode::Gpu);
+    }
 
     #[test]
     fn a_safe_run_minimises_the_plainest_way_and_a_normal_run_keeps_the_settings() {

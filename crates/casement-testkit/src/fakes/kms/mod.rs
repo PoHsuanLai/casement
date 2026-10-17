@@ -10,6 +10,7 @@
 
 mod capture_gpu;
 mod fake;
+mod maker;
 mod topology;
 
 pub use capture_gpu::{CaptureGpuWorld, FakeCaptureGpu, GpuBehaviour, SceneBehaviour};

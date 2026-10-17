@@ -5125,9 +5125,7 @@ One commit per root cause on branch `pa3-cas`; nothing here was compiled or run 
 - **NEW-CAS-3, `moved()` at first use.** `PinnedImage::moved` repeats the probe (a stat of `/proc/<pid>/exe`'s target) on the loop. An ask to
   peephole: `Prober::image_path(&Pinned) -> Result<Exe, ProbeError>` that reads only the `/proc/<pid>/exe` link (no stat of the target) for
   the comparison.
-- **CASB-07 (software renderer for `--safe`).** Not contained: the tty scanout path is GLES only (`surface_real.rs`, `bridge_real.rs`), and a
-  pixman scanout needs dumb-buffer allocation and page flips for it. Plan: a `PixmanScanout: ScanoutSurface` over `drm` dumb buffers in
-  `casement-backend/src/tty/`, chosen when `StartMode::Safe` or a render failure; the soft renderer already exists for the headless backend.
+- **CASB-07 (software renderer for `--safe`).** Built: see "fc1-safe-scanout" below.
 - **CASB-25** (`keymap::live::load_bindings` is synchronous, bounded by keycap-client's 2 s), **CASB-26** (`test_mode` is compiled in: gating
   it by a feature needs the desktop's vkms scripts to build with it), **CASB-28** (no vkms fault-injection gate for the real adapters): lane
   deferrals; no owner decision needed, work not done.
@@ -5145,3 +5143,53 @@ One commit per root cause on branch `pa3-cas`; nothing here was compiled or run 
   thread. Drag and drop uses the same offer path (`dnd_requested` only starts the grab). When XWayland or a server-side clipboard lands,
   its `send_selection` must go through a per-client limiter (a small typed cap, about 4 open writes, the write timeout); add it with that
   change.
+
+## fc1-safe-scanout: `--safe` draws with the CPU alone on a seat (CASB-07; 2026-10-17)
+
+Owner decision 2026-10-17: build it. `casement --safe` on a seat opens no GBM device, no EGL display and no GLES context, so a GPU
+driver that crashes does not take the safe session with it. Nothing was compiled or run by the lane (it may not build).
+
+- **Built.** `RenderMode::{Gpu, Software}` (`tty/render_mode.rs`, pure) says how a session draws; `Routes` holds it with the set of
+  connectors whose GPU surface failed, and `Routes::open(maker, connector, config)` is the one selection: `Software` and a connector that
+  failed before go to the CPU; otherwise GLES is tried first and, if the driver cannot make the surface, the CPU draws that output (a
+  `warn` line, once per output; the other outputs keep the GPU). An output that failed is not asked again for the rest of the run: a
+  driver that refused once is not retried at every mode change or VT switch. `ScanoutMaker` is the two-method seam (`gpu`, `software`);
+  `Opened { surface, drawing }`, `Drawing::{Gpu, Pixman}` say what came out. `casement/src/state.rs::render_mode_of` maps
+  `StartMode::Safe` to `Software` and is passed through `tty_seams` to `real_seams(root, choice, mode, handle)` and
+  `direct_seams(node, writeback, mode, handle)` (so `--safe --drm-node` also draws on the CPU).
+- **The software surface** (`tty/soft_real.rs`, `SoftScanout`, feature `tty`): smithay's own `DrmCompositor<DumbAllocator, DrmDeviceFd,
+  (), DrmDeviceFd>` driven with a shared `PixmanRenderer` (`source.pixman(..)`, the same elements the headless backend and the capture
+  shadow already draw). The swapchain is two or three `XRGB8888` dumb buffers (`create_dumb_buffer` through `DumbAllocator`), each with a
+  framebuffer added on the device descriptor (`ExportFramebuffer<DumbBuffer> for DrmDeviceFd`); pixman reaches them through their prime
+  mapping (`Bind<Dmabuf> for PixmanRenderer`). The compositor does the damage, the buffer ages and the flip (atomic where the device does
+  atomic, legacy otherwise), so a frame is queued, reported presented, blanked and reset exactly as on the GLES surface. It differs from
+  the plan in this file (a hand-written `PixmanScanout` over `map_dumb_buffer`, as the writeback adapter does): the compositor already
+  supports a dumb allocator and pixman, so no flip code is written twice. The flip bookkeeping both surfaces share is the pure `Pace`
+  (`tty/pace.rs`: one flip in flight, the vblank each frame is for); `surface_real.rs` now uses it instead of its two fields.
+- **No GPU userspace in safe mode.** `RealKmsOpener::drawing(Software)` makes `RealKms::open_routed` skip `GbmDevice::new`;
+  `real_seams` in `Software` mode gives `NoGpus` (no enumeration, no render plan), no `RealFormats` (its probe opens GBM and EGL), no
+  `RenderHub`, so no dma-buf is offered and clients use shared memory; `RealKms::capture_gpu` is none, so captures take the pixman shadow
+  they already use when a device lends no renderer. In `Gpu` mode a GBM device that cannot be opened is logged and left `None`, which
+  makes that device's outputs fall back to the CPU through the same `Routes` (before, the whole device failed to open). The kernel
+  ioctls (`DrmDevice::new`, resources, dumb buffers, framebuffers, flips) are the only things `--safe` asks of the driver.
+- **Cursor and planes.** No hardware cursor in software mode: the compositor is given no GBM device (`gbm: None` disables its cursor
+  plane) and `FrameFlags::empty()` leaves cursor, overlay and primary-plane scanout out, so the pointer is composited into the frame.
+  Direct scanout of client buffers is off for the same reason (a safe session offers no dma-buf). The Gpu-mode fallback has the same
+  limits for the output it covers (its dma-buf clients, if the GPU was working for other outputs, are not offered a tranche for it).
+- **Tests (all over fakes, in the `it` binary).** `tests/it/tty/software.rs`: a safe session builds only pixman surfaces and the GPU is
+  never asked; a Gpu session asks once per output; a refusing GPU on one connector leaves the other two on the GPU, and re-lighting
+  the failed one at another mode does not ask the GPU again; both modes flip and report presentation the same way over `FakeKms`
+  (`FakeKms::drawing(mode)`, `refuse_gpu_on`, `gpu_asked`, `drawn_by`; the fake maker is `fakes/kms/maker.rs`); `Pace` in flight, landed
+  and lost. `state.rs`: `render_mode_of`. No existing test was redundant.
+- **Boundary script.** `scripts/check-boundary.sh` B7 allow-list gained `soft_real.rs` and `kms_real/makers.rs` (a child module of
+  `kms_real.rs`, so it can read the device's private state).
+- **Only a real run proves.** `casement --safe --backend tty` on a VT with the GPU driver blacklisted shows the desktop. The likeliest first
+  failures: that `DrmDeviceFd::buffer_to_prime_fd` on a dumb buffer and `PixmanRenderer`'s
+  mmap of it work on the target driver (every driver with prime and a mappable dumb buffer; `simpledrm`/`efifb`-class devices are the
+  least certain); that `DrmCompositor::new` finds a primary-plane format in `[Xrgb8888, Argb8888]` the dumb allocator accepts (linear
+  only); the frame rate pixman reaches at the panel's native size (software: it is not meant to be smooth, only to show the desktop);
+  that a surface re-lit after a failed GLES attempt (`kms_real/makers.rs::surface_for`) is accepted by the device.
+- **Not covered.** The hardware cursor plane and overlay planes in software mode (above). Window and output captures are unchanged
+  (pixman shadow). A GPU crash that is a process crash (a segfault inside the driver at `gbm_create_device`) in `Gpu` mode is not
+  survivable by the fallback, which only sees errors: that is what `--safe` is for, and what the crash guard's three-strikes rule starts
+  it for (`dist/casement.service`).

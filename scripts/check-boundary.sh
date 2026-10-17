@@ -84,7 +84,7 @@ names_only "B6 casement-wayland names no device backend" 'smithay::backend::(drm
 reaches_none casement-wayland "B6 casement-wayland reaches neither drm nor gbm" 'drm|gbm'
 
 # B7 the thin-adapter allow-list (11 §5.3).
-ADAPTERS='crates/casement-backend/src/tty/(kms_real|surface_real|session_real|udev_real|direct_real|writeback_real|render_hub_real|bridge_real|real)\.rs|crates/casement-backend/src/gpu/(render_nodes|formats)_real\.rs|crates/casement-backend/src/input/libinput_real\.rs'
+ADAPTERS='crates/casement-backend/src/tty/(kms_real|surface_real|session_real|udev_real|direct_real|writeback_real|render_hub_real|bridge_real|soft_real|real)\.rs|crates/casement-backend/src/tty/kms_real/makers\.rs|crates/casement-backend/src/gpu/(render_nodes|formats)_real\.rs|crates/casement-backend/src/input/libinput_real\.rs'
 # The test kit's soft GPU (the SP4 route behind the `RenderNodes` fake) names DrmNode too: test
 # support, not shipped, and not counted as adapter lines.
 SOFT_GPU='crates/casement-testkit/src/gpu/[a-z_]+\.rs|crates/casement-testkit/tests/it/topology/[a-z_]+\.rs'

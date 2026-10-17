@@ -15,14 +15,16 @@
 //! compositor, running on the scanout GPU's own renderer, puts that one texture on the glass.
 //! When a copy route cannot be built the surface says so in the log and draws as `Direct` on the
 //! scanout GPU's renderer. The device's vblank events reach the surface through [`Flips`], which
-//! the device's event source fills.
+//! the device's event source fills. The flip count is `pace.rs`, shared with the CPU's surface
+//! (`soft_real.rs`), which `--safe` uses so no GPU driver is loaded at all.
 
 use super::bridge_real::{Bridge, Drawn};
 use super::kms::{ConnectorId, KmsError};
+use super::pace::{Pace, Turn};
 use super::surface::{Presented, QueueOutcome, QueuedFrame, ScanoutSurface};
 use crate::headless::transform_of;
 use casement_core::output::OutputConfig;
-use casement_core::time::{Mono, VblankSeq};
+use casement_core::time::Mono;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags};
 use smithay::backend::drm::compositor::{DrmCompositor, FrameFlags};
@@ -59,12 +61,12 @@ impl Flips {
 
     /// Forgets the flips done on `crtc` that no frame took: after a reset the flip that was in
     /// flight is lost, and a count left over would be taken for the next frame's.
-    fn clear(&mut self, crtc: crtc::Handle) {
+    pub(super) fn clear(&mut self, crtc: crtc::Handle) {
         self.done.remove(&crtc);
     }
 
     /// Takes one flip done on `crtc`, if there is one.
-    fn take(&mut self, crtc: crtc::Handle) -> Option<()> {
+    pub(super) fn take(&mut self, crtc: crtc::Handle) -> Option<()> {
         let count = self.done.get_mut(&crtc).filter(|count| **count > 0)?;
         *count -= 1;
         Some(())
@@ -103,11 +105,8 @@ pub struct RealScanout {
     compositor: Compositor,
     draw: Draw,
     flips: Rc<RefCell<Flips>>,
-    /// The vblank the next queued frame is for (counted here: the kernel's own sequence is
-    /// not used, so a missed vblank is not measured on real hardware; FINDINGS "p1-t").
-    next: VblankSeq,
-    /// The vblank of the frame whose flip is in flight.
-    pending: Option<VblankSeq>,
+    /// The vblank each queued frame is for, and the flip in flight (`pace.rs`).
+    pace: Pace,
     /// Held so the device knows this connector's surface is out; dropped with the surface.
     _claim: Rc<()>,
 }
@@ -213,8 +212,7 @@ impl RealScanout {
             compositor,
             draw,
             flips,
-            next: VblankSeq(0),
-            pending: None,
+            pace: Pace::new(),
             _claim: claim,
         })
     }
@@ -234,9 +232,9 @@ impl RealScanout {
 
 impl ScanoutSurface for RealScanout {
     fn queue(&mut self, frame: QueuedFrame<'_>) -> QueueOutcome {
-        if self.pending.is_some() {
+        let Turn::Free(seq) = self.pace.turn() else {
             return QueueOutcome::Busy;
-        }
+        };
         let QueuedFrame::Draw(source) = frame else {
             // Rendered pixels and direct candidates reach the glass through `Draw`: the
             // compositor does its own plane assignment (see the module doc).
@@ -263,8 +261,8 @@ impl ScanoutSurface for RealScanout {
         };
         match queued {
             Ok(()) => {
-                self.pending = Some(self.next);
-                QueueOutcome::Queued(self.next)
+                self.pace.queued();
+                QueueOutcome::Queued(seq)
             }
             Err(error) => {
                 // What the picture held never reached the glass: draw it all again.
@@ -275,25 +273,23 @@ impl ScanoutSurface for RealScanout {
     }
 
     fn presented(&mut self, now: Mono) -> Option<Presented> {
-        let seq = self.pending?;
+        self.pace.pending()?;
         self.flips.borrow_mut().take(self.crtc)?;
         if let Err(error) = self.compositor.frame_submitted() {
             tracing::warn!(%error, "the compositor did not take a finished flip");
         }
-        self.pending = None;
-        self.next = VblankSeq(seq.0.saturating_add(1));
-        Some(Presented::new(seq, now))
+        self.pace.landed(now)
     }
 
     fn blank(&mut self) -> Result<(), KmsError> {
-        self.pending = None;
+        self.pace.lost();
         self.flips.borrow_mut().clear(self.crtc);
         self.forget_picture();
         self.compositor.clear().map_err(refused)
     }
 
     fn reset(&mut self) {
-        self.pending = None;
+        self.pace.lost();
         self.flips.borrow_mut().clear(self.crtc);
         self.forget_picture();
         if let Err(error) = self.compositor.reset_state() {
@@ -337,8 +333,7 @@ impl std::fmt::Debug for RealScanout {
         f.debug_struct("RealScanout")
             .field("connector", &self.connector)
             .field("crtc", &self.crtc)
-            .field("next", &self.next)
-            .field("pending", &self.pending)
+            .field("pace", &self.pace)
             .finish_non_exhaustive()
     }
 }
