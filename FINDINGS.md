@@ -4129,7 +4129,8 @@ Deferred:
 - CASB-25 (keymap fetch on a worker thread): bounded to about 2 s per keymap change by keycap-client's own timeout; low.
 - CASB-27, `OOMScoreAdjust=-500` in `dist/casement.service`: an unprivileged user manager cannot lower a unit's OOM score, so the
   unit would fail to start. Needs a system-level grant (a drop-in installed as root); not added.
-- CASB-12, the `unwrap`s in smithay's libseat session (`dispatch(0).unwrap()`, `disable().unwrap()`): the fork's code, not casement's.
+- CASB-12, the `unwrap`s in smithay's libseat session: fixed in the fork (`lane/libseat-errors` 30e544aa, which casement pins). A failed
+  dispatch pauses the session and removes the source, a refused disable is logged, and the fd and token paths return errors.
 - CASB-13, CASB-14: quire's ds-settings (bounded reader, hardened writer): interface ask, not this repo.
 - CASB-20, CASB-21, CASB-28: left, as decided.
 ## pa-cassec: production-audit fixes in casement-core, casement-layout, casement-wayland and casement-ipc (2026-10-16)
@@ -5090,7 +5091,6 @@ One commit per root cause on branch `pa3-cas`; nothing here was compiled or run 
 - **CASB-07 (software renderer for `--safe`).** Not contained: the tty scanout path is GLES only (`surface_real.rs`, `bridge_real.rs`), and a
   pixman scanout needs dumb-buffer allocation and page flips for it. Plan: a `PixmanScanout: ScanoutSurface` over `drm` dumb buffers in
   `casement-backend/src/tty/`, chosen when `StartMode::Safe` or a render failure; the soft renderer already exists for the headless backend.
-- **CASB-12.** The smithay fork's `libseat.rs` `unwrap()`s (interface ask in the report).
 - **CASB-25** (`keymap::live::load_bindings` is synchronous, bounded by keycap-client's 2 s), **CASB-26** (`test_mode` is compiled in: gating
   it by a feature needs the desktop's vkms scripts to build with it), **CASB-28** (no vkms fault-injection gate for the real adapters): lane
   deferrals; no owner decision needed, work not done.
