@@ -151,6 +151,10 @@ libseat = { version = "0.2", default-features = false }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std", "env-filter"] }
 
+# Arithmetic that overflows is a bug, not a wrapped number, in the shipped compositor (CASC-19).
+[profile.release]
+overflow-checks = true
+
 [workspace.lints.rust]
 unsafe_code = "deny"
 missing_docs = "warn"

@@ -62,9 +62,11 @@ impl Model {
 }
 
 /// Who a change counts as for the display trial. A program that only lights or darkens a display
-/// (an idle daemon blanking the screen, a power key) changes no setting the person could lose:
-/// any input lights it again, so it is applied like the compositor's own restoring and never
-/// asked. Every other change by a program is a trial.
+/// (an idle daemon blanking the screen) changes no setting the person could lose: the same
+/// program lights it again when the idle notification says the person is back (casement does not
+/// light a display on input itself), so it is applied like the compositor's own restoring and
+/// never asked. Every other change by a program is a trial. A program that darkens a display and
+/// never lights it again leaves it for the person to light in Settings (NEW-CAS-6).
 fn trial_of(by: Requester, before: &OutputConfig, after: &OutputConfig) -> Requester {
     let only_power = OutputConfig {
         power: before.power,
