@@ -367,6 +367,7 @@ dependencies = [
  "casement-wayland",
  "chordkit",
  "ds-core",
+ "ds-helpers",
  "ds-settings",
  "jiff",
  "keycap-client",
@@ -1695,7 +1696,7 @@ dependencies = [
 [[package]]
 name = "keycap-client"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/keycap?rev=be632d80546928860197eaae8ef4e350641b08f5#be632d80546928860197eaae8ef4e350641b08f5"
+source = "git+https://github.com/PoHsuanLai/keycap?rev=56c300c179077b44911df33cb9e82d3db41d9bef#56c300c179077b44911df33cb9e82d3db41d9bef"
 dependencies = [
  "chordkit",
  "keycap-protocol",
@@ -1705,7 +1706,7 @@ dependencies = [
 [[package]]
 name = "keycap-protocol"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/keycap?rev=be632d80546928860197eaae8ef4e350641b08f5#be632d80546928860197eaae8ef4e350641b08f5"
+source = "git+https://github.com/PoHsuanLai/keycap?rev=56c300c179077b44911df33cb9e82d3db41d9bef#56c300c179077b44911df33cb9e82d3db41d9bef"
 dependencies = [
  "serde",
  "serde_json",
