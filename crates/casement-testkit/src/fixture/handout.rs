@@ -4,9 +4,12 @@
 //! instead of a process on a bus.
 
 use super::{ClientId, Fixture};
+use casement::clients::{Judge, Probes, begin_probe};
 use casement::connect;
+use casement::privacy::SystemDir;
 use casement_core::input::InputEvent;
 use casement_core::policy::ConnectionRole;
+use casement_ipc::dbus::peer::Table;
 use casement_ipc::dbus::{ConnectAsk, ConnectRefusal, ConnectReply, Proven};
 use casement_testclient::TestClient;
 use std::os::fd::OwnedFd;
@@ -86,6 +89,29 @@ impl Fixture {
             &mut self.state,
             ConnectAsk::owner_gone(owner, portal.clone()),
         );
+    }
+
+    /// A program connects on the public socket the way `casement::run` takes it in: the look at
+    /// its facts runs on a thread, and the connection is inserted when the look is done (or its
+    /// deadline passes). Returns the client end and how many connections the session holds more
+    /// than before, once the look has had its time.
+    pub fn public_arrival(&mut self) -> (UnixStream, usize) {
+        let (server, client) = UnixStream::pair().expect("a socket pair");
+        if matches!(self.state.probes, Probes::Off) {
+            let handle = self.state.event_loop.clone();
+            self.state.probes = Probes::start(Judge::new(Table::empty(), SystemDir::Etc), &handle)
+                .expect("the looks join the loop");
+        }
+        let before = self.state.roster.len();
+        begin_probe(&mut self.state, server);
+        for _ in 0..400 {
+            self.pump();
+            if self.state.roster.len() > before {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        (client, self.state.roster.len() - before)
     }
 
     /// `caller` asking to end portal session `session`'s remote sockets (`EndEis`'s decision,

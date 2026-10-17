@@ -91,3 +91,14 @@ fn a_shot_of_an_output_is_its_mode_size() {
     let shot = fixture.shot(ShotTarget::Output(name("HEADLESS-1")));
     assert_eq!(shot.dimensions(), (1920, 1080));
 }
+
+/// NEW-CASB-4: a program that connects on the public socket is looked at on a thread and taken in
+/// when the look is done; the loop does not read its facts itself.
+#[test]
+fn a_public_connection_is_taken_in_after_its_look_on_a_thread() {
+    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let (_client, taken) = fixture.public_arrival();
+    assert_eq!(taken, 1, "the connection was inserted");
+    let (_second, taken) = fixture.public_arrival();
+    assert_eq!(taken, 1, "and so is the next");
+}

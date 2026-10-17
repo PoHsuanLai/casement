@@ -65,6 +65,8 @@ pub struct State {
     pub processes: crate::clients::Processes,
     /// Who holds each live connection, for the connection caps.
     pub roster: crate::clients::Roster,
+    /// The looks at the programs behind new public connections, on threads of their own.
+    pub probes: crate::clients::Probes,
     /// The display, for creating globals, inserting clients and sending events. (Not in the
     /// plan's sketch; the handlers need it: FINDINGS.)
     pub display: DisplayHandle,
@@ -394,6 +396,7 @@ impl State {
             start_mode: config.mode,
             processes: crate::clients::Processes::default(),
             roster: crate::clients::Roster::default(),
+            probes: crate::clients::Probes::default(),
             display: dh,
             event_loop: event_loop.clone(),
             #[cfg(feature = "testing")]

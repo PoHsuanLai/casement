@@ -349,9 +349,10 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
     // The desktop's own list of its programs is read once; each program that connects is held,
     // looked at and judged against it, so who it is is known before it asks for anything.
     let table = clients::desktop_table(&system_dir);
-    let judge = clients::Judge::new(table.clone(), system_dir);
+    state.probes = clients::Probes::start(clients::Judge::new(table.clone(), system_dir), &handle)?;
     // A failed accept (no descriptors left, a peer that gave up) rests the listener and never
-    // ends the session; a connection past a cap is closed before it is looked at.
+    // ends the session; a connection past a cap is closed before it is looked at, and the look
+    // at the program behind one runs on a thread, with a deadline.
     clients::accept::insert(
         &handle,
         socket,
@@ -360,16 +361,7 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
             if clients::room_in_session(state) != clients::Room::Free {
                 return;
             }
-            let role = casement_core::policy::ConnectionRole::Public;
-            let arrival = judge.arrival(&stream, state.core.model.privilege().floor());
-            if clients::room_for_peer(state, &arrival.peer, &stream) != clients::Room::Free {
-                return;
-            }
-            if let Err(error) =
-                clients::insert_client(state, stream, role, arrival.peer, arrival.standing)
-            {
-                tracing::warn!(%error, "a client could not be inserted");
-            }
+            clients::begin_probe(state, stream);
         },
     )?;
     #[cfg(feature = "debug-inject")]
