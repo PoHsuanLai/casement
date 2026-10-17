@@ -112,13 +112,5 @@ pub fn on_uninhibit(part: &mut IdleInhibitPart, surface: &WlSurface) -> Inhibite
     part.inhibited()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The session-wide cap is a bound on the walk; the per-client cap is `limits::Limit`'s.
-    #[test]
-    fn the_session_cap_is_above_what_one_client_may_hold() {
-        assert!(MAX_INHIBITORS > crate::limits::MAX_IDLE_INHIBITORS);
-    }
-}
+// The session-wide cap is a bound on the walk; the per-client cap is `limits::Limit`'s.
+const _: () = assert!(MAX_INHIBITORS > crate::limits::MAX_IDLE_INHIBITORS);

@@ -496,7 +496,10 @@ fn an_enabled_output_without_a_scanout_is_not_alive() {
         Health::Alive,
         "nothing is enabled"
     );
-    assert_eq!(set.health_of(at(0), &[dark.clone()]), Health::Frozen);
+    assert_eq!(
+        set.health_of(at(0), std::slice::from_ref(&dark)),
+        Health::Frozen
+    );
 
     let mut live = set_over(Box::new(FakeScanout::following()));
     present(&mut live, 0).expect("queued");

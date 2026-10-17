@@ -74,10 +74,10 @@ where
         let handle = self.handle.clone();
         let token = Rc::clone(&self.token);
         crate::time::after(&self.handle, self.rest, move |_: &mut D| {
-            if let Some(token) = token.get() {
-                if let Err(error) = handle.enable(&token) {
-                    tracing::debug!(%error, "a resting listener is gone");
-                }
+            if let Some(token) = token.get()
+                && let Err(error) = handle.enable(&token)
+            {
+                tracing::debug!(%error, "a resting listener is gone");
             }
         });
     }

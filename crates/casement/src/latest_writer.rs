@@ -139,7 +139,9 @@ mod tests {
     use super::*;
 
     /// A write that appends to a shared list, slowly enough that texts pile up behind it.
-    fn recording(seen: &Arc<Mutex<Vec<String>>>) -> impl FnMut(&str) -> Result<(), String> + Send {
+    fn recording(
+        seen: &Arc<Mutex<Vec<String>>>,
+    ) -> impl FnMut(&str) -> Result<(), String> + Send + use<> {
         let seen = Arc::clone(seen);
         move |text| {
             seen.lock().expect("seen").push(text.to_owned());
