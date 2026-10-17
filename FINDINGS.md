@@ -5091,11 +5091,14 @@ One commit per root cause on branch `pa3-cas`; nothing here was compiled or run 
   (Full is granted, Exe refused), `globals.rs` and `privilege_step.rs` (core), `quire_shell.rs` (hand-out, globals) and
   `image_capture.rs` (a frame with no sheet). transom asks for this connection first and falls back to the public socket when there
   is no casement to ask. `desktop/harness/lib/casement-floor.sh` `floor_powers` can drop its allow row for transom once both land.
-- **NEW-CASB-7 (open, stopped).** `Processes::handle_of` opens a pidfd by the pid in `SO_PEERCRED` and reads the credentials again, which
-  cannot tell a recycled pid from the connector: the credentials were fixed at `connect()`. peephole's `Pinned::of_stream` has the same
-  weakness (its docs say so) and hides its descriptor, so casement cannot reuse it. The fix is `SO_PEERPIDFD` (Linux 6.5): rustix 1.1 has no
-  safe wrapper and every crate forbids `unsafe`, so it needs either a peephole release whose `Pinned` makes its pin `AtConnect` and lends the
-  pidfd (`as_fd`), or a decision on a new dependency that wraps the option.
+- **NEW-CASB-7 (closed, 2026-10-17).** `Processes::handle_of` takes the kernel's own pidfd of the connector
+  (`SO_PEERPIDFD`, Linux 6.5) through nix, which the owner allowed (rustix 1.1 has no safe wrapper and every
+  crate forbids `unsafe`): force quit signals the very process that connected, never one that took its pid. A
+  connector that has exited (`ESRCH`) gets no handle; a kernel before 6.5 gets the old reopen-and-recheck.
+  The same handle now guards the security-context client's cgroup read (`handlers/security_context.rs`
+  `peer_of`): the cgroup counts only if the held process still runs after it is read. peephole 0.1.6 has the
+  same pin (`Pinned::of_stream`, `Pinned::pidfd`); casement moves to it with porter's next peephole bump
+  (porter-dbus pins 0.1.4, and one lock carries one peephole).
 - **NEW-PI-4 (casement half), as replaced by NEW-FA-4 below.** A virtual-bus device is `Origin::Virtual` unless the device service made it
   for keycap (`Origin::of_kernel_device`). A virtual device still moves the pointer, fires bindings and drives swipes (`Origin::is_pad`),
   but trusted surfaces, the lock surface and VT switching never hear it.

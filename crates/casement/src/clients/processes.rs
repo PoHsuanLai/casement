@@ -7,6 +7,10 @@
 
 use casement_core::ClientKey;
 use casement_core::window::WindowOrigin;
+use casement_ipc::dbus::peer::Alive;
+use nix::errno::Errno;
+use nix::sys::socket::{getsockopt, sockopt::PeerPidfd};
+use rustix::event::{PollFd, PollFlags, Timespec, poll};
 use rustix::process::{
     Pid, PidfdFlags, RawPid, Signal, kill_process, pidfd_open, pidfd_send_signal,
 };
@@ -33,12 +37,34 @@ enum Peer {
     Satellite,
 }
 
+/// A handle on the process behind `stream`: the kernel's own, made when the client connected
+/// (`SO_PEERPIDFD`, Linux 6.5), so it is the connecting process and never one that took its pid
+/// after it exited (NEW-CASB-7). A connector that has exited has none. On a kernel without the
+/// option, the pid is opened and kept only when the socket still names it ([`reopened`]).
+pub(crate) fn handle_of(stream: &UnixStream, pid: RawPid) -> Option<OwnedFd> {
+    match getsockopt(stream, PeerPidfd) {
+        Ok(handle) => Some(handle),
+        Err(Errno::ESRCH) => None,
+        Err(_) => reopened(stream, pid),
+    }
+}
+
 /// A handle on the process `pid` behind `stream`, when it is the one the socket names now as well
 /// (a pid read from the socket and opened later could be another process that took the number).
-fn handle_of(stream: &UnixStream, pid: RawPid) -> Option<OwnedFd> {
+fn reopened(stream: &UnixStream, pid: RawPid) -> Option<OwnedFd> {
     let handle = pidfd_open(Pid::from_raw(pid)?, PidfdFlags::empty()).ok()?;
     let again = rustix::net::sockopt::socket_peercred(stream).ok()?;
     (again.pid.as_raw_pid() == pid).then_some(handle)
+}
+
+/// Whether the process `handle` holds still runs: a pidfd turns readable when its process exits.
+/// Facts read from `/proc/<pid>` before this says [`Alive::Yes`] belong to that process.
+pub(crate) fn alive(handle: &OwnedFd) -> Alive {
+    let mut fds = [PollFd::new(handle, PollFlags::IN)];
+    match poll(&mut fds, Some(&Timespec::default())) {
+        Ok(0) => Alive::Yes,
+        _ => Alive::Gone,
+    }
 }
 
 /// Sends `signal` to the process `held` names; whether it arrived.
@@ -178,6 +204,18 @@ mod tests {
             kept.signal(&[ClientKey(1)], Signal::TERM, own, None)
                 .is_empty()
         );
+    }
+
+    /// NEW-CASB-7: the handle is the kernel's pidfd of the connector, made at connect.
+    #[test]
+    fn a_connections_handle_is_the_kernels_pidfd_of_the_connector() {
+        use std::os::fd::AsRawFd;
+        let (ours, _theirs) = UnixStream::pair().expect("a socket pair");
+        let own = getpid().as_raw_pid();
+        let handle = handle_of(&ours, own).expect("a handle on this process");
+        let info = std::fs::read_to_string(format!("/proc/self/fdinfo/{}", handle.as_raw_fd()))
+            .expect("fdinfo");
+        assert!(info.contains(&format!("Pid:\t{own}")), "{info}");
     }
 
     #[test]

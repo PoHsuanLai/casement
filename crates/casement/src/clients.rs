@@ -28,6 +28,7 @@ pub use judge::{Arrival, Judge, desktop_table};
 pub use probes::begin as begin_probe;
 pub use probes::{MAX_PROBES, PROBE_DEADLINE, Probes};
 pub use processes::Processes;
+pub(crate) use processes::{alive, handle_of};
 pub use roster::{Holder, MAX_CONNECTIONS, MAX_PER_HOLDER, RESERVED_FOR_PROVEN, Room, Roster};
 pub use standing::{client_standing, maker_of, peer_of};
 

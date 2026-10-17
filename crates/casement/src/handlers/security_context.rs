@@ -6,6 +6,7 @@ use crate::clients::{self, Room, Standing, accept, insert_client};
 use crate::core_loop;
 use crate::state::State;
 use casement_core::policy::ConnectionRole;
+use casement_ipc::dbus::peer::Alive;
 use casement_wayland::ClientState;
 use casement_wayland::security_context::{Maker, identity_for_clients, on_create_listener};
 use porter_core::{CgroupPath, PeerFacts, PeerIdentity, SandboxFacts, identity_of};
@@ -60,16 +61,22 @@ impl SecurityContextHandler for State {
 }
 
 /// Who the facts say the process on `stream` is, from its credentials, its cgroup and the
-/// context's facts. What cannot be read leaves the peer unproven. (Whether the context's creator
-/// lets the facts count is [`identity_for_clients`]'s.)
+/// context's facts. The connector is held by its pidfd before its cgroup is read, and the reading
+/// counts only if the process still runs afterwards, so a pid another process took after the
+/// connector exited never names the client. What cannot be read leaves the peer unproven.
+/// (Whether the context's creator lets the facts count is [`identity_for_clients`]'s.)
 fn peer_of(stream: &UnixStream, facts: &SandboxFacts) -> PeerIdentity {
     let Ok(cred) = socket_peercred(stream) else {
         return PeerIdentity::Unproven;
     };
     let pid = cred.pid.as_raw_nonzero().get();
+    let Some(held) = clients::handle_of(stream, pid) else {
+        return PeerIdentity::Unproven;
+    };
     let cgroup = std::fs::read_to_string(format!("/proc/{pid}/cgroup"))
         .ok()
-        .and_then(|text| CgroupPath::from_proc_cgroup(&text).ok());
+        .and_then(|text| CgroupPath::from_proc_cgroup(&text).ok())
+        .filter(|_| clients::alive(&held) == Alive::Yes);
     cgroup.map_or(PeerIdentity::Unproven, |cgroup| {
         identity_of(&PeerFacts {
             pid: pid.unsigned_abs(),

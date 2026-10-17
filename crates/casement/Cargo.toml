@@ -54,6 +54,7 @@ smithay = { workspace = true, features = [
 calloop = { workspace = true }
 jiff = { workspace = true }
 x11rb = { workspace = true }
+nix = { workspace = true }
 rustix = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
