@@ -4,24 +4,32 @@
 
 use super::Model;
 use super::moved::Moved;
+use crate::app::AppKey;
 use crate::cause::Cause;
 use crate::geometry::LogicalRect;
 use crate::ids::WindowId;
-use crate::window::{SpacePlace, WindowState, fit_aspect, floats_above, snap_corner};
+use crate::window::{SpacePlace, Window, WindowState, fit_aspect, floats_above, snap_corner};
+
+/// Whether `a` and `b` belong to one owner for the one-picture-in-picture-window rule (CASC-11):
+/// the same connection, or the same app when its name is proven.
+fn same_owner(a: &Window, b: &Window) -> bool {
+    a.client == b.client || (matches!(a.app, AppKey::Proven(_)) && a.app == b.app)
+}
 
 impl Model {
     /// A window whose role or title just changed: when it is picture in picture and sits on one
     /// Space, it moves to every Space of its output. A window that is full screen, minimised or
-    /// already on every Space is left alone, and so is one whose app already has a picture in
-    /// picture window on every Space (one per app, CASC-11).
+    /// already on every Space is left alone, and so is one whose owner already has a picture in
+    /// picture window on every Space (one per proven app or per connection, CASC-11).
     pub(super) fn pip_joined(self, id: WindowId) -> Moved {
         let Some(window) = self.windows.get(&id) else {
             return Moved::of(self);
         };
-        let app = window.app.clone();
+        // One owner has one: an app whose name is proven, or else the connection (an app id a
+        // client only claims is whatever it writes, and a connection can write a thousand).
         let spread_already = self.windows.values().any(|other| {
             other.id != id
-                && other.app == app
+                && same_owner(window, other)
                 && other.place == SpacePlace::AllSpaces
                 && floats_above(other)
         });

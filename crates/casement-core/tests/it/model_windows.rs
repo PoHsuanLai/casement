@@ -586,3 +586,42 @@ fn only_a_small_believed_window_floats_above_and_one_per_app_joins_every_space()
         "another app has its own"
     );
 }
+
+/// CASC-11: the one-per-app rule counts a connection, not the app id its windows claim. A client
+/// that maps windows with a different claimed app id each still gets one picture in picture
+/// window on every Space.
+#[test]
+fn one_connection_gets_one_picture_in_picture_window_whatever_app_ids_it_claims() {
+    use casement_core::WindowHintChange::Role;
+    use casement_core::app::AppKey;
+    use casement_protocols::vocab::WindowRole;
+    let on_one_connection = |n: u64, id: &str| {
+        let app = AppKey::Claimed(support::claimed(id));
+        Op::Event(Event::ToplevelMapped(casement_core::MappedToplevel {
+            client: ClientKey(1),
+            ..support::driver::mapped(n, &app, TokenCheck::Missing)
+        }))
+    };
+    let committed = |n: u64| {
+        Op::Event(Event::ToplevelCommitted {
+            window: WindowId(n),
+            size: size(320, 180),
+        })
+    };
+    let spread =
+        |run: &Run, n: u64| run.model.windows()[&WindowId(n)].place == SpacePlace::AllSpaces;
+    let run = run(vec![
+        plug("HEADLESS-1"),
+        on_one_connection(1, "one"),
+        on_one_connection(2, "two"),
+        on_one_connection(3, "three"),
+        committed(1),
+        committed(2),
+        committed(3),
+        hint(1, Role(WindowRole::Pip)),
+        hint(2, Role(WindowRole::Pip)),
+        hint(3, Role(WindowRole::Pip)),
+    ]);
+    let spread_count = [1, 2, 3].into_iter().filter(|n| spread(&run, *n)).count();
+    assert_eq!(spread_count, 1, "one window, not one per claimed id");
+}
