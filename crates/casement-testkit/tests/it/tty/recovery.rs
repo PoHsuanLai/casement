@@ -470,3 +470,40 @@ fn a_frame_refused_with_permission_denied_is_a_lost_master() {
         PresentOutcome::MasterLost
     );
 }
+
+/// CASB-05: frames that keep failing to queue never flip, yet the screen shows nothing; the
+/// display counts as frozen after the starvation time, through every recovery in between, so the
+/// watchdog is no longer fed.
+#[test]
+fn a_surface_whose_every_frame_fails_to_queue_freezes_the_display() {
+    let mut set = set_over(Box::new(Refusing(std::io::ErrorKind::Other)));
+    for ms in (0..=12_000).step_by(100) {
+        let _ = present(&mut set, ms);
+    }
+    assert_eq!(set.health(at(10_000)), Health::Alive, "not yet");
+    assert_eq!(set.health(at(10_001)), Health::Frozen);
+}
+
+/// CASB-05: an enabled output with no scanout (a re-light that failed took the old one away)
+/// is not alive, however long it has been; an output that is not enabled does not count, and
+/// one live output among several keeps the display alive.
+#[test]
+fn an_enabled_output_without_a_scanout_is_not_alive() {
+    let dark = OutputName::parse("DP-2").expect("a name");
+    let set = ScanoutSet::empty();
+    assert_eq!(
+        set.health_of(at(0), &[]),
+        Health::Alive,
+        "nothing is enabled"
+    );
+    assert_eq!(set.health_of(at(0), &[dark.clone()]), Health::Frozen);
+
+    let mut live = set_over(Box::new(FakeScanout::following()));
+    present(&mut live, 0).expect("queued");
+    assert_eq!(live.health_of(at(1), &[output()]), Health::Alive);
+    assert_eq!(
+        live.health_of(at(1), &[output(), dark]),
+        Health::Alive,
+        "one live output keeps the display alive"
+    );
+}

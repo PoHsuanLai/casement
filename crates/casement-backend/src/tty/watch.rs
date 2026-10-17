@@ -59,6 +59,17 @@ impl FlipWatch {
         }
     }
 
+    /// A frame was asked for at `now` and could not be queued (the draw or the commit failed):
+    /// no flip is in flight, but the time nothing has landed starts running all the same, so a
+    /// surface whose every frame fails is starved like one whose flips never land (CASB-05).
+    #[must_use]
+    pub fn asked(self, now: Mono) -> FlipWatch {
+        FlipWatch {
+            unanswered_since: self.unanswered_since.or(Some(now)),
+            ..self
+        }
+    }
+
     /// A flip landed.
     #[must_use]
     pub fn landed(self) -> FlipWatch {
@@ -203,6 +214,23 @@ mod tests {
         assert_eq!(given_up.starved(at(10_001)), Starved::Yes);
         assert_eq!(watch.landed().starved(at(60_000)), Starved::No);
         assert_eq!(watch.idle().starved(at(60_000)), Starved::No);
+    }
+
+    /// CASB-05: frames that fail to queue count as asked for. One failure starts the clock; it
+    /// is not restarted by the next, and a landing clears it.
+    #[test]
+    fn a_surface_whose_every_frame_fails_to_queue_is_starved_like_one_that_never_flips() {
+        let watch = FlipWatch::default().asked(at(1_000));
+        assert_eq!(watch.flip(at(60_000)), Flip::OnTime, "no flip is in flight");
+        assert_eq!(watch.starved(at(11_000)), Starved::No);
+        assert_eq!(watch.starved(at(11_001)), Starved::Yes);
+        let again = watch.asked(at(9_000));
+        assert_eq!(
+            again.starved(at(11_001)),
+            Starved::Yes,
+            "the clock keeps its start"
+        );
+        assert_eq!(again.landed().starved(at(60_000)), Starved::No);
     }
 
     #[test]

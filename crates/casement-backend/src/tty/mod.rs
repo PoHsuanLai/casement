@@ -659,7 +659,15 @@ impl TtyBackend {
     /// caller then stops telling the service manager the compositor is alive.
     pub fn health(&self, now: Mono) -> Health {
         match self.seat {
-            SeatState::Held => self.scanouts.health(now),
+            SeatState::Held => {
+                let enabled: Vec<OutputName> = self
+                    .lit
+                    .iter()
+                    .filter(|(_, lit)| lit.power() == OutputPower::On)
+                    .map(|(name, _)| name.clone())
+                    .collect();
+                self.scanouts.health_of(now, &enabled)
+            }
             SeatState::Lent => Health::Alive,
         }
     }

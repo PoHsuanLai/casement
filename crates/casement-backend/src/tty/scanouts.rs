@@ -151,6 +151,7 @@ impl Scanout {
                 Ok(PresentOutcome::MasterLost)
             }
             QueueOutcome::Failed(error) => {
+                self.watch = self.watch.asked(now);
                 let (run, verdict) = self.failures.failed();
                 self.failures = run;
                 match verdict {
@@ -302,15 +303,23 @@ impl ScanoutSet {
         self.outputs.values_mut().for_each(Scanout::reset);
     }
 
-    /// Whether the display shows the session at `now`: frozen when at least one output is set
-    /// up and every one of them has asked for frames for too long and shown none.
+    /// Whether the display shows the session at `now`, over the outputs that scan out: see
+    /// [`ScanoutSet::health_of`].
     pub fn health(&self, now: Mono) -> Health {
-        match !self.outputs.is_empty()
-            && self
-                .outputs
-                .values()
-                .all(|scanout| scanout.starved(now) == Starved::Yes)
-        {
+        self.health_of(now, &self.names())
+    }
+
+    /// Whether the display shows the session at `now`, given the outputs that should be lit
+    /// (`enabled`): frozen when there is one and every one of them has either asked for frames
+    /// for too long and shown none, or has no scanout at all (a re-light that failed left it
+    /// without; nothing will ever show on it, CASB-05).
+    pub fn health_of(&self, now: Mono, enabled: &[OutputName]) -> Health {
+        let starved = |name: &OutputName| {
+            self.outputs
+                .get(name)
+                .map_or(true, |scanout| scanout.starved(now) == Starved::Yes)
+        };
+        match !enabled.is_empty() && enabled.iter().all(starved) {
             true => Health::Frozen,
             false => Health::Alive,
         }
