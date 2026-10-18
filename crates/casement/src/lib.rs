@@ -45,6 +45,7 @@ pub mod core_loop;
 mod debug;
 mod delegates;
 pub mod display;
+pub mod environment;
 pub mod exec;
 mod handlers;
 pub mod hangup;
