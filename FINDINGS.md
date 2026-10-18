@@ -5262,3 +5262,17 @@ Code: `crates/casement/src/timing/` (pure records, table-tested; `Sink` is the o
   empty app id prints as `-`. Pid and X11 identity are not improved here.
 - **Seen while reading.** `wp_presentation` advertises `CLOCK_MONOTONIC` but sends `Mono` (time since the session epoch), so a client
   that compares presentation time with its own monotonic clock is off by the epoch. Not changed here.
+
+## Type audit wave 2 (2026-10-18)
+
+- **Lock holder.** `LockState` carries who asked for the lock in the variants that have one (`Locking`, `Locked`,
+  `LockedWithoutSurface`, each with a `holder: LockHolder`); `Model.locker` and `LockHolder::Nobody` are gone, so "unlocked with
+  a holder" cannot be built. Every refusal is as before: a `Requested` that is not the first lock, or a takeover by a client that
+  is neither the shell nor the former holder, is `LockReply::Finished`; a lock marker is written only for a shell holder.
+- **Night light settings.** `NightLightSettings { light: NightLight, skip_outputs }`; the file keys (`night_light.mode/from/to`)
+  are unchanged and `NightLightMode` now lives in `casement/src/config/sections/night_light.rs`, which converts it and the two
+  times to a `Schedule`. A schedule that is off or always has no times, so the document written from the defaults offers 22:00 to
+  07:00.
+- **One raster type.** `casement_core::raster::RasterImage` (premultiplied RGBA8 plus a `RasterId`) replaces
+  `casement_chrome::TitlePixels` and `casement_render::TitleDraw`; chrome now depends on `casement-core`. `casement_icons::Pixels`
+  stays: an icon has no id of its own (the cache's slot has).
