@@ -57,7 +57,7 @@ mod tests {
     fn facts(cgroup: &str, sandbox: SandboxFacts) -> PeerFacts {
         PeerFacts {
             pid: 4242,
-            cgroup: CgroupPath::parse(cgroup).expect("cgroup path"),
+            cgroup: CgroupPath::new(cgroup).expect("cgroup path"),
             sandbox,
         }
     }

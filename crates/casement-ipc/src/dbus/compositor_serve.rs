@@ -12,7 +12,7 @@ use crate::IpcError;
 use crate::privacy::{PrivacyLink, serve_privacy};
 use calloop::channel::{Channel, SyncSender, sync_channel};
 use peephole_bus::peephole_core::{Proof, Requirement, Table, roles};
-use peephole_bus::{BusPeers, ManagerCheck, Tokio};
+use peephole_bus::{BusPeers, ManagerCheck, Offload};
 use std::sync::{Arc, mpsc};
 use std::time::Duration;
 use zbus::Connection;
@@ -46,7 +46,7 @@ impl CallerSetup {
         CallerSetup::with(move |connection| {
             let manager = ManagerCheck::Verified(Requirement::new(roles::MANAGER, Proof::Exe));
             let peers: DesktopCallers =
-                BusPeers::new(connection.clone(), table, manager).with_offload(Tokio);
+                BusPeers::new(connection.clone(), table, manager).with_offload(Offload::Tokio);
             Arc::new(peers)
         })
     }

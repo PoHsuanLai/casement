@@ -1011,7 +1011,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2267,8 +2267,8 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "peephole"
-version = "0.1.6"
-source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.6#87a3d225d7526d03f16acff2245374cb00a27e24"
+version = "0.1.7"
+source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.7#e5b3d1d6b268919d0297b3dba6640f0d9b18bd4f"
 dependencies = [
  "nix",
  "peephole-core",
@@ -2278,8 +2278,8 @@ dependencies = [
 
 [[package]]
 name = "peephole-bus"
-version = "0.1.6"
-source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.6#87a3d225d7526d03f16acff2245374cb00a27e24"
+version = "0.1.7"
+source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.7#e5b3d1d6b268919d0297b3dba6640f0d9b18bd4f"
 dependencies = [
  "futures-timer",
  "peephole",
@@ -2291,8 +2291,8 @@ dependencies = [
 
 [[package]]
 name = "peephole-core"
-version = "0.1.6"
-source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.6#87a3d225d7526d03f16acff2245374cb00a27e24"
+version = "0.1.7"
+source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.7#e5b3d1d6b268919d0297b3dba6640f0d9b18bd4f"
 dependencies = [
  "serde",
  "thiserror 2.0.21",
@@ -2446,6 +2446,7 @@ dependencies = [
 name = "porter-core"
 version = "0.1.0"
 dependencies = [
+ "peephole-core",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -2781,7 +2782,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3080,7 +3081,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3158,10 +3159,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.5",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3397,7 +3398,7 @@ checksum = "f2f6fb2847f6742cd76af783a2a2c49e9375d0a111c7bef6f71cd9e738c72d6e"
 dependencies = [
  "memoffset",
  "tempfile",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

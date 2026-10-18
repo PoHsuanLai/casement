@@ -75,7 +75,7 @@ fn peer_of(stream: &UnixStream, facts: &SandboxFacts) -> PeerIdentity {
     };
     let cgroup = std::fs::read_to_string(format!("/proc/{pid}/cgroup"))
         .ok()
-        .and_then(|text| CgroupPath::from_proc_cgroup(&text).ok())
+        .and_then(|text| CgroupPath::from_proc(&text).ok())
         .filter(|_| clients::alive(&held) == Alive::Yes);
     cgroup.map_or(PeerIdentity::Unproven, |cgroup| {
         identity_of(&PeerFacts {

@@ -8,7 +8,7 @@ use casement_core::policy::ConnectionRole;
 use peephole_bus::peephole::ProcFs;
 use peephole_bus::peephole::RealProc;
 use peephole_bus::peephole_core::{Proof, Refused, Requirement, RoleName, Standing, roles};
-use peephole_bus::{BusPeers, ManagerLink, Offload, Tokio, UnitSource, WhoError};
+use peephole_bus::{BusPeers, ManagerLink, UnitSource, WhoError};
 use std::fmt::Debug;
 use std::future::Future;
 use std::pin::Pin;
@@ -25,10 +25,9 @@ pub trait CallerCheck: Debug + Send + Sync + 'static {
     fn who<'a>(&'a self, sender: &'a str) -> WhoFuture<'a>;
 }
 
-impl<P, O, U> CallerCheck for BusPeers<P, O, U>
+impl<P, U> CallerCheck for BusPeers<P, U>
 where
     P: ProcFs + Debug + 'static,
-    O: Offload + Debug + 'static,
     U: UnitSource + Debug + 'static,
 {
     fn who<'a>(&'a self, sender: &'a str) -> WhoFuture<'a> {
@@ -38,7 +37,7 @@ where
 
 /// The real identifier: the system's `/proc`, the unit manager on the bus, the probe run on the
 /// blocking pool of the tokio runtime the bus thread owns.
-pub type DesktopCallers = BusPeers<RealProc, Tokio, ManagerLink<RealProc>>;
+pub type DesktopCallers = BusPeers<RealProc, ManagerLink<RealProc>>;
 
 /// The role a caller must hold to be handed a connection with `role`: the shell's for the
 /// shell, the agent tier's for the agent tier, the portal's for the portal, none for any other
