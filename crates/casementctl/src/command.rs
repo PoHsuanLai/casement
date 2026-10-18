@@ -175,7 +175,7 @@ pub fn run(command: Command) -> ExitCode {
 }
 
 fn exit_code(command: Command) -> u8 {
-    if let Command::Report = command {
+    if command == Command::Report {
         return not_built("report is the user's hardware report, built in P5");
     }
     if let Command::Privacy(asked) = command {

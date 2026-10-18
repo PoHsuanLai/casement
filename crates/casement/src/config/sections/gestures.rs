@@ -35,6 +35,6 @@ pub struct GesturesSection {
 
 impl Default for GesturesSection {
     fn default() -> Self {
-        convert::gestures_doc(&CasementSettings::defaults().gestures)
+        convert::gestures_doc(CasementSettings::defaults().gestures)
     }
 }

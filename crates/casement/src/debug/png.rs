@@ -35,7 +35,7 @@ fn adler32(bytes: &[u8]) -> u32 {
 }
 
 /// One chunk: length, type, data, CRC.
-fn chunk(out: &mut Vec<u8>, kind: &[u8; 4], data: &[u8]) {
+fn chunk(out: &mut Vec<u8>, kind: [u8; 4], data: &[u8]) {
     out.extend(u32::try_from(data.len()).unwrap_or(u32::MAX).to_be_bytes());
     let from = out.len();
     out.extend(kind);
@@ -67,9 +67,9 @@ pub(super) fn encode_rgba(width: u32, height: u32, rgba: &[u8]) -> Vec<u8> {
     header.extend(height.to_be_bytes());
     header.extend([8, 6, 0, 0, 0]);
     let mut out = SIGNATURE.to_vec();
-    chunk(&mut out, b"IHDR", &header);
-    chunk(&mut out, b"IDAT", &zlib);
-    chunk(&mut out, b"IEND", &[]);
+    chunk(&mut out, *b"IHDR", &header);
+    chunk(&mut out, *b"IDAT", &zlib);
+    chunk(&mut out, *b"IEND", &[]);
     out
 }
 

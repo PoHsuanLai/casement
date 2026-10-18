@@ -75,7 +75,7 @@ fn spaces(doc: &SpacesSection) -> SpaceSettings {
     }
 }
 
-pub(super) fn spaces_doc(core: &SpaceSettings) -> SpacesSection {
+pub(super) fn spaces_doc(core: SpaceSettings) -> SpacesSection {
     SpacesSection {
         per_display: core.per_display,
         auto_rearrange: core.auto_rearrange,
@@ -87,7 +87,7 @@ fn gestures(doc: &GesturesSection) -> GestureSettings {
     GestureSettings::new(doc.spaces, doc.mission_control, doc.natural)
 }
 
-pub(super) fn gestures_doc(core: &GestureSettings) -> GesturesSection {
+pub(super) fn gestures_doc(core: GestureSettings) -> GesturesSection {
     GesturesSection {
         spaces: core.spaces,
         mission_control: core.mission_control,
@@ -167,7 +167,7 @@ fn outputs(doc: &OutputsSection) -> OutputSettings {
 }
 
 /// A fixed scale that is not a whole percent shows as the nearest one below.
-pub(super) fn outputs_doc(core: &OutputSettings) -> OutputsSection {
+pub(super) fn outputs_doc(core: OutputSettings) -> OutputsSection {
     let (first_sight_scale, fixed_scale) = match core.first_sight {
         ScalePolicy::WholeLikeMac => (FirstSight::WholeLikeMac, Count(FIXED_SCALE.0)),
         ScalePolicy::Fixed(scale) => (FirstSight::Fixed, percent_of(scale)),
@@ -202,7 +202,7 @@ fn pointer(mouse: &PointerSection, touchpad: &TouchpadSection) -> PointerSetting
     )
 }
 
-pub(super) fn mouse_doc(core: &PointerProfile) -> PointerSection {
+pub(super) fn mouse_doc(core: PointerProfile) -> PointerSection {
     PointerSection {
         accel: core.accel,
         natural_scroll: core.natural_scroll,
@@ -212,7 +212,7 @@ pub(super) fn mouse_doc(core: &PointerProfile) -> PointerSection {
     }
 }
 
-pub(super) fn touchpad_doc(core: &PointerProfile) -> TouchpadSection {
+pub(super) fn touchpad_doc(core: PointerProfile) -> TouchpadSection {
     TouchpadSection {
         accel: core.accel,
         natural_scroll: core.natural_scroll,

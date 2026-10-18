@@ -35,6 +35,6 @@ pub struct SpacesSection {
 
 impl Default for SpacesSection {
     fn default() -> Self {
-        convert::spaces_doc(&CasementSettings::defaults().spaces)
+        convert::spaces_doc(CasementSettings::defaults().spaces)
     }
 }

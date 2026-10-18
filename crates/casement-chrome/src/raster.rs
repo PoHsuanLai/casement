@@ -138,9 +138,8 @@ impl TitleRaster {
             width: w,
             height: h,
         };
-        let (pw, ph) = match (u16::try_from(w), u16::try_from(h)) {
-            (Ok(pw), Ok(ph)) => (pw, ph),
-            _ => return Err(too_large),
+        let (Ok(pw), Ok(ph)) = (u16::try_from(w), u16::try_from(h)) else {
+            return Err(too_large);
         };
         let (left, right) = self.margins.in_device(key.scale);
         let avail = room(w, left, right);

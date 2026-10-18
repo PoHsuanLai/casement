@@ -49,9 +49,7 @@ pub fn breach(root: &Path, uid: u32) -> Option<JailBreach> {
 
 /// [`breach`] for this process on the real root.
 pub fn breach_here() -> Option<JailBreach> {
-    let uid = std::fs::metadata("/proc/self")
-        .map(|m| m.uid())
-        .unwrap_or(0);
+    let uid = std::fs::metadata("/proc/self").map_or(0, |m| m.uid());
     breach(Path::new("/"), uid)
 }
 

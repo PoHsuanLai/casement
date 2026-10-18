@@ -111,10 +111,10 @@ pub fn insert_client(
 /// `ClientState` queues it: `casement_wayland::client::GoneQueue`).
 pub fn take_gone(state: &mut State) -> Vec<Event> {
     let gone = state.wl.clients.gone_queue().take();
-    gone.iter().for_each(|client| {
+    for client in &gone {
         state.processes.forget(*client);
         state.roster.leave(*client);
-    });
+    }
     gone.into_iter()
         .map(|client| Event::ClientGone { client })
         .collect()

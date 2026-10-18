@@ -135,7 +135,7 @@ impl SharedClock {
         }
         let now = inner.clock.now();
         if inner.clock.timers().next().is_some_and(|due| due.at <= now) {
-            let (clock, timers) = replace(&mut inner.clock, |clock| clock.fire_due());
+            let (clock, timers) = replace(&mut inner.clock, VirtualClock::fire_due);
             inner.clock = clock;
             return Some(Arrival {
                 at: now,

@@ -44,6 +44,6 @@ pub struct OutputsSection {
 
 impl Default for OutputsSection {
     fn default() -> Self {
-        convert::outputs_doc(&CasementSettings::defaults().outputs)
+        convert::outputs_doc(CasementSettings::defaults().outputs)
     }
 }

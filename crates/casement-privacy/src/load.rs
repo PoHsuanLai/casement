@@ -95,7 +95,7 @@ pub fn load_floor(store: &mut dyn PrivacyStore) -> Floor {
 
 /// The floor one file says, or why it is not believed.
 fn floored(file: &FloorText) -> Result<Floor, String> {
-    let text = file.text.as_ref().map_err(|error| error.to_string())?;
+    let text = file.text.as_ref().map_err(ToString::to_string)?;
     Floor::from_toml(text).map_err(|error| format!("{}: {error}", file.path.display()))
 }
 

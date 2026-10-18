@@ -78,9 +78,9 @@ pub(super) fn update(state: &mut State) {
         .filter(|surface| !roots_seen.contains(surface))
         .collect();
     for surface in gone.iter().filter(|surface| surface.is_alive()) {
-        outputs
-            .values()
-            .for_each(|(output, _)| output_update(output, None, surface));
+        for (output, _) in outputs.values() {
+            output_update(output, None, surface);
+        }
     }
     state.render.presence.seen = roots_seen;
 }

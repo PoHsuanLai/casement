@@ -51,6 +51,6 @@ pub struct TouchpadSection {
 
 impl Default for TouchpadSection {
     fn default() -> Self {
-        convert::touchpad_doc(&CasementSettings::defaults().pointer.touchpad)
+        convert::touchpad_doc(CasementSettings::defaults().pointer.touchpad)
     }
 }

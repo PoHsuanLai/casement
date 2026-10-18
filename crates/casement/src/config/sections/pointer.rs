@@ -51,6 +51,6 @@ pub struct PointerSection {
 
 impl Default for PointerSection {
     fn default() -> Self {
-        convert::mouse_doc(&CasementSettings::defaults().pointer.mouse)
+        convert::mouse_doc(CasementSettings::defaults().pointer.mouse)
     }
 }
