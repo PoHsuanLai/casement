@@ -29,7 +29,7 @@ pub fn place_outputs(
     let (_, configs) = present.iter().zip(kept).fold(
         (placed, Vec::new()),
         |(taken, mut configs), (facts, kept)| {
-            let config = kept.unwrap_or_else(|| fresh(facts, policy, next_position(taken)));
+            let config = kept.unwrap_or_else(|| fresh(facts, *policy, next_position(taken)));
             configs.push((facts.key.clone(), config));
             (Some(grow(taken, &config)), configs)
         },
@@ -38,7 +38,7 @@ pub fn place_outputs(
 }
 
 /// What a new output gets: its preferred mode at its first-sight scale, upright and lit.
-fn fresh(facts: &OutputFacts, policy: &ScalePolicy, position: LogicalPoint) -> OutputConfig {
+fn fresh(facts: &OutputFacts, policy: ScalePolicy, position: LogicalPoint) -> OutputConfig {
     OutputConfig {
         mode: pick_mode(facts, &ModeWish::Preferred),
         scale: first_sight_scale(facts, policy),

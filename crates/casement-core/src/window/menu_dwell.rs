@@ -97,13 +97,12 @@ impl Dwell {
             (_, DwellInput::Lost) => (Dwell::Idle, cancel_if_waiting(self)),
             (Dwell::Waiting { .. }, DwellInput::Pressed) => (Dwell::Idle, DwellOutcome::Cancel),
             (Dwell::Shown(on), DwellInput::Pressed) => (Dwell::Spent(on), DwellOutcome::Nothing),
-            (_, DwellInput::Pressed) => (self, DwellOutcome::Nothing),
             (Dwell::Waiting { on, since }, DwellInput::Tick(now))
                 if now >= since.after(timing.rest) =>
             {
                 (Dwell::Shown(on), DwellOutcome::Show(on))
             }
-            (_, DwellInput::Tick(_)) => (self, DwellOutcome::Nothing),
+            (_, DwellInput::Pressed | DwellInput::Tick(_)) => (self, DwellOutcome::Nothing),
             (_, DwellInput::Over(over, now)) => self.over(timing, green(over), now),
         }
     }

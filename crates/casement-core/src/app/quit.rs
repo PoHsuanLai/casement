@@ -43,8 +43,9 @@ pub enum Pinging {
 /// ```
 pub fn ping_plan(life: Option<&AppLife>, outstanding: Held, recent: Held) -> Pinging {
     match (life, outstanding, recent) {
-        (None | Some(AppLife::NotResponding { .. }), _, _) => Pinging::Hold,
-        (Some(_), Held::Yes, _) | (Some(_), _, Held::Yes) => Pinging::Hold,
+        (None | Some(AppLife::NotResponding { .. }), _, _)
+        | (Some(_), Held::Yes, _)
+        | (Some(_), _, Held::Yes) => Pinging::Hold,
         (Some(_), Held::No, Held::No) => Pinging::Send,
     }
 }

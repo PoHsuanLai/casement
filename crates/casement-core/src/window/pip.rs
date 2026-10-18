@@ -78,8 +78,7 @@ pub fn floats_above(window: &Window) -> bool {
         window.claimed_id.as_str(),
     );
     let believed = match (source, &window.app) {
-        (Some(PipSource::Declared), _) => true,
-        (Some(PipSource::Guessed), AppKey::Proven(_)) => true,
+        (Some(PipSource::Declared), _) | (Some(PipSource::Guessed), AppKey::Proven(_)) => true,
         (Some(PipSource::Guessed), AppKey::Claimed(_)) | (None, _) => false,
     };
     let size = match &window.state {

@@ -185,14 +185,14 @@ pub fn target_at(
     }
     let option = mods.holds(MacMods::OPTION) && knobs.option_drag == Enabled::On;
     match (option, knobs.edges) {
-        (true, _) => under_pointer(at, scene.home, knobs),
-        (false, Enabled::On) => at_edge(at, scene, knobs),
+        (true, _) => under_pointer(at, scene.home, *knobs),
+        (false, Enabled::On) => at_edge(at, scene, *knobs),
         (false, Enabled::Off) => None,
     }
 }
 
 /// The top edge's target: Fill, or the top half.
-fn top_of(knobs: &TileKnobs) -> TileTarget {
+fn top_of(knobs: TileKnobs) -> TileTarget {
     match knobs.top_fills {
         Enabled::On => TileTarget::Fill,
         Enabled::Off => TileTarget::Zone(TileZone::Top),
@@ -200,7 +200,7 @@ fn top_of(knobs: &TileKnobs) -> TileTarget {
 }
 
 /// With Option held: the zone of the third of `home` the pointer is in.
-fn under_pointer(at: LogicalPoint, home: LogicalRect, knobs: &TileKnobs) -> Option<TileTarget> {
+fn under_pointer(at: LogicalPoint, home: LogicalRect, knobs: TileKnobs) -> Option<TileTarget> {
     let third = |from: i32, len: u32, p: i32| {
         let along = i64::from(p) - i64::from(from);
         usize::try_from((along * 3 / i64::from(len.max(1))).clamp(0, 2)).unwrap_or(0)
@@ -286,7 +286,7 @@ fn in_reach(
 }
 
 /// The zone of the edge or corner the pointer is at.
-fn at_edge(at: LogicalPoint, scene: &TileScene<'_>, knobs: &TileKnobs) -> Option<TileTarget> {
+fn at_edge(at: LogicalPoint, scene: &TileScene<'_>, knobs: TileKnobs) -> Option<TileTarget> {
     let home = scene.home;
     let clamp = |v: i64| i32::try_from(v).unwrap_or(i32::MAX);
     // The point past an end of the x axis (or the y axis) at the pointer's other coordinate.

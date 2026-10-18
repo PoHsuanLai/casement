@@ -52,7 +52,7 @@ impl Goals {
         for space in &arrangement.spaces {
             strips
                 .entry(space.output.clone())
-                .or_insert(f64::from(space.origin.x));
+                .or_insert_with(|| f64::from(space.origin.x));
         }
         Goals { windows, strips }
     }

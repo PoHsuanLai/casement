@@ -189,9 +189,7 @@ impl NightLight {
     pub fn ramp_at(&self, now: MinuteOfDay, size: u32) -> GammaRamp {
         match self.tint(now) {
             Tint::NONE => GammaRamp::Identity,
-            tint => GammaTable::tinted(size, tint)
-                .map(GammaRamp::Table)
-                .unwrap_or(GammaRamp::Identity),
+            tint => GammaTable::tinted(size, tint).map_or(GammaRamp::Identity, GammaRamp::Table),
         }
     }
 

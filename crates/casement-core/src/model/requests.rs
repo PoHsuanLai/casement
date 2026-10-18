@@ -224,9 +224,8 @@ impl Model {
                 restore,
             };
         }
-        let shown = space.clone();
         Moved::of(model)
-            .then(|model| model.show(&shown))
+            .then(|model| model.show(&space))
             .then(|model| model.relaid_out(id, Cause::Configure))
     }
 

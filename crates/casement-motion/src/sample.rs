@@ -102,10 +102,14 @@ fn placed(
     let frame = look.map(|look| look.frame);
     PlacedWindow {
         window: id,
-        committed: committed.0.get(&id).copied().unwrap_or(LogicalSize {
-            w: whole(target.w),
-            h: whole(target.h),
-        }),
+        committed: committed
+            .0
+            .get(&id)
+            .copied()
+            .unwrap_or_else(|| LogicalSize {
+                w: whole(target.w),
+                h: whole(target.h),
+            }),
         at: SubPoint {
             x: quantise(pose.x),
             y: quantise(pose.y),

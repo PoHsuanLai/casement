@@ -148,7 +148,7 @@ impl TimerBook {
             .take_while(|due| due.at <= t)
             .map(|due| due.key)
             .collect();
-        let book = fired.iter().fold(self, |book, key| book.cancel(key));
+        let book = fired.iter().fold(self, TimerBook::cancel);
         (book, fired)
     }
 

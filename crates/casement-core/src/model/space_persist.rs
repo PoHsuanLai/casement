@@ -53,9 +53,7 @@ impl Model {
             remembered: file,
             ..self
         };
-        let model = outputs
-            .iter()
-            .fold(model, |model, output| model.adopt_ids(output));
+        let model = outputs.iter().fold(model, Model::adopt_ids);
         let choices: Vec<SpaceId> = outputs
             .iter()
             .filter_map(|output| model.stored_choice(output))

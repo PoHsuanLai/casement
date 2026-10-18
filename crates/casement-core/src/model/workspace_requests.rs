@@ -68,12 +68,13 @@ impl Model {
             .spaces
             .shown_on(&space.output)
             .is_some_and(|shown| shown.id == *id);
-        let outputs = vec![space.output.clone()];
+        let outputs = vec![space.output];
         let model = self.without_space(id, &heir);
         let moved = Moved::of(model).then(|model| model.redrawn(Cause::SpaceSwitch, outputs));
-        match was_shown {
-            true => moved.then(|model| model.show(&heir)),
-            false => moved,
+        if was_shown {
+            moved.then(|model| model.show(&heir))
+        } else {
+            moved
         }
     }
 
@@ -108,9 +109,10 @@ impl Model {
         let model = model.renumbered(&from).renumbered(output);
         let outputs = vec![from, output.clone()];
         let moved = Moved::of(model).then(|model| model.redrawn(Cause::OutputChange, outputs));
-        match was_shown {
-            true => moved.then(|model| model.show(&heir)),
-            false => moved,
+        if was_shown {
+            moved.then(|model| model.show(&heir))
+        } else {
+            moved
         }
     }
 

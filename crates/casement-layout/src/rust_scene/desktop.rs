@@ -137,14 +137,13 @@ fn arrange_space(
     for (window, parent, asked) in sheets {
         let usable = below_chrome(output.usable, window.reserve_top);
         let hung = places.get(&parent).map(|rect| attach_rect(*rect, asked));
-        let (target, report) = match hung {
-            Some(rect) => placed(window.window, &output.output, asked, rect, window.limits),
-            None => {
-                let size = fit_size(asked, window.limits, usable);
-                let rect = cascade_rect(usable, size, new_so_far, knobs.cascade_step);
-                new_so_far += 1;
-                placed(window.window, &output.output, asked, rect, window.limits)
-            }
+        let (target, report) = if let Some(rect) = hung {
+            placed(window.window, &output.output, asked, rect, window.limits)
+        } else {
+            let size = fit_size(asked, window.limits, usable);
+            let rect = cascade_rect(usable, size, new_so_far, knobs.cascade_step);
+            new_so_far += 1;
+            placed(window.window, &output.output, asked, rect, window.limits)
         };
         places.entry(target.window).or_insert(target.rect);
         into.windows.push(target);

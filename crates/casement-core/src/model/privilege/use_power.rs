@@ -31,7 +31,7 @@ impl Privilege {
             )
         });
         match known {
-            Some((Decision::Open, _)) | Some((Decision::Ask(_), true)) => {
+            Some((Decision::Open, _) | (Decision::Ask(_), true)) => {
                 self.resolve(out, client, power, PowerOutcome::Allowed);
             }
             Some((Decision::Ask(memory), false)) => self.ask(out, client, power, memory, ctx),

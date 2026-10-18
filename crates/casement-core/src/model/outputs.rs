@@ -7,6 +7,7 @@ use crate::cause::Cause;
 use crate::effect::Effect;
 use crate::focus::FocusIn;
 use crate::ids::OutputKey;
+use crate::layer::LayerBook;
 use crate::output::{OutputConfig, OutputFacts, OutputPower, SavedOutputs, place_outputs};
 use crate::space::SpaceContent;
 use crate::time::TimerKey;
@@ -190,9 +191,7 @@ impl Model {
             .filter(|(_, spec)| spec.output == *output)
             .map(|(key, _)| *key)
             .collect();
-        let layers = gone
-            .iter()
-            .fold(self.layers, |layers, key| layers.without_layer(key));
+        let layers = gone.iter().fold(self.layers, LayerBook::without_layer);
         Model { layers, ..self }
     }
 

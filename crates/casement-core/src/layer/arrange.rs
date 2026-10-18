@@ -169,7 +169,7 @@ fn reservation(spec: &LayerSpec) -> Option<Reservation> {
     let ExclusiveZone::Reserve(zone) = spec.exclusive else {
         return None;
     };
-    let edge = exclusive_edge(&spec.anchor)?;
+    let edge = exclusive_edge(spec.anchor)?;
     let margin = match edge {
         Edge::Top => spec.margin.top,
         Edge::Bottom => spec.margin.bottom,
@@ -216,7 +216,7 @@ fn allowed(
 }
 
 /// The one edge an anchoring reserves beside, if it names one.
-fn exclusive_edge(anchor: &Anchors) -> Option<Edge> {
+fn exclusive_edge(anchor: Anchors) -> Option<Edge> {
     let held = |a: Anchor| a == Anchor::Held;
     let (top, bottom, left, right) = (
         held(anchor.top),

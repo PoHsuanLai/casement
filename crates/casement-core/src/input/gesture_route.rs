@@ -100,22 +100,21 @@ pub fn route(
     settings: &GestureSettings,
 ) -> (Route, Fate) {
     match (state, step) {
-        (_, GestureStep::Begin { fingers }) => begin(fingers, settings),
-        (Route::Idle, _) => (Route::Idle, Fate::Pass),
+        (_, GestureStep::Begin { fingers }) => begin(fingers, *settings),
+        (Route::Idle, _) | (Route::Passing, GestureStep::End(_)) => (Route::Idle, Fate::Pass),
         (Route::Passing, GestureStep::Update(_)) => (Route::Passing, Fate::Pass),
-        (Route::Passing, GestureStep::End(_)) => (Route::Idle, Fate::Pass),
         (Route::Deciding { fingers, x, y }, GestureStep::Update(delta)) => decide(
             fingers,
             x + i64::from(delta.x.0),
             y + i64::from(delta.y.0),
-            settings,
+            *settings,
         ),
         (Route::Deciding { .. } | Route::Dead, GestureStep::End(_)) => {
             (Route::Idle, Fate::Take(Vec::new()))
         }
         (Route::Dead, GestureStep::Update(_)) => (Route::Dead, Fate::Take(Vec::new())),
         (Route::Driving { axis, carry }, GestureStep::Update(delta)) => {
-            drive(axis, carry, delta, settings)
+            drive(axis, carry, delta, *settings)
         }
         (Route::Driving { axis, .. }, GestureStep::End(GestureEnd::Lifted)) => {
             (Route::Idle, Fate::Take(vec![Drive::Ended(axis)]))
@@ -127,7 +126,7 @@ pub fn route(
 }
 
 /// A swipe of `fingers` began: the desktop's when either swipe uses that count.
-fn begin(fingers: u8, settings: &GestureSettings) -> (Route, Fate) {
+fn begin(fingers: u8, settings: GestureSettings) -> (Route, Fate) {
     match settings.spaces.matches(fingers) || settings.mission_control.matches(fingers) {
         true => (
             Route::Deciding {
@@ -142,13 +141,14 @@ fn begin(fingers: u8, settings: &GestureSettings) -> (Route, Fate) {
 }
 
 /// The fingers have moved `(x, y)` sub-pixels in all: pick the axis once they went far enough.
-fn decide(fingers: u8, x: i64, y: i64, settings: &GestureSettings) -> (Route, Fate) {
+fn decide(fingers: u8, x: i64, y: i64, settings: GestureSettings) -> (Route, Fate) {
     if x.abs().max(y.abs()) < LOCK {
         return (Route::Deciding { fingers, x, y }, Fate::Take(Vec::new()));
     }
-    let (axis, along, wanted) = match x.abs() >= y.abs() {
-        true => (Axis::Horizontal, x, settings.spaces.matches(fingers)),
-        false => (Axis::Vertical, y, settings.mission_control.matches(fingers)),
+    let (axis, along, wanted) = if x.abs() >= y.abs() {
+        (Axis::Horizontal, x, settings.spaces.matches(fingers))
+    } else {
+        (Axis::Vertical, y, settings.mission_control.matches(fingers))
     };
     match wanted {
         false => (Route::Dead, Fate::Take(Vec::new())),
@@ -164,7 +164,7 @@ fn decide(fingers: u8, x: i64, y: i64, settings: &GestureSettings) -> (Route, Fa
 }
 
 /// The fingers moved by `delta` on a swipe driving `axis`.
-fn drive(axis: Axis, carry: i64, delta: SubPoint, settings: &GestureSettings) -> (Route, Fate) {
+fn drive(axis: Axis, carry: i64, delta: SubPoint, settings: GestureSettings) -> (Route, Fate) {
     let along = match axis {
         Axis::Horizontal => i64::from(delta.x.0),
         Axis::Vertical => i64::from(delta.y.0),
@@ -179,7 +179,7 @@ fn advance(
     axis: Axis,
     carry: i64,
     along: i64,
-    settings: &GestureSettings,
+    settings: GestureSettings,
 ) -> (Route, Option<Drive>) {
     let total = carry + along;
     let pixels = i32::try_from(total / SUB_PER_PX).unwrap_or(i32::MAX);
@@ -198,7 +198,7 @@ fn advance(
 
 /// `pixels` along `axis` as the person means it: with natural direction off the Spaces move
 /// against the fingers. Mission Control's up and down do not change.
-fn directed(axis: Axis, pixels: i32, settings: &GestureSettings) -> i32 {
+fn directed(axis: Axis, pixels: i32, settings: GestureSettings) -> i32 {
     match (axis, settings.natural) {
         (Axis::Horizontal, Enabled::Off) => pixels.saturating_neg(),
         _ => pixels,

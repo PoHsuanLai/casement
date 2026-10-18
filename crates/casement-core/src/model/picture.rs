@@ -46,12 +46,11 @@ impl Model {
                 .windows
                 .get(&window)
                 .is_some_and(|held| !matches!(held.state, WindowState::FullScreen { .. }));
-        match movable {
-            false => Moved::of(self),
-            true => {
-                let (model, id) = self.with_space(output, SpaceContent::Desktop);
-                model.window_to_space(window, &id)
-            }
+        if movable {
+            let (model, id) = self.with_space(output, SpaceContent::Desktop);
+            model.window_to_space(window, &id)
+        } else {
+            Moved::of(self)
         }
     }
 }

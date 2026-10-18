@@ -87,7 +87,7 @@ pub enum Refusal {
 /// the person would.
 pub fn reach(origin: &Origin, target: &InputTarget, use_: InputUse, facts: &ReachFacts) -> Reach {
     [
-        refuse_by_lock(origin, target, facts),
+        refuse_by_lock(origin, target, *facts),
         refuse_agent(origin),
         refuse_feed(origin, use_),
         refuse_untrusted(origin, target),
@@ -98,7 +98,7 @@ pub fn reach(origin: &Origin, target: &InputTarget, use_: InputUse, facts: &Reac
     .map_or(Reach::Allowed, Reach::Refused)
 }
 
-fn refuse_by_lock(origin: &Origin, target: &InputTarget, facts: &ReachFacts) -> Option<Refusal> {
+fn refuse_by_lock(origin: &Origin, target: &InputTarget, facts: ReachFacts) -> Option<Refusal> {
     match facts.lock {
         LockState::Unlocked => None,
         LockState::Locking { .. } | LockState::Locked { .. } | LockState::LockedWithoutSurface => {

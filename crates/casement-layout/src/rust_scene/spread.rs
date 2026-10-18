@@ -92,12 +92,11 @@ pub(super) fn spread(
         at_floor = cells;
     }
     let sizes = ruler.sizes(floor);
-    match shelf(&sizes, area, &order) {
-        Some(cells) => (ruler.slots(&cells, floor, usable), Fit::Apart),
-        None => {
-            held(&mut at_floor, area);
-            (ruler.slots(&at_floor, floor, usable), Fit::Overflow)
-        }
+    if let Some(cells) = shelf(&sizes, area, &order) {
+        (ruler.slots(&cells, floor, usable), Fit::Apart)
+    } else {
+        held(&mut at_floor, area);
+        (ruler.slots(&at_floor, floor, usable), Fit::Overflow)
     }
 }
 

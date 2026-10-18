@@ -164,7 +164,7 @@ impl Privilege {
 
     /// The shell cannot be asked: what was on its screen waits for the next shell.
     fn shell_gone(&mut self, ctx: Ctx) {
-        if let ShellPresence::Present = self.shell {
+        if self.shell == ShellPresence::Present {
             self.shell = ShellPresence::Absent { since: ctx.now };
         }
         self.asks.requeue();

@@ -32,7 +32,7 @@ impl VblankClock {
         let guess = self.refresh.frames_in(elapsed);
         let k = (guess..=guess.saturating_add(2))
             .find(|k| u128::from(self.refresh.nanos_for(*k)) > elapsed)
-            .unwrap_or(guess.saturating_add(2));
+            .unwrap_or_else(|| guess.saturating_add(2));
         (self.at(k), VblankSeq(k))
     }
 
