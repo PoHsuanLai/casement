@@ -41,7 +41,7 @@ pub fn place_outputs(
 fn fresh(facts: &OutputFacts, policy: ScalePolicy, position: LogicalPoint) -> OutputConfig {
     OutputConfig {
         mode: pick_mode(facts, &ModeWish::Preferred),
-        scale: first_sight_scale(facts, policy),
+        scale: first_sight_scale(facts, &policy),
         transform: Transform::Normal,
         position,
         power: OutputPower::On,
