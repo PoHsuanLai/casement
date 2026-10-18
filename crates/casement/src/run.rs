@@ -6,7 +6,8 @@ use crate::cli::StartMode;
 #[cfg(feature = "debug-inject")]
 use crate::debug;
 use crate::display::{self, attach_display};
-use crate::notify::{Notice, NotifySocket, SocketNotify, Watchdog};
+use crate::endpoint::Endpoint;
+use crate::notify::{Notice, SocketNotify, Watchdog};
 use crate::privacy::SystemDir;
 use crate::space_sync::SpaceSync;
 use crate::spawn::{ProcessSpawner, Scopes};
@@ -27,27 +28,6 @@ use smithay::wayland::socket::ListeningSocketSource;
 #[cfg(any(feature = "testing", feature = "debug-inject"))]
 const JAIL_BREACH: u8 = 5;
 
-/// Where Debug1 is served (feature `debug-inject`; ignored without it).
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
-pub enum DebugBus {
-    /// No bus address was given.
-    #[default]
-    Unset,
-    /// The private bus at this address (the jail's `$DBUS_SESSION_BUS_ADDRESS`).
-    At(String),
-}
-
-/// Where `org.quire.Compositor1` is served (P2-Z; the shell and the agent tier ask it for their
-/// connections).
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
-pub enum CompositorBus {
-    /// No bus address was given: no hand-out is offered.
-    #[default]
-    Unset,
-    /// The session bus at this address.
-    At(String),
-}
-
 /// What [`run`] needs: how casement starts, and where the debug bus is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -55,13 +35,13 @@ pub struct RunConfig {
     /// How casement starts.
     pub start: cli::StartConfig,
     /// Where Debug1 is served.
-    pub debug_bus: DebugBus,
+    pub debug_bus: Endpoint,
     /// Which bus login1 is heard on (a tty seat hears the machine go to sleep there).
     pub sleep_bus: SleepBus,
     /// Where `org.quire.Compositor1` is served.
-    pub compositor_bus: CompositorBus,
+    pub compositor_bus: Endpoint,
     /// Where the service manager is told casement is ready (`$NOTIFY_SOCKET`).
-    pub notify: NotifySocket,
+    pub notify: Endpoint,
     /// How often the service manager wants a ping.
     pub watchdog: Watchdog,
     /// Whether the programs a binding starts get a scope of their own in the person's service
@@ -77,10 +57,10 @@ impl RunConfig {
     pub fn new(start: cli::StartConfig) -> RunConfig {
         RunConfig {
             start,
-            debug_bus: DebugBus::Unset,
+            debug_bus: Endpoint::Unset,
             sleep_bus: SleepBus::System,
-            compositor_bus: CompositorBus::Unset,
-            notify: NotifySocket::Unset,
+            compositor_bus: Endpoint::Unset,
+            notify: Endpoint::Unset,
             watchdog: Watchdog::Off,
             scopes: Scopes::Off,
             #[cfg(feature = "debug-inject")]
@@ -117,13 +97,13 @@ impl RunConfig {
 
     /// The same run with Debug1 on `debug_bus`.
     #[must_use]
-    pub fn with_debug_bus(self, debug_bus: DebugBus) -> RunConfig {
+    pub fn with_debug_bus(self, debug_bus: Endpoint) -> RunConfig {
         RunConfig { debug_bus, ..self }
     }
 
     /// The same run serving `org.quire.Compositor1` on `compositor_bus`.
     #[must_use]
-    pub fn with_compositor_bus(self, compositor_bus: CompositorBus) -> RunConfig {
+    pub fn with_compositor_bus(self, compositor_bus: Endpoint) -> RunConfig {
         RunConfig {
             compositor_bus,
             ..self
@@ -132,7 +112,7 @@ impl RunConfig {
 
     /// The same run telling the service manager through `notify`.
     #[must_use]
-    pub fn with_notify(self, notify: NotifySocket) -> RunConfig {
+    pub fn with_notify(self, notify: Endpoint) -> RunConfig {
         RunConfig { notify, ..self }
     }
 
@@ -215,9 +195,9 @@ pub fn run(config: RunConfig) -> Result<(), RunError> {
 fn attach_debug(
     state: &mut State,
     handle: &smithay::reexports::calloop::LoopHandle<'static, State>,
-    bus: &DebugBus,
+    bus: &Endpoint,
 ) -> Result<debug::Shared, RunError> {
-    let DebugBus::At(address) = bus else {
+    let Endpoint::At(address) = bus else {
         return Err(RunError::NoDebugBus);
     };
     let (calls, connection) = casement_ipc::dbus::serve_debug_at(address)?;
@@ -243,11 +223,11 @@ fn announce_test_units(table: &casement_ipc::dbus::PeerUnitTable) {
 fn attach_compositor(
     state: &mut State,
     handle: &smithay::reexports::calloop::LoopHandle<'static, State>,
-    bus: &CompositorBus,
+    bus: &Endpoint,
     table: CallerTable,
     #[cfg(feature = "debug-inject")] peer_units: casement_ipc::dbus::PeerUnitTable,
 ) -> Result<(), RunError> {
-    let CompositorBus::At(address) = bus else {
+    let Endpoint::At(address) = bus else {
         return Ok(());
     };
     let (link, edits) = PrivacyLink::new();
@@ -337,7 +317,7 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
     if matches!(scopes, Scopes::Under(_)) {
         state.seams.spawner = Box::new(ProcessSpawner::new(scopes));
     }
-    if let CompositorBus::At(address) = &compositor_bus {
+    if let Endpoint::At(address) = &compositor_bus {
         let registry = ZbusSpaceRegistry::at(address.clone());
         state.seams.space_sync = SpaceSync::new(Box::new(registry));
     }

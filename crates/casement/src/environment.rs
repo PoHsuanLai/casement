@@ -2,13 +2,14 @@
 //! the parsed command line: where state and icons live, how X11 apps are served, the service
 //! manager's sockets and the session bus. `main` only parses arguments and calls [`run_config`].
 
+use crate::RunConfig;
 use crate::cli::{StartConfig, StartMode, XwaylandSource};
+use crate::endpoint::Endpoint;
 use crate::icons::IconSearch;
-use crate::notify::{NotifySocket, Watchdog};
+use crate::notify::Watchdog;
 use crate::space_store::{StateDirs, StateHome};
 use crate::spawn::Scopes;
 use crate::xwayland::{self, XwaylandConfig, XwaylandMode};
-use crate::{CompositorBus, DebugBus, RunConfig};
 use casement_backend::BackendChoice;
 use std::path::PathBuf;
 
@@ -101,11 +102,11 @@ pub fn run_config(mut start: StartConfig) -> RunConfig {
     }
     // Debug1 lives on the jail's private bus, which the jail's scripts name here.
     let session_bus = std::env::var("DBUS_SESSION_BUS_ADDRESS").ok();
-    let debug_bus = session_bus.clone().map_or(DebugBus::Unset, DebugBus::At);
+    let debug_bus = session_bus.clone().map_or(Endpoint::Unset, Endpoint::At);
     // Compositor1, which hands the shell its connection, lives on the session bus.
-    let compositor_bus = session_bus.map_or(CompositorBus::Unset, CompositorBus::At);
+    let compositor_bus = session_bus.map_or(Endpoint::Unset, Endpoint::At);
     // systemd's service protocol: where to say "ready", and how often to say "alive".
-    let notify = NotifySocket::of(std::env::var("NOTIFY_SOCKET").ok().as_deref());
+    let notify = Endpoint::of(std::env::var("NOTIFY_SOCKET").ok().as_deref());
     let watchdog = Watchdog::from_env(
         std::env::var("WATCHDOG_USEC").ok().as_deref(),
         std::env::var("WATCHDOG_PID").ok().as_deref(),

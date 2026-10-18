@@ -3,18 +3,20 @@
 //! turns.
 //!
 //! [`Notify`] is the seam. [`SocketNotify`] writes one datagram per [`Notice`] to the socket
-//! systemd names in `$NOTIFY_SOCKET` (the binary reads it and passes a [`NotifySocket`]; the
+//! systemd names in `$NOTIFY_SOCKET` (the binary reads it and passes an [`Endpoint`]; the
 //! library reads no environment); with no socket nothing is sent. `casement-testkit` exports
 //! `FakeNotify`. The watchdog period is read once by the binary ([`Watchdog::from_env`]).
 //!
 //! ```
-//! use casement::notify::{Notice, Notify, NotifySocket, SocketNotify};
+//! use casement::endpoint::Endpoint;
+//! use casement::notify::{Notice, Notify, SocketNotify};
 //!
-//! let mut notify = SocketNotify::new(NotifySocket::Unset);
+//! let mut notify = SocketNotify::new(Endpoint::Unset);
 //! notify.send(&Notice::Stopping).expect("nothing to send to is not an error");
 //! assert_eq!(Notice::Watchdog.datagram(), "WATCHDOG=1");
 //! ```
 
+use crate::endpoint::Endpoint;
 use std::os::linux::net::SocketAddrExt;
 use std::os::unix::net::{SocketAddr, UnixDatagram};
 use std::time::Duration;
@@ -68,33 +70,6 @@ pub trait Notify: std::fmt::Debug {
     fn send(&mut self, notice: &Notice) -> Result<(), NotifyError>;
 }
 
-/// The socket systemd named (`$NOTIFY_SOCKET`).
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
-pub enum NotifySocket {
-    /// None was named: casement is not a service, nothing is sent.
-    #[default]
-    Unset,
-    /// A path, or `@name` for an abstract socket.
-    At(String),
-}
-
-impl NotifySocket {
-    /// The socket for the variable's value (empty is none).
-    ///
-    /// ```
-    /// use casement::notify::NotifySocket;
-    /// assert_eq!(NotifySocket::of(None), NotifySocket::Unset);
-    /// assert_eq!(NotifySocket::of(Some("")), NotifySocket::Unset);
-    /// assert_eq!(NotifySocket::of(Some("/run/n")), NotifySocket::At("/run/n".to_owned()));
-    /// ```
-    pub fn of(value: Option<&str>) -> NotifySocket {
-        match value {
-            Some(text) if !text.is_empty() => NotifySocket::At(text.to_owned()),
-            _ => NotifySocket::Unset,
-        }
-    }
-}
-
 /// Nothing is sent.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct NoNotify;
@@ -109,19 +84,19 @@ impl Notify for NoNotify {
 /// The real implementation: a datagram to the named socket, std's `UnixDatagram`.
 #[derive(Debug, Clone)]
 pub struct SocketNotify {
-    socket: NotifySocket,
+    socket: Endpoint,
 }
 
 impl SocketNotify {
     /// Notices to `socket`.
-    pub fn new(socket: NotifySocket) -> SocketNotify {
+    pub fn new(socket: Endpoint) -> SocketNotify {
         SocketNotify { socket }
     }
 }
 
 impl Notify for SocketNotify {
     fn send(&mut self, notice: &Notice) -> Result<(), NotifyError> {
-        let NotifySocket::At(name) = &self.socket else {
+        let Endpoint::At(name) = &self.socket else {
             return Ok(());
         };
         let wrap = |source| NotifyError::Socket {
@@ -201,7 +176,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("notify");
         let listener = UnixDatagram::bind(&path).expect("bind");
-        let mut notify = SocketNotify::new(NotifySocket::At(path.display().to_string()));
+        let mut notify = SocketNotify::new(Endpoint::At(path.display().to_string()));
         notify.send(&Notice::Watchdog).expect("sent");
         notify.send(&Notice::Stopping).expect("sent");
         let mut buf = [0u8; 128];
@@ -216,7 +191,7 @@ mod tests {
         let name = format!("casement-notify-test-{}", std::process::id());
         let address = SocketAddr::from_abstract_name(name.as_bytes()).expect("address");
         let listener = UnixDatagram::bind_addr(&address).expect("bind");
-        let mut notify = SocketNotify::new(NotifySocket::At(format!("@{name}")));
+        let mut notify = SocketNotify::new(Endpoint::At(format!("@{name}")));
         notify.send(&Notice::Watchdog).expect("sent");
         let mut buf = [0u8; 16];
         let n = listener.recv(&mut buf).expect("received");
@@ -225,9 +200,9 @@ mod tests {
 
     #[test]
     fn an_unset_socket_sends_nothing_and_a_missing_one_is_an_error() {
-        let mut none = SocketNotify::new(NotifySocket::Unset);
+        let mut none = SocketNotify::new(Endpoint::Unset);
         none.send(&Notice::Stopping).expect("nothing to do");
-        let mut gone = SocketNotify::new(NotifySocket::At("/nonexistent/notify".to_owned()));
+        let mut gone = SocketNotify::new(Endpoint::At("/nonexistent/notify".to_owned()));
         assert!(gone.send(&Notice::Stopping).is_err());
     }
 

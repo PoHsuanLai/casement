@@ -45,6 +45,7 @@ pub mod core_loop;
 mod debug;
 mod delegates;
 pub mod display;
+pub mod endpoint;
 pub mod environment;
 pub mod exec;
 mod handlers;
@@ -76,5 +77,6 @@ pub mod time;
 pub mod timing;
 pub mod xwayland;
 
-pub use run::{CompositorBus, DebugBus, RunConfig, RunError, run};
+pub use endpoint::Endpoint;
+pub use run::{RunConfig, RunError, run};
 pub use state::{AgentState, CoreState, IpcState, RenderState, StartError, State};
