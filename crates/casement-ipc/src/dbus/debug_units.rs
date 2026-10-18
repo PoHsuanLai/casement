@@ -119,18 +119,13 @@ fn parse_rule(entry: &str) -> Result<PeerUnitRule, PeerUnitsError> {
     })
 }
 
-/// The program name of a process: `/proc/<pid>/comm`. A seam, with the real one [`ProcComm`].
-pub trait PeerNames: std::fmt::Debug + Send + Sync + 'static {
-    /// The program name of process `pid`, `None` if it cannot be read.
-    fn name_of(&self, pid: u32) -> Option<String>;
-}
-
-/// The real seam: `/proc/<pid>/comm`.
+/// The program name of a process: `/proc/<pid>/comm`.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ProcComm;
 
-impl PeerNames for ProcComm {
-    fn name_of(&self, pid: u32) -> Option<String> {
+impl ProcComm {
+    /// The program name of process `pid`, `None` if it cannot be read.
+    pub fn name_of(&self, pid: u32) -> Option<String> {
         let text = std::fs::read_to_string(format!("/proc/{pid}/comm")).ok()?;
         Some(text.trim_end_matches('\n').to_owned())
     }
@@ -162,23 +157,20 @@ fn standing_of_unit(unit: &str) -> Option<Standing> {
 #[derive(Debug)]
 pub struct DebugPeerUnits {
     table: PeerUnitTable,
-    names: Arc<dyn PeerNames>,
     inner: Arc<dyn CallerCheck>,
     connection: Connection,
 }
 
 impl DebugPeerUnits {
-    /// The wrapper over `inner`, reading program names through `names` and asking the bus of
+    /// The wrapper over `inner`, reading program names from `/proc` and asking the bus of
     /// `connection` for a sender's process.
     pub fn new(
         table: PeerUnitTable,
-        names: Arc<dyn PeerNames>,
         inner: Arc<dyn CallerCheck>,
         connection: Connection,
     ) -> DebugPeerUnits {
         DebugPeerUnits {
             table,
-            names,
             inner,
             connection,
         }
@@ -193,7 +185,7 @@ impl DebugPeerUnits {
             .get_connection_unix_process_id(name)
             .await
             .ok()?;
-        let comm = self.names.name_of(pid);
+        let comm = ProcComm.name_of(pid);
         standing_of_unit(self.table.unit_of(pid, comm.as_deref())?)
     }
 }

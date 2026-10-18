@@ -1743,8 +1743,8 @@ Test unit overrides for jailed desktop scenarios (no systemd, so no unit in `/pr
   `PeerUnitTable` through `RunConfig::with_debug_peer_units` (the field exists only under the feature). A build without the
   feature does not contain the name, so the variable has no effect; `main.rs` has a test that the module is gated and that
   the name appears nowhere else in `main.rs`.
-- **Mechanism.** `casement-ipc/src/dbus/debug_units.rs` (same feature): `PeerUnitTable::parse` (pure), `PeerNames` seam
-  with `ProcComm` (`/proc/<pid>/comm`), and `DebugPeerUnits`, a `PeerCgroups` that answers a matching peer with a
+- **Mechanism.** `casement-ipc/src/dbus/debug_units.rs` (same feature): `PeerUnitTable::parse` (pure), `ProcComm`
+  (`/proc/<pid>/comm`), and `DebugPeerUnits`, a `PeerCgroups` that answers a matching peer with a
   synthesised cgroup text ending in the unit, else asks the real `ProcCgroups`. `run.rs::with_debug_units` wraps it
   around `ProcCgroups` for Compositor1 and logs once at warn level "TEST ONLY: test unit overrides are active" (only when
   the table is non-empty). `role_for` and `CallerUnit::of_cgroup` are untouched, so a peer still needs a unit the plan names.

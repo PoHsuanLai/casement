@@ -45,7 +45,7 @@ mod debug_units;
 
 #[cfg(feature = "debug-inject")]
 pub use debug_units::{
-    DebugPeerUnits, PeerMatch, PeerNames, PeerUnitRule, PeerUnitTable, PeerUnitsError, ProcComm,
+    DebugPeerUnits, PeerMatch, PeerUnitRule, PeerUnitTable, PeerUnitsError, ProcComm,
 };
 
 #[cfg(feature = "debug-inject")]

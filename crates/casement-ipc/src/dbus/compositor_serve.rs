@@ -82,17 +82,13 @@ impl CallerSetup {
     /// a jailed desktop has no unit manager to say so).
     #[cfg(feature = "debug-inject")]
     pub fn with_test_units(self, table: super::debug_units::PeerUnitTable) -> CallerSetup {
-        use super::debug_units::{DebugPeerUnits, ProcComm};
+        use super::debug_units::DebugPeerUnits;
         let build = self.build;
         CallerSetup {
             build: Box::new(move |connection: &Connection| {
                 let inner = build(connection);
-                let wrapped: Arc<dyn CallerCheck> = Arc::new(DebugPeerUnits::new(
-                    table,
-                    Arc::new(ProcComm),
-                    inner,
-                    connection.clone(),
-                ));
+                let wrapped: Arc<dyn CallerCheck> =
+                    Arc::new(DebugPeerUnits::new(table, inner, connection.clone()));
                 wrapped
             }),
             window: self.window,
