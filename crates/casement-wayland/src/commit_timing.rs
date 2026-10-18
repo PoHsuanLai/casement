@@ -80,7 +80,7 @@ pub fn on_barrier(part: &mut CommitTimingPart, surface: &WlSurface) -> Vec<Event
 }
 
 /// `output` is about to present at `presented.at`: barriers due by then are signalled (the
-/// timestamps are `CLOCK_MONOTONIC`, which the session's `Mono` is, virtual in tests). P0
+/// timestamps are `CLOCK_MONOTONIC`, as `presented.at` is: the caller adds the session's epoch). P0
 /// presents each surface on the first output (A28), so any output's frame counts. The clients
 /// that had commits held back are listed for [`take_cleared`].
 pub fn apply_presented(

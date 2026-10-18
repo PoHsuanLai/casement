@@ -254,9 +254,10 @@ fn presented(
     seq: VblankSeq,
 ) {
     send_callbacks(state, output, frame, now);
+    // Presentation and commit timing speak `CLOCK_MONOTONIC`, not the session's `Mono`.
     let at = presentation::Presented {
         seq,
-        at: now,
+        at: state.clock.on_monotonic(now),
         refresh: config.mode.refresh,
     };
     let faults = [

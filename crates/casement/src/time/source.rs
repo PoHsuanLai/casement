@@ -41,11 +41,13 @@ impl WallClock {
     pub(super) fn start() -> WallClock {
         let epoch = Instant::now();
         // `Instant` is `CLOCK_MONOTONIC` on Linux, so the monotonic reading minus the time that
-        // has passed since the epoch was taken is the reading at the epoch itself.
+        // has passed since the epoch was taken is the reading at the epoch itself. The elapsed
+        // time is taken after the reading, so the first read's cost is not counted twice.
+        let reading = super::monotonic_ns();
         let elapsed = u64::try_from(epoch.elapsed().as_nanos()).unwrap_or(0);
         WallClock {
             epoch,
-            epoch_ns: super::monotonic_ns().saturating_sub(elapsed),
+            epoch_ns: reading.saturating_sub(elapsed),
             timers: Rc::new(RefCell::new(BTreeMap::new())),
             vblanks: Rc::new(RefCell::new(BTreeMap::new())),
         }
@@ -120,6 +122,13 @@ impl ClockSource {
             ClockSource::Monotonic(wall) => wall.epoch_ns,
             ClockSource::Virtual(_) | ClockSource::Stepped(_) => 0,
         }
+    }
+
+    /// `at` as `CLOCK_MONOTONIC` reads it: what a client is told when the protocol names that
+    /// clock (`wp_presentation`, `wp_commit_timing_v1`). The epoch plus the session time; a
+    /// virtual clock's epoch is 0, so tests see their own `Mono`.
+    pub fn on_monotonic(&self, at: Mono) -> Mono {
+        Mono(at.0.saturating_add(Duration::from_nanos(self.monotonic_epoch_ns())))
     }
 
     /// The virtual clock, when this is one.
@@ -213,5 +222,24 @@ fn route(state: &mut State, stop: Stop) {
         Stop::Timer(key) => core_loop::feed(state, vec![Event::TimerFired(key)]),
         Stop::Vblank(output, _seq) => core_loop::frame(state, &output),
         Stop::End => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_wall_clocks_now_on_monotonic_is_what_the_system_reads() {
+        let clock = ClockSource::Monotonic(WallClock::start());
+        let before = super::super::monotonic_ns();
+        let told = clock.on_monotonic(clock.now()).0.as_nanos();
+        let after = super::super::monotonic_ns();
+        // The epoch is estimated from two reads a few hundred nanoseconds apart.
+        let slack = 1_000_000;
+        assert!(
+            u128::from(before) <= told + slack && told <= u128::from(after) + slack,
+            "{before} {told} {after}"
+        );
     }
 }

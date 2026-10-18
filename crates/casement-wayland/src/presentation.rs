@@ -1,5 +1,5 @@
-//! `wp_presentation`: when a frame reached the screen. Timestamps are the clock's `Mono`
-//! (virtual in tests), never the wall clock.
+//! `wp_presentation`: when a frame reached the screen. Timestamps are `CLOCK_MONOTONIC` (the
+//! session's `Mono` plus its epoch; virtual in tests, where the epoch is 0), never the wall clock.
 
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::time::{Millihertz, Mono, VblankSeq};
@@ -20,8 +20,8 @@ use smithay::wayland::presentation::{
 };
 use std::collections::BTreeMap;
 
-/// The `clk_id` casement advertises: `CLOCK_MONOTONIC` (the session's `Mono` counts from a
-/// monotonic epoch; the virtual clock stands in for it in tests).
+/// The `clk_id` casement advertises: `CLOCK_MONOTONIC`. [`Presented::at`] is on it (the caller
+/// adds the session's monotonic epoch; the virtual clock stands in for it in tests).
 pub const CLOCK_MONOTONIC: u32 = 1;
 
 /// `wp_presentation`.
@@ -66,7 +66,7 @@ impl PresentationPart {
 pub struct Presented {
     /// The vblank it was shown at.
     pub seq: VblankSeq,
-    /// When.
+    /// When, on `CLOCK_MONOTONIC` (not the session's `Mono`: the epoch is added).
     pub at: Mono,
     /// The output's refresh then.
     pub refresh: Millihertz,
