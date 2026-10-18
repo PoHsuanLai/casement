@@ -3,7 +3,7 @@
 
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::WindowId;
-use casement_core::lock::{LockHolder, LockState};
+use casement_core::lock::LockState;
 use casement_core::policy::GlobalKind;
 use casement_core::window::Window;
 use smithay::reexports::wayland_protocols::ext::foreign_toplevel_list::v1::server::{
@@ -145,6 +145,7 @@ pub fn apply_closed(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use casement_core::lock::LockHolder;
 
     #[test]
     fn a_locked_session_withholds_what_is_open() {

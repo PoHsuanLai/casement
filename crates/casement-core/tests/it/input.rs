@@ -21,6 +21,7 @@ const WINDOW: InputTarget = InputTarget::Window(WindowId(1));
 fn the_reach_table() {
     let unlocked = LockState::Unlocked;
     let holder = LockHolder::Client(ClientKey(1));
+    let without_surface = LockState::LockedWithoutSurface { holder };
     let locked = LockState::Locked {
         holder,
         surfaces: LockSurfaces::Pending,
@@ -159,7 +160,7 @@ fn the_reach_table() {
             FEED,
             WINDOW,
             InputUse::Scroll,
-            &LockState::LockedWithoutSurface { holder },
+            &without_surface,
             Reach::Refused(Refusal::Locked),
         ),
     ];
