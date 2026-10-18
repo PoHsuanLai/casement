@@ -4,6 +4,7 @@
 
 mod a11y;
 pub mod callers;
+mod empty_scene;
 mod input_devices;
 mod input_feed;
 pub mod kms;
@@ -21,6 +22,7 @@ mod udev;
 mod writeback;
 
 pub use a11y::FakeA11y;
+pub use empty_scene::EmptyScene;
 pub use input_devices::FakeInputDevices;
 pub use input_feed::FakeInputFeed;
 pub use kms::{

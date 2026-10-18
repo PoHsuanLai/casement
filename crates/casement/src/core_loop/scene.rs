@@ -2,7 +2,7 @@
 //! renderer builds from them, for each renderer the headless backend can run.
 
 use crate::state::State;
-use casement_backend::headless::FrameSource;
+use casement_backend::headless::FrameElements;
 use casement_core::Model;
 use casement_core::geometry::{LogicalPoint, LogicalRect, SubPx};
 use casement_core::layer::{Arranged, BlurStrength, LayerLevel};
@@ -17,10 +17,6 @@ use casement_render::{
     output_elements, popup_surfaces, surface_origin_logical,
 };
 use casement_wayland::seat::{Candidate, SurfaceAt, surface_under};
-use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::backend::renderer::pixman::PixmanRenderer;
-#[cfg(feature = "testing")]
-use smithay::backend::renderer::test::DummyRenderer;
 use std::collections::BTreeMap;
 
 /// The frame the model's windows are in at `now`: motion sampled, each window's committed
@@ -194,8 +190,7 @@ pub(crate) struct SceneSource<'a> {
     pub(crate) chrome: &'a ChromeLayer,
 }
 
-impl SceneSource<'_> {
-    /// The elements, front first, for `renderer`.
+impl FrameElements for SceneSource<'_> {
     fn elements<R: Compositor>(&self, renderer: &mut R) -> Vec<CasementElement<R>> {
         output_elements(
             self.frame,
@@ -205,21 +200,6 @@ impl SceneSource<'_> {
             self.chrome,
             renderer,
         )
-    }
-}
-
-impl FrameSource for SceneSource<'_> {
-    fn pixman(&self, renderer: &mut PixmanRenderer) -> Vec<CasementElement<PixmanRenderer>> {
-        self.elements(renderer)
-    }
-
-    fn gles(&self, renderer: &mut GlesRenderer) -> Vec<CasementElement<GlesRenderer>> {
-        self.elements(renderer)
-    }
-
-    #[cfg(feature = "testing")]
-    fn dummy(&self, renderer: &mut DummyRenderer) -> Vec<CasementElement<DummyRenderer>> {
-        self.elements(renderer)
     }
 }
 

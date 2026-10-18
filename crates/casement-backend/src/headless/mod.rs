@@ -33,8 +33,8 @@ use casement_core::output::{
 };
 use casement_core::time::{Mono, VblankSeq};
 use casement_core::{OutputKey, OutputName};
-use casement_render::CasementElement;
 use casement_render::pass::CursorInclusion;
+use casement_render::{CasementElement, Compositor};
 use ds_core::geometry::scale::Scale;
 use renderer::{Canvas, Drawn};
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -66,7 +66,7 @@ pub struct HeadlessConfig {
 
 /// What a frame is drawn from: the elements for each renderer the backend can run (smithay's
 /// element types are generic over the renderer, so each gets its own method and the trait stays
-/// object-safe). The composition root implements it once, generically, for all three.
+/// object-safe). Implement [`FrameElements`] instead where one generic method will do.
 pub trait FrameSource {
     /// The elements for pixman, front first.
     fn pixman(&self, renderer: &mut PixmanRenderer) -> Vec<CasementElement<PixmanRenderer>>;
@@ -75,6 +75,29 @@ pub trait FrameSource {
     /// The elements for smithay's dummy renderer, front first.
     #[cfg(feature = "testing")]
     fn dummy(&self, renderer: &mut DummyRenderer) -> Vec<CasementElement<DummyRenderer>>;
+}
+
+/// What a frame is drawn from, written once for every renderer: the elements, front first, for
+/// any [`Compositor`]. Every implementor is a [`FrameSource`] through the blanket impl; a source
+/// that wraps another (`Cursorless`) implements [`FrameSource`] by hand.
+pub trait FrameElements {
+    /// The elements, front first, for `renderer`.
+    fn elements<R: Compositor>(&self, renderer: &mut R) -> Vec<CasementElement<R>>;
+}
+
+impl<T: FrameElements> FrameSource for T {
+    fn pixman(&self, renderer: &mut PixmanRenderer) -> Vec<CasementElement<PixmanRenderer>> {
+        self.elements(renderer)
+    }
+
+    fn gles(&self, renderer: &mut GlesRenderer) -> Vec<CasementElement<GlesRenderer>> {
+        self.elements(renderer)
+    }
+
+    #[cfg(feature = "testing")]
+    fn dummy(&self, renderer: &mut DummyRenderer) -> Vec<CasementElement<DummyRenderer>> {
+        self.elements(renderer)
+    }
 }
 
 /// What presenting a frame did.

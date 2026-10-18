@@ -1,7 +1,6 @@
 //! The scheduler against `FakeScanout` and the virtual clock (P1-D3).
 
 use casement_backend::RenderCostModel;
-use casement_backend::headless::FrameSource;
 use casement_backend::tty::{
     FlipTracker, PresentOutcome, Presented, QueueOutcome, QueuedFrame, Scanout, ScanoutSet,
     ScanoutSurface,
@@ -10,31 +9,11 @@ use casement_core::OutputName;
 use casement_core::frame::{CursorPlaneCaps, CursorPlaneChoice, FrameOutcome};
 use casement_core::geometry::PhysicalSize;
 use casement_core::time::{Millihertz, Mono, VblankClock, VblankSeq};
-use casement_render::CasementElement;
-use casement_testkit::fakes::FakeScanout;
+use casement_testkit::fakes::{EmptyScene, FakeScanout};
 use ds_core::geometry::scale::Scale;
-use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::backend::renderer::pixman::PixmanRenderer;
-use smithay::backend::renderer::test::DummyRenderer;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
-
-/// A scene with nothing in it: the fake never draws.
-#[derive(Debug)]
-struct Empty;
-
-impl FrameSource for Empty {
-    fn pixman(&self, _: &mut PixmanRenderer) -> Vec<CasementElement<PixmanRenderer>> {
-        Vec::new()
-    }
-    fn gles(&self, _: &mut GlesRenderer) -> Vec<CasementElement<GlesRenderer>> {
-        Vec::new()
-    }
-    fn dummy(&self, _: &mut DummyRenderer) -> Vec<CasementElement<DummyRenderer>> {
-        Vec::new()
-    }
-}
 
 /// The fake, shared so the test can feed its script while the `Scanout` owns the handle.
 #[derive(Debug, Clone)]
@@ -84,7 +63,7 @@ fn run(frames: u64, cost: &RenderCostModel) -> (u64, u64) {
             fake.script.push_back(Presented::new(shown, shown_at));
         }
         scanout.record_cost(spent);
-        let queued = set.present(&output(), &Empty, now).expect("present");
+        let queued = set.present(&output(), &EmptyScene, now).expect("present");
         assert_eq!(queued, PresentOutcome::Flipped(wanted), "frame {n}");
         now = shown_at;
     }
@@ -151,12 +130,14 @@ fn a_busy_surface_defers_the_frame_to_the_next_vblank() {
     let mut set = ScanoutSet::empty();
     set.attach(output(), Scanout::new(Box::new(shared.clone()), clock()));
     assert_eq!(
-        set.present(&output(), &Empty, Mono(ms(0))).expect("first"),
+        set.present(&output(), &EmptyScene, Mono(ms(0)))
+            .expect("first"),
         PresentOutcome::Flipped(VblankSeq(0))
     );
     shared.0.borrow_mut().script.clear();
     assert_eq!(
-        set.present(&output(), &Empty, Mono(ms(1))).expect("second"),
+        set.present(&output(), &EmptyScene, Mono(ms(1)))
+            .expect("second"),
         PresentOutcome::Waiting
     );
     assert_eq!(shared.0.borrow().queued, 1);
@@ -200,13 +181,14 @@ fn a_frame_that_changes_nothing_is_unchanged_not_waiting_and_not_an_error() {
     let mut set = ScanoutSet::empty();
     set.attach(output(), Scanout::new(Box::new(Idle), clock()));
     assert_eq!(
-        set.present(&output(), &Empty, Mono(ms(0)))
+        set.present(&output(), &EmptyScene, Mono(ms(0)))
             .expect("present"),
         PresentOutcome::Unchanged
     );
     let other = OutputName::parse("DP-2").expect("a name");
     assert_eq!(
-        set.present(&other, &Empty, Mono(ms(1))).expect("present"),
+        set.present(&other, &EmptyScene, Mono(ms(1)))
+            .expect("present"),
         PresentOutcome::Waiting,
         "an unlit output waits"
     );

@@ -2,7 +2,6 @@
 //! for the GPU, a GPU surface that cannot be made falls back for that output only, and a
 //! software surface flips and reports presentation like the GPU's.
 
-use casement_backend::headless::FrameSource;
 use casement_backend::tty::{
     ConnectorId, DevicePath, Drawing, NoGpus, Pace, PresentOutcome, RenderMode, TtyBackend,
     TtySeams, Turn,
@@ -12,14 +11,10 @@ use casement_core::geometry::{LogicalPoint, Transform};
 use casement_core::gpu::GpuChoice;
 use casement_core::output::{OutputConfig, OutputPower};
 use casement_core::time::{Mono, VblankSeq};
-use casement_render::CasementElement;
 use casement_testkit::fakes::{
-    FakeKms, FakeKmsOpener, FakeSession, FakeUdev, SharedSession, SyntheticTopology,
+    EmptyScene, FakeKms, FakeKmsOpener, FakeSession, FakeUdev, SharedSession, SyntheticTopology,
 };
 use ds_core::geometry::scale::Scale;
-use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::backend::renderer::pixman::PixmanRenderer;
-use smithay::backend::renderer::test::DummyRenderer;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -29,22 +24,6 @@ fn card() -> DevicePath {
 
 fn at(n: u64) -> Mono {
     Mono(Duration::from_millis(n))
-}
-
-/// A scene with nothing in it: the fakes never look at it.
-#[derive(Debug)]
-struct Empty;
-
-impl FrameSource for Empty {
-    fn pixman(&self, _: &mut PixmanRenderer) -> Vec<CasementElement<PixmanRenderer>> {
-        Vec::new()
-    }
-    fn gles(&self, _: &mut GlesRenderer) -> Vec<CasementElement<GlesRenderer>> {
-        Vec::new()
-    }
-    fn dummy(&self, _: &mut DummyRenderer) -> Vec<CasementElement<DummyRenderer>> {
-        Vec::new()
-    }
 }
 
 /// A backend over `kms` (drawing as `mode`) with every connector of the dock announced.
@@ -170,7 +149,7 @@ fn a_software_output_flips_and_reports_presentation_like_a_gpu_one() {
         for n in 0..4u64 {
             let shown = rig
                 .backend
-                .present(&name, &Empty, at(n + 1))
+                .present(&name, &EmptyScene, at(n + 1))
                 .expect("frame");
             assert_eq!(
                 shown,

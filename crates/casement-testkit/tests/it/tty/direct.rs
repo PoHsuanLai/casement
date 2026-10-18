@@ -5,7 +5,6 @@
 
 use casement::cli::DirectTty;
 use casement::test_mode::{Hooks, meta_path};
-use casement_backend::headless::FrameSource;
 use casement_backend::tty::{
     DeviceEvent, DevicePath, DeviceSource, DirectSession, FLIPS_TO_WAIT, FixedNode, NoGpus,
     POLL_EVERY, SeatState, SessionNote, SleepLink, TtyBackend, TtySeams, TtySession,
@@ -16,31 +15,13 @@ use casement_core::geometry::{LogicalPoint, PhysicalSize, Transform};
 use casement_core::gpu::GpuChoice;
 use casement_core::output::{Mode, OutputConfig, OutputPower};
 use casement_core::time::Mono;
-use casement_render::CasementElement;
-use casement_testkit::fakes::{FakeKms, FakeKmsOpener, FakeWriteback, SyntheticTopology};
+use casement_testkit::fakes::{
+    EmptyScene, FakeKms, FakeKmsOpener, FakeWriteback, SyntheticTopology,
+};
 use ds_core::geometry::scale::Scale;
-use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::backend::renderer::pixman::PixmanRenderer;
-use smithay::backend::renderer::test::DummyRenderer;
 use std::path::PathBuf;
 use std::sync::mpsc::Sender;
 use std::time::Duration;
-
-/// A scene with nothing in it: the fake never draws.
-#[derive(Debug)]
-struct Empty;
-
-impl FrameSource for Empty {
-    fn pixman(&self, _: &mut PixmanRenderer) -> Vec<CasementElement<PixmanRenderer>> {
-        Vec::new()
-    }
-    fn gles(&self, _: &mut GlesRenderer) -> Vec<CasementElement<GlesRenderer>> {
-        Vec::new()
-    }
-    fn dummy(&self, _: &mut DummyRenderer) -> Vec<CasementElement<DummyRenderer>> {
-        Vec::new()
-    }
-}
 
 fn ms(n: u64) -> Duration {
     Duration::from_millis(n)
@@ -122,7 +103,7 @@ impl Rig {
         for _ in 0..n {
             self.tick += 1;
             self.backend
-                .present(&self.name, &Empty, at(self.tick))
+                .present(&self.name, &EmptyScene, at(self.tick))
                 .expect("a frame");
         }
     }

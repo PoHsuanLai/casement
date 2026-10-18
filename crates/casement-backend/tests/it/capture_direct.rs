@@ -5,7 +5,7 @@
 
 use casement_backend::capture_path::{Import, RendererClass};
 use casement_backend::gpu::FixedUdmabuf;
-use casement_backend::headless::FrameSource;
+use casement_backend::headless::FrameElements;
 use casement_backend::{
     DmabufMode, FramePixels, HeadlessBackend, HeadlessConfig, RenderCostModel, SoftRenderer,
     VirtualOutputSpec,
@@ -19,10 +19,6 @@ use ds_core::geometry::scale::Scale;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::{Allocator, Format, Fourcc, Modifier};
 use smithay::backend::renderer::element::Id;
-use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::backend::renderer::pixman::PixmanRenderer;
-#[cfg(feature = "testing")]
-use smithay::backend::renderer::test::DummyRenderer;
 use smithay::backend::renderer::utils::CommitCounter;
 use std::time::Duration;
 
@@ -32,7 +28,7 @@ const SIDE: u32 = 64;
 #[derive(Debug)]
 struct Scene;
 
-fn elements<R: Compositor>() -> Vec<CasementElement<R>> {
+fn scene_elements<R: Compositor>() -> Vec<CasementElement<R>> {
     let rect = |x, y, w, h| PhysicalRect { x, y, w, h };
     let paint = |rect, r, g, b| {
         CasementElement::Solid(solid_rect(
@@ -48,16 +44,9 @@ fn elements<R: Compositor>() -> Vec<CasementElement<R>> {
     ]
 }
 
-impl FrameSource for Scene {
-    fn pixman(&self, _: &mut PixmanRenderer) -> Vec<CasementElement<PixmanRenderer>> {
-        elements()
-    }
-    fn gles(&self, _: &mut GlesRenderer) -> Vec<CasementElement<GlesRenderer>> {
-        elements()
-    }
-    #[cfg(feature = "testing")]
-    fn dummy(&self, _: &mut DummyRenderer) -> Vec<CasementElement<DummyRenderer>> {
-        elements()
+impl FrameElements for Scene {
+    fn elements<R: Compositor>(&self, _: &mut R) -> Vec<CasementElement<R>> {
+        scene_elements()
     }
 }
 

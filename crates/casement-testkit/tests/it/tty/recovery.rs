@@ -4,7 +4,6 @@
 
 use casement_backend::BackendError;
 use casement_backend::SessionFault;
-use casement_backend::headless::FrameSource;
 use casement_backend::tty::{
     CommitVerdict, DevicePath, Health, Kms, KmsCommit, KmsError, KmsOpener, KmsRefusal,
     KmsResources, Lighting, NoGpus, PresentOutcome, Presented, QueueOutcome, QueuedFrame, Scanout,
@@ -16,33 +15,13 @@ use casement_core::geometry::{LogicalPoint, Transform};
 use casement_core::gpu::GpuChoice;
 use casement_core::output::{GammaRamp, Mode, OutputConfig, OutputPower};
 use casement_core::time::{Millihertz, Mono, VblankClock, VblankSeq};
-use casement_render::CasementElement;
-use casement_testkit::fakes::{FakeKms, FakeScanout, FakeUdev, SyntheticTopology};
+use casement_testkit::fakes::{EmptyScene, FakeKms, FakeScanout, FakeUdev, SyntheticTopology};
 use ds_core::geometry::scale::Scale;
-use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::backend::renderer::pixman::PixmanRenderer;
-use smithay::backend::renderer::test::DummyRenderer;
 use std::cell::{Cell, RefCell};
 use std::os::fd::OwnedFd;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
-
-/// A scene with nothing in it: the fakes never draw.
-#[derive(Debug)]
-struct Empty;
-
-impl FrameSource for Empty {
-    fn pixman(&self, _: &mut PixmanRenderer) -> Vec<CasementElement<PixmanRenderer>> {
-        Vec::new()
-    }
-    fn gles(&self, _: &mut GlesRenderer) -> Vec<CasementElement<GlesRenderer>> {
-        Vec::new()
-    }
-    fn dummy(&self, _: &mut DummyRenderer) -> Vec<CasementElement<DummyRenderer>> {
-        Vec::new()
-    }
-}
 
 fn at(ms: u64) -> Mono {
     Mono(Duration::from_millis(ms))
@@ -379,7 +358,7 @@ fn a_device_that_cannot_take_master_back_is_asked_again_and_draws_nothing_meanwh
         session_notes(&rig.backend.dispatch()),
         [SessionNote::Activated]
     );
-    let frame = |rig: &mut Rig, ms| rig.backend.present(&rig.name.clone(), &Empty, at(ms));
+    let frame = |rig: &mut Rig, ms| rig.backend.present(&rig.name.clone(), &EmptyScene, at(ms));
     assert_eq!(frame(&mut rig, 0).expect("waits"), PresentOutcome::Waiting);
     assert_eq!(
         frame(&mut rig, 500).expect("waits"),
@@ -449,7 +428,7 @@ fn set_over(surface: Box<dyn ScanoutSurface>) -> ScanoutSet {
 }
 
 fn present(set: &mut ScanoutSet, ms: u64) -> Result<PresentOutcome, BackendError> {
-    set.present(&output(), &Empty, at(ms))
+    set.present(&output(), &EmptyScene, at(ms))
 }
 
 #[test]

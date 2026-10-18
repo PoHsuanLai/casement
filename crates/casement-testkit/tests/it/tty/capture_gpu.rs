@@ -4,23 +4,18 @@
 
 use casement_backend::FramePixels;
 use casement_backend::capture_path::{Import, RendererClass};
-use casement_backend::headless::FrameSource;
 use casement_backend::tty::{DevicePath, NoGpus, TtyBackend, TtySeams, Watch};
 use casement_core::OutputName;
 use casement_core::geometry::{LogicalPoint, Transform};
 use casement_core::gpu::GpuChoice;
 use casement_core::output::{OutputConfig, OutputPower};
 use casement_core::time::Mono;
-use casement_render::CasementElement;
 use casement_testkit::fakes::{
-    FakeCaptureGpu, FakeKms, FakeKmsOpener, FakeSession, FakeUdev, SceneBehaviour, SharedSession,
-    SyntheticTopology,
+    EmptyScene, FakeCaptureGpu, FakeKms, FakeKmsOpener, FakeSession, FakeUdev, SceneBehaviour,
+    SharedSession, SyntheticTopology,
 };
 use ds_core::geometry::scale::Scale;
 use smithay::backend::allocator::{Format, Fourcc, Modifier};
-use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::backend::renderer::pixman::PixmanRenderer;
-use smithay::backend::renderer::test::DummyRenderer;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -82,22 +77,6 @@ fn a_device_that_lends_no_renderer_offers_the_linear_formats_alone() {
     );
 }
 
-/// A scene with nothing in it: the fakes never look at it.
-#[derive(Debug)]
-struct Empty;
-
-impl FrameSource for Empty {
-    fn pixman(&self, _: &mut PixmanRenderer) -> Vec<CasementElement<PixmanRenderer>> {
-        Vec::new()
-    }
-    fn gles(&self, _: &mut GlesRenderer) -> Vec<CasementElement<GlesRenderer>> {
-        Vec::new()
-    }
-    fn dummy(&self, _: &mut DummyRenderer) -> Vec<CasementElement<DummyRenderer>> {
-        Vec::new()
-    }
-}
-
 /// A one-panel seat whose device lends a GPU that lists linear ARGB8888 and behaves as
 /// `scenes` says, with the panel lit and watched, and `frames` frames presented.
 fn watched(scenes: SceneBehaviour, frames: u64) -> (TtyBackend, FakeCaptureGpu, OutputName) {
@@ -122,7 +101,7 @@ fn watched(scenes: SceneBehaviour, frames: u64) -> (TtyBackend, FakeCaptureGpu, 
         .expect("watched");
     for tick in 1..=frames {
         backend
-            .present(&panel.name, &Empty, at(tick))
+            .present(&panel.name, &EmptyScene, at(tick))
             .expect("a frame");
     }
     (backend, gpu, panel.name)
