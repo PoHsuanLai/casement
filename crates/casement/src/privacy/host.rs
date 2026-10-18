@@ -8,7 +8,6 @@ use casement_core::Event;
 use casement_core::privilege::Book;
 use casement_ipc::privacy::PrivacyEdit;
 use casement_privacy::{load_book, load_floor, save_book};
-use casement_wayland::quire::shell_permission::WallSeconds;
 
 /// Reads the book and the floor and tells the model. Called once, before any client connects.
 pub fn start(state: &mut State) {

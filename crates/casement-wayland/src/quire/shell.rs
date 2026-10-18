@@ -9,7 +9,7 @@
 //! until P3-Z gives them their machines.
 
 use super::code_of;
-use super::shell_permission::{self, SentAsk, UnknownWall, WallSeconds};
+use super::shell_permission::{self, SentAsk};
 use super::space_shot::SpaceShotPart;
 use super::{shell_overview, shell_space, shell_split, shell_trial};
 use crate::foreign_toplevel_list::{identifier_of, window_of_identifier};
@@ -17,6 +17,7 @@ use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::overview_drag::SpaceTargets;
 use casement_core::policy::GlobalKind;
+use casement_core::privilege::UnixSeconds;
 use casement_core::shell::{ShellNote, ShellRequest};
 use casement_core::time::Mono;
 use casement_core::window::MenuEntry;
@@ -66,9 +67,6 @@ pub struct QuireShellPart {
     pub shots: SpaceShotPart,
     /// The consent questions sent to the shell and not yet settled (version 5).
     pub asks: Vec<SentAsk>,
-    /// The date an answer is stamped with (version 5): the composition root replaces the
-    /// placeholder, which stamps every answer with the epoch.
-    pub wall: Box<dyn WallSeconds>,
     /// The display trial the shell was asked about and has not seen end (version 6).
     pub trial: Option<shell_trial::OpenTrial>,
 }
@@ -94,7 +92,6 @@ impl QuireShellPart {
             space_targets: SpaceTargets::default(),
             shots: SpaceShotPart::default(),
             asks: Vec::new(),
-            wall: Box::new(UnknownWall),
             trial: None,
         }
     }
@@ -106,6 +103,9 @@ pub trait QuireShellHandler: ImageCaptureSourceHandler + 'static {
     fn quire_shell_part(&mut self) -> &mut QuireShellPart;
     /// Now on the loop's clock (the seam: the wire reads no clock of its own).
     fn quire_shell_now(&self) -> Mono;
+    /// The date in whole seconds (the stamp on a permission answer that is kept; core reads
+    /// no clock).
+    fn quire_shell_wall(&self) -> UnixSeconds;
     /// Feeds the events a request produced into the model (`core_loop::feed`).
     fn quire_shell_events(&mut self, events: Vec<Event>);
     /// The layer surface `surface` is, when it is a live one of `client`.
@@ -252,7 +252,13 @@ where
             }
             quire_shell_v1::Request::PermissionAnswer { ask, answer } => {
                 let now = state.quire_shell_now();
-                match shell_permission::on_answer(state.quire_shell_part(), ask, answer, now) {
+                match shell_permission::on_answer(
+                    state.quire_shell_part(),
+                    ask,
+                    answer,
+                    now,
+                    state.quire_shell_wall(),
+                ) {
                     Ok(events) => state.quire_shell_events(events),
                     Err(fault) => resource
                         .post_error(quire_shell_v1::Error::AnsweredTooSoon, fault.to_string()),

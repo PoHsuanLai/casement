@@ -17,7 +17,6 @@ use casement_core::time::Mono;
 use casement_protocols::server::quire_shell_v1::quire_shell_v1::{self, QuireShellV1};
 use casement_protocols::vocab::{Answer, AskId, Memory, Power, WireCode};
 use smithay::reexports::wayland_server::{Resource, WEnum};
-use std::fmt::Debug;
 use std::time::Duration;
 
 /// The first version of `quire_shell_v1` that carries the question.
@@ -39,23 +38,6 @@ pub const ANSWER_NOT_BEFORE: Duration = Duration::from_millis(500);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[error("the answer came before the question could have been read")]
 pub struct AnsweredTooSoon;
-
-/// What the root knows of the date, in whole seconds: the stamp on an answer that is kept. Core
-/// reads no clock; the root replaces the part's [`UnknownWall`] with a real one.
-pub trait WallSeconds: Debug {
-    /// Seconds since the Unix epoch.
-    fn now(&self) -> UnixSeconds;
-}
-
-/// A date nobody told the part: every answer is stamped with the epoch.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct UnknownWall;
-
-impl WallSeconds for UnknownWall {
-    fn now(&self) -> UnixSeconds {
-        UnixSeconds(0)
-    }
-}
 
 /// A question that was sent to the shell and is not settled.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -128,12 +110,14 @@ pub fn apply_withdraw(part: &mut QuireShellPart, ask: AskId) {
 /// `permission_answer`: the person's word on `ask`, heard at `now`. An answer for a question
 /// the part has not sent or has settled, and one with a code the XML does not name, changes
 /// nothing; one that comes less than [`ANSWER_NOT_BEFORE`] after the question was sent is the
-/// shell's fault (`AnsweredTooSoon`) and settles nothing: the question stays open.
+/// shell's fault (`AnsweredTooSoon`) and settles nothing: the question stays open. `wall` is
+/// the date the answer is stamped with.
 pub fn on_answer(
     part: &mut QuireShellPart,
     ask: u32,
     answer: WEnum<quire_shell_v1::Answer>,
     now: Mono,
+    wall: UnixSeconds,
 ) -> Result<Vec<Event>, AnsweredTooSoon> {
     let Some(at) = part.asks.iter().position(|sent| sent.ask.get() == ask) else {
         return Ok(Vec::new());
@@ -148,7 +132,7 @@ pub fn on_answer(
     Ok(vec![Event::PermissionAnswered {
         ask: sent.ask,
         answer,
-        at: part.wall.now(),
+        at: wall,
     }])
 }
 

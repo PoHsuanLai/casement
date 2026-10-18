@@ -3,6 +3,7 @@
 
 use crate::core_loop;
 use crate::state::State;
+use casement_core::privilege::UnixSeconds;
 use casement_core::time::Mono;
 use casement_core::{Event, LayerKey, OutputKey, WindowId};
 use casement_protocols::vocab::TrialId;
@@ -21,6 +22,10 @@ impl QuireShellHandler for State {
 
     fn quire_shell_now(&self) -> Mono {
         self.clock.now()
+    }
+
+    fn quire_shell_wall(&self) -> UnixSeconds {
+        self.seams.wall.now()
     }
 
     fn quire_shell_events(&mut self, events: Vec<Event>) {

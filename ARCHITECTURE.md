@@ -270,7 +270,7 @@ How the protocol layer carries the contract above (wave 2: `pa2-cwl`).
   version 5 or later (`quire/shell_permission.rs`), the part remembers the questions it sent so an object that binds later is
   shown them, `permission_answer` becomes `Event::PermissionAnswered` (an answer for a question not sent is ignored),
   `Event::ShellReady` follows the bind of a version 5 object and `Event::ShellGone` the unbind of the last one. The date an
-  answer is stamped with comes from `QuireShellPart::wall` (a `WallSeconds` the root supplies; the placeholder stamps the epoch).
+  answer is stamped with comes from `QuireShellHandler::quire_shell_wall` (the root's `WallClock`), passed to `on_answer`.
   An answer that arrives less than `ANSWER_NOT_BEFORE` (500 ms) after its question was first sent is a protocol error for that
   shell connection only (`quire_shell_v1::Error::AnsweredTooSoon`): sill's sheet is disarmed for 600 ms, so a faster
   answer did not come from a person looking at it. The part stamps each `SentAsk` with the loop's clock

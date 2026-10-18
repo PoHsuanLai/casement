@@ -3,7 +3,6 @@
 //! system clock (row B8); a test holds the date fixed.
 
 use casement_core::privilege::UnixSeconds;
-use casement_wayland::quire::shell_permission::WallSeconds;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Where the date comes from.
@@ -21,10 +20,9 @@ impl WallClock {
     pub fn epoch() -> WallClock {
         WallClock::Fixed(UnixSeconds(0))
     }
-}
 
-impl WallSeconds for WallClock {
-    fn now(&self) -> UnixSeconds {
+    /// Seconds since the Unix epoch.
+    pub fn now(&self) -> UnixSeconds {
         match self {
             WallClock::System => UnixSeconds(
                 SystemTime::now()

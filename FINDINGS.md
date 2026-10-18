@@ -4476,8 +4476,8 @@ first. The contract it implements is ARCHITECTURE.md "Consent at the wire". The 
     `can_view`, which runs without the state.
   - `quire_shell_v1` sends one question at a time and re-sends the open ones to a shell that binds late from the part's own list;
     the design's "sends every open ask again" is what core's `pump` does one by one after `ShellReady`.
-  - The date stamped on an answer is a `WallSeconds` field of `QuireShellPart` (placeholder: the epoch) because `State` and
-    `src/time/` are the root lane's.
+  - The date stamped on an answer comes from `QuireShellHandler::quire_shell_wall` (the root's `WallClock`) and is passed to
+    `on_answer`.
   - (Superseded by pa3-cas NEW-CAS-4: cursor sessions are gated by the Screen power now.) `ext_image_copy_capture` cursor sessions (`cursor_frame`) were not gated: they carry the cursor image and position over the
     capture source, not the screen's contents. The shell's own Space pictures are gated like any frame; the shell is trusted, so the
     model answers them at once.

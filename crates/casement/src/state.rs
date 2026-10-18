@@ -340,7 +340,6 @@ impl State {
             .entropy
             .bytes()
             .map_err(|error| StartError::Entropy(error.to_string()))?;
-        wl.quire_shell.wall = Box::new(seams.wall);
         let model = Model::new(
             settings.clone(),
             clock.now(),
