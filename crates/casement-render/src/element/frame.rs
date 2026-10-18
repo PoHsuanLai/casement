@@ -10,13 +10,11 @@ mod shadow_place;
 mod shadow_set;
 mod shrink;
 mod slices;
-mod title;
 
 pub(crate) use raster::Raster;
 pub(crate) use shadow::Tiles;
 pub(crate) use shadow_set::{ShadowKey, ShadowSet, WholeShadow, key as shadow_key};
 pub(crate) use slices::MARGIN as SHADOW_MARGIN;
-pub use title::TitleDraw;
 
 use shrink::Shrink;
 
@@ -33,6 +31,7 @@ use crate::scene::convert::{on_output, sub_of};
 use crate::texture_book::TextureBook;
 use casement_core::WindowId;
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize, buffer_size};
+use casement_core::raster::RasterImage;
 use casement_core::window::{FrameGeometry, FrameLook, FrameMetrics, FrameStyle};
 use ds_core::geometry::scale::Scale;
 use ds_core::vocab::Fraction;
@@ -49,7 +48,7 @@ pub struct FrameDraw<'a> {
     /// The frame's look and metrics.
     pub style: &'a FrameStyle,
     /// The window's title raster, when there is one.
-    pub title: Option<&'a TitleDraw>,
+    pub title: Option<&'a RasterImage>,
     /// Where the window's content is drawn, global logical pixels.
     pub content: LogicalRect,
     /// The size the content really has. When `content` is smaller (Mission Control shows the
@@ -215,7 +214,7 @@ fn placed_about(shrink: Shrink, corner: LogicalPoint, rect: LogicalRect) -> Logi
 /// this output.
 fn title_element<R: Compositor>(
     window: WindowId,
-    (style, title): (&FrameStyle, Option<&TitleDraw>),
+    (style, title): (&FrameStyle, Option<&RasterImage>),
     (bar, drawn): (&LogicalRect, &LogicalRect),
     faded: f32,
     view: &OutputView,
@@ -237,7 +236,7 @@ fn title_element<R: Compositor>(
             bar.size.w,
             bar.size.h,
             style.look,
-            title.id,
+            title.id.0,
         ),
         || {
             to_buffer(&raster::Raster {
@@ -263,7 +262,7 @@ fn title_element<R: Compositor>(
 /// size as `at` at the output's native scale, drawn opaque. Nothing for a raster of another size
 /// or a place off this output. Mission Control's title under the hovered window.
 pub fn label_element<R: Compositor>(
-    label: &TitleDraw,
+    label: &RasterImage,
     at: LogicalRect,
     view: &OutputView,
     renderer: &mut R,

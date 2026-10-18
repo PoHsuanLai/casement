@@ -6,12 +6,12 @@ use super::frames::activity_of;
 use crate::state::{RenderState, State};
 use casement_chrome::{Margins, TitleKey, TitleRaster};
 use casement_core::WindowId;
+use casement_core::raster::RasterImage;
 use casement_core::window::{FrameMetrics, FrameStyle};
 use casement_layout::frame_metrics;
 use casement_motion::OutputFrame;
 use casement_render::{
-    ClosingFrame, OutputView, OverviewDraw, TitleDraw, closing_content, window_content,
-    window_drawn,
+    ClosingFrame, OutputView, OverviewDraw, closing_content, window_content, window_drawn,
 };
 use std::collections::BTreeMap;
 
@@ -35,7 +35,7 @@ pub(super) fn of(
     view: &OutputView,
     styles: &BTreeMap<WindowId, FrameStyle>,
     overview: &OverviewDraw,
-) -> BTreeMap<WindowId, TitleDraw> {
+) -> BTreeMap<WindowId, RasterImage> {
     if styles.is_empty() {
         return BTreeMap::new();
     }
@@ -71,15 +71,7 @@ pub(super) fn of(
                 activity_of(window),
             );
             let pixels = raster.render(&key).ok()?;
-            Some((
-                placed.window,
-                TitleDraw {
-                    id: pixels.id,
-                    width: pixels.width,
-                    height: pixels.height,
-                    rgba: pixels.rgba,
-                },
-            ))
+            Some((placed.window, pixels))
         })
         .collect()
 }
@@ -92,7 +84,7 @@ pub(super) fn of_closing(
     frame: &OutputFrame,
     view: &OutputView,
     closing: &BTreeMap<WindowId, ClosingFrame>,
-) -> BTreeMap<WindowId, TitleDraw> {
+) -> BTreeMap<WindowId, RasterImage> {
     if closing.is_empty() {
         return BTreeMap::new();
     }
@@ -121,15 +113,7 @@ pub(super) fn of_closing(
                 note.activity,
             );
             let pixels = raster.render(&key).ok()?;
-            Some((
-                placed.window,
-                TitleDraw {
-                    id: pixels.id,
-                    width: pixels.width,
-                    height: pixels.height,
-                    rgba: pixels.rgba,
-                },
-            ))
+            Some((placed.window, pixels))
         })
         .collect()
 }

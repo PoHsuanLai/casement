@@ -3,13 +3,14 @@
 //! with the window's slot: from nothing, as small and as faint as the window is far from it, to
 //! the layout's rectangle at rest, and leaves the same way.
 
-use super::frame::{TitleDraw, element, to_buffer, whole};
+use super::frame::{element, to_buffer, whole};
 use super::{CasementElement, Raster};
 use crate::compositor::Compositor;
 use crate::scene::OutputView;
 use crate::texture_book::TextureBook;
 use casement_core::WindowId;
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize, buffer_size};
+use casement_core::raster::RasterImage;
 
 /// One window's icon in Mission Control.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,7 +20,7 @@ pub struct OverviewIcon {
     /// The window's slot (the same space).
     pub slot: LogicalRect,
     /// The icon's pixels, premultiplied, as big as `rest` at the output's native scale.
-    pub draw: TitleDraw,
+    pub draw: RasterImage,
 }
 
 /// Where an icon is drawn this frame and how opaque.
@@ -47,14 +48,15 @@ fn arrival(full: u32, drawn: u32, rest: u32) -> f64 {
 /// ```
 /// use casement_core::WindowId;
 /// use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
-/// use casement_render::{OverviewIcon, TitleDraw, icon_place};
+/// use casement_core::raster::{RasterId, RasterImage};
+/// use casement_render::{OverviewIcon, icon_place};
 /// use std::sync::Arc;
 ///
 /// let rect = |x, y, w, h| LogicalRect::new(LogicalPoint { x, y }, LogicalSize { w, h });
 /// let icon = OverviewIcon {
 ///     rest: rect(168, 374, 64, 64),
 ///     slot: rect(100, 100, 200, 300),
-///     draw: TitleDraw { id: 1, width: 64, height: 64, rgba: Arc::from(vec![0u8; 64 * 64 * 4]) },
+///     draw: RasterImage { id: RasterId(1), width: 64, height: 64, rgba: Arc::from(vec![0u8; 64 * 64 * 4]) },
 /// };
 /// let full = LogicalSize { w: 400, h: 600 };
 /// let at_rest = icon_place(&icon, icon.slot, full).unwrap();
@@ -113,7 +115,7 @@ pub fn icon_element<R: Compositor>(
     }
     let buffer = book
         .cache()
-        .icon((window, draw.id, draw.width, draw.height), || {
+        .icon((window, draw.id.0, draw.width, draw.height), || {
             to_buffer(&Raster {
                 w: draw.width,
                 h: draw.height,
@@ -135,6 +137,7 @@ pub fn icon_element<R: Compositor>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use casement_core::raster::RasterId;
     use std::sync::Arc;
 
     fn rect(x: i32, y: i32, w: u32, h: u32) -> LogicalRect {
@@ -145,8 +148,8 @@ mod tests {
         OverviewIcon {
             rest: rect(168, 374, 64, 64),
             slot: rect(100, 100, 200, 300),
-            draw: TitleDraw {
-                id: 1,
+            draw: RasterImage {
+                id: RasterId(1),
                 width: 64,
                 height: 64,
                 rgba: Arc::from(vec![0u8; 64 * 64 * 4]),

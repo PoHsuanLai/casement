@@ -16,11 +16,12 @@ use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::input::InputEvent;
 use casement_core::overview::Overview;
 use casement_core::overview_drag::Drag;
+use casement_core::raster::RasterImage;
 use casement_core::{OverviewPick, WindowId};
 use casement_layout::{Scheme, overview_dim, overview_plate, overview_ring};
 use casement_render::{
     CursorDraw, CursorShape, OutputView, OverviewDraw, OverviewHover, OverviewIcon, OverviewLook,
-    Rgba8, TitleDraw, shown_length,
+    Rgba8, shown_length,
 };
 use casement_wayland::xdg_toplevel_icon::icon_of;
 use ds_core::vocab::Activity;
@@ -225,7 +226,7 @@ fn label_of(
     state: &mut State,
     window: WindowId,
     view: &OutputView,
-) -> Option<(LogicalSize, TitleDraw)> {
+) -> Option<(LogicalSize, RasterImage)> {
     let title = &state.core.model.windows().get(&window)?.title.0;
     let slot = state
         .core
@@ -249,13 +250,7 @@ fn label_of(
         Scheme::Dark,
         Activity::Active,
     );
-    let pixels = raster.render(&key).ok()?;
-    let draw = TitleDraw {
-        id: pixels.id,
-        width: pixels.width,
-        height: pixels.height,
-        rgba: pixels.rgba,
-    };
+    let draw = raster.render(&key).ok()?;
     Some((size, draw))
 }
 

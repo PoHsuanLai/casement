@@ -15,11 +15,12 @@ use super::frame::SHADOW_MARGIN;
 use super::shared::SharedElement;
 use super::strip::{Margins, StripElement, StripPlan};
 use super::window::{alpha, window_blur, window_content, window_surfaces};
-use super::{BlurV0Element, CasementElement, ClipShape, FrameDraw, TitleDraw, frame_elements};
+use super::{BlurV0Element, CasementElement, ClipShape, FrameDraw, frame_elements};
 use crate::compositor::Compositor;
 use crate::scene::OutputView;
 use crate::texture_book::TextureBook;
 use casement_core::geometry::LogicalRect;
+use casement_core::raster::RasterImage;
 use casement_core::window::FrameStyle;
 use casement_motion::genie::{MAX_STRIPS, RectF, STRIPS, TOLERANCE, strips_fine};
 use casement_motion::{Flight, PlacedWindow};
@@ -203,7 +204,7 @@ pub struct GenieWindow<'a> {
     /// The window's frame, when casement decorates it.
     pub style: Option<&'a FrameStyle>,
     /// Its title raster.
-    pub title: Option<&'a TitleDraw>,
+    pub title: Option<&'a RasterImage>,
     /// The corner radius to clip the surfaces to, in logical pixels, when they are clipped.
     pub clip_radius: Option<u32>,
 }

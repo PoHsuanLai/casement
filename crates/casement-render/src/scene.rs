@@ -6,7 +6,7 @@ mod row;
 use crate::compositor::Compositor;
 use crate::element::{
     BlurFinish, CasementElement, ClipShape, ClosingFrame, FlightDraw, FrameDraw, GenieWindow,
-    LockCoverElement, OverviewIcon, OverviewLook, PopupRide, Rgba8, TilePreview, TitleDraw, choose,
+    LockCoverElement, OverviewIcon, OverviewLook, PopupRide, Rgba8, TilePreview, choose,
     closing_elements, cursor_elements, dim_elements, drawn_content, frame_elements, genie_window,
     icon_element, icon_place, label_element, layer_elements, lift_last, popup_elements,
     popup_elements_riding, ring_elements, shown_length, shown_outline, surface_origin_logical,
@@ -18,6 +18,7 @@ use casement_core::geometry::{
     LogicalPoint, LogicalRect, LogicalSize, PhysicalRect, PhysicalSize, SubPoint,
 };
 use casement_core::layer::{Arranged, BlurStrength};
+use casement_core::raster::RasterImage;
 use casement_core::settings::MinimiseEffect;
 use casement_core::window::FrameStyle;
 use casement_core::{LayerKey, OutputKey, WindowId};
@@ -65,7 +66,7 @@ pub struct LayerDraw {
     pub frames: BTreeMap<WindowId, FrameStyle>,
     /// The title pixels laid over each framed window's titlebar (made by `casement-chrome`). A
     /// framed window not in it has no title drawn.
-    pub titles: BTreeMap<WindowId, TitleDraw>,
+    pub titles: BTreeMap<WindowId, RasterImage>,
     /// How a window in a minimise flight is drawn (`windows.minimise_effect`).
     pub minimise_effect: MinimiseEffect,
     /// Whether blurs are drawn or replaced by a solid colour (quire's
@@ -118,7 +119,7 @@ pub struct OverviewHover {
     pub window: WindowId,
     /// Its title, as a raster of this logical size (centred under the window); none for a window
     /// with no title to show.
-    pub label: Option<(LogicalSize, TitleDraw)>,
+    pub label: Option<(LogicalSize, RasterImage)>,
 }
 
 /// The gap between a window's frame and its title in Mission Control, in logical pixels.

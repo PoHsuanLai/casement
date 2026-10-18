@@ -8,8 +8,8 @@ use crate::cache::Bounded;
 use crate::error::TitleError;
 use crate::ink::{Ink, ink};
 use crate::key::TitleKey;
-use crate::pixels::TitlePixels;
 use crate::place::{Margins, left_edge, longest_fit, room};
+use casement_core::raster::{RasterId, RasterImage};
 use ds_style::appearance::typeface::Typeface;
 use ds_style::tokens::chrome::{TitleFont, title_font};
 use parley::{
@@ -38,7 +38,7 @@ pub struct TitleRaster {
     level: Level,
     font: TitleFont,
     margins: Margins,
-    kept: Bounded<TitleKey, TitlePixels>,
+    kept: Bounded<TitleKey, RasterImage>,
     made: u64,
 }
 
@@ -88,7 +88,7 @@ impl TitleRaster {
 
     /// The pixels of the title `key` describes: the same ones, cheaply, while the key is kept.
     /// An error means the frame is drawn without a title.
-    pub fn render(&mut self, key: &TitleKey) -> Result<TitlePixels, TitleError> {
+    pub fn render(&mut self, key: &TitleKey) -> Result<RasterImage, TitleError> {
         if let Some(kept) = self.kept.get(key) {
             return Ok(kept);
         }
@@ -132,7 +132,7 @@ impl TitleRaster {
         self.shape(&cut(keep), scale)
     }
 
-    fn draw(&mut self, key: &TitleKey) -> Result<TitlePixels, TitleError> {
+    fn draw(&mut self, key: &TitleKey) -> Result<RasterImage, TitleError> {
         let (w, h) = key.device_size();
         let too_large = TitleError::TooLarge {
             width: w,
@@ -186,8 +186,8 @@ impl TitleRaster {
         let mut pixmap = Pixmap::new(pw, ph);
         ctx.render(&mut pixmap, &mut self.resources);
         self.made += 1;
-        Ok(TitlePixels {
-            id: self.made,
+        Ok(RasterImage {
+            id: RasterId(self.made),
             width: w,
             height: h,
             rgba: Arc::from(pixmap.data_as_u8_slice()),
@@ -214,7 +214,7 @@ mod tests {
     }
 
     /// Every pixel is premultiplied: no channel above its alpha.
-    fn premultiplied(pixels: &TitlePixels) -> bool {
+    fn premultiplied(pixels: &RasterImage) -> bool {
         pixels
             .rgba
             .as_chunks::<4>()

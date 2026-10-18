@@ -413,6 +413,7 @@ dependencies = [
 name = "casement-chrome"
 version = "0.1.0"
 dependencies = [
+ "casement-core",
  "ds-core",
  "ds-style",
  "parley",

@@ -12,13 +12,11 @@ mod cache;
 mod error;
 pub mod ink;
 pub mod key;
-pub mod pixels;
 pub mod place;
 mod raster;
 
 pub use error::TitleError;
 pub use ink::{Ink, ink};
 pub use key::TitleKey;
-pub use pixels::TitlePixels;
 pub use place::Margins;
 pub use raster::TitleRaster;

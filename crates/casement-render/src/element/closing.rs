@@ -7,11 +7,12 @@
 //! inside the frame, shrinking and fading with it; a window kept without one is not drawn.
 
 use super::flight::{FlightDraw, scaled_content};
-use super::{CasementElement, ClosingBody, FrameDraw, TitleDraw, frame_elements};
+use super::{CasementElement, ClosingBody, FrameDraw, frame_elements};
 use crate::compositor::Compositor;
 use crate::scene::OutputView;
 use crate::texture_book::TextureBook;
 use casement_core::geometry::{LogicalRect, LogicalSize, SubPoint, SubSize};
+use casement_core::raster::RasterImage;
 use casement_core::window::FrameStyle;
 use casement_motion::PlacedWindow;
 
@@ -67,7 +68,7 @@ pub fn closing_content(at: SubPoint, size: SubSize) -> LogicalRect {
 pub fn closing_elements<R: Compositor>(
     placed: &PlacedWindow,
     closing: &ClosingFrame,
-    title: Option<&TitleDraw>,
+    title: Option<&RasterImage>,
     view: &OutputView,
     book: &TextureBook,
     renderer: &mut R,

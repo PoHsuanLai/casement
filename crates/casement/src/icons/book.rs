@@ -4,9 +4,12 @@ use super::IconSearch;
 use super::worker::{Job, Worker};
 use casement_core::WindowId;
 use casement_core::geometry::{LogicalRect, buffer_size};
-use casement_icons::{Finder, IconCache, IconKey, RgbaBuffer, Slot, SystemTheme, Want, plate};
+use casement_core::raster::{RasterId, RasterImage};
+use casement_icons::{
+    Finder, IconCache, IconKey, Pixels, RgbaBuffer, Slot, SystemTheme, Want, plate,
+};
+use casement_render::OverviewIcon;
 use casement_render::pass::ArgbImage;
-use casement_render::{OverviewIcon, TitleDraw};
 use casement_wayland::xdg_toplevel_icon::IconParts;
 use ds_core::geometry::scale::Scale;
 use std::collections::{BTreeMap, BTreeSet};
@@ -28,7 +31,7 @@ struct Waiting {
     /// The question, to find its answer in the cache.
     key: IconKey,
     /// The plate drawn meanwhile, with an id of its own so it is uploaded once.
-    stand_in: TitleDraw,
+    stand_in: RasterImage,
 }
 
 /// The icons found for the windows of one Mission Control, by window and pixel edge. The files
@@ -51,7 +54,7 @@ pub struct IconBook {
     /// The windows drawn as their plate until their answer comes.
     waiting: BTreeMap<(WindowId, u32), Waiting>,
     /// The raster each window draws, made from the cache.
-    drawn: BTreeMap<(WindowId, u32), TitleDraw>,
+    drawn: BTreeMap<(WindowId, u32), RasterImage>,
     /// The icons last drawn, for the frames of the way out: the layout has no slots then, but
     /// the windows still fly and their icons leave with them.
     shown: BTreeMap<WindowId, OverviewIcon>,
@@ -168,7 +171,7 @@ impl IconBook {
         scale: Scale,
         plate_ink: [u8; 4],
         want: impl FnOnce() -> Want,
-    ) -> Option<TitleDraw> {
+    ) -> Option<RasterImage> {
         self.finder.as_ref()?;
         self.open();
         self.collect();
@@ -204,17 +207,12 @@ impl IconBook {
         key: IconKey,
         edge: u32,
         plate_ink: [u8; 4],
-    ) -> Option<TitleDraw> {
+    ) -> Option<RasterImage> {
         if let Some(waiting) = self.waiting.get(&at) {
             return Some(waiting.stand_in.clone());
         }
         let pixels = plate(edge, plate_ink)?;
-        let stand_in = TitleDraw {
-            id: self.cache.reserve(),
-            width: pixels.edge,
-            height: pixels.edge,
-            rgba: pixels.rgba,
-        };
+        let stand_in = raster_of(self.cache.reserve(), pixels);
         self.waiting.insert(
             at,
             Waiting {
@@ -227,14 +225,19 @@ impl IconBook {
 }
 
 /// The raster for `slot`: its icon, else the plate in `plate_ink`.
-fn draw_of_slot(slot: &Slot, edge: u32, plate_ink: [u8; 4]) -> Option<TitleDraw> {
+fn draw_of_slot(slot: &Slot, edge: u32, plate_ink: [u8; 4]) -> Option<RasterImage> {
     let pixels = slot.pixels.clone().or_else(|| plate(edge, plate_ink))?;
-    Some(TitleDraw {
-        id: slot.id,
+    Some(raster_of(slot.id, pixels))
+}
+
+/// `pixels` as the image the renderer takes, which raster `id` is.
+fn raster_of(id: u64, pixels: Pixels) -> RasterImage {
+    RasterImage {
+        id: RasterId(id),
         width: pixels.edge,
         height: pixels.edge,
         rgba: pixels.rgba,
-    })
+    }
 }
 
 /// The largest edge, in buffer pixels, of an icon buffer that is read: Mission Control draws an
