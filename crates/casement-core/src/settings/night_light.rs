@@ -4,22 +4,6 @@
 
 use crate::ids::{OutputKey, OutputName};
 use crate::output::{GammaRamp, Kelvin, MinuteOfDay, NightLight, Schedule};
-use ds_core::word::Word;
-use serde::{Deserialize, Serialize};
-
-/// When night light is on.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, Word)]
-#[serde(rename_all = "snake_case")]
-#[word(case = snake)]
-pub enum NightLightMode {
-    /// Never.
-    #[default]
-    Off,
-    /// All day.
-    Always,
-    /// From `night_light.from` to `night_light.to`.
-    Scheduled,
-}
 
 /// Whether night light warms an output.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,35 +18,19 @@ pub enum OutputWarming {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct NightLightSettings {
-    /// `night_light.mode`.
-    pub mode: NightLightMode,
-    /// `night_light.from`: minute of the day warming starts.
-    pub from: MinuteOfDay,
-    /// `night_light.to`: minute of the day warming ends.
-    pub to: MinuteOfDay,
-    /// `night_light.kelvin`: how warm the screen gets.
-    pub warmth: Kelvin,
-    /// `night_light.fade_minutes`.
-    pub fade_minutes: u16,
+    /// `night_light.mode`, `from`, `to`, `kelvin` and `fade_minutes`: when the screen warms, how
+    /// warm and how slowly.
+    pub light: NightLight,
     /// `night_light.skip_outputs`: outputs casement does not warm, each a connector name
     /// (`DP-1`) or an [`OutputKey`]'s text (`edid:<make>/<model>/<serial>`).
     pub skip_outputs: Vec<String>,
 }
 
 impl NightLightSettings {
-    /// These settings.
-    pub fn new(
-        mode: NightLightMode,
-        (from, to): (MinuteOfDay, MinuteOfDay),
-        warmth: Kelvin,
-        fade_minutes: u16,
-    ) -> NightLightSettings {
+    /// These settings, leaving no output alone.
+    pub fn new(light: NightLight) -> NightLightSettings {
         NightLightSettings {
-            mode,
-            from,
-            to,
-            warmth,
-            fade_minutes,
+            light,
             skip_outputs: Vec::new(),
         }
     }
@@ -76,39 +44,20 @@ impl NightLightSettings {
         }
     }
 
-    /// Off; when turned on it warms 22:00 to 07:00 to 3400 K over half an hour.
+    /// Off; when turned on it warms to 3400 K over half an hour.
     ///
     /// ```
-    /// use casement_core::settings::{NightLightMode, NightLightSettings};
+    /// use casement_core::output::Schedule;
+    /// use casement_core::settings::NightLightSettings;
     ///
-    /// assert_eq!(NightLightSettings::defaults().mode, NightLightMode::Off);
+    /// assert_eq!(NightLightSettings::defaults().light.schedule, Schedule::Off);
     /// ```
     pub fn defaults() -> NightLightSettings {
-        NightLightSettings {
-            mode: NightLightMode::Off,
-            from: MinuteOfDay::wrapping(22 * 60),
-            to: MinuteOfDay::wrapping(7 * 60),
+        NightLightSettings::new(NightLight {
+            schedule: Schedule::Off,
             warmth: Kelvin::NIGHT,
             fade_minutes: 30,
-            skip_outputs: Vec::new(),
-        }
-    }
-
-    /// The light these settings describe.
-    pub fn light(&self) -> NightLight {
-        let schedule = match self.mode {
-            NightLightMode::Off => Schedule::Off,
-            NightLightMode::Always => Schedule::Always,
-            NightLightMode::Scheduled => Schedule::Between {
-                from: self.from,
-                to: self.to,
-            },
-        };
-        NightLight {
-            schedule,
-            warmth: self.warmth,
-            fade_minutes: self.fade_minutes,
-        }
+        })
     }
 
     /// Whether night light warms the output on connector `name` with key `key`: not when
@@ -155,7 +104,7 @@ impl NightLightSettings {
     ) -> GammaRamp {
         match self.warming_of(name, key) {
             OutputWarming::Skipped => GammaRamp::Identity,
-            OutputWarming::Warmed => self.light().ramp_at(now, size),
+            OutputWarming::Warmed => self.light.ramp_at(now, size),
         }
     }
 }

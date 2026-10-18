@@ -1,10 +1,25 @@
 //! `night_light.*`.
 
 use crate::config::convert;
-use casement_core::settings::{CasementSettings, NightLightMode};
+use casement_core::settings::CasementSettings;
+use ds_core::word::Word;
 use ds_settings::Count;
 use ds_settings::schema::Page;
 use serde::{Deserialize, Serialize};
+
+/// When night light is on (`night_light.mode`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, Word)]
+#[serde(rename_all = "snake_case")]
+#[word(case = snake)]
+pub enum NightLightMode {
+    /// Never.
+    #[default]
+    Off,
+    /// All day.
+    Always,
+    /// From `night_light.from` to `night_light.to`.
+    Scheduled,
+}
 
 /// `night_light.*`: the screen warms on a schedule. A display that takes warmth through its own
 /// controls is warmed by sill instead and listed in `skip_outputs`; this is for the rest.

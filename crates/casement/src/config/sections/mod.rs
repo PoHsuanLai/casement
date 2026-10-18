@@ -19,7 +19,7 @@ pub use bindings::BindingsSection;
 pub use gestures::GesturesSection;
 pub use gpu::GpuSection;
 pub use keyboard::KeyboardSection;
-pub use night_light::NightLightSection;
+pub use night_light::{NightLightMode, NightLightSection};
 pub use outputs::{FirstSight, OutputsSection};
 pub use pointer::PointerSection;
 pub use spaces::SpacesSection;

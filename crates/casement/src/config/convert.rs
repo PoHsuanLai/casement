@@ -5,13 +5,14 @@
 use super::action::ActionWords;
 use super::doc::CasementDoc;
 use super::sections::{
-    BindingsSection, FirstSight, GesturesSection, GpuSection, KeyboardSection, NightLightSection,
-    OutputsSection, PointerSection, SpacesSection, TouchpadSection, WindowsSection,
+    BindingsSection, FirstSight, GesturesSection, GpuSection, KeyboardSection, NightLightMode,
+    NightLightSection, OutputsSection, PointerSection, SpacesSection, TouchpadSection,
+    WindowsSection,
 };
 use casement_core::CoreError;
 use casement_core::gpu::{ByPathId, GpuChoice};
 use casement_core::input::{Binding, Bindings, Chord};
-use casement_core::output::{Kelvin, MinuteOfDay, ScalePolicy};
+use casement_core::output::{Kelvin, MinuteOfDay, NightLight, ScalePolicy, Schedule};
 use casement_core::settings::{
     CasementSettings, GestureSettings, GpuSettings, KeyboardSettings, NightLightSettings,
     OutputSettings, PointerProfile, PointerSettings, RepeatRate, SpaceSettings, WindowSettings,
@@ -252,27 +253,48 @@ pub(super) fn gpu_doc(core: &GpuSettings) -> GpuSection {
 /// `night_light.*`; a time past the day wraps into it and a warmth outside the table stops at its
 /// ends.
 fn night_light(doc: &NightLightSection) -> NightLightSettings {
-    NightLightSettings::new(
-        doc.mode,
-        (
-            MinuteOfDay::wrapping(doc.from.0),
-            MinuteOfDay::wrapping(doc.to.0),
-        ),
-        Kelvin(doc.kelvin.0.clamp(Kelvin::WARMEST.0, Kelvin::NEUTRAL.0)),
-        doc.fade_minutes.0,
-    )
+    let schedule = match doc.mode {
+        NightLightMode::Off => Schedule::Off,
+        NightLightMode::Always => Schedule::Always,
+        NightLightMode::Scheduled => Schedule::Between {
+            from: MinuteOfDay::wrapping(doc.from.0),
+            to: MinuteOfDay::wrapping(doc.to.0),
+        },
+    };
+    NightLightSettings::new(NightLight {
+        schedule,
+        warmth: Kelvin(doc.kelvin.0.clamp(Kelvin::WARMEST.0, Kelvin::NEUTRAL.0)),
+        fade_minutes: doc.fade_minutes.0,
+    })
     .skipping(doc.skip_outputs.clone())
 }
 
+/// The document for `core`: the times of a schedule that is not in force are the usual evening
+/// to morning, as the file offers them when `mode` is changed to `scheduled`.
 pub(super) fn night_light_doc(core: &NightLightSettings) -> NightLightSection {
+    let (mode, from, to) = match core.light.schedule {
+        Schedule::Off => (NightLightMode::Off, evening(), morning()),
+        Schedule::Always => (NightLightMode::Always, evening(), morning()),
+        Schedule::Between { from, to } => (NightLightMode::Scheduled, from, to),
+    };
     NightLightSection {
-        mode: core.mode,
-        from: Count(core.from.get()),
-        to: Count(core.to.get()),
-        kelvin: Count(core.warmth.0),
-        fade_minutes: Count(core.fade_minutes),
+        mode,
+        from: Count(from.get()),
+        to: Count(to.get()),
+        kelvin: Count(core.light.warmth.0),
+        fade_minutes: Count(core.light.fade_minutes),
         skip_outputs: core.skip_outputs.clone(),
     }
+}
+
+/// When a scheduled night light starts, unless the file says: 22:00.
+fn evening() -> MinuteOfDay {
+    MinuteOfDay::wrapping(22 * 60)
+}
+
+/// When a scheduled night light ends, unless the file says: 07:00.
+fn morning() -> MinuteOfDay {
+    MinuteOfDay::wrapping(7 * 60)
 }
 
 /// What `gpu.render` says for the automatic choice.

@@ -45,28 +45,16 @@ fn the_default_gpu_is_automatic() {
 }
 
 #[test]
-fn night_light_is_off_by_default_and_schedules_when_asked() {
-    use crate::output::{MinuteOfDay, Schedule};
+fn night_light_is_off_by_default() {
+    use crate::output::Schedule;
     let settings = CasementSettings::defaults().night_light;
-    assert_eq!(settings.mode, NightLightMode::Off);
-    assert_eq!(settings.light().schedule, Schedule::Off);
-    let scheduled = NightLightSettings {
-        mode: NightLightMode::Scheduled,
-        ..settings
-    };
-    assert_eq!(
-        scheduled.light().schedule,
-        Schedule::Between {
-            from: MinuteOfDay::wrapping(22 * 60),
-            to: MinuteOfDay::wrapping(7 * 60),
-        }
-    );
+    assert_eq!(settings.light.schedule, Schedule::Off);
 }
 
 #[test]
 fn outputs_in_the_skip_list_keep_their_own_curve_and_the_rest_warm() {
     use crate::ids::{OutputKey, OutputName};
-    use crate::output::{EdidFacts, EdidSerial, GammaRamp, MinuteOfDay};
+    use crate::output::{EdidFacts, EdidSerial, GammaRamp, MinuteOfDay, NightLight, Schedule};
     let edid = |serial: EdidSerial| EdidFacts {
         make: "ACME".to_owned(),
         model: "M1".to_owned(),
@@ -80,11 +68,11 @@ fn outputs_in_the_skip_list_keep_their_own_curve_and_the_rest_warm() {
     let by_name = output("DP-1", EdidSerial::Unknown);
     let by_key = output("HDMI-A-1", EdidSerial::Known("S1".to_owned()));
     let other = output("DP-2", EdidSerial::Unknown);
-    let settings = NightLightSettings {
-        mode: NightLightMode::Always,
-        ..NightLightSettings::defaults()
-    }
-    .skipping(vec![
+    let always = NightLightSettings::new(NightLight {
+        schedule: Schedule::Always,
+        ..NightLightSettings::defaults().light
+    });
+    let settings = always.skipping(vec![
         " DP-1 ".to_owned(),
         by_key.1.as_str().to_owned(),
         "connector:DP-3".to_owned(),

@@ -10,10 +10,10 @@ use casement::config::{
 use casement_core::input::{
     Argv, Binding, BindingAction, Bindings, Chord, DbusCall, DesktopCommand, SpaceStep,
 };
-use casement_core::output::{Kelvin, ScalePolicy};
+use casement_core::output::{Kelvin, ScalePolicy, Schedule};
 use casement_core::settings::{
-    AccelProfile, CasementSettings, Enabled, FirstClick, MinimiseEffect, NightLightMode,
-    RepeatRate, TitleDoubleClick,
+    AccelProfile, CasementSettings, Enabled, FirstClick, MinimiseEffect, RepeatRate,
+    TitleDoubleClick,
 };
 use casement_core::window::SplitSide;
 use casement_protocols::vocab::PlaceTarget;
@@ -594,11 +594,11 @@ fn the_file_changes_the_pointer_the_repeat_the_layout_and_the_night_light_and_no
         ),
     );
     assert_eq!(
-        next.night_light.mode,
-        NightLightMode::Always,
+        next.night_light.light.schedule,
+        Schedule::Always,
         "night light follows"
     );
-    assert_eq!(next.night_light.warmth, Kelvin(2900));
+    assert_eq!(next.night_light.light.warmth, Kelvin(2900));
     assert_eq!(next.night_light.skip_outputs, ["DP-1", "edid:ACME/M1/S1"]);
     assert_eq!(
         followed(&next, &doc("")).night_light,

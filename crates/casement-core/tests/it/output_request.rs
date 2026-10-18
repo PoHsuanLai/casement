@@ -5,10 +5,10 @@ use crate::support::driver::{Op, plug, run, run_from};
 use crate::support::{display, headless, mode, ms};
 use casement_core::geometry::{LogicalPoint, Transform};
 use casement_core::output::{
-    GammaRamp, GammaTable, Kelvin, MinuteOfDay, ModePreference, OutputChangeSet, OutputConfig,
-    OutputPower, OutputRefusal, Requester, keeps_one_lit, resolve_change,
+    GammaRamp, GammaTable, Kelvin, MinuteOfDay, ModePreference, NightLight, OutputChangeSet,
+    OutputConfig, OutputPower, OutputRefusal, Requester, Schedule, keeps_one_lit, resolve_change,
 };
-use casement_core::settings::{CasementSettings, NightLightMode, NightLightSettings};
+use casement_core::settings::{CasementSettings, NightLightSettings};
 use casement_core::space::SpaceSeed;
 use casement_core::{Effect, Event, Model, OutputKey};
 use ds_core::geometry::scale::Scale;
@@ -254,9 +254,12 @@ fn gamma_for_a_plugged_output_becomes_an_effect_and_for_a_gone_one_nothing() {
 
 /// Night light all day (no fade) leaving `skipping` alone.
 fn night(skipping: &[&str]) -> CasementSettings {
-    let day = (MinuteOfDay::wrapping(0), MinuteOfDay::wrapping(0));
-    let light = NightLightSettings::new(NightLightMode::Always, day, Kelvin::NIGHT, 0)
-        .skipping(skipping.iter().map(|name| (*name).to_owned()).collect());
+    let light = NightLightSettings::new(NightLight {
+        schedule: Schedule::Always,
+        warmth: Kelvin::NIGHT,
+        fade_minutes: 0,
+    })
+    .skipping(skipping.iter().map(|name| (*name).to_owned()).collect());
     CasementSettings {
         night_light: light,
         ..CasementSettings::defaults()
