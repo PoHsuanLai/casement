@@ -29,7 +29,6 @@ toml = { workspace = true }
 peephole-bus = { workspace = true }
 # `WireCode::ALL` and `Power`: the section list of the Privacy module (the vocabulary's one home).
 casement-protocols = { workspace = true }
-serde_json = { workspace = true }
 # The refusal of a call is logged once, with the role asked and the standing found.
 tracing = { workspace = true }
 # Keysym names in the inject grammar (`key Return down`).

@@ -461,7 +461,6 @@ dependencies = [
  "peephole-bus",
  "porter-core",
  "porter-dbus",
- "serde_json",
  "thiserror 2.0.21",
  "tokio",
  "toml",
@@ -546,7 +545,6 @@ dependencies = [
  "casement-testkit",
  "desktop-client",
  "rustix 1.1.5",
- "serde",
  "serde_json",
  "thiserror 2.0.21",
  "tokio",
@@ -563,7 +561,6 @@ dependencies = [
 name = "casement-testkit"
 version = "0.1.0"
 dependencies = [
- "calloop",
  "casement",
  "casement-backend",
  "casement-core",
