@@ -23,7 +23,6 @@
 pub use casement_core::settings::AccelProfile;
 
 use crate::session::SessionFault;
-use casement_core::DeviceId;
 use casement_core::settings::Enabled;
 use ds_core::vocab::Fraction;
 

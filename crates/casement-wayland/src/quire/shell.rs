@@ -247,13 +247,9 @@ where
             }
             quire_shell_v1::Request::PermissionAnswer { ask, answer } => {
                 let now = state.quire_shell_now();
-                match shell_permission::on_answer(
-                    state.quire_shell_part(),
-                    ask,
-                    answer,
-                    now,
-                    state.quire_shell_wall(),
-                ) {
+                let wall = state.quire_shell_wall();
+                match shell_permission::on_answer(state.quire_shell_part(), ask, answer, now, wall)
+                {
                     Ok(events) => state.feed(events),
                     Err(fault) => resource
                         .post_error(quire_shell_v1::Error::AnsweredTooSoon, fault.to_string()),
