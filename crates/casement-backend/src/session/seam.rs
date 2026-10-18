@@ -1,23 +1,6 @@
 //! The session seam's types.
 
-use smithay::backend::session::{AsErrno, Session};
-
-/// Who opens devices for casement.
-pub enum SessionSeam {
-    /// Nobody: the headless and winit backends open no device.
-    None,
-    /// A fake over fixtures (tests only): any open outside its fixtures is `DeniedOpen`.
-    Fake(Box<dyn Session<Error = SessionFault>>),
-}
-
-impl std::fmt::Debug for SessionSeam {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SessionSeam::None => f.write_str("SessionSeam::None"),
-            SessionSeam::Fake(session) => write!(f, "SessionSeam::Fake(seat {})", session.seat()),
-        }
-    }
-}
+use smithay::backend::session::AsErrno;
 
 /// Why a session refused.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

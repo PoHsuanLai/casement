@@ -3,4 +3,4 @@
 
 mod seam;
 
-pub use seam::{SessionFault, SessionSeam};
+pub use seam::SessionFault;
