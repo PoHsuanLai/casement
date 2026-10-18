@@ -83,7 +83,12 @@ pub fn stored_kind(surface: &WlSurface) -> ContentKind {
         states
             .data_map
             .get::<Stored>()
-            .map(|stored| *stored.0.lock().unwrap_or_else(|poison| poison.into_inner()))
+            .map(|stored| {
+                *stored
+                    .0
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+            })
             .unwrap_or_default()
     })
 }
@@ -98,7 +103,10 @@ pub fn on_content_type(
     let _ = part;
     with_states(surface, |states| {
         let stored = states.data_map.get_or_insert_threadsafe(Stored::default);
-        *stored.0.lock().unwrap_or_else(|poison| poison.into_inner()) = kind;
+        *stored
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = kind;
     });
     Vec::new()
 }

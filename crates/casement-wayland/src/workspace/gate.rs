@@ -60,7 +60,9 @@ pub fn on_resolved(part: &mut WorkspacePart, client: ClientKey, outcome: PowerOu
             }
         }
         PowerOutcome::Denied | PowerOutcome::Revoked => {
-            waiting.iter().for_each(|held| held.manager.finished());
+            for held in &waiting {
+                held.manager.finished();
+            }
             let (ended, kept): (Vec<_>, Vec<_>) = std::mem::take(&mut part.bound)
                 .into_iter()
                 .partition(|bound| owner_of(&bound.manager) == Some(client));

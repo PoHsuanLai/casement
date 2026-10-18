@@ -163,7 +163,7 @@ pub(crate) fn passes_and_offset(sigma: f32) -> (u8, f32) {
     (1..=MAX_PASSES)
         .map(|passes| (passes, offset_at(passes)))
         .find(|(_, offset)| *offset <= MAX_OFFSET)
-        .unwrap_or((MAX_PASSES, offset_at(MAX_PASSES).min(LAST_RESORT_OFFSET)))
+        .unwrap_or_else(|| (MAX_PASSES, offset_at(MAX_PASSES).min(LAST_RESORT_OFFSET)))
 }
 
 /// A level's size: `size` halved `level` times, rounded up, at least one pixel.

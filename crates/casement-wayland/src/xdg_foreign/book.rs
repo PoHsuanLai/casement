@@ -76,7 +76,7 @@ impl Shared {
         // The book is plain data: a panic elsewhere left it whole.
         self.0
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 }
 

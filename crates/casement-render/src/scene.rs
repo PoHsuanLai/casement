@@ -425,7 +425,7 @@ fn in_overview(
 fn label_place(visual: LogicalRect, size: LogicalSize, clear: Option<LogicalRect>) -> LogicalRect {
     let across = i64::from(visual.origin.x) + (i64::from(visual.size.w) - i64::from(size.w)) / 2;
     let bottom = |rect: LogicalRect| i64::from(rect.origin.y) + i64::from(rect.size.h);
-    let below = clear.map_or(bottom(visual), |icon| bottom(visual).max(bottom(icon)))
+    let below = clear.map_or_else(|| bottom(visual), |icon| bottom(visual).max(bottom(icon)))
         + i64::from(LABEL_GAP);
     let whole = |n: i64| i32::try_from(n).unwrap_or(0);
     LogicalRect::new(

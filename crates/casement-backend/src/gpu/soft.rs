@@ -66,14 +66,14 @@ impl CounterHandle {
         *self
             .0
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     fn bump(&self, count: impl FnOnce(&mut CopyCounters) -> &mut u32) {
         let mut counters = self
             .0
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         *count(&mut counters) += 1;
     }
 }

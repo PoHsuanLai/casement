@@ -46,18 +46,25 @@ pub fn on_resolved<D: WlrToplevelHandler>(state: &mut D, client: ClientKey, outc
     let waiting = part.waiting.take(client);
     match outcome {
         PowerOutcome::Allowed => {
-            for manager in waiting.into_iter().filter(|manager| manager.is_alive()) {
+            for manager in waiting
+                .into_iter()
+                .filter(smithay::reexports::wayland_server::Resource::is_alive)
+            {
                 part.managers.push(manager.clone());
                 list_all_on(part, &manager);
             }
         }
         PowerOutcome::Denied | PowerOutcome::Revoked => {
-            waiting.iter().for_each(|manager| manager.finished());
+            for manager in &waiting {
+                manager.finished();
+            }
             let (ended, kept): (Vec<_>, Vec<_>) = std::mem::take(&mut part.managers)
                 .into_iter()
                 .partition(|manager| owner_of(manager) == Some(client));
             part.managers = kept;
-            ended.iter().for_each(|manager| manager.finished());
+            for manager in &ended {
+                manager.finished();
+            }
             for held in part.handles.values_mut() {
                 held.retain(|held| {
                     held.handle.client().as_ref().and_then(consent::key_of) != Some(client)

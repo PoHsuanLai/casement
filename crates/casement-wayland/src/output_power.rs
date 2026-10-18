@@ -248,7 +248,7 @@ where
                 .output_power_part()
                 .objects
                 .get(key)
-                .is_some_and(|control| control.is_alive())
+                .is_some_and(smithay::reexports::wayland_server::Resource::is_alive)
         });
         let Some((key, power)) = key.zip(power).filter(|_| !held) else {
             data_init.init(id, PowerData { output: None }).failed();
@@ -315,7 +315,7 @@ pub fn on_resolved<D: OutputPowerHandler>(state: &mut D, client: ClientKey, outc
                 let free = !part
                     .objects
                     .get(&held.output)
-                    .is_some_and(|control| control.is_alive());
+                    .is_some_and(smithay::reexports::wayland_server::Resource::is_alive);
                 match power.filter(|_| free) {
                     Some(power) => register(part, held.control, &held.output, power),
                     None => held.control.failed(),
@@ -323,7 +323,9 @@ pub fn on_resolved<D: OutputPowerHandler>(state: &mut D, client: ClientKey, outc
             }
         }
         PowerOutcome::Denied | PowerOutcome::Revoked => {
-            waiting.iter().for_each(|held| held.control.failed());
+            for held in &waiting {
+                held.control.failed();
+            }
             let part = state.output_power_part();
             let ended: Vec<OutputKey> = part
                 .objects

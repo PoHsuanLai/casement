@@ -251,7 +251,7 @@ where
                 .gamma_part()
                 .objects
                 .get(&key)
-                .is_some_and(|control| control.is_alive());
+                .is_some_and(smithay::reexports::wayland_server::Resource::is_alive);
             let size = state.gamma_table_size(&key);
             size.filter(|_| free).map(|size| (key, size))
         });
@@ -319,7 +319,7 @@ pub fn on_resolved<D: GammaHandler>(state: &mut D, client: ClientKey, outcome: P
                 let free = !part
                     .objects
                     .get(&held.output)
-                    .is_some_and(|control| control.is_alive());
+                    .is_some_and(smithay::reexports::wayland_server::Resource::is_alive);
                 match size.filter(|_| free) {
                     Some(size) => register(part, held.control, &held.output, size),
                     None => held.control.failed(),
@@ -327,7 +327,9 @@ pub fn on_resolved<D: GammaHandler>(state: &mut D, client: ClientKey, outcome: P
             }
         }
         PowerOutcome::Denied | PowerOutcome::Revoked => {
-            waiting.iter().for_each(|held| held.control.failed());
+            for held in &waiting {
+                held.control.failed();
+            }
             let part = state.gamma_part();
             let ended: Vec<OutputKey> = part
                 .objects

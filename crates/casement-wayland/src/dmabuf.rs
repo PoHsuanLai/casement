@@ -58,7 +58,7 @@ impl DmabufPart {
         for format in self
             .offered
             .iter()
-            .flat_map(|offer| offer.tranche_list())
+            .flat_map(DmabufOffer::tranche_list)
             .flat_map(|tranche| tranche.formats)
         {
             if !seen.contains(&format) {

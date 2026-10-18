@@ -99,7 +99,7 @@ impl Registry {
         // A poisoned list is still a list: the pairs are plain handles.
         self.0
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     fn hold(&self, buffer: WlBuffer, icon: &XdgToplevelIconV1) {
@@ -167,7 +167,7 @@ impl IconData {
     fn phase(&self) -> MutexGuard<'_, Phase> {
         self.phase
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Hands the icon to a toplevel: from now on it is immutable. `None` when it has nothing

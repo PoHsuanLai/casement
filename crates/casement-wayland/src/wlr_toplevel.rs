@@ -224,7 +224,7 @@ where
         _dhandle: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
-        if let zwlr_foreign_toplevel_manager_v1::Request::Stop = request {
+        if matches!(request, zwlr_foreign_toplevel_manager_v1::Request::Stop) {
             state
                 .wlr_toplevel_part()
                 .managers

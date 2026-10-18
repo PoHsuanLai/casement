@@ -15,7 +15,7 @@ use smithay::wayland::shell::xdg::ToplevelState;
 
 /// Every `xdg_toplevel` state a configure decides, with whether it holds. P0 floats: the model
 /// never asks for tiled edges of a floating or zoomed window, and none is invented here.
-pub(super) fn wire_states(states: &ToplevelStates) -> [(State, Held); 8] {
+pub(super) fn wire_states(states: ToplevelStates) -> [(State, Held); 8] {
     [
         (
             State::Activated,
@@ -42,7 +42,7 @@ pub(super) fn apply_spec(state: &mut ToplevelState, spec: &ConfigureSpec) {
         ConfigureSize::Exact(size) => Some(size_to(size)),
     };
     state.bounds = (spec.bounds != LogicalSize { w: 0, h: 0 }).then(|| size_to(spec.bounds));
-    for (wire, held) in wire_states(&spec.states) {
+    for (wire, held) in wire_states(spec.states) {
         match held {
             Held::Yes => {
                 state.states.set(wire);

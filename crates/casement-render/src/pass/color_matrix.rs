@@ -82,8 +82,9 @@ pub fn srgb_to_panel(gamut: Gamut) -> ColorMatrix {
         Gamut::Wide(panel) => rgb_to_xyz(panel)
             .and_then(ColorMatrix::inverse)
             .zip(rgb_to_xyz(SRGB))
-            .map(|(from_xyz, srgb)| from_xyz.after(srgb))
-            .unwrap_or(ColorMatrix::IDENTITY),
+            .map_or(ColorMatrix::IDENTITY, |(from_xyz, srgb)| {
+                from_xyz.after(srgb)
+            }),
     }
 }
 

@@ -38,7 +38,10 @@ impl Points {
     }
 
     fn with<R>(&self, f: impl FnOnce(&mut BTreeMap<u32, Down>) -> R) -> R {
-        f(&mut self.0.lock().unwrap_or_else(|poison| poison.into_inner()))
+        f(&mut self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner))
     }
 }
 

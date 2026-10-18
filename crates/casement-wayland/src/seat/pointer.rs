@@ -105,7 +105,7 @@ where
             let hold = hold_of(&pointer);
             let over = focus.as_ref().map(|at| (&at.surface, whole_of(at.origin)));
             let moved = settled(&hold, over, logical_of(at));
-            let relative = relative_of(&focus, delta, time);
+            let relative = relative_of(focus.as_ref(), delta, time);
             if let Some(location) = moved {
                 // A confined pointer is held on its surface, wherever the motion asked it to go.
                 let focus = confined_focus(&hold).or(focus);
@@ -156,11 +156,11 @@ type RelativeDelivery<F> = ((F, Point<f64, Logical>), RelativeMotionEvent);
 /// The relative motion for a delivery over `focus` (none when the pointer did not move or is
 /// over nothing).
 fn relative_of<F: From<WlSurface>>(
-    focus: &Option<SurfaceAt>,
+    focus: Option<&SurfaceAt>,
     delta: casement_core::geometry::SubPoint,
     time: InputTime,
 ) -> Option<RelativeDelivery<F>> {
-    let at = focus.as_ref()?;
+    let at = focus?;
     if delta.x.0 == 0 && delta.y.0 == 0 {
         return None;
     }

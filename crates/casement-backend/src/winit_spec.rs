@@ -46,8 +46,9 @@ pub fn window_spec(
 fn scale_of(factor: f64) -> Scale {
     Some(factor)
         .filter(|f| f.is_finite() && *f > 0.0)
-        .map(|f| Scale((f * 120.0).round().clamp(1.0, f64::from(u32::MAX)) as u32))
-        .unwrap_or(UNIT_SCALE)
+        .map_or(UNIT_SCALE, |f| {
+            Scale((f * 120.0).round().clamp(1.0, f64::from(u32::MAX)) as u32)
+        })
 }
 
 /// A window's size in our words (a negative side is none).

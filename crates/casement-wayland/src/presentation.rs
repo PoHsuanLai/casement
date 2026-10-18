@@ -104,9 +104,9 @@ pub fn on_feedback(part: &mut PresentationPart, surface: &WlSurface) -> Vec<Even
         .into_iter()
         .partition(|waiting| waiting.surface == surface.downgrade());
     part.waiting = kept;
-    superseded
-        .into_iter()
-        .for_each(|waiting| waiting.callback.discarded());
+    for waiting in superseded {
+        waiting.callback.discarded();
+    }
     part.waiting
         .extend(fresh.into_iter().map(|callback| Waiting {
             surface: surface.downgrade(),
@@ -121,8 +121,9 @@ pub fn discard_surface(part: &mut PresentationPart, surface: &WlSurface) {
         .into_iter()
         .partition(|waiting| waiting.surface == surface.downgrade());
     part.waiting = kept;
-    gone.into_iter()
-        .for_each(|waiting| waiting.callback.discarded());
+    for waiting in gone {
+        waiting.callback.discarded();
+    }
 }
 
 /// The refresh as smithay's feedback takes it: a fixed period, unknown when the output reports

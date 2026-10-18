@@ -323,7 +323,9 @@ impl Bound {
                     .into_iter()
                     .partition(|held| held.window == *id);
                 self.asked = kept;
-                ended.iter().for_each(|held| held.object.closed());
+                for held in &ended {
+                    held.object.closed();
+                }
                 let own = self.windows.remove(id).map(|object| object.closed());
                 own.or_else(|| ended.first().map(|_| ()))
             }

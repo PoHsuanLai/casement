@@ -40,7 +40,7 @@ impl<T: Mortal> Held<T> {
     /// asks and leaves, over and over, cannot grow the table.
     pub fn push(&mut self, client: ClientKey, item: T) -> Pushed<T> {
         self.by_client.retain(|_, items| {
-            items.retain(|item| item.alive());
+            items.retain(Mortal::alive);
             !items.is_empty()
         });
         let items = self.by_client.entry(client).or_default();

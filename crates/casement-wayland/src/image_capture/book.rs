@@ -117,7 +117,9 @@ impl CaptureBook {
             .filter(|(_, captured)| *captured == output)
             .map(|(id, _)| *id)
             .collect();
-        gone.iter().for_each(|id| self.drop_session(*id));
+        for id in &gone {
+            self.drop_session(*id);
+        }
         gone
     }
 }

@@ -69,7 +69,7 @@ impl GoneQueue {
         self.ledger.forget(client);
         self.gone
             .lock()
-            .unwrap_or_else(|poison| poison.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(client);
     }
 
@@ -79,7 +79,7 @@ impl GoneQueue {
             &mut *self
                 .gone
                 .lock()
-                .unwrap_or_else(|poison| poison.into_inner()),
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
         )
     }
 }

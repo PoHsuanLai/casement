@@ -60,7 +60,7 @@ fn is_timed(surface: &WlSurface) -> bool {
             .is_some_and(|barriers| {
                 barriers
                     .lock()
-                    .unwrap_or_else(|poison| poison.into_inner())
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .next_deadline()
                     .is_some()
             });
@@ -100,7 +100,9 @@ pub fn apply_presented(
                 .data_map
                 .get::<CommitTimerBarrierStateUserData>()
                 .map(|barriers| {
-                    let mut barriers = barriers.lock().unwrap_or_else(|poison| poison.into_inner());
+                    let mut barriers = barriers
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
                     (
                         barriers.signal_until(deadline),
                         barriers.next_deadline().is_some(),

@@ -115,7 +115,7 @@ impl CreatorData {
     fn given(&self) -> MutexGuard<'_, Given> {
         self.given
             .lock()
-            .unwrap_or_else(|poison| poison.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 }
 

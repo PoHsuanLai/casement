@@ -95,7 +95,7 @@ fn confine_of(
                 .iter()
                 .filter(|(kind, _)| matches!(kind, RectangleKind::Add))
                 .map(|(_, rect)| *rect)
-                .reduce(|a, b| a.merge(b))
+                .reduce(smithay::utils::Rectangle::merge)
         })
         .and_then(|bounds| bounds.intersection(extent))
         .unwrap_or(extent);

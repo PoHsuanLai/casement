@@ -367,7 +367,9 @@ pub fn apply_window_gone(
     book.sources.retain(|_, shown| *shown != window);
     book.stamps.remove(&window);
     let gone = book.sessions_of(window);
-    gone.iter().for_each(|id| book.drop_session(*id));
+    for id in &gone {
+        book.drop_session(*id);
+    }
     gone
 }
 

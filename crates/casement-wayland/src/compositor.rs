@@ -70,7 +70,7 @@ pub fn route_of_role(role: Option<&str>) -> CommitRoute {
         Some(LAYER_SURFACE_ROLE) => CommitRoute::Layer,
         Some(LOCK_SURFACE_ROLE) => CommitRoute::LockSurface,
         Some(SUBSURFACE_ROLE) => CommitRoute::Subsurface,
-        Some(CURSOR_IMAGE_ROLE) | Some(DND_ICON_ROLE) => CommitRoute::Cursor,
+        Some(CURSOR_IMAGE_ROLE | DND_ICON_ROLE) => CommitRoute::Cursor,
         Some(_) | None => CommitRoute::Unassigned,
     }
 }
