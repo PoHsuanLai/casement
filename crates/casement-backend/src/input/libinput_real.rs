@@ -11,7 +11,7 @@
 
 use super::DeviceName;
 use super::convert::input_kind_of;
-use super::devices::{Applied, DeviceSetting, DeviceSettings, InputDevices, InputError};
+use super::devices::{Applied, DeviceSetting, DeviceSettings, InputError};
 use super::feed::{FedDevice, FedInput, InputFeed, PollContext};
 use casement_core::DeviceId;
 use casement_core::input::{DeviceClass, InputEvent as CoreEvent, KernelIds, Maker, Origin};
@@ -223,7 +223,7 @@ fn skipped(result: DeviceConfigResult, setting: DeviceSetting) -> Option<DeviceS
     }
 }
 
-impl InputDevices for RealInputFeed {
+impl InputFeed for RealInputFeed {
     fn apply(&mut self, device: DeviceId, settings: &DeviceSettings) -> Applied {
         let Some(known) = self.devices.get_mut(&device) else {
             return Applied::Refused;
@@ -260,9 +260,7 @@ impl InputDevices for RealInputFeed {
             Applied::Partly(skipped)
         }
     }
-}
 
-impl InputFeed for RealInputFeed {
     fn poll(&mut self, context: &PollContext) -> Vec<FedInput> {
         let raw: Vec<Raw> = self.queue.borrow_mut().drain(..).collect();
         raw.iter()

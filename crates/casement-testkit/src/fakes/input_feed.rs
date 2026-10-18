@@ -5,7 +5,7 @@
 
 use super::FakeInputDevices;
 use casement_backend::input::{
-    Applied, DeviceName, DeviceSettings, FedDevice, FedInput, InputDevices, InputFeed, PollContext,
+    Applied, DeviceName, DeviceSettings, FedDevice, FedInput, InputFeed, PollContext,
 };
 use casement_core::DeviceId;
 use casement_core::input::{DeviceClass, InputEvent, InputKind, Origin};
@@ -104,7 +104,7 @@ impl FakeInputFeed {
     }
 }
 
-impl InputDevices for FakeInputFeed {
+impl InputFeed for FakeInputFeed {
     fn apply(&mut self, device: DeviceId, settings: &DeviceSettings) -> Applied {
         let present = self.world().devices.contains_key(&device);
         match present {
@@ -112,9 +112,7 @@ impl InputDevices for FakeInputFeed {
             false => Applied::Refused,
         }
     }
-}
 
-impl InputFeed for FakeInputFeed {
     fn poll(&mut self, context: &PollContext) -> Vec<FedInput> {
         let mut world = self.world();
         if world.reading == Reading::Suspended {

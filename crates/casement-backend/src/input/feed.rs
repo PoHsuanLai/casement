@@ -2,7 +2,7 @@
 //! backend's queue of virtual events. [`InputFeed`] is the one seam for a real seat: it reads
 //! what libinput reports, converts it once into our events (device, instant and origin stamped
 //! here and never changed downstream, I8) and configures the devices
-//! ([`InputDevices`](super::InputDevices)). Real: `libinput_real.rs` (feature `libinput`), whose
+//! ([`InputFeed::apply`]). Real: `libinput_real.rs` (feature `libinput`), whose
 //! devices are opened through the seat's session; fake: `casement_testkit::fakes::FakeInputFeed`.
 //!
 //! ```no_run
@@ -21,7 +21,7 @@
 //! }
 //! ```
 
-use super::{DeviceName, InputDevices};
+use super::{Applied, DeviceName, DeviceSettings};
 use casement_core::DeviceId;
 use casement_core::geometry::LogicalRect;
 use casement_core::input::{DeviceClass, InputEvent};
@@ -78,7 +78,10 @@ impl PollContext {
 }
 
 /// The seat's input devices: what they report, and their configuration.
-pub trait InputFeed: InputDevices {
+pub trait InputFeed: std::fmt::Debug {
+    /// Configures `device` with `settings`.
+    fn apply(&mut self, device: DeviceId, settings: &DeviceSettings) -> Applied;
+
     /// What the devices reported since the last poll, in order.
     fn poll(&mut self, context: &PollContext) -> Vec<FedInput>;
 

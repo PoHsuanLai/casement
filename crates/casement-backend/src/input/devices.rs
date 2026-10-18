@@ -3,12 +3,12 @@
 //! FakeInputDevices`, which records what was applied so a test asserts the settings at the seam.
 //!
 //! ```no_run
-//! use casement_backend::input::{AccelProfile, DeviceSettings, InputDevices};
+//! use casement_backend::input::{AccelProfile, DeviceSettings, InputFeed};
 //! use casement_core::DeviceId;
 //! use casement_core::settings::Enabled;
 //! use ds_core::vocab::Fraction;
 //!
-//! fn natural(devices: &mut dyn InputDevices, device: DeviceId) {
+//! fn natural(devices: &mut dyn InputFeed, device: DeviceId) {
 //!     let settings = DeviceSettings::new(
 //!         AccelProfile::Adaptive,
 //!         Enabled::On,
@@ -100,10 +100,4 @@ pub enum InputError {
     /// The input system could not start.
     #[error("input: {0}")]
     Io(#[from] std::io::Error),
-}
-
-/// The input devices' configuration.
-pub trait InputDevices: std::fmt::Debug {
-    /// Configures `device` with `settings`.
-    fn apply(&mut self, device: DeviceId, settings: &DeviceSettings) -> Applied;
 }

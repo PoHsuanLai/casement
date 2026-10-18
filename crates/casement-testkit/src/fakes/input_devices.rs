@@ -1,7 +1,7 @@
 //! The fake libinput configuration: `FakeInputDevices` records the settings applied to each
 //! device, so a test asserts them at the seam (P1-I1). A clone shares the record.
 
-use casement_backend::input::{Applied, DeviceSettings, InputDevices};
+use casement_backend::input::{Applied, DeviceSettings};
 use casement_core::DeviceId;
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -24,10 +24,9 @@ impl FakeInputDevices {
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
-}
 
-impl InputDevices for FakeInputDevices {
-    fn apply(&mut self, device: DeviceId, settings: &DeviceSettings) -> Applied {
+    /// Records `settings` for `device`.
+    pub fn apply(&mut self, device: DeviceId, settings: &DeviceSettings) -> Applied {
         self.applied
             .lock()
             .unwrap_or_else(PoisonError::into_inner)

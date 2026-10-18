@@ -2,7 +2,7 @@
 //! applying a changed setting to a device that is already there (settings take effect at once,
 //! as in System Settings on the Mac). [`PresentDevices::changes`] is the diff from what was
 //! applied to what the settings say now; the loop carries it out through the
-//! [`InputDevices`](super::InputDevices) seam.
+//! [`InputFeed`](super::InputFeed) seam.
 
 use super::config::device_settings;
 use super::devices::DeviceSettings;

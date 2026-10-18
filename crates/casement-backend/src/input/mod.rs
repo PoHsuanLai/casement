@@ -1,5 +1,5 @@
 //! Input devices: [`VirtualInput`], smithay's `InputBackend` over queued events, the same
-//! path libinput takes (11 §2.5), and the libinput settings seam ([`InputDevices`], P1-Z), whose
+//! path libinput takes (11 §2.5), and the libinput settings seam ([`InputFeed::apply`], P1-Z), whose
 //! real adapter is behind feature `libinput`.
 //!
 //! Physical, Virtual and Test origins are minted only under features `testing` or
@@ -22,7 +22,7 @@ mod libinput_real;
 pub use config::{device_settings, scaled_scroll, xkb_of};
 pub use convert::input_kind_of;
 pub use device_spec::{DeviceName, DeviceSpec};
-pub use devices::{AccelProfile, Applied, DeviceSetting, DeviceSettings, InputDevices, InputError};
+pub use devices::{AccelProfile, Applied, DeviceSetting, DeviceSettings, InputError};
 pub use feed::{FedDevice, FedInput, InputFeed, PollContext};
 #[cfg(feature = "libinput")]
 pub use libinput_real::RealInputFeed;
