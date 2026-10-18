@@ -3,47 +3,9 @@
 //! [`RegisterFault::Refused`] once and ends the asking. No real bus, no real account service.
 
 use super::*;
-use std::io::{BufRead, BufReader};
-use std::process::{Child, Command, Stdio};
+use crate::test_bus::PrivateBus;
 use std::sync::{Arc, Mutex, PoisonError};
 use zbus::fdo;
-
-/// A dbus-daemon on the repo's private-bus.conf with a cleared environment, killed and reaped
-/// when dropped.
-struct PrivateBus {
-    daemon: Child,
-    address: String,
-}
-
-impl PrivateBus {
-    fn start() -> PrivateBus {
-        let config = concat!(env!("CARGO_MANIFEST_DIR"), "/../../dev/private-bus.conf");
-        let daemon = Command::new("dbus-daemon")
-            .env_clear()
-            .args(["--config-file", config, "--nofork", "--print-address=1"])
-            .stdout(Stdio::piped())
-            .spawn()
-            .expect("dbus-daemon");
-        let mut bus = PrivateBus {
-            daemon,
-            address: String::new(),
-        };
-        let stdout = bus.daemon.stdout.take().expect("stdout");
-        BufReader::new(stdout)
-            .read_line(&mut bus.address)
-            .expect("address");
-        bus.address = bus.address.trim().to_owned();
-        assert!(!bus.address.is_empty(), "dbus-daemon printed no address");
-        bus
-    }
-}
-
-impl Drop for PrivateBus {
-    fn drop(&mut self) {
-        let _ = self.daemon.kill();
-        let _ = self.daemon.wait();
-    }
-}
 
 /// What the stand-in heard: (id, name, look) per call.
 type Heard = Arc<Mutex<Vec<(String, String, String)>>>;

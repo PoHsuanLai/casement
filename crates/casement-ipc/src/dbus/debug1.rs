@@ -243,4 +243,4 @@ fn check_output_call(verb: &str, args: &[String]) -> fdo::Result<()> {
 }
 
 #[cfg(test)]
-pub(crate) mod tests;
+mod tests;

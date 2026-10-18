@@ -2,8 +2,8 @@
 //! calloop channel and the answer the loop sends comes back.
 
 use super::*;
-use crate::dbus::debug1::tests::PrivateBus;
 use crate::dbus::{DebugReply, DebugRequest};
+use crate::test_bus::PrivateBus;
 use crate::{InjectLine, WaitPredicate};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;

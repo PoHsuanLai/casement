@@ -2,10 +2,9 @@
 //! round trip over a private dbus-daemon (the wire types the interface macro derives).
 
 use super::*;
+use crate::test_bus::PrivateBus;
 use casement_core::geometry::LogicalPoint;
 use casement_core::input::{ButtonCode, Edge, Keysym};
-use std::io::{BufRead, BufReader};
-use std::process::{Child, Command, Stdio};
 use std::thread::JoinHandle;
 
 type Answer = Box<dyn Fn(&DebugRequest) -> DebugReply + Send>;
@@ -218,44 +217,6 @@ async fn malformed_calls_are_refused_before_the_loop_sees_them() {
     assert!(well_formed.iter().all(Result::is_ok), "{well_formed:?}");
     drop(debug);
     assert_eq!(seen.join().expect("loop").len(), 2);
-}
-
-/// A dbus-daemon on the repo's private-bus.conf with a cleared environment, killed and reaped
-/// when dropped, so a failing test leaves nothing behind.
-pub(crate) struct PrivateBus {
-    daemon: Child,
-    pub(crate) address: String,
-}
-
-impl PrivateBus {
-    pub(crate) fn start() -> PrivateBus {
-        let config = concat!(env!("CARGO_MANIFEST_DIR"), "/../../dev/private-bus.conf");
-        let daemon = Command::new("dbus-daemon")
-            .env_clear()
-            .args(["--config-file", config, "--nofork", "--print-address=1"])
-            .stdout(Stdio::piped())
-            .spawn()
-            .expect("dbus-daemon");
-        // The guard exists before anything can fail, so its Drop covers the reads below.
-        let mut bus = PrivateBus {
-            daemon,
-            address: String::new(),
-        };
-        let stdout = bus.daemon.stdout.take().expect("stdout");
-        BufReader::new(stdout)
-            .read_line(&mut bus.address)
-            .expect("address");
-        bus.address = bus.address.trim().to_owned();
-        assert!(!bus.address.is_empty(), "dbus-daemon printed no address");
-        bus
-    }
-}
-
-impl Drop for PrivateBus {
-    fn drop(&mut self) {
-        let _ = self.daemon.kill();
-        let _ = self.daemon.wait();
-    }
 }
 
 #[tokio::test]
