@@ -3,9 +3,11 @@
 //! `Virtual-1` on the leftover vkms device): sysfs fixtures for the detection, the backend over
 //! fakes for the rule at start and at hotplug.
 
-use casement_backend::gpu::{GpuError, GpuHandle, RenderNodes, SysRoot};
-use casement_backend::tty::{DeviceEvent, DevicePath, SysDeviceKinds, TtyBackend, TtySeams};
-use casement_core::gpu::{DisplayKind, DrmNodeId, GpuChoice, GpuFacts};
+use casement_backend::gpu::SysRoot;
+use casement_backend::tty::{
+    DeviceEvent, DevicePath, NoGpus, SysDeviceKinds, TtyBackend, TtySeams,
+};
+use casement_core::gpu::{DisplayKind, GpuChoice};
 use casement_testkit::fakes::{
     FakeKms, FakeKmsOpener, FakeSession, FakeUdev, SharedSession, SyntheticTopology,
 };
@@ -57,19 +59,6 @@ fn sysfs_names_the_framebuffer_and_the_gpus() {
         DisplayKind::Gpu,
         "a device sysfs does not show is driven"
     );
-}
-
-#[derive(Debug)]
-struct NoGpus;
-
-impl RenderNodes for NoGpus {
-    fn nodes(&self) -> Vec<GpuFacts> {
-        Vec::new()
-    }
-
-    fn open(&mut self, node: &DrmNodeId) -> Result<GpuHandle, GpuError> {
-        Err(GpuError::UnknownNode(*node))
-    }
 }
 
 fn backend(root: SysRoot, present: Vec<DevicePath>, udev: FakeUdev) -> TtyBackend {

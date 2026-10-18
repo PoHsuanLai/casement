@@ -1,12 +1,11 @@
 //! The session through `FakeSession` and `FakeUdev` (P1-D1).
 
-use casement_backend::gpu::{GpuError, GpuHandle, RenderNodes};
 use casement_backend::headless::ConnectorEvent;
 use casement_backend::tty::{
-    DeviceEvent, DevicePath, SeatState, SessionNote, TtyBackend, TtyNote, TtySeams, TtySession,
-    VtHeld, VtNumber, vt_of_chord, vt_of_keysym,
+    DeviceEvent, DevicePath, NoGpus, SeatState, SessionNote, TtyBackend, TtyNote, TtySeams,
+    TtySession, VtHeld, VtNumber, vt_of_chord, vt_of_keysym,
 };
-use casement_core::gpu::{DrmNodeId, GpuChoice, GpuFacts};
+use casement_core::gpu::{DrmNodeId, GpuChoice};
 use casement_core::input::Keysym;
 use casement_testkit::fakes::logind::manager::SleepPhase;
 use casement_testkit::fakes::{
@@ -16,20 +15,6 @@ use std::path::PathBuf;
 
 fn card0() -> DevicePath {
     DevicePath(PathBuf::from("/dev/dri/card0"))
-}
-
-/// A machine with no render GPU: the session suite does not need one.
-#[derive(Debug)]
-struct NoGpus;
-
-impl RenderNodes for NoGpus {
-    fn nodes(&self) -> Vec<GpuFacts> {
-        Vec::new()
-    }
-
-    fn open(&mut self, node: &DrmNodeId) -> Result<GpuHandle, GpuError> {
-        Err(GpuError::UnknownNode(*node))
-    }
 }
 
 /// A backend over `session` and `udev` and a KMS opener holding `card0`.

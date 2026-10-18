@@ -4,12 +4,11 @@
 
 use casement_backend::FramePixels;
 use casement_backend::capture_path::{Import, RendererClass};
-use casement_backend::gpu::{GpuError, GpuHandle, RenderNodes};
 use casement_backend::headless::FrameSource;
-use casement_backend::tty::{DevicePath, TtyBackend, TtySeams, Watch};
+use casement_backend::tty::{DevicePath, NoGpus, TtyBackend, TtySeams, Watch};
 use casement_core::OutputName;
 use casement_core::geometry::{LogicalPoint, Transform};
-use casement_core::gpu::{DrmNodeId, GpuChoice, GpuFacts};
+use casement_core::gpu::GpuChoice;
 use casement_core::output::{OutputConfig, OutputPower};
 use casement_core::time::Mono;
 use casement_render::CasementElement;
@@ -27,19 +26,6 @@ use std::time::Duration;
 
 fn card() -> DevicePath {
     DevicePath(PathBuf::from("/dev/dri/card0"))
-}
-
-#[derive(Debug)]
-struct NoGpus;
-
-impl RenderNodes for NoGpus {
-    fn nodes(&self) -> Vec<GpuFacts> {
-        Vec::new()
-    }
-
-    fn open(&mut self, node: &DrmNodeId) -> Result<GpuHandle, GpuError> {
-        Err(GpuError::UnknownNode(*node))
-    }
 }
 
 fn format(code: Fourcc, modifier: Modifier) -> Format {
