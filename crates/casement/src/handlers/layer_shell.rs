@@ -7,6 +7,7 @@ use casement_core::OutputKey;
 use casement_core::layer::LayerOwner;
 use casement_core::policy::ConnectionRole;
 use casement_wayland::ClientState;
+use casement_wayland::handler::OutputLookup;
 use casement_wayland::layer_shell::{self, LayerNamespace};
 use casement_wayland::limits::{self, Limit, Standing};
 use smithay::output::Output;
@@ -16,6 +17,12 @@ use smithay::wayland::shell::wlr_layer::{
     Layer, LayerSurface, WlrLayerShellHandler, WlrLayerShellState,
 };
 use smithay::wayland::shell::xdg::PopupSurface;
+
+impl OutputLookup for State {
+    fn output_key_of(&self, output: &WlOutput) -> Option<OutputKey> {
+        output_key_of(self, output)
+    }
+}
 
 /// The key of the output a client's `wl_output` names.
 pub(super) fn output_key_of(state: &State, wl_output: &WlOutput) -> Option<OutputKey> {

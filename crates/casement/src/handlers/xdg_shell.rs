@@ -92,7 +92,7 @@ impl State {
     }
 
     /// The output a client's `wl_output` is, as the model keys it.
-    fn output_key_of(&self, output: &WlOutput) -> Option<OutputKey> {
+    fn output_key_by_name(&self, output: &WlOutput) -> Option<OutputKey> {
         let name = Output::from_resource(output)?.name();
         self.core
             .model
@@ -214,7 +214,7 @@ impl XdgShellHandler for State {
     fn fullscreen_request(&mut self, surface: ToplevelSurface, output: Option<WlOutput>) {
         let output = output
             .as_ref()
-            .and_then(|output| self.output_key_of(output));
+            .and_then(|output| self.output_key_by_name(output));
         let events = on_full_screen(
             &mut self.wl.xdg_shell,
             &surface,

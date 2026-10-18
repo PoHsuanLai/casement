@@ -151,8 +151,6 @@ impl WorkspacePart {
 pub trait WorkspaceHandler: ConsentHandler {
     /// The part.
     fn workspace_part(&mut self) -> &mut WorkspacePart;
-    /// Feeds the events a commit produced into the model (`core_loop::feed`).
-    fn workspace_events(&mut self, events: Vec<Event>);
 }
 
 /// Adds `manager` to the bound ones and tells it every group and workspace as they are.
@@ -262,7 +260,7 @@ where
                     .into_iter()
                     .flat_map(|request| on_request(part, request))
                     .collect();
-                state.workspace_events(events);
+                state.feed(events);
             }
             ext_workspace_manager_v1::Request::Stop => {
                 state

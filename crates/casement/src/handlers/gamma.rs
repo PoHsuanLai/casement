@@ -3,22 +3,15 @@
 //! A set ramp is an `Event::GammaSet`; the model's `Effect::SetGamma` reaches the backend in
 //! `exec::gamma`.
 
-use super::layer_shell::output_key_of;
-use crate::core_loop;
 use crate::state::State;
 use casement_backend::BackendKind;
 use casement_backend::headless::GAMMA_SIZE;
-use casement_core::{Event, OutputKey};
+use casement_core::OutputKey;
 use casement_wayland::gamma::{GammaHandler, GammaPart, GammaSize};
-use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 
 impl GammaHandler for State {
     fn gamma_part(&mut self) -> &mut GammaPart {
         &mut self.wl.gamma
-    }
-
-    fn gamma_output(&self, output: &WlOutput) -> Option<OutputKey> {
-        output_key_of(self, output)
     }
 
     /// The headless backend takes 256 steps; a tty output has as many as its CRTC reports
@@ -30,9 +23,5 @@ impl GammaHandler for State {
             BackendKind::Tty(tty) => tty.gamma_size(name).filter(|size| *size > 0).map(GammaSize),
             _ => None,
         }
-    }
-
-    fn gamma_events(&mut self, events: Vec<Event>) {
-        core_loop::feed(self, events);
     }
 }

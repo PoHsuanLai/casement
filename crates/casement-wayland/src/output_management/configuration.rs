@@ -209,7 +209,7 @@ fn settle<D: OutputManagementHandler>(
     let answer = on_configuration(state.output_management_part(), &book, intent, configuration);
     match answer {
         ConfigurationAnswer::Succeeded(events) => {
-            state.output_management_events(events);
+            state.feed(events);
             resource.succeeded();
         }
         ConfigurationAnswer::Failed => resource.failed(),

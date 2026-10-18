@@ -21,12 +21,13 @@ pub use gate::on_resolved;
 
 use crate::consent::{self, Admission, ConsentHandler};
 use crate::foreign_toplevel_list::Disclosure;
+use crate::handler::OutputLookup;
 use crate::limits::{self, Limit, Standing};
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::policy::GlobalKind;
 use casement_core::window::{Window, WindowState, WlrToplevelRequest};
-use casement_core::{Event, OutputKey, WindowId};
+use casement_core::{Event, WindowId};
 use casement_protocols::vocab::{Emphasis, Power, Toggle};
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols_wlr::foreign_toplevel::v1::server::{
@@ -143,16 +144,12 @@ impl WlrToplevelPart {
 }
 
 /// What the composition root provides to this protocol's dispatch.
-pub trait WlrToplevelHandler: ConsentHandler {
+pub trait WlrToplevelHandler: ConsentHandler + OutputLookup {
     /// The part.
     fn wlr_toplevel_part(&mut self) -> &mut WlrToplevelPart;
-    /// Feeds the events a request produced into the model (`core_loop::feed`).
-    fn wlr_toplevel_events(&mut self, events: Vec<Event>);
     /// Where `surface` sits in the global logical space, when casement placed it itself (a
     /// layer surface); `None` for a surface with no known place.
     fn surface_origin(&self, surface: &WlSurface) -> Option<LogicalPoint>;
-    /// The output a client's `wl_output` is.
-    fn output_key_of(&self, output: &WlOutput) -> Option<OutputKey>;
 }
 
 /// The global's data: the filter its `can_view` asks.
@@ -298,7 +295,7 @@ where
         };
         if let Some(asked) = asked {
             let events = on_request(state.wlr_toplevel_part(), window, asked);
-            state.wlr_toplevel_events(events);
+            state.feed(events);
         }
     }
 

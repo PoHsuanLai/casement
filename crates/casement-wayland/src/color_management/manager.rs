@@ -103,7 +103,7 @@ where
         use wp_color_manager_v1::{Error, Request};
         match request {
             Request::GetOutput { id, output } => {
-                let key = state.color_output(&output);
+                let key = state.output_key_of(&output);
                 data_init.init(id, OutputData { key });
             }
             Request::GetSurface { id, surface } => {

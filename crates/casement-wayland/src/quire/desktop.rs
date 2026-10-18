@@ -17,6 +17,7 @@ use self::bound::{Asked, Outcome, Told};
 use super::code_of;
 use crate::client::ClientState;
 use crate::foreign_toplevel_list::window_of_identifier;
+use crate::handler::EventSink;
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::app::AppKey;
 use casement_core::desktop::{AppAsk, DesktopNote, DesktopRequest, SpaceAsk, WindowAsk};
@@ -248,11 +249,9 @@ pub struct DesktopParts<'a> {
 }
 
 /// What the composition root provides to this protocol's dispatch.
-pub trait QuireDesktopHandler: 'static {
+pub trait QuireDesktopHandler: EventSink + 'static {
     /// The part and the model it reads.
     fn quire_desktop_parts(&mut self) -> DesktopParts<'_>;
-    /// Feeds the events a request produced into the model (`core_loop::feed`).
-    fn quire_desktop_events(&mut self, events: Vec<Event>);
 }
 
 /// The global's data: the filter its `can_view` asks.
@@ -395,7 +394,7 @@ where
                     return;
                 };
                 let events = on_create_space(part, key);
-                state.quire_desktop_events(events);
+                state.feed(events);
             }
             quire_desktop_manager_v1::Request::Stop => {
                 let DesktopParts { part, .. } = state.quire_desktop_parts();
@@ -438,7 +437,7 @@ where
             return;
         }
         let events = on_app(state.quire_desktop_parts().part, &self.app, ask);
-        state.quire_desktop_events(events);
+        state.feed(events);
     }
 }
 
@@ -484,7 +483,7 @@ where
             return;
         }
         let events = on_window(state.quire_desktop_parts().part, window, ask);
-        state.quire_desktop_events(events);
+        state.feed(events);
     }
 }
 
@@ -513,7 +512,7 @@ where
             return;
         }
         let events = on_space(state.quire_desktop_parts().part, &self.space, ask);
-        state.quire_desktop_events(events);
+        state.feed(events);
     }
 }
 

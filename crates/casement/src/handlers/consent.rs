@@ -14,19 +14,22 @@ use casement_core::privilege::{AskSubject, PowerOutcome};
 use casement_core::{ClientKey, Event};
 use casement_protocols::vocab::{AskId, Memory, Power};
 use casement_wayland::consent::{ConsentHandler, Ledger, release_gate};
+use casement_wayland::handler::EventSink;
 use casement_wayland::quire::shell_permission;
 use casement_wayland::{gamma, output_management, output_power, virtual_keyboard};
 use casement_wayland::{wlr_toplevel, workspace};
 use smithay::reexports::wayland_server::backend::ClientId;
 use smithay::wayland::input_method::InputMethodSeat;
 
+impl EventSink for State {
+    fn feed(&mut self, events: Vec<Event>) {
+        core_loop::feed(self, events);
+    }
+}
+
 impl ConsentHandler for State {
     fn consent_ledger(&self) -> &Ledger {
         self.wl.clients.ledger()
-    }
-
-    fn consent_events(&mut self, events: Vec<Event>) {
-        core_loop::feed(self, events);
     }
 }
 

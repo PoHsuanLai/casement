@@ -29,6 +29,7 @@ pub use ledger::{Admission, Ledger, Word};
 pub use watch::{ImageWatch, Unwatched};
 
 use crate::client::ClientState;
+use crate::handler::EventSink;
 use casement_core::ClientKey;
 use casement_core::Event;
 use casement_core::output::Requester;
@@ -39,12 +40,9 @@ use smithay::reexports::wayland_server::Client;
 use smithay::wayland::Gate;
 
 /// What the composition root provides to every module that gates a power.
-pub trait ConsentHandler: 'static {
+pub trait ConsentHandler: EventSink + 'static {
     /// The latest word per client and power.
     fn consent_ledger(&self) -> &Ledger;
-    /// Feeds the events a use produced into the model (`core_loop::feed`). The model may
-    /// resolve the use before this returns.
-    fn consent_events(&mut self, events: Vec<Event>);
 }
 
 /// What `client`'s request for `power` does now. A client casement did not insert is refused
@@ -62,7 +60,7 @@ fn admit_key<D: ConsentHandler>(state: &mut D, data: &ClientState, power: Power)
     match state.consent_ledger().begin(key, power) {
         Begin::Settled(admission) => admission,
         Begin::Fresh => {
-            state.consent_events(first_use(data, power));
+            state.feed(first_use(data, power));
             state.consent_ledger().admission(key, power)
         }
     }

@@ -26,13 +26,13 @@ pub use creator::{CreatorData, DescriptionData, IccCreatorData, InfoData, send_u
 pub use manager::{ManagerData, ManagerGlobal, OutputData};
 pub use surface::{FeedbackData, SurfaceData, surface_tag};
 
+use crate::handler::OutputLookup;
 use crate::states::GlobalFilter;
 use casement_core::OutputKey;
 use casement_core::output::{ColorTag, Gamut, TransferCurve};
 use smithay::reexports::wayland_protocols::wp::color_management::v1::server::wp_color_manager_v1::WpColorManagerV1;
 use smithay::reexports::wayland_protocols::wp::color_management::v1::server::wp_image_description_info_v1::WpImageDescriptionInfoV1;
 use smithay::reexports::wayland_server::backend::GlobalId;
-use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::{DisplayHandle, GlobalDispatch};
 use std::collections::BTreeMap;
 
@@ -92,11 +92,9 @@ impl ColorPart {
 }
 
 /// What the composition root provides to this protocol's dispatch.
-pub trait ColorHandler: Sized + 'static {
+pub trait ColorHandler: OutputLookup + Sized + 'static {
     /// The part.
     fn color_part(&mut self) -> &mut ColorPart;
-    /// The output a client's `wl_output` names.
-    fn color_output(&self, output: &WlOutput) -> Option<OutputKey>;
 }
 
 /// `output` has this gamut (from its EDID, when it is plugged).

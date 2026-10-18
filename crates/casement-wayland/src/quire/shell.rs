@@ -13,6 +13,7 @@ use super::shell_permission::{self, SentAsk};
 use super::space_shot::SpaceShotPart;
 use super::{shell_overview, shell_space, shell_split, shell_trial};
 use crate::foreign_toplevel_list::{identifier_of, window_of_identifier};
+use crate::handler::{EventSink, OutputLookup};
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::overview_drag::SpaceTargets;
@@ -21,12 +22,11 @@ use casement_core::privilege::UnixSeconds;
 use casement_core::shell::{ShellNote, ShellRequest};
 use casement_core::time::Mono;
 use casement_core::window::MenuEntry;
-use casement_core::{Event, LayerKey, OutputKey, WindowId};
+use casement_core::{Event, LayerKey, WindowId};
 use casement_protocols::server::quire_shell_v1::quire_shell_v1::{self, QuireShellV1};
 use casement_protocols::vocab::{MacMods, ShellRole, WireCode};
 use porter_core::SpaceId;
 use smithay::reexports::wayland_server::backend::{ClientId, GlobalId};
-use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
@@ -98,7 +98,9 @@ impl QuireShellPart {
 }
 
 /// What the composition root provides to this protocol's dispatch.
-pub trait QuireShellHandler: ImageCaptureSourceHandler + 'static {
+pub trait QuireShellHandler:
+    ImageCaptureSourceHandler + EventSink + OutputLookup + 'static
+{
     /// The part.
     fn quire_shell_part(&mut self) -> &mut QuireShellPart;
     /// Now on the loop's clock (the seam: the wire reads no clock of its own).
@@ -106,14 +108,10 @@ pub trait QuireShellHandler: ImageCaptureSourceHandler + 'static {
     /// The date in whole seconds (the stamp on a permission answer that is kept; core reads
     /// no clock).
     fn quire_shell_wall(&self) -> UnixSeconds;
-    /// Feeds the events a request produced into the model (`core_loop::feed`).
-    fn quire_shell_events(&mut self, events: Vec<Event>);
     /// The layer surface `surface` is, when it is a live one of `client`.
     fn layer_of_surface(&self, client: &Client, surface: &WlSurface) -> Option<LayerKey>;
     /// Whether the model knows the window `window` (a live toplevel).
     fn window_known(&self, window: WindowId) -> bool;
-    /// The output a client's `wl_output` is, when it is one casement advertises.
-    fn output_key_of(&self, output: &WlOutput) -> Option<OutputKey>;
     /// Whether the model has the Space `space` (version 2: a picture of one that is gone is a
     /// source whose sessions stop at once).
     fn space_known(&self, space: &SpaceId) -> bool;
@@ -166,7 +164,7 @@ where
         let events = shell_permission::on_bind(state.quire_shell_part(), &shell);
         let now = state.quire_shell_now();
         shell_trial::on_bind(state.quire_shell_part(), &shell, now);
-        state.quire_shell_events(events);
+        state.feed(events);
     }
 
     fn can_view(&self, client: &Client) -> bool {
@@ -195,7 +193,7 @@ where
                 };
                 let layer = state.layer_of_surface(client, &surface);
                 match on_set_role(state.quire_shell_part(), layer, &surface, role) {
-                    Ok(events) => state.quire_shell_events(events),
+                    Ok(events) => state.feed(events),
                     Err(RoleRefusal::NotALayer) => resource.post_error(
                         quire_shell_v1::Error::BadSurface,
                         "the surface is not a layer surface of this client",
@@ -218,37 +216,34 @@ where
                 let local = minimise_rect(x, y, width, height);
                 let window = window_of_identifier(&toplevel).filter(|id| state.window_known(*id));
                 match on_set_minimise_target(state.quire_shell_part(), dock, window, local) {
-                    Ok(events) => state.quire_shell_events(events),
+                    Ok(events) => state.feed(events),
                     Err(refusal) => refuse_target(resource, refusal),
                 }
             }
             quire_shell_v1::Request::ClearMinimiseTarget { toplevel } => {
                 match on_clear_minimise_target(state.quire_shell_part(), &toplevel) {
-                    Ok(events) => state.quire_shell_events(events),
+                    Ok(events) => state.feed(events),
                     Err(refusal) => refuse_target(resource, refusal),
                 }
             }
             quire_shell_v1::Request::WindowMenuPick { toplevel, entry } => {
                 let window = window_of_identifier(&toplevel).filter(|id| state.window_known(*id));
                 let entry = code_of(entry).and_then(MenuEntry::from_code);
-                state.quire_shell_events(on_window_menu_pick(window, entry));
+                state.feed(on_window_menu_pick(window, entry));
             }
             quire_shell_v1::Request::SplitPick { toplevel } => {
                 let window = window_of_identifier(&toplevel).filter(|id| state.window_known(*id));
-                state.quire_shell_events(shell_split::on_split_pick(window));
+                state.feed(shell_split::on_split_pick(window));
             }
             quire_shell_v1::Request::SplitCancel => {
-                state.quire_shell_events(shell_split::on_split_cancel());
+                state.feed(shell_split::on_split_cancel());
             }
             quire_shell_v1::Request::SplitDivide { toplevel, share } => {
                 let window = window_of_identifier(&toplevel).filter(|id| state.window_known(*id));
-                state.quire_shell_events(shell_split::on_split_divide(window, share));
+                state.feed(shell_split::on_split_divide(window, share));
             }
             quire_shell_v1::Request::Overview { mode, toggle } => {
-                state.quire_shell_events(shell_overview::on_overview(
-                    code_of(mode),
-                    code_of(toggle),
-                ));
+                state.feed(shell_overview::on_overview(code_of(mode), code_of(toggle)));
             }
             quire_shell_v1::Request::PermissionAnswer { ask, answer } => {
                 let now = state.quire_shell_now();
@@ -259,7 +254,7 @@ where
                     now,
                     state.quire_shell_wall(),
                 ) {
-                    Ok(events) => state.quire_shell_events(events),
+                    Ok(events) => state.feed(events),
                     Err(fault) => resource
                         .post_error(quire_shell_v1::Error::AnsweredTooSoon, fault.to_string()),
                 }
@@ -267,7 +262,7 @@ where
             quire_shell_v1::Request::DisplaysTrialAnswer { trial, answer } => {
                 let now = state.quire_shell_now();
                 match shell_trial::on_answer(state.quire_shell_part(), trial, answer, now) {
-                    Ok(events) => state.quire_shell_events(events),
+                    Ok(events) => state.feed(events),
                     Err(fault) => resource
                         .post_error(quire_shell_v1::Error::AnsweredTooSoon, fault.to_string()),
                 }
@@ -281,7 +276,7 @@ where
     fn destroyed(&self, state: &mut D, _client: ClientId, resource: &QuireShellV1) {
         on_shell_gone(state.quire_shell_part(), resource);
         let events = shell_permission::on_unbind(state.quire_shell_part(), resource.version());
-        state.quire_shell_events(events);
+        state.feed(events);
     }
 }
 

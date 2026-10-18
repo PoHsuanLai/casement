@@ -2,9 +2,7 @@
 //! client by itself, so casement serves the protocol with its own dispatch and every key
 //! enters the model (`casement_wayland::virtual_keyboard`, A36).
 
-use crate::core_loop;
 use crate::state::State;
-use casement_core::Event;
 use casement_core::time::Mono;
 use casement_wayland::virtual_keyboard::{VirtualKeyboardHandler, VirtualKeyboardPart};
 
@@ -15,9 +13,5 @@ impl VirtualKeyboardHandler for State {
 
     fn virtual_keyboard_now(&self) -> Mono {
         self.clock.now()
-    }
-
-    fn virtual_keyboard_events(&mut self, events: Vec<Event>) {
-        core_loop::feed(self, events);
     }
 }

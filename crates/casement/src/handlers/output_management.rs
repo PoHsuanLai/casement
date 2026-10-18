@@ -4,9 +4,8 @@
 //! per head), and holds [`sync_outputs`], which the core loop runs after every batch of events
 //! so that the heads, the power controls and the gamma controls follow the model.
 
-use crate::core_loop;
 use crate::state::State;
-use casement_core::{Event, OutputBook};
+use casement_core::OutputBook;
 use casement_wayland::output_management::{OutputManagementHandler, OutputManagementPart};
 use casement_wayland::{gamma, output_management, output_power};
 
@@ -17,10 +16,6 @@ impl OutputManagementHandler for State {
 
     fn output_management_outputs(&self) -> &OutputBook {
         self.core.model.outputs()
-    }
-
-    fn output_management_events(&mut self, events: Vec<Event>) {
-        core_loop::feed(self, events);
     }
 }
 

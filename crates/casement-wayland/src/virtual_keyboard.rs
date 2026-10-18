@@ -122,8 +122,6 @@ pub trait VirtualKeyboardHandler: ConsentHandler {
     fn virtual_keyboard_part(&mut self) -> &mut VirtualKeyboardPart;
     /// The session clock's now (`Mono`): the instant a key is stamped with.
     fn virtual_keyboard_now(&self) -> Mono;
-    /// Feeds the events a request produced into the model (`core_loop::feed`).
-    fn virtual_keyboard_events(&mut self, events: Vec<Event>);
 }
 
 /// The global's data: the filter its `can_view` asks.
@@ -333,7 +331,7 @@ impl VirtualKeyboardData {
         }
         let at = state.virtual_keyboard_now();
         let events = on_vk_key(self.device, code, edge, at);
-        state.virtual_keyboard_events(events);
+        state.feed(events);
     }
 }
 
@@ -398,7 +396,7 @@ impl VirtualKeyboardData {
         let held = std::mem::take(&mut *locked(&self.pressed));
         let events = releases(&held, self.device, at);
         if !events.is_empty() {
-            state.virtual_keyboard_events(events);
+            state.feed(events);
         }
     }
 }
@@ -448,7 +446,7 @@ where
         let at = state.virtual_keyboard_now();
         let events = releases(&locked(&self.pressed), self.device, at);
         if !events.is_empty() {
-            state.virtual_keyboard_events(events);
+            state.feed(events);
         }
     }
 }

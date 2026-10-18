@@ -47,6 +47,7 @@ pub mod foreign_toplevel_list;
 pub mod fractional_scale;
 pub mod gamma;
 pub mod gtk_shell;
+pub mod handler;
 pub mod idle_inhibit;
 pub mod idle_notify;
 pub mod image_capture;

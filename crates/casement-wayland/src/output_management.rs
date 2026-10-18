@@ -110,8 +110,6 @@ pub trait OutputManagementHandler: ConsentHandler + Sized {
     fn output_management_part(&mut self) -> &mut OutputManagementPart;
     /// The model's outputs.
     fn output_management_outputs(&self) -> &OutputBook;
-    /// Feeds the events a configuration produced into the model (`core_loop::feed`).
-    fn output_management_events(&mut self, events: Vec<Event>);
 }
 
 /// The global's data: the filter its `can_view` asks.

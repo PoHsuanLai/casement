@@ -13,6 +13,7 @@
 //! output they left dark.
 
 use crate::consent::{self, Admission, ConsentHandler, Held, Mortal, Pushed};
+use crate::handler::OutputLookup;
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::output::{OutputChangeSet, OutputPower, Requester};
 use casement_core::policy::GlobalKind;
@@ -24,7 +25,6 @@ use smithay::reexports::wayland_protocols_wlr::output_power_management::v1::serv
     zwlr_output_power_v1::{self, ZwlrOutputPowerV1},
 };
 use smithay::reexports::wayland_server::backend::{ClientId, GlobalId};
-use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
@@ -81,15 +81,11 @@ impl OutputPowerPart {
 }
 
 /// What the composition root provides to this protocol's dispatch.
-pub trait OutputPowerHandler: ConsentHandler + Sized {
+pub trait OutputPowerHandler: ConsentHandler + OutputLookup + Sized {
     /// The part.
     fn output_power_part(&mut self) -> &mut OutputPowerPart;
-    /// The output a client's `wl_output` names.
-    fn output_power_output(&self, output: &WlOutput) -> Option<OutputKey>;
     /// Whether the model has `output` lit; none when it is not plugged.
     fn output_power_of(&self, output: &OutputKey) -> Option<OutputPower>;
-    /// Feeds the events a request produced into the model (`core_loop::feed`).
-    fn output_power_events(&mut self, events: Vec<Event>);
 }
 
 /// The global's data: the filter its `can_view` asks.
@@ -241,7 +237,7 @@ where
         let zwlr_output_power_manager_v1::Request::GetOutputPower { id, output } = request else {
             return;
         };
-        let key = state.output_power_output(&output);
+        let key = state.output_key_of(&output);
         let power = key.as_ref().and_then(|key| state.output_power_of(key));
         let held = key.as_ref().is_some_and(|key| {
             state
@@ -343,7 +339,7 @@ pub fn on_resolved<D: OutputPowerHandler>(state: &mut D, client: ClientKey, outc
                 events.extend(on_released(part, &output));
             }
             if !events.is_empty() {
-                state.output_power_events(events);
+                state.feed(events);
             }
         }
     }
@@ -386,7 +382,7 @@ where
         };
         let by = consent::requester_of(client);
         let events = on_set_mode(state.output_power_part(), output.clone(), power, by);
-        state.output_power_events(events);
+        state.feed(events);
     }
 
     fn destroyed(&self, state: &mut D, _client: ClientId, resource: &ZwlrOutputPowerV1) {
@@ -396,7 +392,7 @@ where
         let part = state.output_power_part();
         if part.objects.get(output) == Some(resource) {
             let events = on_released(part, output);
-            state.output_power_events(events);
+            state.feed(events);
         }
     }
 }

@@ -349,9 +349,8 @@ the refusal of management on an agent connection) and its `on_*` and `apply_note
 ```rust
 // casement-wayland::quire::desktop (feature `quire`): the root provides the part and what it reads, split
 // into disjoint borrows. `Part::new::<D>` creates the global.
-pub trait QuireDesktopHandler: 'static {
+pub trait QuireDesktopHandler: EventSink + 'static {  // EventSink::feed(Vec<Event>) is casement-wayland::handler's, shared by every handler trait
     fn quire_desktop_parts(&mut self) -> DesktopParts<'_>;          // { part, view: DesktopView { model, outputs } }
-    fn quire_desktop_events(&mut self, events: Vec<Event>);
 }
 pub fn on_bind(part: &mut QuireDesktopPart, view: &DesktopView<'_>, manager: QuireDesktopManagerV1, standing: Standing)
     -> Result<(), WaylandFault>;
@@ -364,9 +363,8 @@ pub fn apply_note(part, view: &DesktopView<'_>, note: &DesktopNote) -> Result<()
 pub enum Standing { Manager, ReadOnly }                           // Shell manages, Agent reads; ReadOnly is refused with not_permitted
 
 // casement-wayland::quire::shell
-pub trait QuireShellHandler: 'static {
+pub trait QuireShellHandler: EventSink + OutputLookup + 'static {
     fn quire_shell_part(&mut self) -> &mut QuireShellPart;
-    fn quire_shell_events(&mut self, events: Vec<Event>);
     fn layer_of_surface(&self, client: &Client, surface: &WlSurface) -> Option<LayerKey>;
 }
 pub fn on_set_role(part, layer: Option<LayerKey>, surface: &WlSurface, role: ShellRole) -> Result<Vec<Event>, RoleRefusal>;

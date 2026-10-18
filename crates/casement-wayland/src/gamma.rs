@@ -16,6 +16,7 @@
 
 use crate::client_file;
 use crate::consent::{self, Admission, ConsentHandler, Held, Mortal, Pushed};
+use crate::handler::OutputLookup;
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::output::{GammaRamp, GammaTable};
 use casement_core::policy::GlobalKind;
@@ -27,7 +28,6 @@ use smithay::reexports::wayland_protocols_wlr::gamma_control::v1::server::{
     zwlr_gamma_control_v1::{self, ZwlrGammaControlV1},
 };
 use smithay::reexports::wayland_server::backend::{ClientId, GlobalId};
-use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
@@ -88,15 +88,11 @@ impl GammaPart {
 }
 
 /// What the composition root provides to this protocol's dispatch.
-pub trait GammaHandler: ConsentHandler + Sized {
+pub trait GammaHandler: ConsentHandler + OutputLookup + Sized {
     /// The part.
     fn gamma_part(&mut self) -> &mut GammaPart;
-    /// The output a client's `wl_output` names.
-    fn gamma_output(&self, output: &WlOutput) -> Option<OutputKey>;
     /// The table size the backend drives `output` with; none when it cannot take a ramp.
     fn gamma_table_size(&self, output: &OutputKey) -> Option<GammaSize>;
-    /// Feeds the events a request produced into the model (`core_loop::feed`).
-    fn gamma_events(&mut self, events: Vec<Event>);
 }
 
 /// The global's data: the filter its `can_view` asks.
@@ -246,7 +242,7 @@ where
         let zwlr_gamma_control_manager_v1::Request::GetGammaControl { id, output } = request else {
             return;
         };
-        let granted = state.gamma_output(&output).and_then(|key| {
+        let granted = state.output_key_of(&output).and_then(|key| {
             let free = !state
                 .gamma_part()
                 .objects
@@ -347,7 +343,7 @@ pub fn on_resolved<D: GammaHandler>(state: &mut D, client: ClientKey, outcome: P
                 events.extend(on_released(part, &output));
             }
             if !events.is_empty() {
-                state.gamma_events(events);
+                state.feed(events);
             }
         }
     }
@@ -383,7 +379,7 @@ where
         match read_ramp(fd, size) {
             Some(ramp) => {
                 let events = on_set_gamma(state.gamma_part(), output.clone(), ramp);
-                state.gamma_events(events);
+                state.feed(events);
             }
             None => resource.post_error(
                 zwlr_gamma_control_v1::Error::InvalidGamma,
@@ -401,6 +397,6 @@ where
             return;
         }
         let events = on_released(part, output);
-        state.gamma_events(events);
+        state.feed(events);
     }
 }
