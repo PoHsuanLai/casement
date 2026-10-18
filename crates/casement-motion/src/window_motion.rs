@@ -90,6 +90,11 @@ impl WindowLegs {
             .any(|(leg, px)| leg.phase(elapsed, px) == SpringPhase::Moving)
     }
 
+    /// Whether it has finished leaving: nothing of it is drawn any more.
+    pub(crate) fn is_gone(&self, now: Mono) -> bool {
+        self.fate == Fate::Leaving && !self.is_moving(now)
+    }
+
     /// The legs aimed at `goal` from where they are at `now`, speeds kept; `Snap` puts them
     /// there at once. The opacity always runs on the travel's fade spring.
     pub(crate) fn aimed(

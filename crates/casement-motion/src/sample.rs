@@ -1,6 +1,5 @@
 //! Sampling: the frame at an instant.
 
-use crate::book::{Motion, MotionKey};
 use crate::pose::Pose;
 use crate::quantise::quantise;
 use crate::window_motion::WindowLegs;
@@ -47,21 +46,15 @@ pub fn sample(
 ) -> (FrameScene, Settled) {
     let mut rows: Vec<(&OutputKey, u32, PlacedWindow)> = Vec::new();
     let mut frames: BTreeMap<&OutputKey, OutputFrame> = BTreeMap::new();
-    for (key, motion) in &book.legs {
-        match (key, motion) {
-            (MotionKey::Window(id), Motion::Window(legs)) if !motion.is_gone(now) => {
-                rows.push((
-                    &legs.output,
-                    legs.stack,
-                    placed(*id, legs, committed, looks, now),
-                ));
-            }
-            (MotionKey::SpaceStrip(output), Motion::Slide(leg)) => {
-                frame_of(&mut frames, output).strip =
-                    StripOffset(quantise(leg.state(now).position));
-            }
-            _ => {}
-        }
+    for (id, legs) in book.windows.iter().filter(|(_, legs)| !legs.is_gone(now)) {
+        rows.push((
+            &legs.output,
+            legs.stack,
+            placed(*id, legs, committed, looks, now),
+        ));
+    }
+    for (output, leg) in &book.strips {
+        frame_of(&mut frames, output).strip = StripOffset(quantise(leg.state(now).position));
     }
     rows.sort_by(|a, b| (a.0, a.1, a.2.window).cmp(&(b.0, b.1, b.2.window)));
     for (output, _, window) in rows {

@@ -27,7 +27,7 @@ mod settled;
 mod space_slide;
 mod window_motion;
 
-pub use book::{MotionBook, MotionKey};
+pub use book::MotionBook;
 pub use frame_scene::{
     CornerRadius, Flight, FrameScene, OutputFrame, PlacedWindow, ShadowLevel, StripOffset,
 };

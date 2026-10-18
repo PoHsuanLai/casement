@@ -1,7 +1,7 @@
 //! Retargeting: from one arrangement to the next, every leg starting from where it is at the
 //! speed it has (design/27 §3.12 rule 4).
 
-use crate::book::{Motion, MotionBook, MotionKey};
+use crate::book::MotionBook;
 use crate::cause_travel::{Travel, travel_of};
 use crate::flight::FlightEnds;
 use crate::goals::{Goal, Goals};
@@ -48,14 +48,14 @@ pub fn retarget_driven(
 ) -> MotionBook {
     let travel = travel_of(cause, level);
     let (before, after) = (Goals::of(from), Goals::of(to));
-    let mut tracked = book.legs;
-    tracked.retain(|_, motion| !motion.is_gone(now));
+    let MotionBook {
+        windows: mut tracked,
+        strips: mut tracked_strips,
+    } = book;
+    tracked.retain(|_, legs| !legs.is_gone(now));
     let ids: BTreeSet<WindowId> = tracked
         .keys()
-        .filter_map(|key| match key {
-            MotionKey::Window(id) => Some(*id),
-            _ => None,
-        })
+        .copied()
         .chain(before.windows.keys().copied())
         .chain(after.windows.keys().copied())
         .collect();
@@ -65,25 +65,21 @@ pub fn retarget_driven(
         level,
         now,
     };
-    let mut legs = BTreeMap::new();
+    let mut windows = BTreeMap::new();
     for id in ids {
-        let known = match tracked.remove(&MotionKey::Window(id)) {
-            Some(Motion::Window(legs)) => Some(legs),
-            _ => None,
-        };
+        let known = tracked.remove(&id);
         let was = before.windows.get(&id);
         let next = match after.windows.get(&id) {
             Some(goal) => Some(step.toward(known, was, goal)),
             None => step.away(known, was),
         };
-        legs.extend(next.map(|next| (MotionKey::Window(id), Motion::Window(next))));
+        windows.extend(next.map(|next| (id, next)));
     }
+    let mut strips = BTreeMap::new();
     for (output, target) in &after.strips {
-        let key = MotionKey::SpaceStrip(output.clone());
-        let known = match tracked.remove(&key) {
-            Some(Motion::Slide(leg)) => leg,
-            _ => SlideLeg::still(before.strips.get(output).copied().unwrap_or(*target), now),
-        };
+        let known = tracked_strips.remove(output).unwrap_or_else(|| {
+            SlideLeg::still(before.strips.get(output).copied().unwrap_or(*target), now)
+        });
         let slide = match driven.contains(output) {
             true => Travel::Snap,
             false => travel,
@@ -92,9 +88,9 @@ pub fn retarget_driven(
             .spring()
             .map_or(0.0, |spec| spec.thrown(level).px_per_s());
         let aimed = known.aimed(*target, thrown, slide, level, now);
-        legs.insert(key, Motion::Slide(aimed));
+        strips.insert(output.clone(), aimed);
     }
-    MotionBook { legs }
+    MotionBook { windows, strips }
 }
 
 /// The parts of a retarget every window shares.

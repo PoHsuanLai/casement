@@ -528,7 +528,7 @@ ones, which is how the test kit's `Fixture` gets its fakes.
 3. Table rows in `crates/casement-layout/tests/it/rust_scene.rs`; anything it cannot honour goes to
    `Arrangement::reports`.
 
-**Add a motion quantity.**
+1. A map in `MotionBook` (keyed by what moves), its legs beside `window_motion.rs` / `space_slide.rs`.
 1. A key in `MotionKey`, its legs beside `window_motion.rs` / `space_slide.rs`.
 2. `retarget` starts each new leg from the old leg's state; `sample` quantises through
    `quantise`.

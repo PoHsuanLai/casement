@@ -356,7 +356,7 @@ byte-exact for tier P and 2 per channel on at most 1000 ppm of pixels for tier L
   a raise (activation, a press, an unhide) moves to the top; a hidden app's windows are
   arranged as minimised.
 - **P3-Z owes two fields** (A29): `OverviewSlot` gains `output: OutputKey` and `FrameScene` an
-  overview progress field (`MotionKey::Overview` is unbuilt).
+  overview progress field (the motion book has no overview map yet).
 - **Benches live outside `crates/`** (A30): B8 bans `Instant::now` there; P0-Z2 hosts a perf
   project under dev, and until then the layout and motion benches sit in their lane worktrees,
   beside the checkout.
