@@ -16,8 +16,8 @@
 //! let _watch = SignalWatch::start(Say).expect("signals can be installed");
 //! ```
 
+use crate::stop_on_drop::StopOnDrop;
 use std::sync::mpsc;
-use std::thread::JoinHandle;
 use std::time::Duration;
 use tokio::signal::unix::{Signal, SignalKind, signal};
 use tokio::sync::oneshot;
@@ -56,8 +56,7 @@ pub enum SignalError {
 /// of the process (the signals are then ignored, not fatal).
 #[derive(Debug)]
 pub struct SignalWatch {
-    stop: Option<oneshot::Sender<()>>,
-    thread: Option<JoinHandle<()>>,
+    _guard: StopOnDrop,
 }
 
 impl SignalWatch {
@@ -72,22 +71,10 @@ impl SignalWatch {
             .map_err(SignalError::Thread)?;
         match ready.recv_timeout(INSTALL_WITHIN) {
             Ok(Ok(())) => Ok(SignalWatch {
-                stop: Some(stop),
-                thread: Some(thread),
+                _guard: StopOnDrop::new(stop, thread),
             }),
             Ok(Err(error)) => Err(error),
             Err(_) => Err(SignalError::Timeout),
-        }
-    }
-}
-
-impl Drop for SignalWatch {
-    fn drop(&mut self) {
-        if let Some(stop) = self.stop.take() {
-            let _ = stop.send(());
-        }
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
         }
     }
 }

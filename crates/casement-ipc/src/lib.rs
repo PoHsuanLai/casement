@@ -11,6 +11,7 @@ mod error;
 mod handles;
 mod inject;
 mod shot;
+mod stop_on_drop;
 mod wait;
 
 #[cfg(test)]

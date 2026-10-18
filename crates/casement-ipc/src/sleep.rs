@@ -24,10 +24,10 @@
 //! let _watch = SleepWatch::start(SleepBus::System, Say).expect("login1 is on the bus");
 //! ```
 
+use crate::stop_on_drop::StopOnDrop;
 use std::future::poll_fn;
 use std::pin::Pin;
 use std::sync::mpsc;
-use std::thread::JoinHandle;
 use std::time::Duration;
 use tokio::sync::oneshot;
 use zbus::export::futures_core::Stream;
@@ -87,8 +87,7 @@ impl From<zbus::Error> for SleepError {
 /// The running watcher; dropping it stops the thread and releases the inhibitor.
 #[derive(Debug)]
 pub struct SleepWatch {
-    stop: Option<oneshot::Sender<()>>,
-    thread: Option<JoinHandle<()>>,
+    _guard: StopOnDrop,
 }
 
 impl SleepWatch {
@@ -103,22 +102,10 @@ impl SleepWatch {
             .map_err(SleepError::Thread)?;
         match ready.recv_timeout(CONNECT_WITHIN) {
             Ok(Ok(())) => Ok(SleepWatch {
-                stop: Some(stop),
-                thread: Some(thread),
+                _guard: StopOnDrop::new(stop, thread),
             }),
             Ok(Err(error)) => Err(error),
             Err(_) => Err(SleepError::Timeout),
-        }
-    }
-}
-
-impl Drop for SleepWatch {
-    fn drop(&mut self) {
-        if let Some(stop) = self.stop.take() {
-            let _ = stop.send(());
-        }
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
         }
     }
 }

@@ -23,12 +23,12 @@
 //! assert_eq!(rx.recv(), Ok(DesktopScheme::Light));
 //! ```
 
+use crate::stop_on_drop::StopOnDrop;
 use ds_core::spawner::Spawner;
 use ds_settings::{SystemPrefsSource, SystemPrefsWatch, scheme_from_portal};
 use std::future::Future;
 use std::ops::ControlFlow;
 use std::pin::Pin;
-use std::thread::JoinHandle;
 use tokio::sync::oneshot;
 
 /// Why the watcher could not start.
@@ -75,8 +75,7 @@ impl Spawner for InRuntime {
 /// The running watcher; dropping it stops the thread.
 #[derive(Debug)]
 pub struct SchemeWatch {
-    stop: Option<oneshot::Sender<()>>,
-    thread: Option<JoinHandle<()>>,
+    _guard: StopOnDrop,
 }
 
 impl SchemeWatch {
@@ -97,20 +96,8 @@ impl SchemeWatch {
             .spawn(move || runtime.block_on(follow(source, tell, stopped)))
             .map_err(SchemeError::Thread)?;
         Ok(SchemeWatch {
-            stop: Some(stop),
-            thread: Some(thread),
+            _guard: StopOnDrop::new(stop, thread),
         })
-    }
-}
-
-impl Drop for SchemeWatch {
-    fn drop(&mut self) {
-        if let Some(stop) = self.stop.take() {
-            let _ = stop.send(());
-        }
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
-        }
     }
 }
 
