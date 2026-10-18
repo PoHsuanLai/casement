@@ -348,7 +348,7 @@ the refusal of management on an agent connection) and its `on_*` and `apply_note
 
 ```rust
 // casement-wayland::quire::desktop (feature `quire`): the root provides the part and what it reads, split
-// into disjoint borrows. `Part::new::<D>` creates the global only when `GLOBAL == Advertised::Yes`.
+// into disjoint borrows. `Part::new::<D>` creates the global.
 pub trait QuireDesktopHandler: 'static {
     fn quire_desktop_parts(&mut self) -> DesktopParts<'_>;          // { part, view: DesktopView { model, outputs } }
     fn quire_desktop_events(&mut self, events: Vec<Event>);
@@ -552,9 +552,8 @@ ones, which is how the test kit's `Fixture` gets its fakes.
 
 **Declare a protocol before its lane fills it (a delta freeze).** Everything in "Add a protocol",
 except that `Part::new::<D>(display, role_filter)` creates no global and returns the empty part,
-so no client sees the protocol and `globals.txt` stays as it is. (P2-Z writes the creation too and
-puts it behind a constant, `quire::{desktop, shell}::GLOBAL: Advertised`, that the lane flips;
-`ToplevelCapturePart` cannot hold smithay's state without creating the global, so its lane adds the
+so no client sees the protocol and `globals.txt` stays as it is. (The `quire` parts now create their
+globals in `Part::new`; `ToplevelCapturePart` cannot hold smithay's state without creating the global, so its lane adds the
 field and the call together.) The `GlobalKind` variant (and its
 I7 row), the `WaylandStates` field, the `Part::new` call in `State::new`, the handler file, the
 testkit protocol test (ignored, lane-named) and its `mod` line all exist; the lane creates the

@@ -8,9 +8,9 @@
 //! note sends (`apply_note`) are the lane's. The switcher and show-desktop requests are ignored
 //! until P3-Z gives them their machines.
 
+use super::code_of;
 use super::shell_permission::{self, SentAsk, UnknownWall, WallSeconds};
 use super::space_shot::SpaceShotPart;
-use super::{Advertised, code_of};
 use super::{shell_overview, shell_space, shell_split, shell_trial};
 use crate::foreign_toplevel_list::{identifier_of, window_of_identifier};
 use crate::states::{GlobalFilter, WaylandFault};
@@ -37,9 +37,6 @@ use std::collections::BTreeMap;
 /// The version casement serves (6: the display trial, `displays_trial` and its two siblings).
 pub const VERSION: u32 = 6;
 
-/// Whether the global is created yet (P2-Q2 flipped it).
-pub const GLOBAL: Advertised = Advertised::Yes;
-
 /// The surface that holds a role.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RoleHolder {
@@ -52,8 +49,8 @@ pub struct RoleHolder {
 /// `quire_shell_v1` and the objects bound on it.
 #[derive(Debug)]
 pub struct QuireShellPart {
-    /// The global, once it is created ([`GLOBAL`]).
-    pub global: Option<GlobalId>,
+    /// The global.
+    pub global: GlobalId,
     /// Every bound `quire_shell_v1`.
     pub bound: Vec<QuireShellV1>,
     /// The surface holding each role.
@@ -77,20 +74,17 @@ pub struct QuireShellPart {
 }
 
 impl QuireShellPart {
-    /// The part; creates the global (version 1) behind the I7 filter when [`GLOBAL`] says so.
+    /// The part; creates the global (version 1) behind the I7 filter.
     pub fn new<D>(display: &DisplayHandle, role_filter: GlobalFilter) -> QuireShellPart
     where
         D: GlobalDispatch<QuireShellV1, ShellGlobal> + 'static,
     {
-        let global = match GLOBAL {
-            Advertised::Yes => Some(display.create_global::<D, QuireShellV1, _>(
-                VERSION,
-                ShellGlobal {
-                    filter: role_filter,
-                },
-            )),
-            Advertised::Not => None,
-        };
+        let global = display.create_global::<D, QuireShellV1, _>(
+            VERSION,
+            ShellGlobal {
+                filter: role_filter,
+            },
+        );
         QuireShellPart {
             global,
             bound: Vec::new(),

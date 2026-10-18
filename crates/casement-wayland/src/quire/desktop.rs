@@ -14,7 +14,7 @@ mod bound;
 mod facts;
 
 use self::bound::{Asked, Outcome, Told};
-use super::{Advertised, code_of};
+use super::code_of;
 use crate::client::ClientState;
 use crate::foreign_toplevel_list::window_of_identifier;
 use crate::states::{GlobalFilter, WaylandFault};
@@ -51,9 +51,6 @@ pub const SUBJECT_SINCE: u32 = 2;
 /// The version of the window and Space objects: their interfaces have not grown, so they are
 /// created at 1 whatever the manager's version is.
 const OBJECT_VERSION: u32 = 1;
-
-/// Whether the global is created: yes, behind the I7 filter (shell and agent tier only).
-pub const GLOBAL: Advertised = Advertised::Yes;
 
 /// What a connection may do through the desktop manager.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -107,8 +104,8 @@ pub enum Stopped {
 /// `quire_desktop_manager_v1` and everything bound on it.
 #[derive(Debug)]
 pub struct QuireDesktopPart {
-    /// The global, once it is created ([`GLOBAL`]).
-    pub global: Option<GlobalId>,
+    /// The global.
+    pub global: GlobalId,
     /// Every bound manager.
     pub bound: Vec<Bound>,
     /// How to create the objects an event announces.
@@ -116,7 +113,7 @@ pub struct QuireDesktopPart {
 }
 
 impl QuireDesktopPart {
-    /// The part; creates the global (at [`VERSION`]) behind the I7 filter when [`GLOBAL`] says so.
+    /// The part; creates the global (at [`VERSION`]) behind the I7 filter.
     pub fn new<D>(display: &DisplayHandle, role_filter: GlobalFilter) -> QuireDesktopPart
     where
         D: GlobalDispatch<QuireDesktopManagerV1, DesktopGlobal>
@@ -125,15 +122,12 @@ impl QuireDesktopPart {
             + Dispatch<QuireDesktopSpaceV1, SpaceData>
             + 'static,
     {
-        let global = match GLOBAL {
-            Advertised::Yes => Some(display.create_global::<D, QuireDesktopManagerV1, _>(
-                VERSION,
-                DesktopGlobal {
-                    filter: role_filter,
-                },
-            )),
-            Advertised::Not => None,
-        };
+        let global = display.create_global::<D, QuireDesktopManagerV1, _>(
+            VERSION,
+            DesktopGlobal {
+                filter: role_filter,
+            },
+        );
         QuireDesktopPart {
             global,
             bound: Vec::new(),
