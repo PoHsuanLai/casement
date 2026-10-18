@@ -190,7 +190,7 @@ pub fn load_spaces(store: &dyn SpaceStore) -> Result<SpaceFile, SpaceStoreError>
                     "the Spaces file had duplicate or surplus entries; they were left out"
                 );
             }
-            Ok(read.file)
+            Ok(read.value)
         }
         None => Ok(SpaceFile::empty()),
     }

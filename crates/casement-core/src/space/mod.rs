@@ -15,7 +15,6 @@ pub use book::SpaceBook;
 pub use mint::{SpaceSeed, mint_space_id};
 pub use persist::{
     MAX_STORED_SHOWN, MAX_STORED_SPACES, SpaceFile, SpaceFileError, StoredShown, StoredSpace,
-    Trimmed,
 };
 pub use request::WorkspaceRequest;
 pub use space::{Space, SpaceContent, SpaceIndex, SplitPair, TaskToken};

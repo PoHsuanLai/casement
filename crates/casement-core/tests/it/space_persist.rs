@@ -99,7 +99,7 @@ fn a_damaged_file_is_trimmed_to_what_casement_would_have_written() {
         "the second Space of the id and the second shown entry"
     );
     assert_eq!(
-        read.file.spaces,
+        read.value.spaces,
         vec![StoredSpace::new(
             space_id(one),
             output.clone(),
@@ -108,7 +108,7 @@ fn a_damaged_file_is_trimmed_to_what_casement_would_have_written() {
         "the first entry of an id wins"
     );
     assert_eq!(
-        read.file.shown,
+        read.value.shown,
         vec![StoredShown::new(output, space_id(one))]
     );
 

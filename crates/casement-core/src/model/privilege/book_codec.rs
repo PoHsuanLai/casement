@@ -22,8 +22,8 @@ use serde::{Deserialize, Serialize};
 /// The only version this build reads and writes.
 const VERSION: i64 = 1;
 
-/// A book read from text, and how many rows were dropped to make it one casement would have
-/// written.
+/// A file read from text (a book, the Spaces file), and how many rows were dropped to make it
+/// one casement would have written.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Loaded<T> {
     /// What was read.

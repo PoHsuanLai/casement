@@ -15,6 +15,7 @@
 
 use super::{SpaceBook, SpaceContent, SpaceIndex};
 use crate::ids::OutputKey;
+use crate::privilege::Loaded;
 use porter_core::SpaceId;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -90,16 +91,6 @@ impl StoredShown {
     }
 }
 
-/// A file read from text, and how many of its entries were dropped to make it one casement
-/// would have written.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Trimmed {
-    /// The file.
-    pub file: SpaceFile,
-    /// The entries dropped.
-    pub dropped: usize,
-}
-
 /// Why the file's text could not be read or written.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -129,11 +120,11 @@ impl SpaceFile {
     /// The file `text` holds (empty text is an empty file; keys it does not know are ignored),
     /// trimmed: see [`SpaceFile::trimmed`].
     pub fn parse(text: &str) -> Result<SpaceFile, SpaceFileError> {
-        Ok(SpaceFile::parse_counting(text)?.file)
+        Ok(SpaceFile::parse_counting(text)?.value)
     }
 
     /// As [`SpaceFile::parse`], and how many entries the trimming dropped (for the log).
-    pub fn parse_counting(text: &str) -> Result<Trimmed, SpaceFileError> {
+    pub fn parse_counting(text: &str) -> Result<Loaded<SpaceFile>, SpaceFileError> {
         Ok(toml::from_str::<SpaceFile>(text)?.trimmed())
     }
 
@@ -141,7 +132,7 @@ impl SpaceFile {
     /// Space under an id already seen (the first wins, so a duplicate cannot move windows onto
     /// another Space), a second "shown" entry for an output, and anything past
     /// [`MAX_STORED_SPACES`] / [`MAX_STORED_SHOWN`].
-    pub fn trimmed(self) -> Trimmed {
+    pub fn trimmed(self) -> Loaded<SpaceFile> {
         let before = self.spaces.len() + self.shown.len();
         let mut seen = BTreeSet::new();
         let spaces: Vec<StoredSpace> = self
@@ -158,8 +149,8 @@ impl SpaceFile {
             .take(MAX_STORED_SHOWN)
             .collect();
         let dropped = before - (spaces.len() + shown.len());
-        Trimmed {
-            file: SpaceFile { spaces, shown },
+        Loaded {
+            value: SpaceFile { spaces, shown },
             dropped,
         }
     }
@@ -200,7 +191,7 @@ impl SpaceFile {
                 None => StoredSpace::homeless(id, position),
             });
         }
-        Ok(SpaceFile::new(spaces, Vec::new()).trimmed().file)
+        Ok(SpaceFile::new(spaces, Vec::new()).trimmed().value)
     }
 
     /// What `book` stores: its desktop Spaces and what each output shows.
