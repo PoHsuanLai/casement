@@ -606,7 +606,6 @@ name = "casementctl"
 version = "0.1.0"
 dependencies = [
  "casement-privacy",
- "casement-testclient",
  "desktop-client",
  "image",
  "rustix 1.1.5",

@@ -18,7 +18,6 @@ path = "src/main.rs"
 [dependencies]
 # The privacy book and the administrator's floor as casement reads them (`privacy list`).
 casement-privacy = { workspace = true }
-casement-testclient = { workspace = true }
 desktop-client = { workspace = true, features = ["client"] }
 image = { workspace = true }
 wayland-client = { workspace = true }
