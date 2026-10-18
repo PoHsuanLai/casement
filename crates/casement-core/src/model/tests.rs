@@ -361,6 +361,7 @@ fn every_invariant_can_fail() {
             "a lock surface covering an output that is not plugged",
             |m| {
                 m.lock = LockState::Locked {
+                    holder: crate::lock::LockHolder::Client(crate::ClientKey(1)),
                     surfaces: crate::lock::LockSurfaces::Covering(vec![key("HEADLESS-9")]),
                 };
             },

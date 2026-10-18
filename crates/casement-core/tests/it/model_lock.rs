@@ -10,7 +10,7 @@ use casement_core::layer::{
     Anchor, Anchors, ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerOwner, LayerSpec,
     Margins, ShellRoleTag,
 };
-use casement_core::lock::{LockEvent, LockReply, LockState, LockSurfaces};
+use casement_core::lock::{LockEvent, LockHolder, LockReply, LockState, LockSurfaces};
 use casement_core::policy::ConnectionRole;
 use casement_core::space::WorkspaceRequest;
 use casement_core::time::TimerKey;
@@ -20,6 +20,9 @@ use casement_core::{
 };
 use support::driver::{Op, assert_same_world, last, map, plug, run, run_from, unplug};
 use support::{headless, proven};
+
+/// The client that `requested()` asks for the lock as: never introduced, so not the shell.
+const LOCKER: LockHolder = LockHolder::Client(ClientKey(7));
 
 fn key(name: &str) -> OutputKey {
     headless(name).key
@@ -118,6 +121,7 @@ fn a_locker_that_never_makes_a_surface_is_not_waited_for_forever() {
     assert_eq!(
         late.model.lock(),
         &LockState::Locked {
+            holder: LOCKER,
             surfaces: LockSurfaces::Pending
         }
     );
@@ -165,6 +169,7 @@ fn the_lock_runs_from_request_to_unlock() {
     assert_eq!(
         first.model.lock(),
         &LockState::Locked {
+            holder: LOCKER,
             surfaces: LockSurfaces::Covering(vec![key(a)])
         }
     );
@@ -177,6 +182,7 @@ fn the_lock_runs_from_request_to_unlock() {
     assert_eq!(
         second.model.lock(),
         &LockState::Locked {
+            holder: LOCKER,
             surfaces: LockSurfaces::Covering(vec![key(a), key(b)])
         }
     );
@@ -219,7 +225,10 @@ fn a_dead_locker_leaves_the_cover_and_another_locker_takes_over() {
         committed("HEADLESS-1"),
         lock(LockEvent::LockerGone),
     ]);
-    assert_eq!(base.model.lock(), &LockState::LockedWithoutSurface);
+    assert_eq!(
+        base.model.lock(),
+        &LockState::LockedWithoutSurface { holder: LOCKER }
+    );
     assert_eq!(
         last(&base),
         [
@@ -235,6 +244,7 @@ fn a_dead_locker_leaves_the_cover_and_another_locker_takes_over() {
     assert_eq!(
         taken.model.lock(),
         &LockState::Locked {
+            holder: LOCKER,
             surfaces: LockSurfaces::Pending
         }
     );
@@ -280,7 +290,12 @@ fn a_restored_lock_covers_until_the_shell_locks_and_unlocks() {
         connected(7, ConnectionRole::Public),
         connected(9, ConnectionRole::Shell),
     ]);
-    assert_eq!(restored.model.lock(), &LockState::LockedWithoutSurface);
+    assert_eq!(
+        restored.model.lock(),
+        &LockState::LockedWithoutSurface {
+            holder: LockHolder::Shell(None)
+        }
+    );
     assert!(
         restored
             .effects
@@ -291,12 +306,18 @@ fn a_restored_lock_covers_until_the_shell_locks_and_unlocks() {
     );
     let refused = run_from(restored.model.clone(), vec![requested_by(7)]);
     assert_eq!(last(&refused), [Effect::Lock(LockReply::Finished)]);
-    assert_eq!(refused.model.lock(), &LockState::LockedWithoutSurface);
+    assert_eq!(
+        refused.model.lock(),
+        &LockState::LockedWithoutSurface {
+            holder: LockHolder::Shell(None)
+        }
+    );
 
     let taken = run_from(restored.model, vec![requested_by(9)]);
     assert_eq!(
         taken.model.lock(),
         &LockState::Locked {
+            holder: LockHolder::Shell(Some(ClientKey(9))),
             surfaces: LockSurfaces::Pending
         }
     );
@@ -467,6 +488,7 @@ fn a_lock_surface_that_goes_puts_the_cover_back() {
     assert_eq!(
         one.model.lock(),
         &LockState::Locked {
+            holder: LOCKER,
             surfaces: LockSurfaces::Covering(vec![key(b)])
         }
     );
@@ -478,6 +500,7 @@ fn a_lock_surface_that_goes_puts_the_cover_back() {
     assert_eq!(
         none.model.lock(),
         &LockState::Locked {
+            holder: LOCKER,
             surfaces: LockSurfaces::Pending
         }
     );
@@ -488,6 +511,7 @@ fn a_lock_surface_that_goes_puts_the_cover_back() {
     assert_eq!(
         back.model.lock(),
         &LockState::Locked {
+            holder: LOCKER,
             surfaces: LockSurfaces::Covering(vec![key(a)])
         }
     );
@@ -534,7 +558,10 @@ fn a_locker_that_dies_before_locked_leaves_the_session_open() {
         committed("HEADLESS-1"),
         lock(LockEvent::LockerGone),
     ]);
-    assert_eq!(locked.model.lock(), &LockState::LockedWithoutSurface);
+    assert_eq!(
+        locked.model.lock(),
+        &LockState::LockedWithoutSurface { holder: LOCKER }
+    );
 }
 
 /// CASW-02: while the locker is gone, only the shell or the client that held the lock may take
@@ -550,22 +577,37 @@ fn only_the_shell_or_the_same_client_takes_a_lock_over() {
         committed("HEADLESS-1"),
         lock(LockEvent::LockerGone),
     ]);
-    assert_eq!(orphaned.model.lock(), &LockState::LockedWithoutSurface);
+    assert_eq!(
+        orphaned.model.lock(),
+        &LockState::LockedWithoutSurface { holder: LOCKER }
+    );
     let sent = Effect::Lock(LockReply::SendLocked);
     let remembered = Effect::Lock(LockReply::Remember);
     let cases = [
         ("another public client", 8, None),
         ("a client nobody introduced", 99, None),
-        ("the client that held the lock", 7, Some(vec![sent.clone()])),
-        ("the shell", 9, Some(vec![sent, remembered])),
+        (
+            "the client that held the lock",
+            7,
+            Some((LOCKER, vec![sent.clone()])),
+        ),
+        (
+            "the shell",
+            9,
+            Some((
+                LockHolder::Shell(Some(ClientKey(9))),
+                vec![sent, remembered],
+            )),
+        ),
     ];
     for (name, client, taken) in cases {
         let run = run_from(orphaned.model.clone(), vec![requested_by(client)]);
         match taken {
-            Some(effects) => {
+            Some((holder, effects)) => {
                 assert_eq!(
                     run.model.lock(),
                     &LockState::Locked {
+                        holder,
                         surfaces: LockSurfaces::Pending
                     },
                     "{name}"
@@ -594,7 +636,10 @@ fn a_refused_takeover_does_not_become_the_holder() {
         requested_by(8),
         requested_by(8),
     ]);
-    assert_eq!(refused.model.lock(), &LockState::LockedWithoutSurface);
+    assert_eq!(
+        refused.model.lock(),
+        &LockState::LockedWithoutSurface { holder: LOCKER }
+    );
     assert_eq!(last(&refused), [Effect::Lock(LockReply::Finished)]);
 }
 
@@ -616,6 +661,7 @@ fn a_request_with_no_output_locks_at_once() {
     assert_eq!(
         run.model.lock(),
         &LockState::Locked {
+            holder: LOCKER,
             surfaces: LockSurfaces::Pending
         }
     );
@@ -652,6 +698,7 @@ fn an_output_plugged_or_unplugged_while_locked_is_covered_or_forgotten() {
     assert_eq!(
         gone.model.lock(),
         &LockState::Locked {
+            holder: LOCKER,
             surfaces: LockSurfaces::Pending
         }
     );

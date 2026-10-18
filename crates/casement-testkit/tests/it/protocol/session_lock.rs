@@ -4,7 +4,7 @@ use casement::lock_marker::Marked;
 use casement_core::OutputName;
 use casement_core::geometry::PhysicalSize;
 use casement_core::input::{DeviceClass, Edge, KeyCode};
-use casement_core::lock::LockState;
+use casement_core::lock::{LockHolder, LockState};
 use casement_core::policy::ConnectionRole;
 use casement_testclient::seat::keyboard::Keyboard;
 use casement_testclient::surface::layer::{
@@ -246,7 +246,8 @@ fn a_lock_whose_locker_died_is_taken_over_only_by_the_shell() {
     let _locker = lock_with_content(&mut fixture, owner);
     fixture.disconnect(owner);
     fixture.advance(Duration::from_secs(2));
-    assert_eq!(fixture.model().lock(), &LockState::LockedWithoutSurface);
+    let orphaned = fixture.model().lock().clone();
+    assert!(matches!(orphaned, LockState::LockedWithoutSurface { .. }));
 
     let grab = Locker::request(fixture.client(hostile)).expect("a lock request");
     fixture.pump();
@@ -254,8 +255,8 @@ fn a_lock_whose_locker_died_is_taken_over_only_by_the_shell() {
     assert!(!grab.is_locked(), "and does not hold the session");
     assert_eq!(
         fixture.model().lock(),
-        &LockState::LockedWithoutSurface,
-        "the session stays covered"
+        &orphaned,
+        "the session stays covered, held by the same client"
     );
 
     let own = Locker::request(fixture.client(shell)).expect("the shell's lock");
@@ -374,12 +375,11 @@ fn a_restart_while_locked_comes_back_covered_until_the_shell_locks_again() {
     );
     drop(first);
 
+    let restored = LockState::LockedWithoutSurface {
+        holder: LockHolder::Shell(None),
+    };
     let mut second = Fixture::start(spec()).expect("fixture");
-    assert_eq!(
-        second.model().lock(),
-        &LockState::LockedWithoutSurface,
-        "it comes back covered"
-    );
+    assert_eq!(second.model().lock(), &restored, "it comes back covered");
     let public = second.connect(ConnectionRole::Public);
     let shell = second.connect(ConnectionRole::Shell);
     second.pump();
@@ -389,7 +389,7 @@ fn a_restart_while_locked_comes_back_covered_until_the_shell_locks_again() {
         grab.is_finished() && !grab.is_locked(),
         "a public client is refused"
     );
-    assert_eq!(second.model().lock(), &LockState::LockedWithoutSurface);
+    assert_eq!(second.model().lock(), &restored);
 
     let own = lock_with_content(&mut second, shell);
     own.unlock(second.client(shell));

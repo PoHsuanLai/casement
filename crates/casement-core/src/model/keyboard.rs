@@ -23,6 +23,7 @@ impl Model {
                 .unwrap_or(KeyboardTarget::Nothing),
             LockState::Locked {
                 surfaces: LockSurfaces::Covering(outputs),
+                ..
             } => self
                 .working_output()
                 .filter(|working| outputs.contains(working))
@@ -31,8 +32,9 @@ impl Model {
             LockState::Locking { .. }
             | LockState::Locked {
                 surfaces: LockSurfaces::Pending,
+                ..
             }
-            | LockState::LockedWithoutSurface => KeyboardTarget::Nothing,
+            | LockState::LockedWithoutSurface { .. } => KeyboardTarget::Nothing,
         }
     }
 

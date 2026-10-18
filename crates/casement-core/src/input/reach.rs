@@ -101,7 +101,9 @@ pub fn reach(origin: &Origin, target: &InputTarget, use_: InputUse, facts: &Reac
 fn refuse_by_lock(origin: &Origin, target: &InputTarget, facts: ReachFacts) -> Option<Refusal> {
     match facts.lock {
         LockState::Unlocked => None,
-        LockState::Locking { .. } | LockState::Locked { .. } | LockState::LockedWithoutSurface => {
+        LockState::Locking { .. }
+        | LockState::Locked { .. }
+        | LockState::LockedWithoutSurface { .. } => {
             let reaches_lock = origin.is_physical() && matches!(target, InputTarget::LockSurface);
             (!reaches_lock).then_some(Refusal::Locked)
         }

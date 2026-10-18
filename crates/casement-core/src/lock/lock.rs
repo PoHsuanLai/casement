@@ -13,14 +13,21 @@ pub enum LockState {
     Locking {
         /// When it asked.
         since: Mono,
+        /// Who asked.
+        holder: LockHolder,
     },
     /// Locked, with the locker's surfaces.
     Locked {
+        /// Who asked for the lock.
+        holder: LockHolder,
         /// Which outputs its surfaces cover.
         surfaces: LockSurfaces,
     },
     /// Locked, and the locker is gone: every output shows the lock cover.
-    LockedWithoutSurface,
+    LockedWithoutSurface {
+        /// Who asked for the lock that is held now.
+        holder: LockHolder,
+    },
 }
 
 /// Which outputs the locker has covered.
@@ -35,8 +42,6 @@ pub enum LockSurfaces {
 /// Who asked for the lock that is held now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LockHolder {
-    /// No lock is held.
-    Nobody,
     /// The shell's own locker. `None` while the lock is one casement restored after a restart,
     /// before the shell's new connection has locked again. Only the shell's locks are
     /// remembered across a restart.
@@ -49,7 +54,7 @@ impl LockHolder {
     /// The client that asked for the lock, if it is known.
     pub fn client(self) -> Option<ClientKey> {
         match self {
-            LockHolder::Nobody | LockHolder::Shell(None) => None,
+            LockHolder::Shell(None) => None,
             LockHolder::Shell(Some(client)) | LockHolder::Client(client) => Some(client),
         }
     }

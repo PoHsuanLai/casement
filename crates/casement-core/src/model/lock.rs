@@ -32,10 +32,14 @@ impl Model {
     /// restart only the shell can take a held lock over, so a marker for any other locker could
     /// leave the person with a cover nobody comes to lift.
     fn marker(&self) -> Marker {
-        match (&self.lock, self.locker) {
-            (LockState::Locked { .. } | LockState::LockedWithoutSurface, LockHolder::Shell(_)) => {
-                Marker::Present
+        match &self.lock {
+            LockState::Locked {
+                holder: LockHolder::Shell(_),
+                ..
             }
+            | LockState::LockedWithoutSurface {
+                holder: LockHolder::Shell(_),
+            } => Marker::Present,
             _ => Marker::Absent,
         }
     }
@@ -43,22 +47,23 @@ impl Model {
     fn lock_moved(self, event: LockEvent) -> Moved {
         match (self.lock.clone(), event) {
             (LockState::Unlocked, LockEvent::Restored) => {
-                self.with_lock_by(LockState::LockedWithoutSurface, LockHolder::Shell(None))
+                self.with_lock(LockState::LockedWithoutSurface {
+                    holder: LockHolder::Shell(None),
+                })
             }
             (_, LockEvent::Restored) => Moved::of(self),
             (LockState::Unlocked, LockEvent::Requested { client }) => self
                 .begin_lock(client)
                 .then(|model| model.leave_overview(None)),
-            (LockState::LockedWithoutSurface, LockEvent::Requested { client })
-                if self.may_take_over(client) =>
-            {
+            (
+                LockState::LockedWithoutSurface { holder: before },
+                LockEvent::Requested { client },
+            ) if self.may_take_over(before, client) => {
                 let holder = self.holder_of(client);
-                self.with_lock_by(
-                    LockState::Locked {
-                        surfaces: LockSurfaces::Pending,
-                    },
+                self.with_lock(LockState::Locked {
                     holder,
-                )
+                    surfaces: LockSurfaces::Pending,
+                })
                 .with(Effect::Lock(LockReply::SendLocked))
             }
             (_, LockEvent::Requested { .. }) => {
@@ -85,8 +90,8 @@ impl Model {
     /// Whether `client` may take over a lock whose locker is gone: the shell may (it is the
     /// person's own locker), and so may the client that held the lock. Any other client is
     /// refused, so a program that waits for the locker to die cannot unlock the session.
-    fn may_take_over(&self, client: ClientKey) -> bool {
-        self.is_shell(client) || self.locker.client() == Some(client)
+    fn may_take_over(&self, holder: LockHolder, client: ClientKey) -> bool {
+        self.is_shell(client) || holder.client() == Some(client)
     }
 
     /// `client` as the holder of a lock it asked for.
@@ -102,6 +107,7 @@ impl Model {
         match state {
             LockState::Locked {
                 surfaces: LockSurfaces::Covering(covered),
+                ..
             } => self
                 .outputs
                 .0
@@ -112,21 +118,12 @@ impl Model {
             LockState::Unlocked => Vec::new(),
             LockState::Locking { .. }
             | LockState::Locked { .. }
-            | LockState::LockedWithoutSurface => self.outputs.0.keys().cloned().collect(),
+            | LockState::LockedWithoutSurface { .. } => self.outputs.0.keys().cloned().collect(),
         }
     }
 
     fn with_lock(self, lock: LockState) -> Moved {
         Moved::of(Model { lock, ..self })
-    }
-
-    /// The same with `locker` as the client that holds the lock.
-    fn with_lock_by(self, lock: LockState, locker: LockHolder) -> Moved {
-        Moved::of(Model {
-            lock,
-            locker,
-            ..self
-        })
     }
 
     /// A locker asked: every output goes under the cover. With no output there is nothing to
@@ -137,12 +134,10 @@ impl Model {
         let holder = self.holder_of(client);
         if outputs.is_empty() {
             return self
-                .with_lock_by(
-                    LockState::Locked {
-                        surfaces: LockSurfaces::Pending,
-                    },
+                .with_lock(LockState::Locked {
                     holder,
-                )
+                    surfaces: LockSurfaces::Pending,
+                })
                 .with(Effect::Lock(LockReply::SendLocked))
                 .with_all(relisted);
         }
@@ -151,7 +146,7 @@ impl Model {
             at: since.after(LOCK_WAIT),
             key: TimerKey::LockWait,
         };
-        self.with_lock_by(LockState::Locking { since }, holder)
+        self.with_lock(LockState::Locking { since, holder })
             .with_all(outputs.into_iter().map(show_cover))
             .with(Effect::ArmTimer(wait))
             .with_all(relisted)
@@ -171,8 +166,9 @@ impl Model {
     /// (A wait that already ended with a surface, an unlock or a dead locker changes nothing.)
     pub(super) fn lock_wait_over(self) -> Moved {
         match self.lock {
-            LockState::Locking { .. } => self
+            LockState::Locking { holder, .. } => self
                 .with_lock(LockState::Locked {
+                    holder,
                     surfaces: LockSurfaces::Pending,
                 })
                 .with(Effect::Lock(LockReply::SendLocked)),
@@ -186,8 +182,9 @@ impl Model {
         if !self.outputs.0.contains_key(&output) {
             return Moved::of(self);
         }
-        let (covered, announce) = match state {
-            LockState::Locking { .. } => (
+        let (holder, covered, announce) = match state {
+            LockState::Locking { holder, .. } => (
+                holder,
                 vec![output.clone()],
                 vec![
                     Effect::Lock(LockReply::SendLocked),
@@ -195,17 +192,22 @@ impl Model {
                 ],
             ),
             LockState::Locked {
+                holder,
                 surfaces: LockSurfaces::Covering(covered),
             } => match covered.contains(&output) {
                 true => return Moved::of(self),
-                false => (with_output(covered, &output), Vec::new()),
+                false => (holder, with_output(covered, &output), Vec::new()),
             },
             LockState::Locked {
+                holder,
                 surfaces: LockSurfaces::Pending,
-            } => (vec![output.clone()], Vec::new()),
-            LockState::Unlocked | LockState::LockedWithoutSurface => return Moved::of(self),
+            } => (holder, vec![output.clone()], Vec::new()),
+            LockState::Unlocked | LockState::LockedWithoutSurface { .. } => {
+                return Moved::of(self);
+            }
         };
         self.with_lock(LockState::Locked {
+            holder,
             surfaces: LockSurfaces::Covering(covered),
         })
         .with(Effect::Lock(LockReply::HideCover(output)))
@@ -217,6 +219,7 @@ impl Model {
     /// covered the rest. (Before `locked` nothing has been hidden for it yet.)
     fn lose_surface(self, state: LockState, output: &OutputKey) -> Moved {
         let LockState::Locked {
+            holder,
             surfaces: LockSurfaces::Covering(covered),
         } = state
         else {
@@ -230,7 +233,7 @@ impl Model {
             true => LockSurfaces::Pending,
             false => LockSurfaces::Covering(rest),
         };
-        self.with_lock(LockState::Locked { surfaces })
+        self.with_lock(LockState::Locked { holder, surfaces })
             .with(show_cover(output.clone()))
     }
 
@@ -238,7 +241,7 @@ impl Model {
     fn end_lock(self, state: &LockState) -> Moved {
         let covers = self.covers_for(state);
         let relisted = self.relisted();
-        self.with_lock_by(LockState::Unlocked, LockHolder::Nobody)
+        self.with_lock(LockState::Unlocked)
             .with_all(covers.into_iter().map(hide_cover))
             .with_all(relisted)
     }
@@ -248,14 +251,14 @@ impl Model {
     /// the session stays locked, and each output its surface covered shows the cover instead.
     fn lose_locker(self, state: &LockState) -> Moved {
         match state {
-            LockState::Unlocked | LockState::LockedWithoutSurface => Moved::of(self),
+            LockState::Unlocked | LockState::LockedWithoutSurface { .. } => Moved::of(self),
             LockState::Locking { .. } => self.abandon_lock(state),
-            LockState::Locked { surfaces } => {
+            LockState::Locked { holder, surfaces } => {
                 let uncovered = match surfaces {
                     LockSurfaces::Covering(covered) => covered.clone(),
                     LockSurfaces::Pending => Vec::new(),
                 };
-                self.with_lock(LockState::LockedWithoutSurface)
+                self.with_lock(LockState::LockedWithoutSurface { holder: *holder })
                     .with_all(uncovered.into_iter().map(show_cover))
             }
         }
@@ -266,7 +269,7 @@ impl Model {
     fn abandon_lock(self, state: &LockState) -> Moved {
         let covers = self.covers_for(state);
         let relisted = self.relisted();
-        self.with_lock_by(LockState::Unlocked, LockHolder::Nobody)
+        self.with_lock(LockState::Unlocked)
             .with(Effect::CancelTimer(TimerKey::LockWait))
             .with_all(covers.into_iter().map(hide_cover))
             .with_all(relisted)
@@ -276,6 +279,7 @@ impl Model {
     pub(super) fn lock_without_output(self, output: &OutputKey) -> Model {
         let lock = match &self.lock {
             LockState::Locked {
+                holder,
                 surfaces: LockSurfaces::Covering(covered),
             } => {
                 let rest: Vec<OutputKey> = covered
@@ -284,6 +288,7 @@ impl Model {
                     .cloned()
                     .collect();
                 LockState::Locked {
+                    holder: *holder,
                     surfaces: match rest.is_empty() {
                         true => LockSurfaces::Pending,
                         false => LockSurfaces::Covering(rest),

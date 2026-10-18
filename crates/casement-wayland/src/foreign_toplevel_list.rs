@@ -3,7 +3,7 @@
 
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::WindowId;
-use casement_core::lock::LockState;
+use casement_core::lock::{LockHolder, LockState};
 use casement_core::policy::GlobalKind;
 use casement_core::window::Window;
 use smithay::reexports::wayland_protocols::ext::foreign_toplevel_list::v1::server::{
@@ -84,7 +84,7 @@ impl Disclosure {
             LockState::Unlocked => Disclosure::Shown,
             LockState::Locking { .. }
             | LockState::Locked { .. }
-            | LockState::LockedWithoutSurface => Disclosure::Withheld,
+            | LockState::LockedWithoutSurface { .. } => Disclosure::Withheld,
         }
     }
 
@@ -148,13 +148,15 @@ mod tests {
 
     #[test]
     fn a_locked_session_withholds_what_is_open() {
+        let holder = LockHolder::Client(casement_core::ClientKey(1));
         let locking = LockState::Locking {
             since: casement_core::time::Mono(std::time::Duration::ZERO),
+            holder,
         };
         for (lock, want) in [
             (LockState::Unlocked, "Inbox"),
             (locking, ""),
-            (LockState::LockedWithoutSurface, ""),
+            (LockState::LockedWithoutSurface { holder }, ""),
         ] {
             assert_eq!(Disclosure::of(&lock).text("Inbox"), want, "{lock:?}");
         }

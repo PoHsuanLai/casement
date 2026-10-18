@@ -6,8 +6,8 @@ use super::{
     InputUse, Keysym, Origin, PortalSessionId, Reach, ReachFacts, Refusal, Resolved, reach,
     resolve,
 };
-use crate::ids::{LayerKey, LeaseId, WindowId};
-use crate::lock::{LockState, LockSurfaces};
+use crate::ids::{ClientKey, LayerKey, LeaseId, WindowId};
+use crate::lock::{LockHolder, LockState, LockSurfaces};
 use crate::time::Mono;
 use casement_protocols::vocab::MacMods;
 use proptest::prelude::*;
@@ -62,14 +62,19 @@ fn lock() -> impl Strategy<Value = LockState> {
         Just(LockState::Unlocked),
         Just(LockState::Locking {
             since: Mono(Duration::from_secs(1)),
+            holder: LockHolder::Client(ClientKey(1)),
         }),
         Just(LockState::Locked {
+            holder: LockHolder::Client(ClientKey(1)),
             surfaces: LockSurfaces::Pending,
         }),
         Just(LockState::Locked {
+            holder: LockHolder::Client(ClientKey(1)),
             surfaces: LockSurfaces::Covering(Vec::new()),
         }),
-        Just(LockState::LockedWithoutSurface),
+        Just(LockState::LockedWithoutSurface {
+            holder: LockHolder::Client(ClientKey(1))
+        }),
     ]
 }
 

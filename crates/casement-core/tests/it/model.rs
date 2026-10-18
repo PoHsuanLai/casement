@@ -5,7 +5,7 @@
 use crate::support;
 
 use casement_core::focus::{Focus, TokenCheck};
-use casement_core::lock::{LockEvent, LockReply, LockState};
+use casement_core::lock::{LockEvent, LockHolder, LockReply, LockState};
 use casement_core::settings::CasementSettings;
 use casement_core::space::{SpaceContent, SpaceSeed};
 use casement_core::{ClientKey, Effect, Event, KeyboardTarget, Model, WindowId};
@@ -126,6 +126,11 @@ fn a_lock_whose_locker_dies_stays_covered() {
         })),
         Op::Event(Event::Lock(LockEvent::LockerGone)),
     ]);
-    assert_eq!(run.model.lock(), &LockState::LockedWithoutSurface);
+    assert_eq!(
+        run.model.lock(),
+        &LockState::LockedWithoutSurface {
+            holder: LockHolder::Client(ClientKey(7))
+        }
+    );
     assert!(last(&run).contains(&Effect::Lock(LockReply::ShowCover(key))));
 }

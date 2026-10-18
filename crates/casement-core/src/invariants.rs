@@ -278,6 +278,7 @@ fn lock_covers_plugged_outputs(model: &Model) -> Option<InvariantBreak> {
     match model.lock() {
         LockState::Locked {
             surfaces: LockSurfaces::Covering(covered),
+            ..
         } => covered
             .iter()
             .find(|output| !model.outputs().0.contains_key(*output))

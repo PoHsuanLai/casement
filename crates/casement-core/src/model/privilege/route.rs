@@ -17,7 +17,7 @@ impl Screen {
             LockState::Unlocked => Screen::Open,
             LockState::Locking { .. }
             | LockState::Locked { .. }
-            | LockState::LockedWithoutSurface => Screen::Covered,
+            | LockState::LockedWithoutSurface { .. } => Screen::Covered,
         }
     }
 }

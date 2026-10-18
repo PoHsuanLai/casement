@@ -5,9 +5,9 @@ use casement_core::input::{
     InputUse, Keysym, Origin, PortalSessionId, Reach, ReachFacts, Refusal, Resolved, reach,
     resolve,
 };
-use casement_core::lock::{LockState, LockSurfaces};
+use casement_core::lock::{LockHolder, LockState, LockSurfaces};
 use casement_core::policy::{Advertise, ConnectionRole, GlobalKind, advertised};
-use casement_core::{LayerKey, LeaseId, WindowId};
+use casement_core::{ClientKey, LayerKey, LeaseId, WindowId};
 use casement_protocols::vocab::MacMods;
 use porter_core::SandboxFacts;
 
@@ -20,7 +20,9 @@ const WINDOW: InputTarget = InputTarget::Window(WindowId(1));
 #[test]
 fn the_reach_table() {
     let unlocked = LockState::Unlocked;
+    let holder = LockHolder::Client(ClientKey(1));
     let locked = LockState::Locked {
+        holder,
         surfaces: LockSurfaces::Pending,
     };
     let cases: Vec<(&str, Origin, InputTarget, InputUse, &LockState, Reach)> = vec![
@@ -157,7 +159,7 @@ fn the_reach_table() {
             FEED,
             WINDOW,
             InputUse::Scroll,
-            &LockState::LockedWithoutSurface,
+            &LockState::LockedWithoutSurface { holder },
             Reach::Refused(Refusal::Locked),
         ),
     ];
