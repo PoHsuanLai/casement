@@ -5,8 +5,9 @@
 //! file, calls a bus or starts a process any other way.
 
 use crate::a11y::{A11yChecks, NoA11y};
+use crate::endpoint::Endpoint;
 use crate::lock_marker::{FileLockMarker, LockMarker, NoLockMarker};
-use crate::notify::{NoNotify, Notify};
+use crate::notify::{Notify, SocketNotify};
 use crate::privacy::{
     BackgroundPrivacyStore, FloorOnlyStore, NoPrivacyStore, PrivacyFiles, PrivacyStore, SystemDir,
 };
@@ -61,7 +62,7 @@ impl Seams {
             spawner,
             child_env: ChildEnv::default(),
             space_sync: SpaceSync::none(),
-            notify: Box::new(NoNotify),
+            notify: Box::new(SocketNotify::new(Endpoint::Unset)),
             tty: None,
             lock_marker: Box::new(NoLockMarker),
             privacy: Box::new(NoPrivacyStore),

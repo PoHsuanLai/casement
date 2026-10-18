@@ -70,17 +70,6 @@ pub trait Notify: std::fmt::Debug {
     fn send(&mut self, notice: &Notice) -> Result<(), NotifyError>;
 }
 
-/// Nothing is sent.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct NoNotify;
-
-impl Notify for NoNotify {
-    fn send(&mut self, notice: &Notice) -> Result<(), NotifyError> {
-        let _ = notice;
-        Ok(())
-    }
-}
-
 /// The real implementation: a datagram to the named socket, std's `UnixDatagram`.
 #[derive(Debug, Clone)]
 pub struct SocketNotify {
