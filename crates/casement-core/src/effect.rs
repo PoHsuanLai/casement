@@ -198,7 +198,7 @@ pub enum ConfigureSize {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ToplevelStates {
     /// `activated`.
-    pub activation: Activation,
+    pub activated: Held,
     /// `maximized`.
     pub maximised: Held,
     /// `fullscreen`.
@@ -207,15 +207,6 @@ pub struct ToplevelStates {
     pub tiled: TiledEdges,
     /// `resizing`.
     pub resizing: Held,
-}
-
-/// Whether a toplevel is drawn active.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Activation {
-    /// Active.
-    Active,
-    /// Inactive.
-    Inactive,
 }
 
 /// Whether a toplevel state holds.

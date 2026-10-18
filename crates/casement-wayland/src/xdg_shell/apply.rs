@@ -5,7 +5,7 @@ use crate::convert::size_to;
 use crate::states::WaylandFault;
 use casement_core::geometry::LogicalSize;
 use casement_core::{
-    Activation, ClientKey, ConfigureSize, ConfigureSpec, Held, PopupKey, ToplevelStates, WindowId,
+    ClientKey, ConfigureSize, ConfigureSpec, Held, PopupKey, ToplevelStates, WindowId,
 };
 use smithay::desktop::{PopupKind, PopupManager, find_popup_root_surface};
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::State;
@@ -17,13 +17,7 @@ use smithay::wayland::shell::xdg::ToplevelState;
 /// never asks for tiled edges of a floating or zoomed window, and none is invented here.
 pub(super) fn wire_states(states: ToplevelStates) -> [(State, Held); 8] {
     [
-        (
-            State::Activated,
-            match states.activation {
-                Activation::Active => Held::Yes,
-                Activation::Inactive => Held::No,
-            },
-        ),
+        (State::Activated, states.activated),
         (State::Maximized, states.maximised),
         (State::Fullscreen, states.full_screen),
         (State::Resizing, states.resizing),
@@ -141,9 +135,9 @@ mod tests {
         }
     }
 
-    fn floating(activation: Activation) -> ToplevelStates {
+    fn floating(activated: Held) -> ToplevelStates {
         ToplevelStates {
-            activation,
+            activated,
             maximised: Held::No,
             full_screen: Held::No,
             tiled: NO,
@@ -154,10 +148,7 @@ mod tests {
     #[test]
     fn a_floating_configure_sets_activated_and_nothing_tiled() {
         let mut state = ToplevelState::default();
-        apply_spec(
-            &mut state,
-            &spec(ConfigureSize::Keep, floating(Activation::Active)),
-        );
+        apply_spec(&mut state, &spec(ConfigureSize::Keep, floating(Held::Yes)));
         assert!(state.states.contains(State::Activated));
         for tiled in [
             State::TiledTop,
@@ -177,7 +168,7 @@ mod tests {
         let zoomed = ToplevelStates {
             maximised: Held::Yes,
             resizing: Held::Yes,
-            ..floating(Activation::Active)
+            ..floating(Held::Yes)
         };
         apply_spec(
             &mut state,
@@ -186,10 +177,7 @@ mod tests {
         assert!(state.states.contains(State::Maximized));
         assert!(state.states.contains(State::Resizing));
         assert_eq!(state.size, Some((800, 600).into()));
-        apply_spec(
-            &mut state,
-            &spec(ConfigureSize::Keep, floating(Activation::Inactive)),
-        );
+        apply_spec(&mut state, &spec(ConfigureSize::Keep, floating(Held::No)));
         assert!(!state.states.contains(State::Maximized));
         assert!(!state.states.contains(State::Resizing));
         assert!(!state.states.contains(State::Activated));
@@ -206,7 +194,7 @@ mod tests {
                 left: Held::Yes,
                 right: Held::No,
             },
-            ..floating(Activation::Inactive)
+            ..floating(Held::No)
         };
         apply_spec(&mut state, &spec(ConfigureSize::Keep, left));
         assert!(state.states.contains(State::TiledLeft));
@@ -216,7 +204,7 @@ mod tests {
     #[test]
     fn zero_bounds_are_none() {
         let mut state = ToplevelState::default();
-        let mut zero = spec(ConfigureSize::Keep, floating(Activation::Inactive));
+        let mut zero = spec(ConfigureSize::Keep, floating(Held::No));
         zero.bounds = LogicalSize { w: 0, h: 0 };
         apply_spec(&mut state, &zero);
         assert_eq!(state.bounds, None);

@@ -1,7 +1,7 @@
 //! The `xdg_toplevel` states a window's record and focus imply.
 
 use super::Model;
-use crate::effect::{Activation, Held, TiledEdges, ToplevelStates};
+use crate::effect::{Held, TiledEdges, ToplevelStates};
 use crate::focus::Focus;
 use crate::ids::WindowId;
 use crate::window::{Window, WindowState};
@@ -20,10 +20,10 @@ impl Model {
 /// tiled on the edges its zone touches, never resizing (a grab sets that).
 pub(super) fn toplevel_states(window: &Window, focus: &Focus) -> ToplevelStates {
     ToplevelStates {
-        activation: if focus.key == Some(window.id) {
-            Activation::Active
+        activated: if focus.key == Some(window.id) {
+            Held::Yes
         } else {
-            Activation::Inactive
+            Held::No
         },
         maximised: if matches!(window.state, WindowState::Filled { .. }) {
             Held::Yes

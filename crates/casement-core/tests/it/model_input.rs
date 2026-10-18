@@ -264,7 +264,7 @@ fn settings_replace_and_lay_out_again_only_when_they_differ() {
 
 #[test]
 fn states_follow_the_record_and_focus() {
-    use casement_core::{Activation, Held};
+    use casement_core::Held;
     let run = run_from(
         two_apps().model,
         vec![request(
@@ -276,12 +276,12 @@ fn states_follow_the_record_and_focus() {
         )],
     );
     let key = run.model.states_of(WindowId(3)).expect("window");
-    assert_eq!(key.activation, Activation::Active);
+    assert_eq!(key.activated, Held::Yes);
     assert_eq!((key.tiled.top, key.tiled.left), (Held::Yes, Held::Yes));
     assert_eq!((key.tiled.bottom, key.tiled.right), (Held::No, Held::No));
     assert_eq!(key.maximised, Held::No);
     let other = run.model.states_of(WindowId(1)).expect("window");
-    assert_eq!(other.activation, Activation::Inactive);
+    assert_eq!(other.activated, Held::No);
     assert_eq!(run.model.states_of(WindowId(9)), None);
 }
 
