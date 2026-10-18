@@ -281,7 +281,7 @@ impl Dispatch<ZxdgImportedV2, ImportedLog> for Host {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let zxdg_imported_v2::Event::Destroyed = event {
+        if matches!(event, zxdg_imported_v2::Event::Destroyed) {
             log.with(|seen| seen.destroyed += 1);
         }
     }

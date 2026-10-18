@@ -209,7 +209,7 @@ async fn subscribe(bus: &SleepBus) -> zbus::Result<(Connection, Signals)> {
 /// `org.freedesktop.login1` now. A message with no sender, or one whose owner cannot be
 /// resolved, is not logind's.
 async fn from_logind(connection: &Connection, message: &Message) -> bool {
-    let Some(sender) = message.header().sender().map(|sender| sender.to_string()) else {
+    let Some(sender) = message.header().sender().map(ToString::to_string) else {
         return false;
     };
     let Ok(logind) = BusName::try_from(LOGIND) else {

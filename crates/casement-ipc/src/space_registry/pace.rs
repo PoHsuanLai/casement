@@ -30,15 +30,12 @@ pub struct Pace {
 impl Pace {
     /// How long to wait before the next send, if at all; counts that send.
     pub fn before_send(&mut self) -> Option<Duration> {
-        match self.sent >= PACE {
-            true => {
-                self.sent = 1;
-                Some(PACE_WINDOW)
-            }
-            false => {
-                self.sent += 1;
-                None
-            }
+        if self.sent >= PACE {
+            self.sent = 1;
+            Some(PACE_WINDOW)
+        } else {
+            self.sent += 1;
+            None
         }
     }
 }

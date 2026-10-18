@@ -127,7 +127,7 @@ impl Dispatch<QuireWindowManagerV1, QuitLog> for Host {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let quire_window_manager_v1::Event::Quit = event {
+        if matches!(event, quire_window_manager_v1::Event::Quit) {
             quits.with(|count| *count += 1);
         }
     }

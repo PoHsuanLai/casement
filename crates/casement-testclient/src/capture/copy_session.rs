@@ -347,7 +347,7 @@ impl OutputCapture {
         let (size, format) = match ask {
             BufferAsk::Announced => (
                 session.size,
-                ShmFormat::pick(&session.formats).map(|f| f.code()),
+                ShmFormat::pick(&session.formats).map(ShmFormat::code),
             ),
             BufferAsk::Sized(size) => (Some(size), Some(ShmFormat::ARGB8888.code())),
             BufferAsk::Reuse => (None, None),

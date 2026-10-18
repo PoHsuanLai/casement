@@ -472,18 +472,16 @@ impl Fixture {
 
     /// The counters now (on a tty seat: frames queued, and no frame callback counter).
     fn tally(&self) -> Tally {
-        match &self.state.backend {
-            BackendKind::Tty(tty) => Tally {
+        if let BackendKind::Tty(tty) = &self.state.backend {
+            return Tally {
                 frames: tty.frames_queued(),
                 callbacks: 0,
-            },
-            _ => {
-                let backend = self.headless();
-                Tally {
-                    frames: backend.frames_presented(),
-                    callbacks: backend.callbacks_sent(),
-                }
-            }
+            };
+        }
+        let backend = self.headless();
+        Tally {
+            frames: backend.frames_presented(),
+            callbacks: backend.callbacks_sent(),
         }
     }
 

@@ -100,9 +100,8 @@ fn admitted(standing: &Standing, roles: &[RoleName]) -> Result<(), Refused> {
         .iter()
         .map(|role| Requirement::new(role.clone(), Proof::Full))
         .collect();
-    let refused = match standing.holds(&need) {
-        Ok(_) => return Ok(()),
-        Err(refused) => refused,
+    let Err(refused) = standing.holds(&need) else {
+        return Ok(());
     };
     match dev_row_of(standing, roles) {
         true => Ok(()),

@@ -141,7 +141,7 @@ impl Session {
                 )?;
             }
             Command::PopupClose(name) => self.surfaces.popup_close(&name)?,
-            Command::Layer(cmd) => self.surfaces.layer(&mut self.client, &cmd)?,
+            Command::Layer(cmd) => self.surfaces.layer(&self.client, &cmd)?,
             Command::LayerClose(name) => self.surfaces.layer_close(&self.client, &name)?,
             Command::Lock(name) => self.surfaces.lock(&self.client, &name)?,
             Command::Unlock(name) => self.surfaces.unlock(&self.client, &name)?,
@@ -224,7 +224,9 @@ impl Session {
             println!("< {}.{}({})", line.object, line.event, line.args.join(", "));
         }
         self.printed = lines.len();
-        notes.iter().for_each(|text| note(text));
+        for text in notes.iter() {
+            note(text);
+        }
         let (done, waiting): (Vec<SyncDone>, Vec<SyncDone>) = std::mem::take(&mut self.syncs)
             .into_iter()
             .partition(SyncDone::is_done);

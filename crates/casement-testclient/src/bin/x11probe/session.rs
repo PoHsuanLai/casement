@@ -242,13 +242,11 @@ impl Session {
         name: &str,
         action: impl FnOnce(&mut Session, Window) -> Result<(), ProbeError>,
     ) -> Result<(), ProbeError> {
-        match self.windows.get(name).copied() {
-            Some(window) => action(self, window),
-            None => {
-                note(&format!("error no window named {name}"));
-                Ok(())
-            }
-        }
+        let Some(window) = self.windows.get(name).copied() else {
+            note(&format!("error no window named {name}"));
+            return Ok(());
+        };
+        action(self, window)
     }
 
     fn map(&mut self, ask: &MapAsk) -> Result<(), ProbeError> {
@@ -356,39 +354,43 @@ impl Session {
 
     fn event(&mut self, event: &Event) -> Result<(), ProbeError> {
         match event {
-            Event::MapNotify(e) => self.report(e.window, "mapped", String::new()),
-            Event::UnmapNotify(e) => self.report(e.window, "unmapped", String::new()),
-            Event::DestroyNotify(e) => self.report(e.window, "destroyed", String::new()),
+            Event::MapNotify(e) => self.report(e.window, "mapped", ""),
+            Event::UnmapNotify(e) => self.report(e.window, "unmapped", ""),
+            Event::DestroyNotify(e) => self.report(e.window, "destroyed", ""),
             Event::ConfigureNotify(e) => self.report(
                 e.window,
                 "configure",
-                format!("{}x{} at {},{}", e.width, e.height, e.x, e.y),
+                &format!("{}x{} at {},{}", e.width, e.height, e.x, e.y),
             ),
-            Event::Expose(e) => self.report(e.window, "expose", format!("count={}", e.count)),
-            Event::FocusIn(e) => self.report(e.event, "focus-in", format!("mode={:?}", e.mode)),
-            Event::FocusOut(e) => self.report(e.event, "focus-out", format!("mode={:?}", e.mode)),
+            Event::Expose(e) => self.report(e.window, "expose", &format!("count={}", e.count)),
+            Event::FocusIn(e) => self.report(e.event, "focus-in", &format!("mode={:?}", e.mode)),
+            Event::FocusOut(e) => self.report(e.event, "focus-out", &format!("mode={:?}", e.mode)),
             Event::EnterNotify(e) => {
-                self.report(e.event, "enter", format!("at {},{}", e.event_x, e.event_y))
+                self.report(e.event, "enter", &format!("at {},{}", e.event_x, e.event_y))
             }
-            Event::LeaveNotify(e) => self.report(e.event, "leave", String::new()),
-            Event::MotionNotify(e) => {
-                self.report(e.event, "motion", format!("at {},{}", e.event_x, e.event_y))
-            }
+            Event::LeaveNotify(e) => self.report(e.event, "leave", ""),
+            Event::MotionNotify(e) => self.report(
+                e.event,
+                "motion",
+                &format!("at {},{}", e.event_x, e.event_y),
+            ),
             Event::ButtonPress(e) => self.report(
                 e.event,
                 "button-press",
-                format!("detail={} at {},{}", e.detail, e.event_x, e.event_y),
+                &format!("detail={} at {},{}", e.detail, e.event_x, e.event_y),
             ),
             Event::ButtonRelease(e) => {
-                self.report(e.event, "button-release", format!("detail={}", e.detail))
+                self.report(e.event, "button-release", &format!("detail={}", e.detail))
             }
-            Event::KeyPress(e) => self.report(e.event, "key-press", format!("detail={}", e.detail)),
+            Event::KeyPress(e) => {
+                self.report(e.event, "key-press", &format!("detail={}", e.detail))
+            }
             Event::KeyRelease(e) => {
-                self.report(e.event, "key-release", format!("detail={}", e.detail))
+                self.report(e.event, "key-release", &format!("detail={}", e.detail))
             }
             Event::ClientMessage(e) if e.type_ == self.atoms.protocols => {
                 if e.data.as_data32()[0] == self.atoms.delete_window {
-                    self.report(e.window, "close-requested", String::new());
+                    self.report(e.window, "close-requested", "");
                 }
             }
             Event::SelectionRequest(e) => self.answer_request(e)?,
@@ -403,7 +405,7 @@ impl Session {
         Ok(())
     }
 
-    fn report(&self, window: Window, kind: &str, detail: String) {
+    fn report(&self, window: Window, kind: &str, detail: &str) {
         note(format!("event {} {kind} {detail}", self.name_of(window)).trim_end());
     }
 

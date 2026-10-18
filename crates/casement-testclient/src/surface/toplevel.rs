@@ -38,7 +38,10 @@ impl<T> Clone for Shared<T> {
 impl<T> Shared<T> {
     /// Runs `f` on the log.
     pub fn with<R>(&self, f: impl FnOnce(&mut T) -> R) -> R {
-        f(&mut self.0.lock().unwrap_or_else(|poison| poison.into_inner()))
+        f(&mut self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner))
     }
 }
 

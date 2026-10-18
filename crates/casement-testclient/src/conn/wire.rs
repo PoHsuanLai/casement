@@ -127,9 +127,8 @@ pub(super) fn show(arg: &Arg, declared: Option<&str>, name_of: &dyn Fn(u32) -> S
         Arg::Int(v) => v.to_string(),
         Arg::Uint(v) => v.to_string(),
         Arg::Fixed(v) => format!("{:.3}", f64::from(*v) / 256.0),
-        Arg::Str(None) => "nil".to_owned(),
+        Arg::Str(None) | Arg::Object(0) => "nil".to_owned(),
         Arg::Str(Some(text)) => format!("{text:?}"),
-        Arg::Object(0) => "nil".to_owned(),
         Arg::Object(id) => name_of(*id),
         Arg::NewId(id) => format!("new {}#{id}", declared.unwrap_or("")),
         Arg::Array(bytes) if bytes.len().is_multiple_of(4) => {

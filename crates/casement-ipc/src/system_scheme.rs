@@ -59,7 +59,7 @@ impl DesktopScheme {
     /// assert_eq!(DesktopScheme::of_portal(0), DesktopScheme::Light);
     /// ```
     pub fn of_portal(code: u32) -> DesktopScheme {
-        pick(scheme_from_portal(code), scheme_from_portal(1))
+        pick(&scheme_from_portal(code), &scheme_from_portal(1))
     }
 }
 
@@ -116,7 +116,7 @@ impl Drop for SchemeWatch {
 
 /// `scheme` as ours, given the portal's dark scheme to compare with (this crate names no
 /// ds-style type, so the value is compared, never matched).
-fn pick<S: PartialEq>(scheme: S, dark: S) -> DesktopScheme {
+fn pick<S: PartialEq>(scheme: &S, dark: &S) -> DesktopScheme {
     if scheme == dark {
         DesktopScheme::Dark
     } else {
@@ -132,7 +132,7 @@ async fn follow(
 ) {
     let spawner = InRuntime(tokio::runtime::Handle::current());
     let mut watch = SystemPrefsWatch::start(&source, &spawner).await;
-    if tell(pick(watch.current().scheme, scheme_from_portal(1))).is_break() {
+    if tell(pick(&watch.current().scheme, &scheme_from_portal(1))).is_break() {
         return;
     }
     loop {
@@ -140,7 +140,7 @@ async fn follow(
             _ = &mut stopped => return,
             next = watch.changed() => match next {
                 Some(prefs) => {
-                    if tell(pick(prefs.scheme, scheme_from_portal(1))).is_break() {
+                    if tell(pick(&prefs.scheme, &scheme_from_portal(1))).is_break() {
                         return;
                     }
                 }

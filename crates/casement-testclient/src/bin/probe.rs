@@ -33,7 +33,7 @@ fn main() -> ExitCode {
     let rest: Vec<String> = args.collect();
     // A usage error is found before anything is looked at, so it reads the same inside the
     // jail and out.
-    if let Err(Failure::Usage) = usage(command.as_deref(), &rest) {
+    if matches!(usage(command.as_deref(), &rest), Err(Failure::Usage)) {
         return usage_exit();
     }
     if let Some(why) = outside_the_jail() {

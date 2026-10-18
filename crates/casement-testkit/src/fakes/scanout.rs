@@ -104,14 +104,12 @@ impl FakeScanout {
 impl ScanoutSurface for FakeScanout {
     fn queue(&mut self, frame: QueuedFrame<'_>) -> QueueOutcome {
         let _ = frame;
-        match self.flying {
-            Some(_) => QueueOutcome::Busy,
-            None => {
-                self.queued += 1;
-                self.flying = Some(self.vblank);
-                QueueOutcome::Queued(self.vblank)
-            }
+        if self.flying.is_some() {
+            return QueueOutcome::Busy;
         }
+        self.queued += 1;
+        self.flying = Some(self.vblank);
+        QueueOutcome::Queued(self.vblank)
     }
 
     fn presented(&mut self, now: Mono) -> Option<Presented> {

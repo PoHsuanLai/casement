@@ -312,7 +312,7 @@ impl Dispatch<ExtWorkspaceHandleV1, ()> for Roster {
         _connection: &Connection,
         _qh: &QueueHandle<Roster>,
     ) {
-        if let ext_workspace_handle_v1::Event::Removed = event {
+        if matches!(event, ext_workspace_handle_v1::Event::Removed) {
             state.spaces.retain(|space| &space.handle != proxy);
             return;
         }

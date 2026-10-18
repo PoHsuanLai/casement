@@ -146,7 +146,7 @@ impl Dispatch<WlBuffer, Plain> for ClientState {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let wl_buffer::Event::Release = event {
+        if matches!(event, wl_buffer::Event::Release) {
             plain.0.store(true, Ordering::SeqCst);
         }
     }

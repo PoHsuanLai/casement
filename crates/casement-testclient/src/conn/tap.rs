@@ -288,7 +288,7 @@ impl Tap {
                 .objects
                 .get(*object)
                 .map_or_else(String::new, |s| s.name.clone());
-            self.error.get_or_insert(ClientProtocolError {
+            self.error.get_or_insert_with(|| ClientProtocolError {
                 code: *code,
                 interface,
                 object: *object,

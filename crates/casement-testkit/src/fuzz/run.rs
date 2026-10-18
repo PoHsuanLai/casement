@@ -163,7 +163,7 @@ fn resolve(
         ObjectRef::Destroyed(n) => preferring(client.destroyed_objects(), n),
         ObjectRef::Foreign(n) => preferring(foreign.to_vec(), n),
     };
-    picked.unwrap_or((1, "wl_display".to_owned()))
+    picked.unwrap_or_else(|| (1, "wl_display".to_owned()))
 }
 
 #[cfg(test)]

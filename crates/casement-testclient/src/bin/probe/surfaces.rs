@@ -257,7 +257,7 @@ impl Surfaces {
             .ok_or_else(|| missing("popup", name))
     }
 
-    pub(crate) fn layer(&mut self, client: &mut TestClient, cmd: &LayerCmd) -> Result<(), String> {
+    pub(crate) fn layer(&mut self, client: &TestClient, cmd: &LayerCmd) -> Result<(), String> {
         let ask = LayerAsk {
             level: cmd.level,
             namespace: Box::leak(cmd.name.clone().into_boxed_str()),

@@ -101,9 +101,8 @@ async fn run(connection: &Connection, watch: &PortalWatch, intake: &Intake) -> z
 async fn tell_the_loop(intake: &Intake, ask: ConnectAsk) {
     for _ in 0..RETRIES {
         match intake.enqueue(ask.clone()) {
-            Ok(_) => return,
             Err(ConnectRefusal::TooMany) => tokio::time::sleep(RETRY_AFTER).await,
-            Err(_) => return,
+            _ => return,
         }
     }
     tracing::warn!(

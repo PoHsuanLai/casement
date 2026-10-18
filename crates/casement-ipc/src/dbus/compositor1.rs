@@ -144,7 +144,7 @@ impl Compositor1 {
 impl Compositor1 {
     /// Counts the call against its caller's rate, then proves the caller holds `needed`.
     async fn proven(&self, header: &Header<'_>, needed: &RoleName) -> fdo::Result<Proven> {
-        let sender = header.sender().map(|name| name.as_str());
+        let sender = header.sender().map(zbus::names::UniqueName::as_str);
         if let Some(name) = sender {
             self.intake.rate(name).map_err(ConnectRefusal::to_error)?;
         }

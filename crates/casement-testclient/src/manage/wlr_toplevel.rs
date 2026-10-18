@@ -168,7 +168,7 @@ impl ToplevelWatch {
 
     /// `activate` window `index` on the client's seat.
     pub fn activate(&mut self, index: usize) -> Result<(), ClientError> {
-        self.on(index, |handle, seat| handle.activate(seat))
+        self.on(index, ZwlrForeignToplevelHandleV1::activate)
     }
 
     /// `close` window `index`.
