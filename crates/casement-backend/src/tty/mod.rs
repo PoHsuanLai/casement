@@ -83,7 +83,7 @@ pub use direct::{
     DirectSession, DriverRefusal, FixedNode, NoGpus, POLL_EVERY, VKMS_DRIVER, require_vkms,
 };
 pub use fallback::mode_ladder;
-pub use firmware::{DeviceKinds, SysDeviceKinds};
+pub use firmware::SysDeviceKinds;
 pub use flip::FlipTracker;
 pub use hotplug::{KnownConnectors, reconcile};
 pub use judge::{Lit, judge};
@@ -167,7 +167,7 @@ pub struct TtySeams {
     pub writeback: Option<Box<dyn Writeback>>,
     /// What each display device is, so a firmware framebuffer is left out beside a real GPU
     /// (none: every device is driven).
-    pub kinds: Option<Box<dyn DeviceKinds>>,
+    pub kinds: Option<SysDeviceKinds>,
 }
 
 impl TtySeams {
@@ -212,7 +212,7 @@ impl TtySeams {
 
     /// The same with this reader of device kinds.
     #[must_use]
-    pub fn with_kinds(self, kinds: Box<dyn DeviceKinds>) -> TtySeams {
+    pub fn with_kinds(self, kinds: SysDeviceKinds) -> TtySeams {
         TtySeams {
             kinds: Some(kinds),
             ..self
@@ -324,7 +324,7 @@ impl TtyBackend {
             .present()
             .into_iter()
             .map(|path| {
-                let kind = kind_of(seams.kinds.as_deref(), &path);
+                let kind = kind_of(seams.kinds.as_ref(), &path);
                 kinds.insert(path.clone(), kind);
                 (path, kind)
             })
@@ -596,7 +596,7 @@ impl TtyBackend {
 
     /// Whether an added device is driven: not a firmware framebuffer while any device is open.
     fn admits(&mut self, path: &DevicePath) -> bool {
-        let kind = kind_of(self.seams.kinds.as_deref(), path);
+        let kind = kind_of(self.seams.kinds.as_ref(), path);
         self.kinds.insert(path.clone(), kind);
         let found: Vec<(DevicePath, DisplayKind)> = self
             .devices
@@ -822,7 +822,7 @@ impl TtyBackend {
 
 /// What a device reported, as notes; a device that refused is logged and reports nothing.
 /// The kind of the device at `path` under `kinds`; a GPU when nothing says otherwise.
-fn kind_of(kinds: Option<&dyn DeviceKinds>, path: &DevicePath) -> DisplayKind {
+fn kind_of(kinds: Option<&SysDeviceKinds>, path: &DevicePath) -> DisplayKind {
     kinds.map_or(DisplayKind::Gpu, |kinds| kinds.kind(path))
 }
 

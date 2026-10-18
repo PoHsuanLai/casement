@@ -47,12 +47,7 @@ pub fn real_seams<D: 'static>(
         RenderMode::Gpu => on_gpus(Box::new(session), Box::new(udev), opener, root, choice),
         RenderMode::Software => on_cpu(Box::new(session), Box::new(udev), opener, choice),
     };
-    with_input(
-        seams.with_kinds(Box::new(kinds)),
-        &seat,
-        input_session,
-        handle,
-    )
+    with_input(seams.with_kinds(kinds), &seat, input_session, handle)
 }
 
 /// The seams of a session drawn by the GPUs: the render plan (when the GPUs were found) routes

@@ -15,17 +15,11 @@ use crate::gpu::SysRoot;
 use casement_core::gpu::DisplayKind;
 use std::path::Path;
 
-/// What a display device is.
-pub trait DeviceKinds: std::fmt::Debug {
-    /// The kind of the device at `path`.
-    fn kind(&self, path: &DevicePath) -> DisplayKind;
-}
-
 /// Device kinds read from a sys root.
 ///
 /// ```
 /// use casement_backend::gpu::SysRoot;
-/// use casement_backend::tty::{DeviceKinds, DevicePath, SysDeviceKinds};
+/// use casement_backend::tty::{DevicePath, SysDeviceKinds};
 /// use casement_core::gpu::DisplayKind;
 ///
 /// let kinds = SysDeviceKinds::new(SysRoot::under("/nonexistent-sys-root".as_ref()));
@@ -42,10 +36,9 @@ impl SysDeviceKinds {
     pub fn new(root: SysRoot) -> SysDeviceKinds {
         SysDeviceKinds { root }
     }
-}
 
-impl DeviceKinds for SysDeviceKinds {
-    fn kind(&self, path: &DevicePath) -> DisplayKind {
+    /// The kind of the device at `path`.
+    pub fn kind(&self, path: &DevicePath) -> DisplayKind {
         let Some(card) = path.as_path().file_name() else {
             return DisplayKind::Gpu;
         };

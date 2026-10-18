@@ -4,9 +4,7 @@
 //! fakes for the rule at start and at hotplug.
 
 use casement_backend::gpu::{GpuError, GpuHandle, RenderNodes, SysRoot};
-use casement_backend::tty::{
-    DeviceEvent, DeviceKinds, DevicePath, SysDeviceKinds, TtyBackend, TtySeams,
-};
+use casement_backend::tty::{DeviceEvent, DevicePath, SysDeviceKinds, TtyBackend, TtySeams};
 use casement_core::gpu::{DisplayKind, DrmNodeId, GpuChoice, GpuFacts};
 use casement_testkit::fakes::{
     FakeKms, FakeKmsOpener, FakeSession, FakeUdev, SharedSession, SyntheticTopology,
@@ -90,7 +88,7 @@ fn backend(root: SysRoot, present: Vec<DevicePath>, udev: FakeUdev) -> TtyBacken
         Box::new(NoGpus),
         GpuChoice::Auto,
     )
-    .with_kinds(Box::new(SysDeviceKinds::new(root)));
+    .with_kinds(SysDeviceKinds::new(root));
     TtyBackend::start(seams).expect("start")
 }
 
