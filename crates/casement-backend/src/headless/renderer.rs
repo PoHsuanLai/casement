@@ -22,6 +22,7 @@ use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::pixman::PixmanRenderer;
 use smithay::backend::renderer::{Bind, ExportMem, Offscreen, RendererSuper};
+use smithay::reexports::pixman;
 use smithay::utils::{Buffer, Rectangle, Size};
 use std::fmt;
 
@@ -75,7 +76,7 @@ impl HeadlessRenderer {
                 let image = renderer
                     .create_buffer(Fourcc::Abgr8888, buffer)
                     .map_err(renderer_fault)?;
-                Ok(Canvas::of(size, Target::Pixman(Box::new(Held(image)))))
+                Ok(Canvas::of(size, Target::Pixman(image)))
             }
             HeadlessRenderer::Gles(renderer) => renderer
                 .create_buffer(Fourcc::Abgr8888, buffer)
@@ -106,8 +107,10 @@ impl HeadlessRenderer {
                     false => Drawn::Nothing(rendered.damage),
                 })
             }
-            (HeadlessRenderer::Pixman(renderer), Target::Pixman(held)) => {
-                held.draw(renderer.as_mut(), tracker, source, age, size)
+            (HeadlessRenderer::Pixman(renderer), Target::Pixman(image)) => {
+                let renderer = renderer.as_mut();
+                let elements = source.pixman(renderer);
+                draw_with(renderer, image, tracker, &elements, age, size)
             }
             (HeadlessRenderer::Gles(renderer), Target::Gles(texture)) => {
                 let renderer = renderer.as_mut();
@@ -334,41 +337,8 @@ impl fmt::Debug for Canvas {
 enum Target {
     #[cfg(feature = "testing")]
     Dummy,
-    Pixman(Box<dyn PixmanTarget>),
+    Pixman(pixman::Image<'static, 'static>),
     Gles(GlesTexture),
-}
-
-/// pixman's image type is private to smithay (and to the `pixman` crate we do not depend on),
-/// so the image is held behind this trait, typed by inference at its one creation site.
-trait PixmanTarget {
-    fn draw(
-        &mut self,
-        renderer: &mut PixmanRenderer,
-        tracker: &mut OutputDamageTracker,
-        source: &dyn FrameSource,
-        age: Age,
-        size: PhysicalSize,
-    ) -> Result<Drawn, BackendError>;
-}
-
-/// A pixman image of whatever type smithay binds.
-struct Held<T>(T);
-
-impl<T> PixmanTarget for Held<T>
-where
-    PixmanRenderer: Bind<T>,
-{
-    fn draw(
-        &mut self,
-        renderer: &mut PixmanRenderer,
-        tracker: &mut OutputDamageTracker,
-        source: &dyn FrameSource,
-        age: Age,
-        size: PhysicalSize,
-    ) -> Result<Drawn, BackendError> {
-        let elements = source.pixman(renderer);
-        draw_with(renderer, &mut self.0, tracker, &elements, age, size)
-    }
 }
 
 /// Binds `target`, renders `elements` and reads the frame back when it had damage.
