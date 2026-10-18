@@ -45,7 +45,7 @@ pub use limits::{
     REASK_AFTER, SHELL_WAIT,
 };
 pub use rows::{PrivacyRow, Source};
-pub use standing::{AskSubject, ClientStanding, Identity, ServiceRole};
+pub use standing::{AskSubject, ClientStanding, ServiceRole};
 pub use step::PowerOutcome;
 pub use subject::{Engine, ProgramPath, SandboxAppId, Subject};
 
@@ -198,14 +198,14 @@ impl Privilege {
             Class::Trusted => Decision::Open,
             Class::Sandboxed => Decision::Closed,
             Class::Public(standing) => {
-                let identity = standing.identity();
+                let subject = standing.subject();
                 let trusted = standing
                     .service_role()
                     .map(trusted_powers)
                     .unwrap_or_default();
                 match trusted.contains(&power) {
-                    true => decide_trusted(&self.floor, &self.book, &identity, power),
-                    false => decide(&self.floor, &self.book, &identity, power),
+                    true => decide_trusted(&self.floor, &self.book, subject.as_ref(), power),
+                    false => decide(&self.floor, &self.book, subject.as_ref(), power),
                 }
             }
         }

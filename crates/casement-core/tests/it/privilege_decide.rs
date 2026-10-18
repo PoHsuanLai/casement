@@ -2,7 +2,7 @@
 //! person's book (precedence), the book's and the floor's text, and the caps.
 
 use casement_core::privilege::{
-    Book, BookError, Decision, Engine, Fallback, Floor, FloorError, FloorRule, Grant, Identity,
+    Book, BookError, Decision, Engine, Fallback, Floor, FloorError, FloorRule, Grant,
     MAX_FILE_BYTES, MAX_GRANTS, ProgramPath, SandboxAppId, Subject, UnixSeconds, Verdict, decide,
     decide_trusted,
 };
@@ -105,7 +105,7 @@ proptest! {
     ) {
         let subject = program("/usr/bin/grim");
         let (floor, book) = records(&subject, power, floor_rule, book_rule, fallback);
-        let got = decide(&floor, &book, &Identity::Named(subject), power);
+        let got = decide(&floor, &book, Some(&subject), power);
         let want = match (floor_rule, book_rule) {
             (Some(Verdict::Deny), _) | (_, Some(Verdict::Deny)) => Decision::Closed,
             (Some(Verdict::Allow), _) | (_, Some(Verdict::Allow)) => Decision::Open,
@@ -128,12 +128,12 @@ proptest! {
     ) {
         let subject = program("/usr/bin/grim");
         let (floor, book) = records(&subject, power, floor_rule, book_rule, fallback);
-        let quiet = decide(&floor, &book, &Identity::Named(subject.clone()), power);
+        let quiet = decide(&floor, &book, Some(&subject), power);
         let noisy_book = noise
             .into_iter()
             .filter(|row| row.subject != subject || row.power != power)
             .fold(book, Book::with);
-        prop_assert_eq!(decide(&floor, &noisy_book, &Identity::Named(subject), power), quiet);
+        prop_assert_eq!(decide(&floor, &noisy_book, Some(&subject), power), quiet);
     }
 
     /// A program that cannot be named is never let in, and its answer is never kept.
@@ -145,7 +145,7 @@ proptest! {
     ) {
         let floor = Floor::empty().with_fallback(power, fallback);
         let book = noise.into_iter().fold(Book::empty(), Book::with);
-        let got = decide(&floor, &book, &Identity::Unnamed, power);
+        let got = decide(&floor, &book, None, power);
         let want = match fallback {
             Fallback::Deny => Decision::Closed,
             Fallback::Ask => Decision::Ask(Memory::ThisTimeOnly),
@@ -158,7 +158,7 @@ proptest! {
     fn an_interpreter_is_never_a_standing_guest(power in any_power(), verdict in any_verdict()) {
         let subject = program("/usr/bin/python3.13");
         let book = Book::empty().with(grant(power, subject.clone(), verdict, 1));
-        let got = decide(&Floor::empty(), &book, &Identity::Named(subject), power);
+        let got = decide(&Floor::empty(), &book, Some(&subject), power);
         prop_assert_eq!(got, Decision::Ask(Memory::ThisTimeOnly));
     }
 
@@ -172,7 +172,7 @@ proptest! {
     ) {
         let subject = program("/usr/libexec/transom");
         let (floor, book) = records(&subject, power, floor_rule, book_rule, fallback);
-        let got = decide_trusted(&floor, &book, &Identity::Named(subject), power);
+        let got = decide_trusted(&floor, &book, Some(&subject), power);
         let refused = floor_rule == Some(Verdict::Deny) || book_rule == Some(Verdict::Deny);
         prop_assert_eq!(got, if refused { Decision::Closed } else { Decision::Open });
     }

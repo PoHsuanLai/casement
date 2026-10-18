@@ -7,7 +7,7 @@
 
 use super::book::{Book, Verdict};
 use super::floor::{Fallback, Floor};
-use super::standing::Identity;
+use super::subject::Subject;
 use casement_protocols::vocab::{Memory, Power};
 
 /// What a program gets for a power.
@@ -30,13 +30,13 @@ struct Says {
 /// What the floor and the book say. A program that cannot be named has no entry in either; a
 /// program whose answers are never kept is not looked up in the book (a hand-edited row
 /// cannot make an interpreter a standing guest).
-fn says(floor: &Floor, book: &Book, identity: &Identity, power: Power) -> Says {
-    match identity {
-        Identity::Unnamed => Says {
+fn says(floor: &Floor, book: &Book, subject: Option<&Subject>, power: Power) -> Says {
+    match subject {
+        None => Says {
             floor: None,
             book: None,
         },
-        Identity::Named(subject) => Says {
+        Some(subject) => Says {
             floor: floor.rule(subject, power),
             book: match floor.remembers(subject) {
                 Memory::Remembered => book.get(subject, power),
@@ -47,16 +47,17 @@ fn says(floor: &Floor, book: &Book, identity: &Identity, power: Power) -> Says {
 }
 
 /// How long an answer about this program lives.
-fn memory_of(floor: &Floor, identity: &Identity) -> Memory {
-    match identity {
-        Identity::Named(subject) => floor.remembers(subject),
-        Identity::Unnamed => Memory::ThisTimeOnly,
+fn memory_of(floor: &Floor, subject: Option<&Subject>) -> Memory {
+    match subject {
+        Some(subject) => floor.remembers(subject),
+        None => Memory::ThisTimeOnly,
     }
 }
 
-/// What `identity` gets for `power`.
-pub fn decide(floor: &Floor, book: &Book, identity: &Identity, power: Power) -> Decision {
-    match says(floor, book, identity, power) {
+/// What `subject` gets for `power`; a program that cannot be named (`None`) is asked about for
+/// its connection only.
+pub fn decide(floor: &Floor, book: &Book, subject: Option<&Subject>, power: Power) -> Decision {
+    match says(floor, book, subject, power) {
         Says {
             floor: Some(Verdict::Deny),
             ..
@@ -78,15 +79,20 @@ pub fn decide(floor: &Floor, book: &Book, identity: &Identity, power: Power) -> 
             book: None,
         } => match floor.fallback(power) {
             Fallback::Deny => Decision::Closed,
-            Fallback::Ask => Decision::Ask(memory_of(floor, identity)),
+            Fallback::Ask => Decision::Ask(memory_of(floor, subject)),
         },
     }
 }
 
 /// What a program the desktop trusts for `power` gets: in unless the floor or the book
 /// refuses it by name.
-pub fn decide_trusted(floor: &Floor, book: &Book, identity: &Identity, power: Power) -> Decision {
-    match says(floor, book, identity, power) {
+pub fn decide_trusted(
+    floor: &Floor,
+    book: &Book,
+    subject: Option<&Subject>,
+    power: Power,
+) -> Decision {
+    match says(floor, book, subject, power) {
         Says {
             floor: Some(Verdict::Deny),
             ..

@@ -6,7 +6,6 @@ use super::ask::{Asker, OpenAsk, Sheet};
 use super::book::{Book, Grant, UnixSeconds, Verdict};
 use super::decide::{Decision, decide};
 use super::limits::{ASK_TTL, SHELL_WAIT};
-use super::standing::Identity;
 use super::step::{Ctx, PowerOutcome, Screen};
 use super::subject::Subject;
 use super::{Class, Privilege, ShellPresence};
@@ -166,7 +165,7 @@ impl Privilege {
             .iter()
             .filter(|(_, record)| record.allowed.contains(&power))
             .filter(|(_, record)| match &record.class {
-                Class::Public(standing) => standing.identity() == Identity::Named(subject.clone()),
+                Class::Public(standing) => standing.subject().as_ref() == Some(subject),
                 Class::Trusted | Class::Sandboxed => false,
             })
             .map(|(client, _)| *client)
@@ -201,12 +200,7 @@ impl Privilege {
             .iter()
             .filter(|ask| match &ask.key.asker {
                 Asker::Subject(subject) => !matches!(
-                    decide(
-                        &self.floor,
-                        &self.book,
-                        &Identity::Named(subject.clone()),
-                        ask.key.power
-                    ),
+                    decide(&self.floor, &self.book, Some(subject), ask.key.power),
                     Decision::Ask(_)
                 ),
                 Asker::Connection(_) => false,

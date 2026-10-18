@@ -70,15 +70,6 @@ pub enum ClientStanding {
     },
 }
 
-/// Whom a decision is about.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Identity {
-    /// A program that can be named and so remembered (unless the floor says otherwise).
-    Named(Subject),
-    /// A program that cannot: it gets a question valid for its connection only.
-    Unnamed,
-}
-
 /// The subject a question carries to the shell.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AskSubject {
@@ -104,19 +95,19 @@ impl ClientStanding {
         }
     }
 
-    /// Whom decisions about this connection are about.
-    pub fn identity(&self) -> Identity {
+    /// Whom decisions about this connection are about: a program that can be named and so
+    /// remembered (unless the floor says otherwise), or `None` for one that cannot, which gets a
+    /// question valid for its connection only.
+    pub fn subject(&self) -> Option<Subject> {
         match self {
             ClientStanding::Service { exe: Some(exe), .. } | ClientStanding::Program { exe } => {
-                Identity::Named(Subject::Program(exe.clone()))
+                Some(Subject::Program(exe.clone()))
             }
-            ClientStanding::Sandboxed { app, engine } => Identity::Named(Subject::Sandboxed {
+            ClientStanding::Sandboxed { app, engine } => Some(Subject::Sandboxed {
                 app: app.clone(),
                 engine: *engine,
             }),
-            ClientStanding::Service { exe: None, .. } | ClientStanding::Unverified { .. } => {
-                Identity::Unnamed
-            }
+            ClientStanding::Service { exe: None, .. } | ClientStanding::Unverified { .. } => None,
         }
     }
 
@@ -153,12 +144,12 @@ impl ClientStanding {
 
     /// What the question says about this program.
     pub fn ask_subject(&self) -> AskSubject {
-        match self.identity() {
-            Identity::Named(subject) => AskSubject {
+        match self.subject() {
+            Some(subject) => AskSubject {
                 kind: subject.kind(),
                 text: subject.text().to_owned(),
             },
-            Identity::Unnamed => AskSubject {
+            None => AskSubject {
                 kind: SubjectKind::Unrecognised,
                 text: self.unnamed_text(),
             },

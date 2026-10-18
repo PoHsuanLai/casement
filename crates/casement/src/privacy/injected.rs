@@ -89,7 +89,7 @@ mod tests {
     fn decision(system: &SystemDir, floor: &Floor, book: &Book) -> Decision {
         let (found, exe) = writable();
         let standing = named_by_floor(system, floor, &found, &exe, client_standing(&found, &exe));
-        decide(floor, book, &standing.identity(), Power::Screen)
+        decide(floor, book, standing.subject().as_ref(), Power::Screen)
     }
 
     #[test]

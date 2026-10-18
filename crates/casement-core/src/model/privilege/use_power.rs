@@ -8,7 +8,6 @@
 use super::ask::{AskKey, Asker, Join, Reask};
 use super::decide::Decision;
 use super::limits::{ASKS_PER_MINUTE, RATE_WINDOW, SHELL_WAIT};
-use super::standing::Identity;
 use super::step::{Ctx, PowerOutcome, Screen};
 use super::{Class, Privilege, ShellPresence};
 use crate::effect::Effect;
@@ -55,14 +54,14 @@ impl Privilege {
             self.resolve(out, client, power, PowerOutcome::Denied);
             return;
         };
-        let asker = match standing.identity() {
-            Identity::Named(subject) => Asker::Subject(subject),
-            Identity::Unnamed => Asker::Connection(client),
+        let asker = match standing.subject() {
+            Some(subject) => Asker::Subject(subject),
+            None => Asker::Connection(client),
         };
-        let reask = match (standing.identity(), standing.image_name()) {
-            (Identity::Named(subject), _) => Reask::Subject(subject),
-            (Identity::Unnamed, Some(name)) => Reask::Image(name.to_owned()),
-            (Identity::Unnamed, None) => Reask::Anonymous,
+        let reask = match (standing.subject(), standing.image_name()) {
+            (Some(subject), _) => Reask::Subject(subject),
+            (None, Some(name)) => Reask::Image(name.to_owned()),
+            (None, None) => Reask::Anonymous,
         };
         let key = AskKey { asker, power };
         let refused = match (ctx.screen, self.shell) {
