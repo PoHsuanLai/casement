@@ -8,7 +8,7 @@
 //! the windows whose class names the app (`xwayland::owners`).
 
 use crate::state::State;
-use crate::xwayland::owners::{self, Spared, XWindows};
+use crate::xwayland::owners::{self, Spared};
 use crate::xwayland::xres::XServer;
 use casement_core::app::{StopSignal, Termination};
 use rustix::process::{Pid, RawPid, Signal, getpid, kill_process};

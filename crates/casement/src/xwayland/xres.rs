@@ -6,7 +6,7 @@
 //! quit exists for programs that hang, and a hung X server must not hang the compositor too.
 
 use super::DisplayName;
-use super::owners::{WmClass, XWindow, XWindows};
+use super::owners::{WmClass, XWindow};
 use rustix::process::RawPid;
 use std::sync::mpsc;
 use std::time::Duration;
@@ -52,10 +52,10 @@ impl XServer {
             display: display.clone(),
         }
     }
-}
 
-impl XWindows for XServer {
-    fn top_levels(&self) -> Vec<XWindow> {
+    /// Every top-level window. A server that cannot be reached has none (and says why in the
+    /// log), so force quit then signals only what the Wayland side knows.
+    pub fn top_levels(&self) -> Vec<XWindow> {
         let (sender, receiver) = mpsc::channel();
         let name = self.display.0.clone();
         std::thread::spawn(move || {

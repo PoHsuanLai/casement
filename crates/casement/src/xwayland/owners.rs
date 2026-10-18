@@ -3,7 +3,7 @@
 //! asked of the X server: each top-level window's class, and the process the server read from
 //! the window's connection (`xres`). What is left here is the decision, which is pure: an
 //! app's windows are those whose class names it, their processes are what gets signalled, and
-//! satellite, this process, init and pid 0 never are. The X server sits behind [`XWindows`].
+//! satellite, this process, init and pid 0 never are. The X server is `xres::XServer`.
 
 use casement_core::app::AppKey;
 use rustix::process::RawPid;
@@ -43,14 +43,6 @@ pub struct XWindow {
     pub class: Option<WmClass>,
     /// The process behind its connection, when the server could name one.
     pub pid: Option<RawPid>,
-}
-
-/// Where the top-level X11 windows come from: the X server in a session (`xres::XServer`), a
-/// table in a test.
-pub trait XWindows {
-    /// Every top-level window. A server that cannot be reached has none (and says why in the
-    /// log), so force quit then signals only what the Wayland side knows.
-    fn top_levels(&self) -> Vec<XWindow>;
 }
 
 /// The processes force quit never signals.
