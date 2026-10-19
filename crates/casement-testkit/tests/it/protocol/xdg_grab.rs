@@ -8,7 +8,7 @@
 use crate::protocol::xdg_shell::{boot, click, pointer, rect_of, settle, windows};
 use casement_core::DeviceId;
 use casement_core::WindowId;
-use casement_core::geometry::{LogicalPoint, LogicalRect};
+use casement_core::geometry::{LogicalPoint, LogicalRect, SubPoint, SubPx};
 use casement_core::input::{ButtonCode, Edge};
 use casement_core::window::WindowState;
 use casement_layout::{LayoutKnobs, zone_rect};
@@ -327,4 +327,106 @@ fn a_drag_off_the_edge_or_away_from_it_tiles_nothing() {
         "floating, not {:?}",
         desk.state()
     );
+}
+
+/// A window with the compositor's frame is dragged by its titlebar with a mouse: it follows
+/// every relative step while it keeps drawing, and stays where it was let go (the trial login
+/// of 2026-10-19, where the pointer did not move during a grab and every window stayed pinned
+/// near the press).
+#[test]
+fn a_window_dragged_by_its_titlebar_stays_where_it_is_let_go() {
+    for output in [
+        "HEADLESS-1:1920x1080@60000:120:0,0",
+        "HEADLESS-1:3840x2160@60000:240:0,0",
+    ] {
+        dragged_by_the_titlebar(output);
+    }
+}
+
+fn dragged_by_the_titlebar(output: &str) {
+    use casement_core::policy::ConnectionRole;
+    use casement_testclient::misc::decoration::{DecorationManager, Mode};
+    use casement_testkit::FixtureSpec;
+    let mut fixture =
+        Fixture::start(FixtureSpec::desktop().with_outputs(&[output])).expect("fixture");
+    let id = fixture.connect(ConnectionRole::Public);
+    fixture.pump();
+    let base = WmBase::bind(fixture.client(id), 7);
+    let manager = DecorationManager::bind(fixture.client(id)).expect("advertised");
+    let top = base.toplevel(fixture.client(id));
+    let decoration = manager.decorate(fixture.client(id), &top);
+    top.commit_bare();
+    fixture.pump();
+    assert_eq!(decoration.newest(), Some(Mode::ServerSide));
+    top.ack_latest();
+    let buffer = casement_testclient::shm_buffer(
+        fixture.client(id),
+        casement_core::geometry::PhysicalSize { w: 400, h: 300 },
+        casement_testclient::Pattern::Gradient,
+    );
+    top.show(&buffer);
+    fixture.pump();
+    settle(&mut fixture);
+    let window = windows(&fixture)[0];
+    let device = pointer(&mut fixture);
+    let floating = |fixture: &Fixture| match fixture.model().windows()[&window].state {
+        WindowState::Floating(rect) => Some(rect.origin),
+        _ => None,
+    };
+    let start = rect_of(&fixture, window);
+    let grip = LogicalPoint {
+        x: start.centre().x,
+        y: start.origin.y - 10,
+    };
+    fixture.input().pointer_to(device, grip);
+    fixture.pump();
+    fixture.input().button(device, BTN_LEFT, Edge::Press);
+    fixture.pump();
+    let mut acked = top.configures().len();
+    let mut draw = |fixture: &mut Fixture| {
+        if top.configures().len() > acked {
+            acked = top.configures().len();
+            top.ack_latest();
+        }
+        top.show(&buffer);
+        fixture.pump();
+    };
+    let mut first = None;
+    for step in 1..=10 {
+        // A mouse moves by steps (relative motion), each from where the last one left it.
+        fixture.input().pointer_by(
+            device,
+            SubPoint {
+                x: SubPx(-12 * 120),
+                y: SubPx(8 * 120),
+            },
+        );
+        fixture.pump();
+        draw(&mut fixture);
+        let at = floating(&fixture).expect("floating while dragged");
+        let first = *first.get_or_insert(LogicalPoint {
+            x: at.x + 12,
+            y: at.y - 8,
+        });
+        assert_eq!(
+            at,
+            LogicalPoint {
+                x: first.x - 12 * step,
+                y: first.y + 8 * step,
+            },
+            "{output} step {step} follows the pointer"
+        );
+    }
+    let dropped = floating(&fixture);
+    fixture.input().button(device, BTN_LEFT, Edge::Release);
+    fixture.pump();
+    draw(&mut fixture);
+    settle(&mut fixture);
+    draw(&mut fixture);
+    assert_eq!(
+        floating(&fixture),
+        dropped,
+        "{output}: the window stays where it was let go"
+    );
+    assert!(fixture.client(id).protocol_error().is_none());
 }

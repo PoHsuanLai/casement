@@ -423,6 +423,25 @@ fn logical(at: (f64, f64)) -> LogicalPoint {
     }
 }
 
+/// The pointer moves to `at` while something of the compositor's own takes the motion: the
+/// clients under it are left and hear nothing.
+fn move_unheard(
+    state: &mut State,
+    seat: &Seat<State>,
+    event: &InputEvent,
+    at: (f64, f64),
+    delta: SubPoint,
+) {
+    state.render.chrome.cursor_at = logical(at);
+    let delivery = PointerDelivery::Motion {
+        focus: None,
+        at: sub_of(at),
+        delta,
+        time: event.at,
+    };
+    log(seat::apply_pointer(seat, state, delivery));
+}
+
 /// The pointer moves to `at` (global logical, clamped to the desktop).
 fn motion(
     state: &mut State,
@@ -435,6 +454,10 @@ fn motion(
         return;
     };
     if grab::follow(state, logical(at)) == grab::Follow::Taken {
+        // A move or resize: the pointer still moves, or the next relative motion would start
+        // from the press again and the window would stay pinned near it (the trial login of
+        // 2026-10-19).
+        move_unheard(state, seat, event, at, delta);
         return;
     }
     if overview::takes_input(state) {
@@ -443,16 +466,8 @@ fn motion(
     }
     let stacked = stack(state);
     if divider::moved(state, &stacked, logical(at)) == grab::Follow::Taken {
-        // The strip between Split View halves (or a drag of it): the pointer moves, the clients
-        // under it are left and hear nothing.
-        state.render.chrome.cursor_at = logical(at);
-        let delivery = PointerDelivery::Motion {
-            focus: None,
-            at: sub_of(at),
-            delta,
-            time: event.at,
-        };
-        log(seat::apply_pointer(seat, state, delivery));
+        // The strip between Split View halves (or a drag of it).
+        move_unheard(state, seat, event, at, delta);
         return;
     }
     let over = frames::under(state, &stacked, logical(at));
