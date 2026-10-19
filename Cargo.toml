@@ -73,8 +73,8 @@ keycap-client = { git = "https://github.com/PoHsuanLai/keycap", rev = "52c66c7c7
 # `org.quire.Compositor1` call with it, on casement's tokio runtime) and the pure vocabulary
 # (casement-agent names the roles). The desktop's role names; the `fake` seams are a dev
 # dependency of casement-ipc only (the desktop gate greps `cargo tree -e features` for them).
-peephole-bus  = { git = "https://github.com/PoHsuanLai/peephole", tag = "v0.1.8", default-features = false, features = ["desktop", "tokio"] }
-peephole-core = { git = "https://github.com/PoHsuanLai/peephole", tag = "v0.1.8", features = ["desktop"] }
+peephole-bus  = { git = "https://github.com/PoHsuanLai/peephole", tag = "v0.1.9", default-features = false, features = ["desktop", "tokio"] }
+peephole-core = { git = "https://github.com/PoHsuanLai/peephole", tag = "v0.1.9", features = ["desktop"] }
 # The stored settings document (C45, B13): casement and casement-ipc only.
 # `quire-desktop`: the settings portal, so `theme = "system"` follows the desktop (wave-2026-10-15/chrome2 ask).
 ds-settings = { path = "../quire/crates/ds-settings", default-features = false, features = ["quire-desktop"] }
