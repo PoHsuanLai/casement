@@ -146,6 +146,14 @@ fn whole_like_mac_matches_sills_prefer_whole_table() {
             Some(size_of(15.6, 3840, 2160)),
             200,
         ),
+        // The BenQ MA270U's EDID: 600 x 340 mm, 1.49 by density.
+        ("27in 4K, EDID 600 mm", (3840, 2160), Some((600, 340)), 200),
+        (
+            "28in 4K",
+            (3840, 2160),
+            Some(size_of(28.0, 3840, 2160)),
+            200,
+        ),
         ("projector 1080p", (1920, 1080), None, 100),
         ("projector 4K", (3840, 2160), None, 200),
         // A TV whose EDID says 16 x 9 cm: 13 700 ppi is not a display.

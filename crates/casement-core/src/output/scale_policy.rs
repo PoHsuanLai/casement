@@ -1,6 +1,5 @@
-//! The scale a display gets the first time it is seen (12 §4: the policy moves from sill's
-//! display service into the compositor, so a 4K output is right before any client draws).
-//! The `WholeLikeMac` rows are sill's `PreferWhole` table (`displays/scale.rs`), in 120ths.
+//! The scale a display gets the first time it is seen (12 §4: the compositor owns it, so a 4K
+//! output is right before any client draws; sill keeps no rule of its own).
 
 use super::density::{MilliPpi, density};
 use super::{ModeWish, OutputFacts, pick_mode};
@@ -9,13 +8,16 @@ use serde::{Deserialize, Serialize};
 
 /// The Mac's 27-inch density (2560 x 1440 points on 27 inches), in pixels per inch.
 const TARGET_PPI: u64 = 109;
-/// The ideal scale (hundredths) from which a whole scale is preferred: 1.5.
-const WHOLE_FROM: u64 = 150;
-/// The narrowest logical width a whole scale may leave: the smallest common laptop panel.
+/// The ideal scale (hundredths) from which 2x is preferred: 1.4. A 27-inch 4K display sits
+/// right at 1.5 (163 ppi), and its EDID size decides which side: one that says 600 mm comes out
+/// at 1.49. macOS shows every such display at 2x.
+const WHOLE_FROM: u64 = 140;
+/// The whole scale preferred. 3x on a 15.6-inch 4K laptop leaves 1280 points, tighter than any
+/// Mac laptop's default, so a denser panel stays at 2x too.
+const WHOLE: u64 = 2;
+/// The narrowest logical width 2x may leave: the smallest common laptop panel. A laptop panel
+/// as dense as a 27-inch 4K (14-inch 1920 x 1200) is too narrow for 2x and keeps its step.
 const MIN_LOGICAL_WIDTH: u32 = 1280;
-/// The largest whole scale chosen: 3x on a 15.6-inch 4K laptop leaves 1280 points, tighter than
-/// any Mac laptop's default, so a denser panel stays at 2x.
-const MAX_WHOLE: u64 = 2;
 /// How close (hundredths) to a whole scale the ideal must be to take it.
 const WHOLE_PULL: u64 = 15;
 /// The steps a first scale may land on, in hundredths: 1, 1.25, 1.5, 1.75, 2, 2.5, 3.
@@ -28,8 +30,8 @@ const WIDE_PANEL: u32 = 3840;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "v", rename_all = "snake_case")]
 pub enum ScalePolicy {
-    /// Aim at the Mac's 27-inch density (109 points per inch) and prefer a whole scale where
-    /// the ideal is at least 1.5 and the display stays at least 1280 points wide, as macOS does
+    /// Aim at the Mac's 27-inch density (109 points per inch) and prefer 2x where the ideal is
+    /// at least 1.4 and the display stays at least 1280 points wide, as macOS does
     /// for a sharp external display; otherwise the nearest quarter step. With no usable
     /// physical size: 2 for a panel at least 3840 pixels wide, else 1.
     WholeLikeMac,
@@ -59,13 +61,11 @@ fn ideal(ppi: MilliPpi) -> u64 {
     (ppi.0 * 100 + TARGET_PPI * 500) / (TARGET_PPI * 1000)
 }
 
-/// Below 1.5, the nearest step; from it, a whole scale (at most 2) when the display stays wide
-/// enough, else the nearest step.
+/// From 1.4, 2x when the display stays wide enough; otherwise the nearest step.
 fn whole_like_mac(ideal: u64, width: u32) -> u64 {
-    let whole = nearest_whole(ideal).min(MAX_WHOLE);
-    let wide_enough = u64::from(width) / whole >= u64::from(MIN_LOGICAL_WIDTH);
+    let wide_enough = u64::from(width) / WHOLE >= u64::from(MIN_LOGICAL_WIDTH);
     if ideal >= WHOLE_FROM && wide_enough {
-        whole * 100
+        WHOLE * 100
     } else {
         snap(ideal)
     }
