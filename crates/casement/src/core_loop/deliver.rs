@@ -26,7 +26,7 @@ use casement_core::time::{Due, Mono, TimerKey};
 use casement_core::{Effect, InputSerial, KeyboardTarget, Model, SwipeOwner};
 use casement_protocols::vocab::MacMods;
 use casement_wayland::seat::{
-    self, GestureDelivery, KeyDelivery, PointerDelivery, PressFate, SurfaceAt,
+    self, GestureDelivery, KeyDelivery, KeyRoute, PointerDelivery, PressFate, SurfaceAt,
 };
 use casement_wayland::serial::{PressKind, PressRecord};
 use casement_wayland::shortcuts_inhibit::{self, Bindings};
@@ -213,8 +213,14 @@ fn key(state: &mut State, seat: &Seat<State>, event: &InputEvent, code: KeyCode,
         &keyboard_target(&state.core.model),
         InputUse::Key,
     ) {
-        if edge == Edge::Press {
-            state.wl.seat.taken = std::mem::take(&mut state.wl.seat.taken).take_key(code);
+        match edge {
+            Edge::Press => {
+                state.wl.seat.taken = std::mem::take(&mut state.wl.seat.taken).take_key(code);
+            }
+            Edge::Release => {
+                state.wl.seat.past =
+                    std::mem::take(&mut state.wl.seat.past).refused_release(event.device, code);
+            }
         }
         return;
     }
@@ -224,6 +230,7 @@ fn key(state: &mut State, seat: &Seat<State>, event: &InputEvent, code: KeyCode,
         serial: next_serial(),
         time: event.at,
         origin: event.origin,
+        device: event.device,
     };
     let now = state.clock.now();
     let ready = text_input::admit_key(&mut state.wl.text_input, seat, delivery, now);
@@ -251,8 +258,20 @@ pub(super) fn deliver_keys(state: &mut State, seat: &Seat<State>, keys: Vec<KeyD
 
 /// One key, through the keyboard: a chord that is a binding is carried out and not delivered;
 /// any other key goes to the keyboard focus. While a client inhibits shortcuts, or the session
-/// is locked, no chord resolves. The release of a key a binding took is not delivered.
+/// is locked, no chord resolves. The release of a key a binding took is not delivered. A copy
+/// the input method sends back through its virtual keyboard goes past its grab, straight to the
+/// focus (`seat::key_route`): the real key already went through the bindings.
 fn deliver_key(state: &mut State, seat: &Seat<State>, key: KeyDelivery) {
+    let facts = seat::route_facts(seat, key.code);
+    let (past, route) = std::mem::take(&mut state.wl.seat.past).route(&key, facts);
+    state.wl.seat.past = past;
+    if route == KeyRoute::PastGrab {
+        seat::deliver_past_grab(seat, &key);
+        if key.edge == Edge::Press {
+            remember_key_press(state, seat, &key);
+        }
+        return;
+    }
     let (taken, fate) = std::mem::take(&mut state.wl.seat.taken).release_key(key.code);
     state.wl.seat.taken = taken;
     let live = matches!(state.core.model.lock(), LockState::Unlocked)
@@ -308,24 +327,27 @@ fn deliver_key(state: &mut State, seat: &Seat<State>, key: KeyDelivery) {
             carry_out(state, &action);
         }
         Ok(Some(None)) => {}
-        Ok(None) if key.edge == Edge::Press => {
-            let focus = seat
-                .get_keyboard()
-                .and_then(|keyboard| keyboard.current_focus());
-            remember(
-                state,
-                focus.as_ref(),
-                key.serial,
-                key.time,
-                PressKind::Key,
-                origin,
-                None,
-            );
-        }
+        Ok(None) if key.edge == Edge::Press => remember_key_press(state, seat, &key),
         Ok(None) => {}
         Err(fault) => tracing::warn!(%fault, "a key delivery failed"),
     }
     tell_shell_modifiers(state, seat);
+}
+
+/// Records a key press the keyboard focus was sent, so its serial answers a real press.
+fn remember_key_press(state: &mut State, seat: &Seat<State>, key: &KeyDelivery) {
+    let focus = seat
+        .get_keyboard()
+        .and_then(|keyboard| keyboard.current_focus());
+    remember(
+        state,
+        focus.as_ref(),
+        key.serial,
+        key.time,
+        PressKind::Key,
+        key.origin,
+        None,
+    );
 }
 
 /// The keyboard's modifier set, as the shell sees it (it ignores a set it was already sent).

@@ -225,6 +225,14 @@ impl ImeSession {
         self.flush()
     }
 
+    /// The input method lets the keyboard go (it has no field to work on).
+    pub fn release_grab(&mut self) -> Result<(), ClientError> {
+        if let Some(grab) = self.grab.take() {
+            grab.release();
+        }
+        self.flush()
+    }
+
     /// The input method sets the preedit text.
     pub fn set_preedit(&self, text: &str, begin: i32, end: i32) -> Result<(), ClientError> {
         if let Some(method) = &self.method {

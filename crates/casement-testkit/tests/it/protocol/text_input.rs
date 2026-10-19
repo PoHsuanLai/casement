@@ -8,8 +8,12 @@ use casement_core::input::{DeviceClass, Edge, KeyCode};
 use casement_testclient::ime::input_method::InputMethodEvent;
 use casement_testclient::ime::session::ImeSession;
 use casement_testclient::ime::text_input::TextInputEvent;
+use casement_testclient::ime::virtual_keyboard::VirtualBoard;
 use casement_testclient::surface::toplevel::{Toplevel, WmBase};
 use casement_testkit::{ClientId, Fixture, TestOrigin};
+
+/// The smallest keymap libxkbcommon accepts: one key.
+const KEYMAP: &str = "xkb_keymap {\n xkb_keycodes { <A> = 38; };\n xkb_types {};\n xkb_compat {};\n xkb_symbols { key <A> { [ a ] }; };\n};\n";
 
 /// Whether the input method is bound when the session starts.
 #[derive(Debug, Clone, Copy)]
@@ -178,6 +182,150 @@ fn the_first_key_after_enable_reaches_the_input_method() {
     assert!(
         typing.ime.document_keys().is_empty(),
         "the release goes to the method too"
+    );
+}
+
+/// An input method that holds the keyboard sends a key it does not use back through its own
+/// virtual keyboard while the person still holds the real one (fcitx5 in English mode, the
+/// launcher on the trial login of 2026-10-19). The document gets that key and its release; the
+/// method gets the real key and its release, and nothing twice.
+#[test]
+fn a_key_the_input_method_sends_back_reaches_the_document() {
+    let mut typing = Typing::start();
+    typing.enable_and_grab();
+    let board =
+        VirtualBoard::start(typing.fixture.client(typing.client).globals()).expect("the board");
+    typing.pump();
+    board.keymap(KEYMAP).expect("keymap");
+    typing.pump();
+    let keyboard = typing.keyboard;
+    typing
+        .fixture
+        .input()
+        .key(keyboard, KeyCode(30), Edge::Press);
+    typing.pump();
+    board.key(0, 30, 1).expect("the key back");
+    typing.pump();
+    typing
+        .fixture
+        .input()
+        .key(keyboard, KeyCode(30), Edge::Release);
+    typing.pump();
+    board.key(0, 30, 0).expect("the release back");
+    typing.pump();
+    let grabbed: Vec<_> = typing
+        .ime
+        .method_events()
+        .iter()
+        .filter_map(|line| match line.event {
+            InputMethodEvent::GrabKey { key, state } => Some((key, state)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        grabbed,
+        vec![(30, 1), (30, 0)],
+        "the method had the real key"
+    );
+    assert_eq!(
+        typing
+            .ime
+            .document_keys()
+            .iter()
+            .map(|key| (key.key, key.state))
+            .collect::<Vec<_>>(),
+        vec![(30, 1), (30, 0)],
+        "the document had the key sent back"
+    );
+}
+
+/// The grab ends between the copy's press and its release: the release still
+/// reaches the document the press went to, and the next key reaches it through the keyboard, so
+/// no key is left held on either side.
+#[test]
+fn a_copy_released_after_the_grab_ends_leaves_no_key_held() {
+    let mut typing = Typing::start();
+    typing.enable_and_grab();
+    let board =
+        VirtualBoard::start(typing.fixture.client(typing.client).globals()).expect("the board");
+    typing.pump();
+    board.keymap(KEYMAP).expect("keymap");
+    typing.pump();
+    let keyboard = typing.keyboard;
+    typing
+        .fixture
+        .input()
+        .key(keyboard, KeyCode(30), Edge::Press);
+    typing.pump();
+    board.key(0, 30, 1).expect("the key back");
+    typing.pump();
+    typing.ime.release_grab().expect("the method lets go");
+    typing.pump();
+    board.key(0, 30, 0).expect("the release back");
+    typing.pump();
+    typing
+        .fixture
+        .input()
+        .key(keyboard, KeyCode(30), Edge::Release);
+    typing.pump();
+    // The field is still enabled, so the key waits for a method first (the hold limit).
+    for edge in [Edge::Press, Edge::Release] {
+        typing.fixture.input().key(keyboard, KeyCode(30), edge);
+        typing.pump();
+        typing
+            .fixture
+            .advance(casement_wayland::text_input::HOLD_LIMIT);
+        typing.pump();
+    }
+    let keys: Vec<_> = typing
+        .ime
+        .document_keys()
+        .iter()
+        .map(|key| (key.key, key.state))
+        .collect();
+    assert_eq!(
+        keys[..2],
+        [(30, 1), (30, 0)],
+        "the copy and its release, past the grab: {keys:?}"
+    );
+    // The real key's release goes through the keyboard once the grab is gone: a release of a
+    // key the document already heard released, which a client ignores.
+    assert_eq!(
+        keys[2..],
+        [(30, 0), (30, 1), (30, 0)],
+        "the next key reaches the document through the keyboard: {keys:?}"
+    );
+}
+
+/// An on-screen keyboard's own key, with nothing real held, is not a copy: it goes to the
+/// method's grab like any key, and the document hears nothing until the method sends it back.
+#[test]
+fn an_on_screen_keyboards_own_key_goes_to_the_grab() {
+    let mut typing = Typing::start();
+    typing.enable_and_grab();
+    let board =
+        VirtualBoard::start(typing.fixture.client(typing.client).globals()).expect("the board");
+    typing.pump();
+    board.keymap(KEYMAP).expect("keymap");
+    typing.pump();
+    board.key(0, 30, 1).expect("press");
+    typing.pump();
+    board.key(0, 30, 0).expect("release");
+    typing.pump();
+    let grabbed: Vec<_> = typing
+        .ime
+        .method_events()
+        .iter()
+        .filter_map(|line| match line.event {
+            InputMethodEvent::GrabKey { key, state } => Some((key, state)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(grabbed, vec![(30, 1), (30, 0)], "the method had the key");
+    assert!(
+        typing.ime.document_keys().is_empty(),
+        "the document heard nothing: {:?}",
+        typing.ime.document_keys()
     );
 }
 

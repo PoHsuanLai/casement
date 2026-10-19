@@ -150,8 +150,8 @@ fn next_phase(phase: Phase, facts: ImeFacts, now: Mono) -> Phase {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use casement_core::InputSerial;
     use casement_core::input::{Edge, KeyCode, Origin};
+    use casement_core::{DeviceId, InputSerial};
 
     fn at(ms: u64) -> Mono {
         Mono(Duration::from_millis(ms))
@@ -164,6 +164,7 @@ mod tests {
             serial: InputSerial(code),
             time: at(ms),
             origin: Origin::Test,
+            device: DeviceId(1),
         }
     }
 

@@ -9,6 +9,7 @@ mod edge;
 mod focus_origin;
 mod grab;
 mod hold;
+mod key_route;
 mod live;
 mod pointer;
 mod taken;
@@ -16,6 +17,9 @@ mod touch;
 mod under;
 
 pub use grab::Drag;
+pub use key_route::{
+    KeyRoute, MethodGrab, PastKeys, RouteFacts, SeatHolds, deliver_past_grab, route_facts,
+};
 pub use live::Live;
 pub use pointer::{apply_axis, apply_gesture, apply_pointer, apply_refocus, end_grab, forget_dead};
 pub use taken::{PressFate, Taken};
@@ -30,7 +34,7 @@ use casement_core::geometry::{LogicalPoint, SubPoint};
 use casement_core::input::{ButtonCode, Edge, GestureStep, KeyCode, Origin, PinchDelta};
 use casement_core::settings::KeyboardSettings;
 use casement_core::time::Mono;
-use casement_core::{Event, InputSerial};
+use casement_core::{DeviceId, Event, InputSerial};
 use smithay::input::keyboard::{FilterResult, KeyboardHandle, KeysymHandle, ModifiersState};
 use smithay::input::pointer::{CursorImageStatus, PointerHandle};
 use smithay::input::touch::TouchHandle;
@@ -64,6 +68,8 @@ pub struct SeatPart<D: SeatHandler + 'static> {
     pub taken: Taken,
     /// The interactive move or resize in progress, if any.
     pub grab: Option<Drag>,
+    /// The virtual keyboard presses that went past the input method's grab (`key_route`).
+    pub past: PastKeys,
     /// The cursor the focused client asked for.
     pub cursor: CursorImageStatus,
 }
@@ -102,6 +108,7 @@ impl<D: SeatHandler + 'static> SeatPart<D> {
             serials: SerialBook::empty(),
             taken: Taken::none(),
             grab: None,
+            past: PastKeys::default(),
             cursor: CursorImageStatus::default_named(),
         })
     }
@@ -158,6 +165,8 @@ pub struct KeyDelivery {
     pub time: Mono,
     /// Where the key came from (a held key keeps it while it waits).
     pub origin: Origin,
+    /// The device it came from (a virtual keyboard's says it was made through the protocol).
+    pub device: DeviceId,
 }
 
 /// One gesture step the model routed to the focused client.
