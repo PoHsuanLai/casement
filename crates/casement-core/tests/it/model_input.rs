@@ -161,6 +161,35 @@ fn the_desktop_commands_that_close_minimise_and_place_the_key_window() {
     ));
 }
 
+/// Ctrl-Cmd-F: the key window goes into a Space of its own and comes back, in any app.
+#[test]
+fn the_full_screen_command_takes_the_key_window_into_its_own_space_and_back() {
+    let start = two_apps().model;
+    let shown = |model: &casement_core::Model| {
+        model
+            .spaces()
+            .shown()
+            .map(|(_, space)| space.clone())
+            .collect::<Vec<_>>()
+    };
+    let full = run_from(
+        start.clone(),
+        vec![Op::Command(DesktopCommand::FullScreenKey)],
+    );
+    let WindowState::FullScreen { space, .. } = full.model.windows()[&WindowId(3)].state.clone()
+    else {
+        panic!("full screen");
+    };
+    assert!(!shown(&start).contains(&space), "a Space of its own");
+    assert!(shown(&full.model).contains(&space), "shown");
+    let back = run_from(full.model, vec![Op::Command(DesktopCommand::FullScreenKey)]);
+    assert_eq!(
+        back.model.windows()[&WindowId(3)].state,
+        start.windows()[&WindowId(3)].state,
+        "it comes back where it was"
+    );
+}
+
 #[test]
 fn quitting_asks_every_window_of_the_active_app_to_close() {
     let run = run_from(
@@ -183,6 +212,7 @@ fn commands_with_nothing_to_act_on_do_nothing() {
     for command in [
         DesktopCommand::CloseKey,
         DesktopCommand::MinimiseKey,
+        DesktopCommand::FullScreenKey,
         DesktopCommand::HideActive,
         DesktopCommand::HideOthers,
         DesktopCommand::QuitActive,

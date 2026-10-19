@@ -34,6 +34,11 @@ const ROWS: &[Row] = &[
         StandardAction::MissionControl,
         Does::Itself(DesktopCommand::MissionControl),
     ),
+    // View > Enter Full Screen: the compositor's, so it works in an app that has no such item.
+    (
+        StandardAction::FullScreen,
+        Does::Itself(DesktopCommand::FullScreenKey),
+    ),
     (
         StandardAction::SpaceLeft,
         Does::Itself(DesktopCommand::SwitchSpace(SpaceStep::Previous)),
@@ -271,7 +276,11 @@ mod tests {
             ("copy is an app's", "cmd+c", None),
             ("close is the app's menu", "cmd+w", None),
             ("minimise is the app's menu", "cmd+m", None),
-            ("full screen is the app's menu", "ctrl+cmd+f", None),
+            (
+                "full screen",
+                "ctrl+cmd+f",
+                itself(DesktopCommand::FullScreenKey),
+            ),
             ("hide is the app's menu", "cmd+h", None),
             ("hide others is the app's menu", "option+cmd+h", None),
             ("quit is the app's menu", "cmd+q", None),

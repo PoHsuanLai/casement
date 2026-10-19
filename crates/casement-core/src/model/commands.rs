@@ -16,7 +16,7 @@ use crate::lock::LockState;
 use crate::settings::Enabled;
 use crate::time::Mono;
 use crate::window::{SpacePlace, Window, WindowState};
-use casement_protocols::vocab::ActorKind;
+use casement_protocols::vocab::{ActorKind, Toggle};
 
 impl Model {
     /// Whether an input from `origin` may reach `target` for `use_` now (the lock, the agent,
@@ -122,6 +122,16 @@ impl Model {
             },
             DesktopCommand::MinimiseKey => match key {
                 Some(window) => self.minimise(&window),
+                None => Moved::of(self),
+            },
+            DesktopCommand::FullScreenKey => match key {
+                Some(window) => {
+                    let toggle = match window.state {
+                        WindowState::FullScreen { .. } => Toggle::Off,
+                        _ => Toggle::On,
+                    };
+                    self.full_screen_by_hand(window.id, toggle)
+                }
                 None => Moved::of(self),
             },
             DesktopCommand::HideActive => match active {

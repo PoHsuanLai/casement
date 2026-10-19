@@ -45,6 +45,9 @@ pub enum DesktopCommand {
     CloseKey,
     /// Minimise the key window.
     MinimiseKey,
+    /// Take the key window into full screen, a Space of its own, or bring it back (the Mac's
+    /// Enter Full Screen, Ctrl-Cmd-F, in every app, also one that does not offer it).
+    FullScreenKey,
     /// Hide the active app.
     HideActive,
     /// Hide every app but the active one.

@@ -4,9 +4,9 @@
 //! ```text
 //! ["spawn", "foot", "--title", "x"]                       a program and its arguments
 //! ["call", SERVICE, PATH, INTERFACE, METHOD, ARG...]      a session-bus method call
-//! ["desktop", "close_key"]                                 close_key, minimise_key, hide_active,
-//!                                                          hide_others, quit_active, force_quit_panel,
-//!                                                          mission_control
+//! ["desktop", "close_key"]                                 close_key, minimise_key, full_screen_key,
+//!                                                          hide_active, hide_others, quit_active,
+//!                                                          force_quit_panel, mission_control
 //! ["desktop", "switch_space", "next"]                      previous, next or the Space's number
 //! ["desktop", "place", "left"]                             a `PlaceTarget` word
 //! ["desktop", "split_tile", "left"]                        left or right: Tile Window to Left / Right
@@ -44,9 +44,10 @@ const SPLIT_SIDES: [(&str, SplitSide); 2] =
     [("left", SplitSide::Left), ("right", SplitSide::Right)];
 
 /// The unit commands and the word each is written as.
-const UNIT_COMMANDS: [(&str, DesktopCommand); 7] = [
+const UNIT_COMMANDS: [(&str, DesktopCommand); 8] = [
     ("close_key", DesktopCommand::CloseKey),
     ("minimise_key", DesktopCommand::MinimiseKey),
+    ("full_screen_key", DesktopCommand::FullScreenKey),
     ("hide_active", DesktopCommand::HideActive),
     ("hide_others", DesktopCommand::HideOthers),
     ("quit_active", DesktopCommand::QuitActive),

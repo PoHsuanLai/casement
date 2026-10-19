@@ -9,6 +9,7 @@ use casement_core::app::AppLife;
 use casement_core::geometry::{LogicalPoint, LogicalRect, PhysicalSize};
 use casement_core::input::{ButtonCode, DeviceClass, Edge, KeyCode};
 use casement_core::policy::ConnectionRole;
+use casement_core::window::WindowState;
 use casement_core::{DeviceId, WindowId};
 use casement_layout::{LayoutKnobs, RustScene, SceneLayout, spec_of};
 use casement_testclient::surface::popup::{Popup, PopupSpec};
@@ -766,4 +767,33 @@ fn a_window_and_a_click_write_their_timing_lines() {
         "idle frames write nothing"
     );
     drop(top);
+}
+
+/// A window that draws its own frame (no decoration object, as Firefox and Zen) and is key goes
+/// full screen when it asks: it takes a Space of its own, which is shown (the trial login of
+/// 2026-10-19, where F11 in Zen left it where it was).
+#[test]
+fn a_key_window_with_its_own_frame_goes_full_screen_when_it_asks() {
+    let (mut fixture, id) = boot();
+    let base = WmBase::bind(fixture.client(id), 6);
+    let top = map_toplevel(&mut fixture, id, &base, (800, 600));
+    let window = windows(&fixture)[0];
+    make_key(&mut fixture, window);
+    let shown = |fixture: &Fixture| {
+        fixture
+            .model()
+            .spaces()
+            .shown()
+            .map(|(_, space)| space.clone())
+            .collect::<Vec<_>>()
+    };
+    let before = shown(&fixture);
+    top.set_fullscreen();
+    fixture.pump();
+    let state = fixture.model().windows()[&window].state.clone();
+    let WindowState::FullScreen { space, .. } = state else {
+        panic!("full screen, not {state:?}");
+    };
+    assert!(!before.contains(&space), "a Space of its own");
+    assert!(shown(&fixture).contains(&space), "and it is shown");
 }
