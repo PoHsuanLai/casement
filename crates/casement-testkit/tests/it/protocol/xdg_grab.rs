@@ -416,6 +416,15 @@ fn dragged_by_the_titlebar(output: &str) {
             },
             "{output} step {step} follows the pointer"
         );
+        // Drawn there at once: no spring between the hand and the window, so nothing is left
+        // to travel when time passes.
+        let drawn = fixture.scene();
+        fixture.advance(std::time::Duration::from_millis(500));
+        assert_eq!(
+            fixture.scene(),
+            drawn,
+            "{output} step {step}: the window is drawn where the pointer put it"
+        );
     }
     let dropped = floating(&fixture);
     fixture.input().button(device, BTN_LEFT, Edge::Release);

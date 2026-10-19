@@ -10,8 +10,11 @@ use ds_motion::velocity::Velocity;
 pub enum Cause {
     /// A client's own configure or commit.
     Configure,
-    /// The person dragged a window.
+    /// The person drags a window: it is under the hand, so it is where the pointer puts it.
     Drag,
+    /// The person let go of a dragged window and it settles somewhere else (a picture in
+    /// picture window to its corner).
+    Drop,
     /// A keyboard command (a placement chord, a Space step).
     Keyboard,
     /// A swipe was released with this velocity.

@@ -80,7 +80,7 @@ impl Model {
         match snapped {
             Some(rect) => self
                 .with_state(id, WindowState::Floating(rect))
-                .then(|model| model.relaid_out(id, Cause::Drag)),
+                .then(|model| model.relaid_out(id, Cause::Drop)),
             None => Moved::of(self),
         }
     }

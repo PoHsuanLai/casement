@@ -445,7 +445,7 @@ fn picture_in_picture_joins_every_space_keeps_its_aspect_and_snaps_to_a_corner()
             size(480, 270)
         ))
     );
-    assert!(last(&dropped).contains(&Effect::Relayout(Cause::Drag)));
+    assert!(last(&dropped).contains(&Effect::Relayout(Cause::Drop)));
 
     // An ordinary window is neither fitted nor snapped.
     let plain = support::driver::run_from(

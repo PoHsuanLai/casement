@@ -37,7 +37,7 @@ fn known(arrangement: &Arrangement, level: MotionLevel) -> MotionBook {
 #[test]
 fn a_retarget_mid_flight_has_no_sub_pixel_jump_on_any_channel() {
     let (desktop, overview) = arrangements();
-    let causes = [Cause::Overview, Cause::Keyboard, Cause::Drag];
+    let causes = [Cause::Overview, Cause::Keyboard, Cause::Drop];
     for (cause, back) in causes.iter().zip([true, false, true]) {
         let (from, to) = (&desktop, &overview);
         let first = retarget(known(from, STANDARD), from, to, cause, STANDARD, at(0));
@@ -119,7 +119,7 @@ fn reduced_motion_settles_at_once() {
     let (desktop, overview) = arrangements();
     let causes = [
         Cause::Keyboard,
-        Cause::Drag,
+        Cause::Drop,
         Cause::Overview,
         Cause::SpaceSwitch,
         Cause::Swipe(SwipeRelease {

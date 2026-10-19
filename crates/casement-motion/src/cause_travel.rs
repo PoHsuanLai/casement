@@ -9,8 +9,9 @@ use ds_style::appearance::motion::MotionLevel;
 /// How a change of target is travelled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Travel {
-    /// The new target is the position at once (the client's own configure, an output change,
-    /// and everything under Reduced motion: no state is carried by movement alone).
+    /// The new target is the position at once (the client's own configure, an output change, a
+    /// window under the hand, and everything under Reduced motion: no state is carried by
+    /// movement alone).
     Snap,
     /// A spring from where the leg is, at the speed it has.
     Spring {
@@ -21,15 +22,19 @@ pub(crate) enum Travel {
     },
 }
 
-/// The travel `cause` asks for under `level`. A drag follows quickly; a keyboard command, an
+/// The travel `cause` asks for under `level`. A drag is where the hand puts the window, with no
+/// spring between them (a spring lags and then catches up, so the window runs off from under
+/// the pointer: the trial login of 2026-10-19); a drop settles quickly; a keyboard command, an
 /// overview, a minimise, an open and a Space change take the Move response; a close is quick; a
 /// released swipe runs on the spring its release chose (a throw may overshoot, a hand having
 /// spent it).
 pub(crate) fn travel_of(cause: &Cause, level: MotionLevel) -> Travel {
     let spring = |touch, response| Travel::Spring { touch, response };
     match (level, cause) {
-        (MotionLevel::Reduced, _) | (_, Cause::Configure | Cause::OutputChange) => Travel::Snap,
-        (_, Cause::Drag | Cause::Close) => spring(Touch::Remote, SpringResponse::Quick),
+        (MotionLevel::Reduced, _) | (_, Cause::Configure | Cause::OutputChange | Cause::Drag) => {
+            Travel::Snap
+        }
+        (_, Cause::Drop | Cause::Close) => spring(Touch::Remote, SpringResponse::Quick),
         (
             _,
             Cause::Keyboard
@@ -102,7 +107,8 @@ mod tests {
         let cases = [
             ("configure", Cause::Configure, Travel::Snap),
             ("output change", Cause::OutputChange, Travel::Snap),
-            ("drag", Cause::Drag, remote(SpringResponse::Quick)),
+            ("drag", Cause::Drag, Travel::Snap),
+            ("drop", Cause::Drop, remote(SpringResponse::Quick)),
             ("close", Cause::Close, remote(SpringResponse::Quick)),
             ("keyboard", Cause::Keyboard, remote(SpringResponse::Move)),
             ("overview", Cause::Overview, remote(SpringResponse::Move)),
