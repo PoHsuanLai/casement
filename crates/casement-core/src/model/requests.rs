@@ -82,7 +82,7 @@ impl Model {
 
     /// A window was put at `rect` by hand (a test's placement, never the person's): layout keeps
     /// the rectangle where it is even outside the usable area, until the person drags the
-    /// window. The person-facing rule (a drag keeps a window inside) is unchanged.
+    /// window. The person-facing rule (a drag keeps a window within reach) is unchanged.
     pub(super) fn placed_by_hand(self, id: WindowId, rect: LogicalRect) -> Moved {
         let mut model = self;
         let reach = Reach::of(model.windows.contains_key(&id) && model.hand_placed.insert(id));

@@ -158,7 +158,7 @@ fn a_full_screen_window_covers_the_whole_output_whatever_its_limits() {
 }
 
 #[test]
-fn floating_windows_stay_or_come_back_inside() {
+fn floating_windows_stay_or_come_back_within_reach() {
     let usable = rect(0, 24, 1920, 1056);
     let min = |w, h| SizeLimits {
         min: LogicalSize { w, h },
@@ -173,10 +173,17 @@ fn floating_windows_stay_or_come_back_inside() {
             ConfigureNeed::Keep,
         ),
         (
-            "off the right edge moves back",
+            "partly off the right edge stays",
             rect(1800, 100, 400, 300),
             ANY_SIZE,
-            rect(1520, 100, 400, 300),
+            rect(1800, 100, 400, 300),
+            ConfigureNeed::Keep,
+        ),
+        (
+            "past the right edge comes back until its grip shows",
+            rect(2500, 100, 400, 300),
+            ANY_SIZE,
+            rect(1920 - 112, 100, 400, 300),
             ConfigureNeed::Keep,
         ),
         (

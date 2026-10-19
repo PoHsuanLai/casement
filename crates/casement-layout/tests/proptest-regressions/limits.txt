@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc fb52271d7ca36fc18a64f167cb695227cac3a00019625381a896450500cd2a3b # shrinks to draws = [Draw { placement: Floating(LogicalRect { origin: LogicalPoint { x: 0, y: 0 }, size: LogicalSize { w: 113, h: 0 } }), limits: SizeLimits { min: LogicalSize { w: 0, h: 0 }, max: Unbounded } }], (x, y, w, h) = (1, 0, 320, 240), spaces = 1, shown = 0

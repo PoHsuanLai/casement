@@ -108,7 +108,7 @@ impl Fixture {
 
     /// Puts `window`'s top-left corner at `at`, keeping its size, where it is told even if that
     /// is partly outside the usable area (`Event::WindowPlaced`: a test's placement, not the
-    /// person's drag, which keeps a window inside); then pumps. A window the layout does not
+    /// person's drag, which keeps a window within reach); then pumps. A window the layout does not
     /// hold is left alone.
     pub fn place_window_by_hand(&mut self, window: WindowId, at: LogicalPoint) {
         let held = self

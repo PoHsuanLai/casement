@@ -1,22 +1,24 @@
-//! A floating window's target: kept where it is when it fits; otherwise its size held to its
-//! limits, then to the usable area (an unmet minimum is reported), and its position pushed
-//! inside.
+//! A floating window's target: kept where it is when it can still be grabbed; otherwise its
+//! size held to its limits, then to the usable area (an unmet minimum is reported), and its
+//! position pulled back the shortest way until it can (the Mac's rule: a window may go off the
+//! left, right and bottom, never above the menu bar, while its grip stays on screen).
 
 use crate::{ConfigureNeed, LayoutReport, WindowTarget};
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::window::{MaxSize, SizeLimits};
 use casement_core::{OutputKey, WindowId};
 
-/// Where a floating window at `rect` on `output` goes inside `usable`.
+/// Where a floating window at `rect` on `output` goes in `usable`, keeping `grip` of it there.
 pub(crate) fn floating_target(
     window: WindowId,
     output: &OutputKey,
     rect: LogicalRect,
     limits: SizeLimits,
     usable: LogicalRect,
+    grip: LogicalSize,
 ) -> (WindowTarget, Option<LayoutReport>) {
     let size = fit_size(rect.size, limits, usable);
-    let at = push_inside(rect.origin, size, usable);
+    let at = within_reach(rect.origin, size, usable, grip);
     placed(
         window,
         output,
@@ -126,23 +128,50 @@ pub(crate) fn fit_size(want: LogicalSize, limits: SizeLimits, usable: LogicalRec
     }
 }
 
-/// `at` moved the shortest way that puts a window of `size` inside `usable` (`size` fits it).
-pub(crate) fn push_inside(
+/// `at` moved the shortest way that leaves `grip` of a window of `size` inside `usable` (`size`
+/// fits it): across, at least the grip's width stays on either side; down, the top stays
+/// below the area's top and the grip's height above its bottom.
+pub(crate) fn within_reach(
     at: LogicalPoint,
     size: LogicalSize,
     usable: LogicalRect,
+    grip: LogicalSize,
 ) -> LogicalPoint {
+    let across = Span::of(usable.origin.x, usable.size.w);
+    let down = Span::of(usable.origin.y, usable.size.h);
     LogicalPoint {
-        x: inside(at.x, size.w, usable.origin.x, usable.size.w),
-        y: inside(at.y, size.h, usable.origin.y, usable.size.h),
+        x: across.hold(
+            at.x,
+            i64::from(grip.w.min(size.w)) - i64::from(size.w),
+            grip.w.min(size.w),
+        ),
+        y: down.hold(at.y, 0, grip.h.min(size.h)),
     }
 }
 
-/// `at` held so a span of `own` stays within the `extent` that starts at `from`.
-fn inside(at: i32, own: u32, from: i32, extent: u32) -> i32 {
-    let last = i64::from(from) + i64::from(extent.saturating_sub(own));
-    let held = i64::from(at).clamp(i64::from(from), last);
-    i32::try_from(held).unwrap_or(from)
+/// One axis of the usable area: where it starts and how far it goes.
+#[derive(Debug, Clone, Copy)]
+struct Span {
+    from: i64,
+    extent: i64,
+}
+
+impl Span {
+    fn of(from: i32, extent: u32) -> Span {
+        Span {
+            from: i64::from(from),
+            extent: i64::from(extent),
+        }
+    }
+
+    /// `at` held between the span's start moved by `before` (how far the window may stick out
+    /// ahead of it) and its end less `kept` (how much must stay inside before the end).
+    fn hold(self, at: i32, before: i64, kept: u32) -> i32 {
+        let first = self.from + before;
+        let last = (self.from + self.extent - i64::from(kept)).max(first);
+        let held = i64::from(at).clamp(first, last);
+        i32::try_from(held).unwrap_or(i32::MAX)
+    }
 }
 
 #[cfg(test)]
@@ -220,20 +249,48 @@ mod tests {
     }
 
     #[test]
-    fn positions_are_pushed_the_shortest_way_inside() {
+    fn a_window_may_leave_the_area_while_its_grip_stays() {
         let usable = rect(100, 24, 800, 600);
+        let grip = size(112, 28);
         let cases = [
             ("inside stays", (150, 100), (150, 100)),
-            ("left of the area", (-40, 100), (100, 100)),
-            ("past the right edge", (880, 100), (800, 100)),
-            ("above", (150, -500), (150, 24)),
-            ("below", (150, 5000), (150, 424)),
-            ("far off both", (i32::MIN, i32::MAX), (100, 424)),
+            ("partly off the left stays", (-50, 100), (-50, 100)),
+            (
+                "past the left: the grip's width stays",
+                (-500, 100),
+                (-88, 100),
+            ),
+            ("partly off the right stays", (700, 100), (700, 100)),
+            (
+                "past the right: the grip's width stays",
+                (850, 100),
+                (788, 100),
+            ),
+            ("never above the area's top", (150, -500), (150, 24)),
+            ("partly below stays", (150, 500), (150, 500)),
+            (
+                "past the bottom: the grip's height stays",
+                (150, 5000),
+                (150, 596),
+            ),
+            ("far off both", (i32::MIN, i32::MAX), (-88, 596)),
         ];
         for (name, (x, y), (want_x, want_y)) in cases {
-            let got = push_inside(LogicalPoint { x, y }, size(100, 200), usable);
+            let got = within_reach(LogicalPoint { x, y }, size(300, 200), usable, grip);
             assert_eq!((got.x, got.y), (want_x, want_y), "{name}");
         }
+    }
+
+    #[test]
+    fn a_window_smaller_than_the_grip_stays_whole_inside() {
+        let usable = rect(100, 24, 800, 600);
+        let got = within_reach(
+            LogicalPoint { x: -500, y: 5000 },
+            size(80, 20),
+            usable,
+            size(112, 28),
+        );
+        assert_eq!((got.x, got.y), (100, 604));
     }
 
     #[test]
@@ -254,6 +311,7 @@ mod tests {
             rect(10, 40, 300, 200),
             limits((0, 0), None),
             usable,
+            size(112, 28),
         );
         assert_eq!(
             (kept.rect, kept.size, none),
@@ -265,6 +323,7 @@ mod tests {
             rect(0, 24, 400, 2000),
             limits((400, 1200), None),
             usable,
+            size(112, 28),
         );
         assert_eq!(squeezed.size, ConfigureNeed::Resize(size(400, 1056)));
         assert_eq!(

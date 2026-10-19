@@ -1,6 +1,6 @@
 //! RustScene under random limits and Spaces: minimums honoured or reported, maximums kept,
-//! sizes and positions inside the area, the answer a fixed point of layout, and the same on
-//! every call.
+//! sizes inside the area and positions within reach of it (the grip on screen, never above
+//! it), the answer a fixed point of layout, and the same on every call.
 
 use crate::support;
 
@@ -99,6 +99,24 @@ fn reported(arrangement: &Arrangement, window: WindowId) -> Option<(LogicalSize,
     })
 }
 
+/// Whether `rect` is within reach of `usable`: no larger, never above it, and the knobs' grip
+/// (or the whole window, when smaller) inside it.
+fn within_reach(rect: LogicalRect, usable: LogicalRect) -> bool {
+    let grip = knobs().grip;
+    let (x, y) = (i64::from(rect.origin.x), i64::from(rect.origin.y));
+    let (left, top) = (i64::from(usable.origin.x), i64::from(usable.origin.y));
+    let right = left + i64::from(usable.size.w);
+    let bottom = top + i64::from(usable.size.h);
+    let kept_w = i64::from(grip.w.min(rect.size.w));
+    let kept_h = i64::from(grip.h.min(rect.size.h));
+    rect.size.w <= usable.size.w
+        && rect.size.h <= usable.size.h
+        && y >= top
+        && y + kept_h <= bottom
+        && x + i64::from(rect.size.w) >= left + kept_w
+        && x + kept_w <= right
+}
+
 fn asked(placement: &WindowPlacement) -> Option<LogicalSize> {
     match placement {
         WindowPlacement::Floating(r) => Some(r.size),
@@ -126,7 +144,7 @@ proptest! {
                 continue;
             };
             let t = target(&got, window).expect("a floating or new window has a target");
-            prop_assert_eq!(t.rect.intersection(&usable), Some(t.rect), "inside the area");
+            prop_assert!(within_reach(t.rect, usable), "within reach of the area: {:?}", t.rect);
             let min = d.limits.min;
             let fits = min.w <= usable.size.w && min.h <= usable.size.h;
             if fits {

@@ -242,6 +242,7 @@ mod tests {
             tile_margin: 8,
             spread_gap: 24,
             spread_floor: Fraction(300),
+            grip: LogicalSize { w: 112, h: 28 },
         }
     }
 

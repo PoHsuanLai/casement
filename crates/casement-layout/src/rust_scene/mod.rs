@@ -34,8 +34,8 @@ pub struct RustScene;
 impl SceneLayout for RustScene {
     /// For each output: each Space's origin (the shown one at the usable origin, the others
     /// beside it in row order, one usable width apart), each floating window kept where it is
-    /// when it fits the usable area, else its size held to its limits and then to the area and
-    /// its position pushed inside, each new window centred in the usable area and every later
+    /// while its grip stays in the usable area (never above it), else its size held to its
+    /// limits and then to the area and its position pulled back until it does, each new window centred in the usable area and every later
     /// new window of the same Space one cascade step further (starting over at the centre
     /// when a step would leave the area); minimised windows get no target. A window whose size
     /// changed gets a `Resize`; a minimum that cannot be met is reported

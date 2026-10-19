@@ -91,9 +91,14 @@ fn arrange_space(
     for window in &space.windows {
         let usable = below_chrome(output.usable, window.reserve_top);
         let (target, report) = match window.placement {
-            WindowPlacement::Floating(rect) => {
-                floating_target(window.window, &output.output, rect, window.limits, usable)
-            }
+            WindowPlacement::Floating(rect) => floating_target(
+                window.window,
+                &output.output,
+                rect,
+                window.limits,
+                usable,
+                knobs.grip,
+            ),
             WindowPlacement::Placed(rect) => {
                 placed_target(window.window, &output.output, rect, window.limits, usable)
             }

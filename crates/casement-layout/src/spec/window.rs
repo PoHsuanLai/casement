@@ -31,7 +31,7 @@ pub enum WindowPlacement {
     /// At this rectangle.
     Floating(LogicalRect),
     /// At this rectangle even where it leaves the usable area: put there by hand (a test's
-    /// placement, never the person's; a drag keeps a window inside). Only its size is fitted.
+    /// placement, never the person's; a drag keeps a window within reach). Only its size is fitted.
     Placed(LogicalRect),
     /// In this tile zone.
     Tiled(TileZone),

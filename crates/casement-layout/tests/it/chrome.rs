@@ -1,5 +1,6 @@
-//! A window with a frame above its content: fill, first placement and the keep-inside clamp
-//! hold the outer frame (content plus the reserve) inside the usable area.
+//! A window with a frame above its content: fill and first placement hold the outer frame
+//! (content plus the reserve) inside the usable area, and the reach rule keeps the frame below
+//! its top.
 
 use crate::support;
 
@@ -20,7 +21,7 @@ type Case = (
 );
 
 #[test]
-fn the_frame_stays_inside_the_usable_area() {
+fn the_frame_stays_below_the_top_of_the_usable_area() {
     let usable = rect(0, 24, 1920, 1056);
     let cases: Vec<Case> = vec![
         (
@@ -52,10 +53,10 @@ fn the_frame_stays_inside_the_usable_area() {
             None,
         ),
         (
-            "below: the content's foot stays inside",
+            "below: a grip's height of it stays inside",
             WindowPlacement::Floating(rect(100, 5000, 400, 300)),
             BAR,
-            rect(100, 24 + 1056 - 300, 400, 300),
+            rect(100, 24 + 1056 - 28, 400, 300),
             None,
         ),
         (
