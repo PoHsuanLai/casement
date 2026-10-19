@@ -138,7 +138,8 @@ where
     send_past_grab(&keyboard, delivery);
 }
 
-fn send_past_grab<D>(keyboard: &KeyboardHandle<D>, delivery: &KeyDelivery)
+/// Sends `delivery` to every keyboard the focused client bound, the seat's modifiers first.
+pub(super) fn send_past_grab<D>(keyboard: &KeyboardHandle<D>, delivery: &KeyDelivery)
 where
     D: SeatHandler<KeyboardFocus = WlSurface> + 'static,
 {

@@ -214,29 +214,51 @@ where
     Ok(())
 }
 
-/// Delivers a key to the focused client through smithay's keyboard `input`, which honours the
-/// input method's grab and sends the modifiers first when the key changed them (so the order on
-/// the wire is `enter`, `modifiers`, `key`). `filter` sees the modifiers and the key's symbol
-/// first and may intercept it (a binding): its answer is returned, `None` when the key was
-/// forwarded.
+/// Which way a key the filter does not intercept goes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyForward {
+    /// Through the keyboard's grab: the input method's, when it holds one.
+    Grab,
+    /// Straight to the focused client, past any grab: the lock screen's keys, which an input
+    /// method could only answer through its virtual keyboard, and the lock refuses that.
+    Focus,
+}
+
+/// Delivers a key to the focused client through smithay's keyboard `input`, which counts it
+/// and sends the modifiers first when the key changed them (so the order on the wire is
+/// `enter`, `modifiers`, `key`). `filter` sees the modifiers and the key's symbol first and may
+/// intercept it (a binding): its answer is returned, `None` when the key was forwarded. A key
+/// that is forwarded goes the way `forward` says.
 pub fn apply_key<D, T>(
     seat: &Seat<D>,
     state: &mut D,
     delivery: KeyDelivery,
+    forward: KeyForward,
     filter: impl FnOnce(&mut D, &ModifiersState, KeysymHandle<'_>) -> FilterResult<T>,
 ) -> Result<Option<T>, WaylandFault>
 where
-    D: SeatHandler + 'static,
+    D: SeatHandler<KeyboardFocus = WlSurface> + 'static,
 {
     let keyboard = seat.get_keyboard().ok_or(WaylandFault::SurfaceGone)?;
-    Ok(keyboard.input(
-        state,
-        edge::keycode_of(delivery.code),
-        edge::key_state_of(delivery.edge),
-        serial_to(delivery.serial),
-        edge::time_of(delivery.time),
-        filter,
-    ))
+    let code = edge::keycode_of(delivery.code);
+    let key_state = edge::key_state_of(delivery.edge);
+    Ok(match forward {
+        KeyForward::Grab => keyboard.input(
+            state,
+            code,
+            key_state,
+            serial_to(delivery.serial),
+            edge::time_of(delivery.time),
+            filter,
+        ),
+        KeyForward::Focus => match keyboard.input_intercept(state, code, key_state, filter).0 {
+            FilterResult::Intercept(answer) => Some(answer),
+            FilterResult::Forward => {
+                key_route::send_past_grab(&keyboard, &delivery);
+                None
+            }
+        },
+    })
 }
 
 /// Changes the repeat rate and delay every keyboard of the seat advertises (a settings

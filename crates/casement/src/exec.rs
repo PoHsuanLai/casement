@@ -238,6 +238,17 @@ fn focus_surface(state: &State, target: &KeyboardTarget) -> Option<WlSurface> {
     }
 }
 
+/// Where text input follows the keyboard: everywhere but the lock screen. An input method
+/// takes the keys and answers through its virtual keyboard, which the lock refuses, so on the
+/// lock screen its password field gets the real keys and no input method (the Mac's secure
+/// input; fcitx5 on the trial login of 2026-10-20).
+fn text_focus<'a>(target: &KeyboardTarget, focus: Option<&'a WlSurface>) -> Option<&'a WlSurface> {
+    match target {
+        KeyboardTarget::LockSurface(_) => None,
+        _ => focus,
+    }
+}
+
 /// Moves keyboard focus to what the model says holds it.
 fn keyboard(state: &mut State, target: &KeyboardTarget) {
     let focus = focus_surface(state, target);
@@ -247,7 +258,10 @@ fn keyboard(state: &mut State, target: &KeyboardTarget) {
     let followed = focus.clone();
     let left = state.wl.seat.keyboard.current_focus();
     log(seat::apply_keyboard_focus(&handle, state, focus, serial));
-    log(text_input::apply_text_focus(&handle, followed.as_ref()));
+    log(text_input::apply_text_focus(
+        &handle,
+        text_focus(target, followed.as_ref()),
+    ));
     let pointer = state.wl.seat.pointer.clone();
     pointer_constraints::on_keyboard_focus(&pointer, left.as_ref(), followed.as_ref());
 }

@@ -17,10 +17,12 @@ use casement_testkit::{Fixture, FixtureSpec, FrameCount, ShotTarget, TestOrigin}
 use std::time::Duration;
 
 use crate::protocol::consent::{asked_world, kept, program};
+use crate::protocol::text_input::Typing;
 use crate::protocol::xdg_shell::{map_toplevel, settle};
 use casement_core::Event;
 use casement_core::privilege::{UnixSeconds, Verdict};
 use casement_protocols::vocab::{Answer, Power};
+use casement_testclient::ime::input_method::InputMethodEvent;
 use casement_testclient::surface::toplevel::WmBase;
 use casement_testkit::ASKED_PROGRAM;
 
@@ -509,5 +511,63 @@ fn taking_the_power_back_does_not_end_a_lock_in_force() {
         fixture.model().lock(),
         &LockState::Unlocked,
         "only the locker unlocks, and it still can"
+    );
+}
+
+/// The screensaver locks while an input method holds the keyboard (fcitx5 on the trial login of
+/// 2026-10-20): the lock screen's password field enables text input as any field does. A real
+/// key must reach the lock surface itself, not the input method: the method can only answer
+/// through its virtual keyboard, which the lock refuses, so the field would hear nothing. The
+/// method is not activated on the lock screen and never sees the key, as the Mac turns input
+/// methods off for a password field.
+#[test]
+fn a_key_on_the_lock_screen_reaches_it_past_a_running_input_method() {
+    let mut typing = Typing::start();
+    typing.enable_and_grab();
+    let activations = |typing: &Typing| {
+        typing
+            .ime
+            .method_events()
+            .iter()
+            .filter(|line| line.event == InputMethodEvent::Activate)
+            .count()
+    };
+    let before = activations(&typing);
+    let client = typing.client;
+    let _locker = lock_with_content(&mut typing.fixture, client);
+    typing.pump();
+    typing
+        .ime
+        .enable()
+        .expect("the password field enables text input");
+    typing.pump();
+    typing.pump();
+    assert_eq!(
+        activations(&typing),
+        before,
+        "the method is not activated on the lock screen"
+    );
+    let heard = typing.ime.document_keys().len();
+    let keyboard = typing.keyboard;
+    typing.fixture.input().key(keyboard, KEY_A, Edge::Press);
+    typing.fixture.input().key(keyboard, KEY_A, Edge::Release);
+    typing.pump();
+    typing.pump();
+    assert!(
+        typing
+            .ime
+            .method_events()
+            .iter()
+            .all(|line| !matches!(line.event, InputMethodEvent::GrabKey { .. })),
+        "the method never sees a key typed on the lock screen"
+    );
+    let keys: Vec<_> = typing.ime.document_keys()[heard..]
+        .iter()
+        .map(|key| (key.key, key.state))
+        .collect();
+    assert_eq!(
+        keys,
+        vec![(30, 1), (30, 0)],
+        "the lock surface hears the key"
     );
 }

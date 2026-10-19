@@ -26,7 +26,7 @@ use casement_core::time::{Due, Mono, TimerKey};
 use casement_core::{Effect, InputSerial, KeyboardTarget, Model, SwipeOwner};
 use casement_protocols::vocab::MacMods;
 use casement_wayland::seat::{
-    self, GestureDelivery, KeyDelivery, KeyRoute, PointerDelivery, PressFate, SurfaceAt,
+    self, GestureDelivery, KeyDelivery, KeyForward, KeyRoute, PointerDelivery, PressFate, SurfaceAt,
 };
 use casement_wayland::serial::{PressKind, PressRecord};
 use casement_wayland::shortcuts_inhibit::{self, Bindings};
@@ -260,7 +260,8 @@ pub(super) fn deliver_keys(state: &mut State, seat: &Seat<State>, keys: Vec<KeyD
 /// any other key goes to the keyboard focus. While a client inhibits shortcuts, or the session
 /// is locked, no chord resolves. The release of a key a binding took is not delivered. A copy
 /// the input method sends back through its virtual keyboard goes past its grab, straight to the
-/// focus (`seat::key_route`): the real key already went through the bindings.
+/// focus (`seat::key_route`): the real key already went through the bindings. On the lock
+/// screen a key goes to the lock surface past any input method's grab (`KeyForward::Focus`).
 fn deliver_key(state: &mut State, seat: &Seat<State>, key: KeyDelivery) {
     let facts = seat::route_facts(seat, key.code);
     let (past, route) = std::mem::take(&mut state.wl.seat.past).route(&key, facts);
@@ -279,7 +280,11 @@ fn deliver_key(state: &mut State, seat: &Seat<State>, key: KeyDelivery) {
         && key.edge == Edge::Press;
     let bindings = state.core.model.settings().bindings.clone();
     let origin = key.origin;
-    let answer = seat::apply_key(seat, state, key, |state, mods, handle| {
+    let forward = match state.core.model.keyboard_target() {
+        KeyboardTarget::LockSurface(_) => KeyForward::Focus,
+        _ => KeyForward::Grab,
+    };
+    let answer = seat::apply_key(seat, state, key, forward, |state, mods, handle| {
         if key.edge == Edge::Release && fate == PressFate::Taken {
             return FilterResult::Intercept(None);
         }
