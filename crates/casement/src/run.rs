@@ -323,14 +323,9 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
     }
     let display = attach_display(display, &handle)?;
     let socket = ListeningSocketSource::new_auto()?;
-    eprintln!(
-        "casement: listening on {}",
-        socket.socket_name().to_string_lossy()
-    );
     let socket_name = socket.socket_name().to_string_lossy().into_owned();
     state.seams.child_env =
         std::mem::take(&mut state.seams.child_env).with("WAYLAND_DISPLAY", &socket_name);
-    let status = format!("listening on {socket_name}");
     // The desktop's own list of its programs is read once; each program that connects is held,
     // looked at and judged against it, so who it is is known before it asks for anything.
     let table = clients::desktop_table(&system_dir);
@@ -370,6 +365,9 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
     }
     let wayland = crate::xwayland::WaylandSocket(socket_name);
     crate::xwayland::attach(&mut state, &xwayland_config);
+    // After the X11 line (`casement: X11 display :0`), so whoever waits for the socket's line
+    // finds the display too; nothing is accepted before the loop runs.
+    eprintln!("casement: listening on {}", wayland.0);
     // Held for the run: dropping it stops the thread that hears the machine go to sleep.
     // The vkms test mode has no logind: its pause and return are signals instead.
     let _sleep = match &tty_mode {
@@ -391,6 +389,7 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
     // The Spaces are loaded and the outputs announced: register them (queued, not waited for),
     // then tell the service manager the compositor is ready.
     state.seams.space_sync.sync(state.core.model.spaces());
+    let status = ready_status(&wayland, state.xwayland.display());
     if let Err(error) = state.seams.notify.send(&Notice::Ready { status }) {
         tracing::warn!(%error, "the service manager could not be told casement is ready");
     }
@@ -443,5 +442,35 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
     match core_loop::tty::seat(&state) {
         SeatState::Gone => Err(RunError::SeatLost),
         _ => Ok(()),
+    }
+}
+
+/// What the service manager shows once casement is ready: its Wayland socket, then its X11
+/// display when X11 apps are served. The session reads both from it and hands them to the shell
+/// and every program it starts (`listening on wayland-1 X11 display :0`).
+fn ready_status(
+    wayland: &crate::xwayland::WaylandSocket,
+    x11: Option<&crate::xwayland::DisplayName>,
+) -> String {
+    match x11 {
+        Some(display) => format!("listening on {} X11 display {}", wayland.0, display.0),
+        None => format!("listening on {}", wayland.0),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ready_status;
+    use crate::xwayland::{DisplayName, WaylandSocket};
+
+    #[test]
+    fn the_ready_status_names_the_x11_display_when_there_is_one() {
+        let wayland = WaylandSocket("wayland-1".to_owned());
+        let x11 = DisplayName(":0".to_owned());
+        assert_eq!(
+            ready_status(&wayland, Some(&x11)),
+            "listening on wayland-1 X11 display :0"
+        );
+        assert_eq!(ready_status(&wayland, None), "listening on wayland-1");
     }
 }
