@@ -55,6 +55,14 @@ impl FocusView<'_> {
         self.is_shown(window) && !self.app_hidden(&window.app)
     }
 
+    /// Whether a window the person can see is stacked above `window` (a window of another app
+    /// that mapped without the key goes on top, so the key window can be under it).
+    pub(super) fn is_covered(&self, window: &Window) -> bool {
+        self.windows
+            .values()
+            .any(|other| other.stack > window.stack && self.is_visible(other))
+    }
+
     /// Every window of `app` in the app's own order, bottom first: the app's record when it
     /// has one, else by id.
     pub(super) fn windows_of(&self, app: &AppKey) -> Vec<&Window> {

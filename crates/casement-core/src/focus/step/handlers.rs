@@ -21,7 +21,8 @@ fn through_sheet<'v>(window: &'v Window, view: &'v FocusView) -> &'v Window {
 }
 
 /// A press: the route is the table's (`route_press`); an activating route moves focus to the
-/// window (rows 1, 2 and the sheet row).
+/// window (rows 1, 2 and the sheet row). A press on the key window while another window covers
+/// it also raises it, as a click on any window brings it to the front.
 pub(super) fn press(focus: Focus, press: &Press, view: &FocusView) -> Outcome {
     let route = route_press(press, &focus, view);
     let Some(window) = view.window(press.window) else {
@@ -35,6 +36,9 @@ pub(super) fn press(focus: Focus, press: &Press, view: &FocusView) -> Outcome {
         }
         PressRoute::SwallowWithBell => {
             Outcome::asking(focus, vec![FocusOut::Bell(window.app.clone())]).routing(route)
+        }
+        PressRoute::Deliver if focus.key == Some(window.id) && view.is_covered(window) => {
+            Outcome::of(focus).raising(vec![window.id]).routing(route)
         }
         PressRoute::Deliver
         | PressRoute::DeliverWithoutActivation

@@ -64,9 +64,26 @@ fn the_focus_table() {
             Outs::Exactly(vec![FocusOut::Route(PressRoute::DeliverWithoutActivation)]),
         ),
         (
-            "press on the key window delivers",
+            "press on the key window on top delivers",
             press(1, HitPart::Content, none),
-            windows(&[], vec![]),
+            windows(&[2, 3], vec![]),
+            start(),
+            Outs::Exactly(vec![FocusOut::Route(PressRoute::Deliver)]),
+        ),
+        (
+            "press on the key window under another raises it and delivers",
+            press(1, HitPart::Content, none),
+            windows(&[], vec![window(5, &b(), "s-1")]),
+            start(),
+            Outs::Including(vec![
+                FocusOut::Raise(ids(&[1])),
+                FocusOut::Route(PressRoute::Deliver),
+            ]),
+        ),
+        (
+            "press on the key window under a window off the shown Space delivers",
+            press(1, HitPart::Content, none),
+            windows(&[2, 3], vec![window(5, &b(), "s-2")]),
             start(),
             Outs::Exactly(vec![FocusOut::Route(PressRoute::Deliver)]),
         ),
