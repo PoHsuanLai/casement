@@ -375,7 +375,7 @@ dependencies = [
  "porter-core",
  "rustix 1.1.5",
  "serde",
- "shell-verbs 0.1.0",
+ "shell-verbs",
  "smithay",
  "tempfile",
  "thiserror 2.0.21",
@@ -1774,7 +1774,7 @@ dependencies = [
  "chordkit-file",
  "keycap-protocol",
  "rustix 1.1.5",
- "shell-verbs 0.1.0 (git+https://github.com/PoHsuanLai/casement-protocols?rev=79aef3be4bead802ef5748178b0e25a589624a9d)",
+ "shell-verbs",
 ]
 
 [[package]]
@@ -2912,11 +2912,6 @@ dependencies = [
 [[package]]
 name = "shell-verbs"
 version = "0.1.0"
-
-[[package]]
-name = "shell-verbs"
-version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/casement-protocols?rev=79aef3be4bead802ef5748178b0e25a589624a9d#79aef3be4bead802ef5748178b0e25a589624a9d"
 
 [[package]]
 name = "shlex"

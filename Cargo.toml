@@ -157,6 +157,11 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std", "env-filter"] }
 
 # Arithmetic that overflows is a bug, not a wrapped number, in the shipped compositor (CASC-19).
+# keycap-client pins shell-verbs by git; casement reads the sibling checkout, so the git copy is
+# patched to it and one ShellVerb type is built (the keymap test compares the two tables).
+[patch."https://github.com/PoHsuanLai/casement-protocols"]
+shell-verbs = { path = "../casement-protocols/shell-verbs" }
+
 [profile.release]
 overflow-checks = true
 
