@@ -9,6 +9,7 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+ds-helpers = { workspace = true }
 freedesktop-icons = { workspace = true }
 image = { workspace = true }
 resvg = { workspace = true }

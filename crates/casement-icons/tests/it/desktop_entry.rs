@@ -47,7 +47,7 @@ fn the_parse_reads_only_the_desktop_entry_group() {
 }
 
 #[test]
-fn an_entry_is_found_by_name_then_by_class_then_by_any_case() {
+fn an_entry_is_found_by_the_shared_rules_in_any_folder_depth() {
     let first = tempfile::tempdir().expect("scratch");
     let second = tempfile::tempdir().expect("scratch");
     entry(first.path(), "org.a.Exact", "Icon=exact");
@@ -56,6 +56,14 @@ fn an_entry_is_found_by_name_then_by_class_then_by_any_case() {
     entry(second.path(), "Mixed.Case", "Icon=by-stem");
     entry(second.path(), "dup", "Icon=second-dir");
     entry(first.path(), "dup", "Icon=first-dir");
+    std::fs::create_dir(first.path().join("kde")).expect("subfolder");
+    entry(&first.path().join("kde"), "tool", "Icon=in-folder");
+    entry(second.path(), "org.mozilla.firefox", "Icon=by-suffix");
+    entry(
+        second.path(),
+        "spotify-launcher",
+        "Icon=by-flatpak\nX-Flatpak=com.spotify.Client",
+    );
     let dirs = [first.path().to_path_buf(), second.path().to_path_buf()];
     // name, app id, icon
     let cases = [
@@ -63,6 +71,9 @@ fn an_entry_is_found_by_name_then_by_class_then_by_any_case() {
         ("the class", "Classy", Some("by-class")),
         ("the stem in another case", "mixed.case", Some("by-stem")),
         ("the first folder wins", "dup", Some("first-dir")),
+        ("a subfolder's dashed id", "kde-tool", Some("in-folder")),
+        ("the last labels of the id", "firefox", Some("by-suffix")),
+        ("the Flatpak id", "com.spotify.Client", Some("by-flatpak")),
         ("none", "nothing", None),
     ];
     for (name, app_id, icon) in cases {
