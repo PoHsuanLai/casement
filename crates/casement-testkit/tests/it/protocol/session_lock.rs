@@ -571,3 +571,60 @@ fn a_key_on_the_lock_screen_reaches_it_past_a_running_input_method() {
         "the lock surface hears the key"
     );
 }
+
+/// The lock is another program than the app and its input method (sill's lock, fcitx5 and the
+/// app the person was typing in): a key typed on the lock screen reaches the locker's keyboard
+/// and none reaches the app behind it, whether the method keeps its grab or lets it go when it
+/// is deactivated (fcitx5 lets it go at the `done` after `deactivate`).
+#[test]
+fn a_key_on_the_lock_screen_reaches_the_locker_not_the_app_under_an_input_method() {
+    for release in [GrabAfterLock::Kept, GrabAfterLock::Released] {
+        let mut typing = Typing::start();
+        typing.enable_and_grab();
+        let locker_client = typing.fixture.connect(ConnectionRole::Public);
+        typing.fixture.pump();
+        let _locker_keyboard =
+            Keyboard::bind(typing.fixture.client(locker_client)).expect("keyboard");
+        let _locker = lock_with_content(&mut typing.fixture, locker_client);
+        typing.pump();
+        if release == GrabAfterLock::Released {
+            typing
+                .ime
+                .release_grab()
+                .expect("the method lets the grab go");
+        }
+        typing.pump();
+        let app = typing.client;
+        let before = (
+            keys_received(typing.fixture.client(app)),
+            keys_received(typing.fixture.client(locker_client)),
+        );
+        let keyboard = typing.keyboard;
+        typing.fixture.input().key(keyboard, KEY_A, Edge::Press);
+        typing.fixture.input().key(keyboard, KEY_A, Edge::Release);
+        typing.pump();
+        typing.pump();
+        let after = (
+            keys_received(typing.fixture.client(app)),
+            keys_received(typing.fixture.client(locker_client)),
+        );
+        assert_eq!(
+            after.0, before.0,
+            "{release:?}: no key reaches the app behind the lock"
+        );
+        assert_eq!(
+            after.1,
+            before.1 + 2,
+            "{release:?}: the lock hears the press and the release"
+        );
+    }
+}
+
+/// What the input method does with its keyboard grab once the lock deactivated it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GrabAfterLock {
+    /// It keeps it.
+    Kept,
+    /// It lets it go, as fcitx5 does.
+    Released,
+}
