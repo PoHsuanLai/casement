@@ -136,6 +136,14 @@ fn refused(state: &State, event: &InputEvent, target: &InputTarget, use_: InputU
     )
 }
 
+/// A press of `button` that no client gets: its release is not delivered either. An agent
+/// lease's press is taken off the lease's (`agent_gate::held_back`), never put in the person's.
+fn take_button(state: &mut State, event: &InputEvent, button: casement_core::input::ButtonCode) {
+    if !agent_gate::held_back(state, event.origin, Pressed::Button(button)) {
+        state.wl.seat.taken = std::mem::take(&mut state.wl.seat.taken).take_button(button);
+    }
+}
+
 /// Whether `event` is an agent lease's release. It is delivered wherever the seat sends it, past
 /// the reach table: the gate let it through only because its press was delivered
 /// (`agent_gate::note`), and a release held back would leave the key or button down in the
@@ -581,7 +589,7 @@ fn press_on_divider(
     let Some(found) = divider::under_pointer(state, &stacked, at) else {
         return false;
     };
-    state.wl.seat.taken = std::mem::take(&mut state.wl.seat.taken).take_button(button);
+    take_button(state, event, button);
     let target = InputTarget::Window(found.leading);
     if !refused(state, event, &target, InputUse::Press) {
         divider::begin(state, found, button);
@@ -621,7 +629,7 @@ fn press_edge(
     };
     if edge == Edge::Press && overview::takes_input(state) {
         // Mission Control takes the press (a pick or a leave); no client sees it or its release.
-        state.wl.seat.taken = std::mem::take(&mut state.wl.seat.taken).take_button(button);
+        take_button(state, event, button);
         if !refused(state, event, &InputTarget::Nothing, InputUse::Press) {
             overview::press(state, event, at);
         }
@@ -633,7 +641,7 @@ fn press_edge(
     let (over, under) = frames::pick(state, at);
     if let (Some(over), Edge::Press) = (over, edge) {
         // A frame's press never reaches a client; its release is swallowed with it.
-        state.wl.seat.taken = std::mem::take(&mut state.wl.seat.taken).take_button(button);
+        take_button(state, event, button);
         let target = InputTarget::Window(over.window);
         if !refused(state, event, &target, InputUse::Press) {
             frames::press(state, seat, event, button, over);
@@ -659,7 +667,7 @@ fn press_edge(
         if edge == Edge::Press
             && !agent_gate::held_back(state, event.origin, Pressed::Button(button))
         {
-            state.wl.seat.taken = std::mem::take(&mut state.wl.seat.taken).take_button(button);
+            take_button(state, event, button);
         }
         return;
     }
