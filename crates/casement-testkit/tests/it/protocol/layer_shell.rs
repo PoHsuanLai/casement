@@ -44,7 +44,7 @@ fn events_of(client: &TestClient, object_prefix: &str) -> Vec<(String, Vec<Strin
 
 /// Maps `ask` the way a shell does: create, wait for the configure, acknowledge it and attach
 /// a buffer of the configured size.
-fn map(fixture: &mut Fixture, id: ClientId, ask: &LayerAsk) -> LayerSurface {
+pub(crate) fn map(fixture: &mut Fixture, id: ClientId, ask: &LayerAsk) -> LayerSurface {
     let layer = LayerSurface::create(fixture.client(id), ask).expect("a layer surface");
     fixture.pump();
     let configure = layer.configure().expect("the initial configure");

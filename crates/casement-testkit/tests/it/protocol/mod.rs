@@ -72,6 +72,7 @@ mod xdg_dialog;
 mod xdg_foreign;
 mod xdg_grab;
 mod xdg_shell;
+pub(crate) use layer_shell::map as map_layer;
 pub(crate) use xdg_shell::{map_toplevel, rect_of, settle, windows};
 mod xdg_toplevel_icon;
 mod xdg_toplevel_tag;

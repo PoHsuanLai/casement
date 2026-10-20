@@ -2,7 +2,7 @@
 //! what the lease's socket sends reaches the leased window and nothing else; once the lease
 //! ends, or its window closes, it reaches nothing.
 
-use crate::protocol::{map_toplevel, rect_of, settle, windows};
+use crate::protocol::{map_layer, map_toplevel, rect_of, settle, windows};
 use casement_core::DeviceId;
 use casement_core::geometry::{LogicalPoint, LogicalRect};
 use casement_core::input::{ButtonCode, DeviceClass, Edge, InputEvent, InputKind, KeyCode, Origin};
@@ -472,8 +472,9 @@ fn click_while_a_sheet_covers_the_window() -> (Fixture, ClientId, ClientId, Laye
     assert_eq!(fixture.focus_lease(&agent, lease), Ok(()));
     let shell = fixture.connect(ConnectionRole::Shell);
     fixture.pump();
-    let sheet = LayerSurface::create(
-        fixture.client(shell),
+    let sheet = map_layer(
+        &mut fixture,
+        shell,
         &LayerAsk {
             level: Layer::Overlay,
             namespace: "sheet",
@@ -482,9 +483,7 @@ fn click_while_a_sheet_covers_the_window() -> (Fixture, ClientId, ClientId, Laye
             keyboard: KeyboardInteractivity::None,
             size: (0, 0),
         },
-    )
-    .expect("layer");
-    fixture.pump();
+    );
     let rect = rect_of(&fixture, over);
     let middle = LogicalPoint {
         x: rect.origin.x + rect.size.w as i32 / 2,
