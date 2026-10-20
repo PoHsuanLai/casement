@@ -14,6 +14,8 @@ casement-protocols = { workspace = true, features = ["server"] }
 porter-core = { workspace = true }
 ds-core = { workspace = true }
 smithay = { workspace = true, features = ["wayland_frontend", "desktop"] }
+# The seat's keymap as text for the EIS keyboards (`seat_keymap::keymap_text`).
+xkbcommon = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 

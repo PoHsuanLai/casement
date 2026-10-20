@@ -18,5 +18,9 @@ reis = { workspace = true, features = ["calloop"] }
 # no bus and no process reading in this crate.
 peephole-core = { workspace = true }
 
+# The sealed memory file of a keyboard's keymap (eis_keymap.rs).
+rustix = { workspace = true }
+tracing = { workspace = true }
+
 [lints]
 workspace = true

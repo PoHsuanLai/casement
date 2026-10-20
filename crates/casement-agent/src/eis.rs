@@ -13,6 +13,7 @@
 //! Wayland role.
 //! This is the only file that names `reis` (B14). The agent seat's EIS (P4) is not here.
 
+use crate::eis_keymap::{KeymapFile, KeymapText};
 use crate::remote::{Fit, Held, RemoteFor, RemoteHandle, RemoteSlot, releases, tagged};
 use casement_core::DeviceId;
 use casement_core::geometry::{LogicalPoint, LogicalRect, SubPoint, SubPx};
@@ -28,7 +29,7 @@ use reis::request::{Connection, Device, DeviceCapability, EisRequest, Seat};
 use smithay::reexports::calloop::{EventSource, Poll, PostAction, Readiness, Token, TokenFactory};
 use std::fmt;
 use std::io;
-use std::os::fd::OwnedFd;
+use std::os::fd::{AsFd, OwnedFd};
 use std::os::unix::net::UnixStream;
 
 /// Whether `held`, the role the caller proved, is the desktop portal's backend: the one caller
@@ -131,17 +132,20 @@ pub struct RemoteGrant {
 
 /// Opens a remote EIS connection for `owner` (a portal session or an agent lease), numbered `slot` (minted by the
 /// compositor, one per connection), offering `kinds`. Absolute pointer and touch positions are
-/// over `extent` (the union of the outputs now).
+/// over `extent` (the union of the outputs now). A keyboard device is told `keymap`, the seat's
+/// keymap now, so the keycodes it sends mean what the person's layout means. A layout change
+/// later does not reach devices already made (each connection binds within moments of opening).
 pub fn open(
     owner: RemoteFor,
     slot: RemoteSlot,
     kinds: RemoteKinds,
     extent: LogicalRect,
+    keymap: KeymapText,
 ) -> io::Result<RemoteGrant> {
     let (server, client) = UnixStream::pair()?;
     server.set_nonblocking(true)?;
     let context = eis::Context::new(server)?;
-    let link = Link::new(owner, slot, kinds, extent);
+    let link = Link::new(owner, slot, kinds, extent, keymap);
     let handle = RemoteHandle::new(owner, slot, link.held.clone());
     Ok(RemoteGrant {
         source: RemoteEisSource {
@@ -215,6 +219,18 @@ impl EventSource for RemoteEisSource {
     }
 }
 
+/// Tells a new keyboard device its keymap (xkb text v1). A keymap that could not be made is
+/// logged and the device goes without: the client then waits, as it did before.
+fn send_keymap(device: &Device, keymap: Result<&KeymapFile, &io::Error>) {
+    match (keymap, device.interface::<eis::Keyboard>()) {
+        (Ok(file), Some(keyboard)) => {
+            keyboard.keymap(eis::keyboard::KeymapType::Xkb, file.size, file.fd.as_fd());
+        }
+        (Err(error), _) => tracing::warn!(%error, "a remote keyboard has no keymap"),
+        (Ok(_), None) => {}
+    }
+}
+
 /// Which of our devices a handle is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Made {
@@ -230,6 +246,7 @@ struct Link {
     slot: RemoteSlot,
     kinds: RemoteKinds,
     extent: LogicalRect,
+    keymap: KeymapText,
     seat: Option<Seat>,
     devices: Vec<(Made, Device)>,
     held: Held,
@@ -247,12 +264,19 @@ impl fmt::Debug for Link {
 }
 
 impl Link {
-    fn new(owner: RemoteFor, slot: RemoteSlot, kinds: RemoteKinds, extent: LogicalRect) -> Link {
+    fn new(
+        owner: RemoteFor,
+        slot: RemoteSlot,
+        kinds: RemoteKinds,
+        extent: LogicalRect,
+        keymap: KeymapText,
+    ) -> Link {
         Link {
             owner,
             slot,
             kinds,
             extent,
+            keymap,
             seat: None,
             devices: Vec::new(),
             held: Held::default(),
@@ -369,6 +393,8 @@ impl Link {
                 continue;
             }
             let (width, height) = (self.extent.size.w, self.extent.size.h);
+            // Made before `done`: a keyboard without its keymap is one libei clients never use.
+            let keymap = self.keymap.to_file();
             let device = seat.add_device(
                 Some(name),
                 eis::device::DeviceType::Virtual,
@@ -376,6 +402,9 @@ impl Link {
                 |device| {
                     if matches!(made, Made::PointerAbsolute | Made::Touch) {
                         device.device().region(0, 0, width, height, 1.0);
+                    }
+                    if made == Made::Keyboard {
+                        send_keymap(device, keymap.as_ref());
                     }
                 },
             );
@@ -618,6 +647,10 @@ mod tests {
     use casement_core::geometry::LogicalSize;
     use casement_core::input::PortalSessionId;
 
+    fn keymap() -> KeymapText {
+        KeymapText::new("xkb_keymap { };")
+    }
+
     fn extent() -> LogicalRect {
         LogicalRect::new(
             LogicalPoint { x: -100, y: 0 },
@@ -742,6 +775,7 @@ mod tests {
             RemoteSlot::default(),
             RemoteKinds::from_wire(7),
             extent(),
+            keymap(),
         );
         for class in [
             DeviceClass::Keyboard,
@@ -772,6 +806,7 @@ mod tests {
             RemoteSlot::default(),
             RemoteKinds::from_wire(7),
             extent(),
+            keymap(),
         );
         let input = link.tag(DeviceClass::Keyboard, InputKind::Touch(TouchStep::Cancel));
         assert_eq!(input.origin, Origin::Agent(lease));
@@ -787,6 +822,7 @@ mod tests {
             RemoteSlot::default(),
             RemoteKinds::from_wire(7),
             extent(),
+            keymap(),
         );
         link.held.key(30, Edge::Press);
         link.held.key(31, Edge::Press);
@@ -826,6 +862,7 @@ mod tests {
             RemoteSlot::default(),
             RemoteKinds::from_wire(7),
             extent(),
+            keymap(),
         )
         .expect("open");
         let RemoteGrant {
@@ -847,8 +884,16 @@ mod tests {
             RemoteSlot::default(),
             RemoteKinds::from_wire(3),
             extent(),
+            keymap(),
         )
         .expect("open");
         assert!(grant.source.link.devices.is_empty());
+        let file = grant
+            .source
+            .link
+            .keymap
+            .to_file()
+            .expect("the keymap's file");
+        assert_eq!(usize::try_from(file.size), Ok(keymap().as_str().len() + 1));
     }
 }

@@ -392,7 +392,9 @@ dependencies = [
  "casement-core",
  "peephole-core",
  "reis",
+ "rustix 1.1.5",
  "smithay",
+ "tracing",
 ]
 
 [[package]]
@@ -597,6 +599,7 @@ dependencies = [
  "smithay",
  "thiserror 2.0.21",
  "tracing",
+ "xkbcommon",
 ]
 
 [[package]]
@@ -943,7 +946,6 @@ dependencies = [
  "ds-style",
  "futures-timer",
  "notify",
- "objc2-core-foundation",
  "serde",
  "serde_json",
  "thiserror 2.0.21",

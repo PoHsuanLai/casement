@@ -12,7 +12,7 @@ use crate::State;
 use crate::clients::{Standing, insert_client};
 use crate::core_loop::{feed, tty::desktop_extent};
 use casement_agent::{
-    HandOut, RefuseWhy, RemoteEvent, RemoteFor, RemoteHandle, RemoteKinds, RoleName,
+    HandOut, KeymapText, RefuseWhy, RemoteEvent, RemoteFor, RemoteHandle, RemoteKinds, RoleName,
     agent_may_lease, hand_out, open_remote_eis, portal_may_connect,
 };
 use casement_core::input::{InputEvent, PortalSessionId};
@@ -23,6 +23,7 @@ use casement_ipc::dbus::{
 };
 use casement_wayland::ClientState;
 use casement_wayland::foreign_toplevel_list::window_of_identifier;
+use casement_wayland::seat_keymap::keymap_text;
 use porter_core::PeerIdentity;
 use smithay::reexports::calloop::channel::{Channel, Event as ChannelEvent};
 use smithay::reexports::calloop::{Error as LoopError, LoopHandle, RegistrationToken};
@@ -146,12 +147,16 @@ fn open_socket(
         return Err(ConnectRefusal::Unavailable);
     };
     let extent = desktop_extent(state);
-    let grant = open_remote_eis(owner_of, slot, RemoteKinds::from_wire(devices), extent).map_err(
-        |error| {
-            tracing::warn!(%error, "a remote input socket could not be made");
-            ConnectRefusal::Unavailable
-        },
-    )?;
+    // The seat's keymap now, the one `wl_keyboard` clients have: the keyboard device is told it.
+    let Some(keymap) = keymap_text(state.wl.seat.keymap.running()).map(KeymapText::new) else {
+        tracing::warn!("the seat's keymap could not be compiled for a remote keyboard");
+        return Err(ConnectRefusal::Unavailable);
+    };
+    let kinds = RemoteKinds::from_wire(devices);
+    let grant = open_remote_eis(owner_of, slot, kinds, extent, keymap).map_err(|error| {
+        tracing::warn!(%error, "a remote input socket could not be made");
+        ConnectRefusal::Unavailable
+    })?;
     let inserted = state.event_loop.insert_source(
         grant.source,
         move |event, (), state: &mut State| match event {

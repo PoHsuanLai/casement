@@ -11,6 +11,7 @@ use crate::states::WaylandFault;
 use casement_core::settings::XkbNames;
 use smithay::input::SeatHandler;
 use smithay::input::keyboard::{KeyboardHandle, XkbConfig};
+use xkbcommon::xkb;
 
 /// The `XkbConfig` that compiles `names`. An empty name is libxkbcommon's default for it.
 pub fn xkb_config(names: &XkbNames) -> XkbConfig<'_> {
@@ -21,6 +22,23 @@ pub fn xkb_config(names: &XkbNames) -> XkbConfig<'_> {
         variant: &names.variant,
         options: Some(names.options.clone()).filter(|options| !options.is_empty()),
     }
+}
+
+/// The keymap `names` compile to, as XKB text v1: what `wl_keyboard` clients are sent for the
+/// seat, so a remote keyboard's keycodes mean the same. `None` when the names do not compile.
+pub fn keymap_text(names: &XkbNames) -> Option<String> {
+    let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
+    let options = Some(names.options.clone()).filter(|options| !options.is_empty());
+    xkb::Keymap::new_from_names(
+        &context,
+        &names.rules,
+        &names.model,
+        &names.layout,
+        &names.variant,
+        options,
+        xkb::KEYMAP_COMPILE_NO_FLAGS,
+    )
+    .map(|keymap| keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1))
 }
 
 /// What to do about the layout a settings change asks for.
@@ -128,6 +146,16 @@ mod tests {
             layout: layout.to_owned(),
             ..CasementSettings::defaults().keyboard.layout
         }
+    }
+
+    /// The text is a keymap, and another layout is another text (a remote keyboard gets the
+    /// layout the seat has now).
+    #[test]
+    fn the_keymap_text_follows_the_layout() {
+        let us = keymap_text(&names("us")).expect("us compiles");
+        assert!(us.starts_with("xkb_keymap"));
+        assert_ne!(Some(us), keymap_text(&names("de")));
+        assert_eq!(keymap_text(&names("no-such-layout")), None);
     }
 
     #[test]
