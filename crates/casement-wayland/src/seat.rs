@@ -5,6 +5,7 @@
 //! smithay's input handles take the whole compositor state (`&mut D`), so the `apply_*`
 //! functions take the seat (a cheap handle) and the state instead of the part.
 
+mod agent_down;
 mod edge;
 mod focus_origin;
 mod grab;
@@ -16,6 +17,7 @@ mod taken;
 mod touch;
 mod under;
 
+pub use agent_down::{AgentDown, Pressed};
 pub use grab::Drag;
 pub use key_route::{
     KeyRoute, MethodGrab, PastKeys, RouteFacts, SeatHolds, deliver_past_grab, route_facts,
@@ -66,6 +68,8 @@ pub struct SeatPart<D: SeatHandler + 'static> {
     pub serials: SerialBook,
     /// The presses taken before a client saw them (their releases are taken too).
     pub taken: Taken,
+    /// The agent leases' presses delivered and still down (their releases are delivered).
+    pub agent_down: AgentDown,
     /// The interactive move or resize in progress, if any.
     pub grab: Option<Drag>,
     /// The virtual keyboard presses that went past the input method's grab (`key_route`).
@@ -107,6 +111,7 @@ impl<D: SeatHandler + 'static> SeatPart<D> {
             touch,
             serials: SerialBook::empty(),
             taken: Taken::none(),
+            agent_down: AgentDown::none(),
             grab: None,
             past: PastKeys::default(),
             cursor: CursorImageStatus::default_named(),

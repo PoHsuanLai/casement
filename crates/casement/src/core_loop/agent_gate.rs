@@ -8,18 +8,21 @@
 //!   is held by a surface that is not the leased window's client, it is dropped;
 //! - only keys, pointer motion, buttons and scrolling: no touch, gestures or switches.
 //!
-//! The release of a key or button is never stopped here (nor by the reach table, `deliver`):
-//! the lease's socket drops a release of what it does not hold, and a press that was refused
-//! takes its release with it, so what reaches the seat is the end of a press the client was
-//! given, and a key or button is never left down.
+//! A press that goes on is noted as the lease's (`seat.agent_down`, [`note`]); one held back
+//! later (the reach table refused it, or it only activated the window) is taken off again
+//! ([`held_back`]). The release of a key or button goes on exactly when its press is noted, and
+//! past the reach table (`deliver`): a client that was given a press gets its release, even after
+//! the lease ended or the window lost focus, so nothing is left down; a release of anything else
+//! reaches no one, and the person's own presses are never touched by a lease's.
 
 use super::{divider, frames, overview};
 use crate::state::State;
 use casement_core::geometry::LogicalPoint;
-use casement_core::input::{Edge, InputEvent, InputKind};
-use casement_core::{ClientKey, LeaseId};
-use casement_wayland::ClientState;
-use smithay::reexports::wayland_server::Resource;
+use casement_core::input::{Edge, InputEvent, InputKind, Origin};
+use casement_core::{LeaseId, WindowId};
+use casement_wayland::compositor::root_of;
+use casement_wayland::seat::Pressed;
+use smithay::desktop::{PopupKind, find_popup_root_surface};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 
 /// Whether an agent event goes on to delivery.
@@ -38,17 +41,20 @@ pub(super) fn gate(
     event: &InputEvent,
     at: Option<LogicalPoint>,
 ) -> Gate {
-    if is_release(&event.kind) {
-        return Gate::Open;
+    if let Some((what, Edge::Release)) = pressed_of(&event.kind) {
+        return match state.wl.seat.agent_down.holds(lease, what) {
+            true => Gate::Open,
+            false => Gate::Shut,
+        };
     }
-    let Some(client) = leased_client(state, lease) else {
+    let Some(window) = state.core.model.leases().window_of(lease) else {
         return Gate::Shut;
     };
     let shut = !allowed_kind(&event.kind)
         || overview::takes_input(state)
         || state.wl.seat.grab.is_some()
         || divider::is_dragging(state)
-        || held_by_another(state, client, &event.kind)
+        || held_by_another(state, window, &event.kind)
         || on_compositor_chrome(state, &event.kind, at);
     match shut {
         true => Gate::Shut,
@@ -56,17 +62,33 @@ pub(super) fn gate(
     }
 }
 
-fn is_release(kind: &InputKind) -> bool {
-    matches!(
-        kind,
-        InputKind::Key {
-            edge: Edge::Release,
-            ..
-        } | InputKind::Button {
-            edge: Edge::Release,
-            ..
-        }
-    )
+/// Notes a press of `lease` that went on through the gate; a release takes its press off.
+pub(super) fn note(state: &mut State, lease: LeaseId, kind: &InputKind) {
+    let down = std::mem::take(&mut state.wl.seat.agent_down);
+    state.wl.seat.agent_down = match pressed_of(kind) {
+        Some((what, Edge::Press)) => down.pressed(lease, what),
+        Some((what, Edge::Release)) => down.held_back(lease, what),
+        None => down,
+    };
+}
+
+/// Takes an agent press that was not delivered after all off its lease, so its release reaches
+/// no one. Whether `origin` was a lease's (the person's own presses are `seat.taken`'s).
+pub(super) fn held_back(state: &mut State, origin: Origin, what: Pressed) -> bool {
+    let Origin::Agent(lease) = origin else {
+        return false;
+    };
+    let down = std::mem::take(&mut state.wl.seat.agent_down);
+    state.wl.seat.agent_down = down.held_back(lease, what);
+    true
+}
+
+fn pressed_of(kind: &InputKind) -> Option<(Pressed, Edge)> {
+    match kind {
+        InputKind::Key { code, edge } => Some((Pressed::Key(*code), *edge)),
+        InputKind::Button { button, edge } => Some((Pressed::Button(*button), *edge)),
+        _ => None,
+    }
 }
 
 fn allowed_kind(kind: &InputKind) -> bool {
@@ -80,29 +102,28 @@ fn allowed_kind(kind: &InputKind) -> bool {
     )
 }
 
-/// The client of the window `lease` holds; none for a lease that ended.
-fn leased_client(state: &State, lease: LeaseId) -> Option<ClientKey> {
-    let model = &state.core.model;
-    let window = model.leases().window_of(lease)?;
-    model.windows().get(&window).map(|held| held.client)
-}
-
-fn client_of(surface: &WlSurface) -> Option<ClientKey> {
-    surface
-        .client()
-        .and_then(|client| ClientState::of(&client).map(|data| data.key))
+/// The window `surface` belongs to: the window of its subsurface tree's root, or of the popup
+/// chain that root opens from. None for a layer, a lock surface or a surface with no role.
+fn window_holding(state: &State, surface: &WlSurface) -> Option<WindowId> {
+    let shell = &state.wl.xdg_shell;
+    let root = root_of(surface);
+    shell.window_of_surface(&root).or_else(|| {
+        let popup = shell
+            .popup_surfaces
+            .values()
+            .find(|popup| *popup.wl_surface() == root)?;
+        let opener = find_popup_root_surface(&PopupKind::Xdg(popup.clone())).ok()?;
+        shell.window_of_surface(&root_of(&opener))
+    })
 }
 
 /// Whether the pointer (for pointer events) or the keyboard (for keys) is grabbed by, or
-/// focused on, a surface of another client than `leased`: a popup grab, a drag, an input
-/// method's or another app's implicit grab would carry the event there.
-fn held_by_another(state: &State, leased: ClientKey, kind: &InputKind) -> bool {
+/// focused on, a surface that is not `leased` or one of its popups: a popup grab, a drag, an
+/// input method's, another window's or another app's implicit grab would carry the event there.
+fn held_by_another(state: &State, leased: WindowId, kind: &InputKind) -> bool {
     let seat = &state.wl.seat;
     let elsewhere = |surface: Option<WlSurface>| {
-        surface
-            .as_ref()
-            .and_then(client_of)
-            .is_some_and(|client| client != leased)
+        surface.is_some_and(|surface| window_holding(state, &surface) != Some(leased))
     };
     match kind {
         InputKind::Key { .. } => elsewhere(seat.keyboard.current_focus()),

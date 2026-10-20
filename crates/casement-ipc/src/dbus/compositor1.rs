@@ -154,6 +154,7 @@ impl Compositor1 {
         window: String,
         devices: u32,
         #[zbus(header)] header: Header<'_>,
+        #[zbus(connection)] connection: &zbus::Connection,
     ) -> fdo::Result<(u64, zbus::zvariant::OwnedFd)> {
         let caller = self.proven(&header, &roles::AGENT_TIER).await?;
         let owner = sender_of(&header)?;
@@ -165,11 +166,20 @@ impl Compositor1 {
         };
         // The lease belongs to the agent tier's bus connection: when it goes, so does the lease.
         // It is watched only once a lease was granted, so a refused ask takes no room.
-        if self.portals.watch(&owner, &caller) == Watching::TableFull {
+        // A connection that left while the lease was granted is not told it went (the watch
+        // came too late), so it is asked once more now that it is watched.
+        let kept = match self.portals.watch(&owner, &caller) {
+            Watching::TableFull => Err(ConnectRefusal::TooMany),
+            Watching::Yes if !still_there(connection, &owner).await => {
+                Err(ConnectRefusal::NotTheCaller)
+            }
+            Watching::Yes => Ok(()),
+        };
+        if let Err(why) = kept {
             let _ = self
                 .answer(ConnectAsk::end_lease(lease, caller).from_owner(&owner))
                 .await;
-            return Err(ConnectRefusal::TooMany.to_error());
+            return Err(why.to_error());
         }
         Ok((lease, zbus::zvariant::OwnedFd::from(socket)))
     }
@@ -187,6 +197,17 @@ impl Compositor1 {
             ConnectReply::Refused(why) => Err(why.to_error()),
             _ => Err(ConnectRefusal::Unavailable.to_error()),
         }
+    }
+}
+
+/// Whether `owner` is still on the bus (a bus that does not answer counts as no).
+async fn still_there(connection: &zbus::Connection, owner: &str) -> bool {
+    let Ok(name) = zbus::names::BusName::try_from(owner) else {
+        return false;
+    };
+    match fdo::DBusProxy::new(connection).await {
+        Ok(bus) => bus.name_has_owner(name).await.unwrap_or(false),
+        Err(_) => false,
     }
 }
 

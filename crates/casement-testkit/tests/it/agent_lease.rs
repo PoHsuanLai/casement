@@ -2,10 +2,10 @@
 //! what the lease's socket sends reaches the leased window and nothing else; once the lease
 //! ends, or its window closes, it reaches nothing.
 
-use crate::protocol::xdg_shell::{map_toplevel, rect_of, settle, windows};
+use crate::protocol::{map_toplevel, rect_of, settle, windows};
 use casement_core::DeviceId;
 use casement_core::geometry::{LogicalPoint, LogicalRect};
-use casement_core::input::{ButtonCode, Edge, InputEvent, InputKind, Origin};
+use casement_core::input::{ButtonCode, DeviceClass, Edge, InputEvent, InputKind, Origin};
 use casement_core::policy::ConnectionRole;
 use casement_core::{LeaseId, WindowId};
 use casement_ipc::dbus::ConnectRefusal;
@@ -13,7 +13,7 @@ use casement_testclient::TestClient;
 use casement_testclient::seat::pointer::Pointer;
 use casement_testclient::surface::toplevel::{Toplevel, WmBase};
 use casement_testkit::fakes::callers;
-use casement_testkit::{ClientId, Fixture, FixtureSpec};
+use casement_testkit::{ClientId, Fixture, FixtureSpec, TestOrigin};
 use casement_wayland::foreign_toplevel_list::identifier_of;
 
 const BTN_LEFT: ButtonCode = ButtonCode(0x110);
@@ -283,4 +283,45 @@ fn a_lease_reaches_its_window_and_no_other() {
         "an ended lease reaches nothing"
     );
     assert_eq!(fixture.end_lease(&agent, lease), Ok(()), "ending twice");
+}
+
+/// A press of the lease that the desktop held back (here, on the window's title bar) never
+/// takes the person's own release of the same button: their click after it is whole.
+#[test]
+fn a_held_back_lease_press_leaves_the_persons_click_whole() {
+    let (mut fixture, [(under_id, under), (_, over)], _kept) = two_windows();
+    let (lease, _socket) = fixture
+        .lease_window(&callers::agent_tier(), &identifier_of(under), 7)
+        .expect("granted");
+    let first = uncovered(rect_of(&fixture, under), rect_of(&fixture, over));
+    click(&mut fixture, lease, first);
+    settle(&mut fixture);
+    let rect = rect_of(&fixture, under);
+    let bar = LogicalPoint {
+        x: rect.origin.x + rect.size.w as i32 / 2,
+        y: rect.origin.y + 8,
+    };
+    send(&mut fixture, lease, InputKind::MotionTo { at: bar });
+    send(
+        &mut fixture,
+        lease,
+        InputKind::Button {
+            button: BTN_LEFT,
+            edge: Edge::Press,
+        },
+    );
+    let mouse = fixture.input().plug(
+        DeviceClass::Pointer,
+        TestOrigin::Physical(DeviceClass::Pointer),
+    );
+    fixture.input().pointer_to(mouse, first);
+    let before = count(fixture.client(under_id), "wl_pointer#", "button");
+    fixture.input().button(mouse, BTN_LEFT, Edge::Press);
+    fixture.input().button(mouse, BTN_LEFT, Edge::Release);
+    fixture.pump();
+    assert_eq!(
+        count(fixture.client(under_id), "wl_pointer#", "button"),
+        before + 2,
+        "the window hears the person's press and release"
+    );
 }

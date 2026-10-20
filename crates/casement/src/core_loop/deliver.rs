@@ -27,7 +27,8 @@ use casement_core::time::{Due, Mono, TimerKey};
 use casement_core::{Effect, InputSerial, KeyboardTarget, Model, SwipeOwner};
 use casement_protocols::vocab::MacMods;
 use casement_wayland::seat::{
-    self, GestureDelivery, KeyDelivery, KeyForward, KeyRoute, PointerDelivery, PressFate, SurfaceAt,
+    self, GestureDelivery, KeyDelivery, KeyForward, KeyRoute, PointerDelivery, PressFate, Pressed,
+    SurfaceAt,
 };
 use casement_wayland::serial::{PressKind, PressRecord};
 use casement_wayland::shortcuts_inhibit::{self, Bindings};
@@ -48,10 +49,9 @@ pub(super) fn deliver(state: &mut State, event: &InputEvent) {
     if let Origin::Agent(lease) = event.origin {
         let at = pointer_at(&seat).map(|(x, y)| LogicalPoint { x, y });
         if agent_gate::gate(state, lease, event, at) == agent_gate::Gate::Shut {
-            // A press held back takes its release with it, as a refused press does.
-            take_press(state, &event.kind);
             return;
         }
+        agent_gate::note(state, lease, &event.kind);
     }
     // Mission Control keeps scrolls, gestures and touches from the windows.
     let others = matches!(
@@ -136,26 +136,10 @@ fn refused(state: &State, event: &InputEvent, target: &InputTarget, use_: InputU
     )
 }
 
-/// Remembers a press that was not delivered, so its release is not delivered either.
-fn take_press(state: &mut State, kind: &InputKind) {
-    let taken = std::mem::take(&mut state.wl.seat.taken);
-    state.wl.seat.taken = match kind {
-        InputKind::Key {
-            code,
-            edge: Edge::Press,
-        } => taken.take_key(*code),
-        InputKind::Button {
-            button,
-            edge: Edge::Press,
-        } => taken.take_button(*button),
-        _ => taken,
-    };
-}
-
 /// Whether `event` is an agent lease's release. It is delivered wherever the seat sends it, past
-/// the reach table: its press was delivered (a refused press takes its release with it, and the
-/// lease's socket drops a release of what it does not hold), and a release held back would leave
-/// the key or button down in the client and the seat after the lease ended or its window closed.
+/// the reach table: the gate let it through only because its press was delivered
+/// (`agent_gate::note`), and a release held back would leave the key or button down in the
+/// client and the seat after the lease ended or its window closed.
 fn ends_agent_press(event: &InputEvent, edge: Edge) -> bool {
     edge == Edge::Release && matches!(event.origin, Origin::Agent(_))
 }
@@ -249,6 +233,7 @@ fn key(state: &mut State, seat: &Seat<State>, event: &InputEvent, code: KeyCode,
         )
     {
         match edge {
+            Edge::Press if agent_gate::held_back(state, event.origin, Pressed::Key(code)) => {}
             Edge::Press => {
                 state.wl.seat.taken = std::mem::take(&mut state.wl.seat.taken).take_key(code);
             }
@@ -308,8 +293,15 @@ fn deliver_key(state: &mut State, seat: &Seat<State>, key: KeyDelivery) {
         }
         return;
     }
-    let (taken, fate) = std::mem::take(&mut state.wl.seat.taken).release_key(key.code);
-    state.wl.seat.taken = taken;
+    // A lease's keys are never the person's taken ones (`agent_gate`): its release delivers.
+    let fate = match key.origin {
+        Origin::Agent(_) => PressFate::Delivered,
+        _ => {
+            let (taken, fate) = std::mem::take(&mut state.wl.seat.taken).release_key(key.code);
+            state.wl.seat.taken = taken;
+            fate
+        }
+    };
     let live = matches!(state.core.model.lock(), LockState::Unlocked)
         && shortcuts_inhibit::bindings(seat) == Bindings::Active
         && key.edge == Edge::Press;
@@ -611,7 +603,8 @@ fn press_edge(
         grab::end(state, button);
         divider::end(state, button);
     }
-    if edge == Edge::Release {
+    if edge == Edge::Release && !ends_agent_press(event, edge) {
+        // A lease's release is never the end of a press the person's frame took.
         let (taken, fate) = std::mem::take(&mut state.wl.seat.taken).release_button(button);
         state.wl.seat.taken = taken;
         if fate == PressFate::Taken {
@@ -663,7 +656,9 @@ fn press_edge(
             _ => true,
         };
     if !delivered {
-        if edge == Edge::Press {
+        if edge == Edge::Press
+            && !agent_gate::held_back(state, event.origin, Pressed::Button(button))
+        {
             state.wl.seat.taken = std::mem::take(&mut state.wl.seat.taken).take_button(button);
         }
         return;
