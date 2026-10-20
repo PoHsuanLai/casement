@@ -10,7 +10,9 @@ use casement_wayland::fractional_scale;
 use ds_core::geometry::scale::Scale;
 use smithay::desktop::utils::bbox_from_surface_tree;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::wayland::compositor::{TraversalAction, with_surface_tree_downward};
+use smithay::wayland::compositor::{
+    RegionAttributes, SurfaceAttributes, TraversalAction, with_states, with_surface_tree_downward,
+};
 
 /// Brings the surface book up to date with `events`, in order.
 pub(super) fn sync(state: &mut State, events: &[Event]) {
@@ -24,6 +26,19 @@ pub(super) fn sync(state: &mut State, events: &[Event]) {
                     continue;
                 };
                 let size = bbox_from_surface_tree(&root, (0, 0)).size;
+                if let Event::LayerMapped { spec, .. } = event {
+                    // At info: a layer that covers a point takes the pointer there unless its
+                    // input region leaves the point out, so which layer it is and what region it
+                    // set is what tells a refused click's `target=Layer(_)` apart.
+                    tracing::info!(
+                        ?layer,
+                        namespace = %spec.namespace,
+                        level = ?spec.level,
+                        ?size,
+                        input = ?input_region(&root),
+                        "layer mapped"
+                    );
+                }
                 let entry = SurfaceEntry {
                     root,
                     committed: LogicalSize {
@@ -44,6 +59,18 @@ pub(super) fn sync(state: &mut State, events: &[Event]) {
             _ => {}
         }
     }
+}
+
+/// The input region `root` committed; `None` is the whole surface.
+fn input_region(root: &WlSurface) -> Option<RegionAttributes> {
+    with_states(root, |states| {
+        states
+            .cached_state
+            .get::<SurfaceAttributes>()
+            .current()
+            .input_region
+            .clone()
+    })
 }
 
 /// Each output's lock surface is drawn at its output's size.

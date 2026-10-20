@@ -135,19 +135,27 @@ pub(super) fn pointer_at(seat: &Seat<State>) -> Option<(i32, i32)> {
 }
 
 /// Whether the reach table refuses `event` on `target` for `use_`.
-fn refused(state: &State, event: &InputEvent, target: &InputTarget, use_: InputUse) -> bool {
+fn refused(
+    state: &State,
+    event: &InputEvent,
+    target: &InputTarget,
+    use_: InputUse,
+    at: Option<LogicalPoint>,
+) -> bool {
     match state.core.model.reach(&event.origin, target, use_) {
         Reach::Allowed => false,
         Reach::Refused(why) => {
             if let Origin::Agent(lease) = event.origin {
-                // At info, with what was under the pointer and what the lease holds: a refused
-                // agent click is otherwise silent, and the two keys are what tell why.
+                // At info, with what was hit at `at` (none for a key) and what the lease holds: a refused agent
+                // click is otherwise silent, and the two keys are what tell why. `cursor` is
+                // where the person's pointer was last drawn, which a refused move never changes.
                 tracing::info!(
                     lease = lease.0,
                     ?why,
                     ?use_,
                     ?target,
                     held = ?state.core.model.leases().window_of(lease),
+                    ?at,
                     cursor = ?state.render.chrome.cursor_at,
                     "agent input refused by the reach table"
                 );
@@ -259,6 +267,7 @@ fn key(state: &mut State, seat: &Seat<State>, event: &InputEvent, code: KeyCode,
             event,
             &keyboard_target(&state.core.model),
             InputUse::Key,
+            None,
         )
     {
         match edge {
@@ -540,7 +549,7 @@ fn motion(
         Some(over) => InputTarget::Window(over.window),
         None => target_of(under.as_ref().map(|(hit, _)| hit)),
     };
-    if refused(state, event, &target, InputUse::Motion) {
+    if refused(state, event, &target, InputUse::Motion, Some(logical(at))) {
         return;
     }
     frames::hover(state, over);
@@ -563,7 +572,13 @@ fn mission_control_motion(
     at: (f64, f64),
     delta: SubPoint,
 ) {
-    if refused(state, event, &InputTarget::Nothing, InputUse::Motion) {
+    if refused(
+        state,
+        event,
+        &InputTarget::Nothing,
+        InputUse::Motion,
+        Some(logical(at)),
+    ) {
         return;
     }
     overview::hover(state, logical(at));
@@ -612,7 +627,7 @@ fn press_on_divider(
     };
     take_button(state, event, button);
     let target = InputTarget::Window(found.leading);
-    if !refused(state, event, &target, InputUse::Press) {
+    if !refused(state, event, &target, InputUse::Press, Some(at)) {
         divider::begin(state, found, button);
     }
     true
@@ -651,7 +666,13 @@ fn press_edge(
     if edge == Edge::Press && overview::takes_input(state) {
         // Mission Control takes the press (a pick or a leave); no client sees it or its release.
         take_button(state, event, button);
-        if !refused(state, event, &InputTarget::Nothing, InputUse::Press) {
+        if !refused(
+            state,
+            event,
+            &InputTarget::Nothing,
+            InputUse::Press,
+            Some(at),
+        ) {
             overview::press(state, event, at);
         }
         return;
@@ -664,7 +685,7 @@ fn press_edge(
         // A frame's press never reaches a client; its release is swallowed with it.
         take_button(state, event, button);
         let target = InputTarget::Window(over.window);
-        if !refused(state, event, &target, InputUse::Press) {
+        if !refused(state, event, &target, InputUse::Press, Some(at)) {
             frames::press(state, seat, event, button, over);
         }
         return;
@@ -672,7 +693,7 @@ fn press_edge(
     let target = target_of(under.as_ref().map(|(hit, _)| hit));
     let surface = under.as_ref().map(|(_, at)| at.surface.clone());
     let delivered = (ends_agent_press(event, edge)
-        || !refused(state, event, &target, InputUse::Press))
+        || !refused(state, event, &target, InputUse::Press, Some(at)))
         && match (&under, edge) {
             (Some((Hit::Window(window), _)), Edge::Press) => {
                 deliver_press(state, seat, event, *window)
@@ -777,7 +798,13 @@ fn deliver_press(
 /// One scroll frame to the client under the pointer.
 fn scroll(state: &mut State, seat: &Seat<State>, event: &InputEvent, frame: AxisFrame) {
     if let Some(under) = under_pointer(state, seat)
-        && !refused(state, event, &target_of(Some(&under.0)), InputUse::Scroll)
+        && !refused(
+            state,
+            event,
+            &target_of(Some(&under.0)),
+            InputUse::Scroll,
+            seat_point(seat),
+        )
     {
         log(seat::apply_axis(seat, state, frame, event.at));
     }
@@ -791,6 +818,7 @@ fn gesture(state: &mut State, seat: &Seat<State>, event: &InputEvent, step: Gest
             event,
             &target_of(Some(&under.0)),
             InputUse::SystemGesture,
+            seat_point(seat),
         )
     {
         log(seat::apply_gesture(
@@ -805,29 +833,27 @@ fn gesture(state: &mut State, seat: &Seat<State>, event: &InputEvent, step: Gest
 
 /// What is under the pointer now.
 fn under_pointer(state: &State, seat: &Seat<State>) -> Option<(Hit, SurfaceAt)> {
-    let here = pointer_at(seat)?;
-    frames::pick(
-        state,
-        LogicalPoint {
-            x: here.0,
-            y: here.1,
-        },
-    )
-    .1
+    frames::pick(state, seat_point(seat)?).1
+}
+
+/// Where the seat's pointer is, as a logical point.
+fn seat_point(seat: &Seat<State>) -> Option<LogicalPoint> {
+    pointer_at(seat).map(|(x, y)| LogicalPoint { x, y })
 }
 
 /// A touch step; a touch going down is hit-tested where it lands.
 fn touch(state: &mut State, seat: &Seat<State>, event: &InputEvent, step: TouchStep) {
-    let under = match step {
-        TouchStep::Down { at, .. } => hit_test(&stack(state), at),
+    let down_at = match step {
+        TouchStep::Down { at, .. } => Some(at),
         _ => None,
     };
+    let under = down_at.and_then(|at| hit_test(&stack(state), at));
     let target = target_of(under.as_ref().map(|(hit, _)| hit));
     let use_ = match step {
         TouchStep::Down { .. } | TouchStep::Up { .. } => InputUse::Press,
         _ => InputUse::Motion,
     };
-    if refused(state, event, &target, use_) {
+    if refused(state, event, &target, use_, down_at) {
         return;
     }
     let serial = next_serial();
