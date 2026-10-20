@@ -375,7 +375,7 @@ dependencies = [
  "porter-core",
  "rustix 1.1.5",
  "serde",
- "shell-verbs",
+ "shell-verbs 0.1.0",
  "smithay",
  "tempfile",
  "thiserror 2.0.21",
@@ -1017,7 +1017,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -1768,18 +1768,19 @@ dependencies = [
 [[package]]
 name = "keycap-client"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/keycap?rev=ab8021b2531b262fe452e55e574a5a80917848ac#ab8021b2531b262fe452e55e574a5a80917848ac"
+source = "git+https://github.com/PoHsuanLai/keycap?rev=ffcc2dbb0c9b6fffd123f94777352cb59250282d#ffcc2dbb0c9b6fffd123f94777352cb59250282d"
 dependencies = [
  "chordkit",
  "chordkit-file",
  "keycap-protocol",
  "rustix 1.1.5",
+ "shell-verbs 0.1.0 (git+https://github.com/PoHsuanLai/casement-protocols?rev=79aef3be4bead802ef5748178b0e25a589624a9d)",
 ]
 
 [[package]]
 name = "keycap-protocol"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/keycap?rev=ab8021b2531b262fe452e55e574a5a80917848ac#ab8021b2531b262fe452e55e574a5a80917848ac"
+source = "git+https://github.com/PoHsuanLai/keycap?rev=ffcc2dbb0c9b6fffd123f94777352cb59250282d#ffcc2dbb0c9b6fffd123f94777352cb59250282d"
 dependencies = [
  "serde",
  "serde_json",
@@ -2788,7 +2789,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -2911,6 +2912,11 @@ dependencies = [
 [[package]]
 name = "shell-verbs"
 version = "0.1.0"
+
+[[package]]
+name = "shell-verbs"
+version = "0.1.0"
+source = "git+https://github.com/PoHsuanLai/casement-protocols?rev=79aef3be4bead802ef5748178b0e25a589624a9d#79aef3be4bead802ef5748178b0e25a589624a9d"
 
 [[package]]
 name = "shlex"
@@ -3172,7 +3178,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.5",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]

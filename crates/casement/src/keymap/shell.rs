@@ -252,9 +252,7 @@ mod tests {
             };
             assert_eq!(keycap_client::handler(action), want, "{}", action.slug());
         }
-        assert!(
-            keycap_client::handled_actions().all(|(action, _)| shell_action(action).is_some())
-        );
+        assert!(keycap_client::handled_actions().all(|(action, _)| shell_action(action).is_some()));
     }
 
     #[test]
