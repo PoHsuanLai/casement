@@ -7,6 +7,7 @@
 //! remembered (`seat.taken`), so their releases are not delivered either. Keys wait at the
 //! text-input gate while an input method is about to grab the keyboard.
 
+use super::agent_gate;
 use super::divider;
 use super::frames;
 use super::grab;
@@ -44,6 +45,14 @@ const ESCAPE: u32 = 0xff1b;
 /// logged: the loop degrades, it does not stop).
 pub(super) fn deliver(state: &mut State, event: &InputEvent) {
     let seat = state.wl.seat.seat.clone();
+    if let Origin::Agent(lease) = event.origin {
+        let at = pointer_at(&seat).map(|(x, y)| LogicalPoint { x, y });
+        if agent_gate::gate(state, lease, event, at) == agent_gate::Gate::Shut {
+            // A press held back takes its release with it, as a refused press does.
+            take_press(state, &event.kind);
+            return;
+        }
+    }
     // Mission Control keeps scrolls, gestures and touches from the windows.
     let others = matches!(
         event.kind,
@@ -127,6 +136,30 @@ fn refused(state: &State, event: &InputEvent, target: &InputTarget, use_: InputU
     )
 }
 
+/// Remembers a press that was not delivered, so its release is not delivered either.
+fn take_press(state: &mut State, kind: &InputKind) {
+    let taken = std::mem::take(&mut state.wl.seat.taken);
+    state.wl.seat.taken = match kind {
+        InputKind::Key {
+            code,
+            edge: Edge::Press,
+        } => taken.take_key(*code),
+        InputKind::Button {
+            button,
+            edge: Edge::Press,
+        } => taken.take_button(*button),
+        _ => taken,
+    };
+}
+
+/// Whether `event` is an agent lease's release. It is delivered wherever the seat sends it, past
+/// the reach table: its press was delivered (a refused press takes its release with it, and the
+/// lease's socket drops a release of what it does not hold), and a release held back would leave
+/// the key or button down in the client and the seat after the lease ended or its window closed.
+fn ends_agent_press(event: &InputEvent, edge: Edge) -> bool {
+    edge == Edge::Release && matches!(event.origin, Origin::Agent(_))
+}
+
 /// What a hit lands on, as the reach table names it.
 fn target_of(hit: Option<&Hit>) -> InputTarget {
     match hit {
@@ -207,12 +240,14 @@ fn keyboard_target(model: &Model) -> InputTarget {
 /// (the first key after a field is enabled must reach the method, not the document); the keys
 /// the gate lets go are then delivered ([`deliver_keys`]).
 fn key(state: &mut State, seat: &Seat<State>, event: &InputEvent, code: KeyCode, edge: Edge) {
-    if refused(
-        state,
-        event,
-        &keyboard_target(&state.core.model),
-        InputUse::Key,
-    ) {
+    if !ends_agent_press(event, edge)
+        && refused(
+            state,
+            event,
+            &keyboard_target(&state.core.model),
+            InputUse::Key,
+        )
+    {
         match edge {
             Edge::Press => {
                 state.wl.seat.taken = std::mem::take(&mut state.wl.seat.taken).take_key(code);
@@ -312,7 +347,7 @@ fn deliver_key(state: &mut State, seat: &Seat<State>, key: KeyDelivery) {
             .raw_latin_sym_or_raw_current_sym()
             .is_some_and(|sym| sym.raw() == ESCAPE)
             && chord_mods(mods) == MacMods::NONE;
-        if live && escape && overview::escape_leaves(state) {
+        if live && escape && origin.fires_bindings() && overview::escape_leaves(state) {
             return FilterResult::Intercept(Some(BindingAction::Desktop(
                 DesktopCommand::MissionControl,
             )));
@@ -532,6 +567,7 @@ fn pressed(
     edge: Edge,
 ) {
     let ends_grab = edge == Edge::Release
+        && !ends_agent_press(event, edge)
         && (grab::ends_with(state, button) || divider::ends_with(state, button));
     press_edge(state, seat, event, button, edge);
     if ends_grab {
@@ -568,10 +604,14 @@ fn press_edge(
     button: casement_core::input::ButtonCode,
     edge: Edge,
 ) {
-    if edge == Edge::Release {
+    if edge == Edge::Release && !ends_agent_press(event, edge) {
+        // An agent lease never starts the compositor's own interactions (`agent_gate`), so its
+        // release ends none of the person's.
         overview::released(state);
         grab::end(state, button);
         divider::end(state, button);
+    }
+    if edge == Edge::Release {
         let (taken, fate) = std::mem::take(&mut state.wl.seat.taken).release_button(button);
         state.wl.seat.taken = taken;
         if fate == PressFate::Taken {
@@ -609,7 +649,8 @@ fn press_edge(
     }
     let target = target_of(under.as_ref().map(|(hit, _)| hit));
     let surface = under.as_ref().map(|(_, at)| at.surface.clone());
-    let delivered = !refused(state, event, &target, InputUse::Press)
+    let delivered = (ends_agent_press(event, edge)
+        || !refused(state, event, &target, InputUse::Press))
         && match (&under, edge) {
             (Some((Hit::Window(window), _)), Edge::Press) => {
                 deliver_press(state, seat, event, *window)

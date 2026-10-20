@@ -12,6 +12,7 @@ use super::commit::Phase;
 use crate::convert::size_to;
 use crate::serial::{PressKind, PressRecord};
 use casement_core::geometry::{LogicalPoint, LogicalSize};
+use casement_core::input::Origin;
 use casement_core::{
     ClientKey, Event, InputSerial, OpeningRoom, OutputKey, ResizeEdges, ToplevelRequest, WindowId,
 };
@@ -31,10 +32,15 @@ pub enum GrabUse {
 
 /// Whether the press `record` (what the seat remembers of the serial the client sent, if it
 /// was delivered to that client and is recent) is proof enough for `use_`.
+///
+/// An agent lease's press is never proof of a drag: an interactive move or resize is the
+/// compositor's own interaction, which the agent never drives (a popup grab inside its window is
+/// still allowed: a menu it opened).
 pub fn grab_proven(record: Option<&PressRecord>, use_: GrabUse) -> bool {
-    match (record.map(|press| press.kind), use_) {
+    match (record.map(|press| (press.kind, press.origin)), use_) {
         (None, _) => false,
-        (Some(PressKind::Key | PressKind::Release), GrabUse::Drag) => false,
+        (Some((_, Origin::Agent(_))), GrabUse::Drag) => false,
+        (Some((PressKind::Key | PressKind::Release, _)), GrabUse::Drag) => false,
         (Some(_), GrabUse::Drag | GrabUse::AnyPress) => true,
     }
 }
@@ -199,6 +205,18 @@ mod tests {
             origin: Origin::Physical(DeviceClass::Pointer),
             button: None,
         }
+    }
+
+    /// An agent lease's button press opens a menu in its window but never starts a move or a
+    /// resize.
+    #[test]
+    fn an_agent_press_is_no_proof_of_a_drag() {
+        let agent = PressRecord {
+            origin: Origin::Agent(casement_core::LeaseId(3)),
+            ..press(PressKind::Button)
+        };
+        assert!(!grab_proven(Some(&agent), GrabUse::Drag));
+        assert!(grab_proven(Some(&agent), GrabUse::AnyPress));
     }
 
     /// A press proves a drag unless it was a key; no press proves nothing.

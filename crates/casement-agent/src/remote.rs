@@ -83,6 +83,9 @@ pub(crate) enum Fit {
     Held,
     /// The set is full ([`MAX_HELD`]); the press is to be dropped.
     Full,
+    /// A release of what the connection does not hold: to be dropped, so a connection can never
+    /// let go of a key or button someone else (the person) is holding.
+    Unheld,
 }
 
 #[derive(Debug, Default)]
@@ -137,10 +140,10 @@ fn note(set: &mut BTreeSet<u32>, code: u32, edge: Edge) -> Fit {
             set.insert(code);
             Fit::Held
         }
-        Edge::Release => {
-            set.remove(&code);
-            Fit::Held
-        }
+        Edge::Release => match set.remove(&code) {
+            true => Fit::Held,
+            false => Fit::Unheld,
+        },
     }
 }
 
@@ -283,6 +286,16 @@ mod tests {
         );
         assert_eq!(held.key(3, Edge::Release), Fit::Held);
         assert_eq!(held.key(cap, Edge::Press), Fit::Held, "room again");
+        assert_eq!(
+            held.key(3, Edge::Release),
+            Fit::Unheld,
+            "a key let go once is not let go again"
+        );
+        assert_eq!(
+            held.button(0x110, Edge::Release),
+            Fit::Unheld,
+            "never pressed"
+        );
     }
 
     #[test]

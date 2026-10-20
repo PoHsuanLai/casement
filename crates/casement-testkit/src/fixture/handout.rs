@@ -128,6 +128,39 @@ impl Fixture {
         }
     }
 
+    /// `caller` asking for a lease on the window whose foreign-toplevel identifier is `window`
+    /// (`LeaseWindow`'s decision, `casement::connect::answer`) with the `devices` bit set.
+    /// Granted, the lease's number and the client end of its input socket; refused, the reason
+    /// the D-Bus caller is told.
+    pub fn lease_window(
+        &mut self,
+        caller: &Proven,
+        window: &str,
+        devices: u32,
+    ) -> Result<(u64, OwnedFd), ConnectRefusal> {
+        match connect::answer(
+            &mut self.state,
+            ConnectAsk::lease_window(window, devices, caller.clone()),
+        ) {
+            ConnectReply::Leased { lease, socket } => Ok((lease, socket)),
+            ConnectReply::Refused(why) => Err(why),
+            _ => Err(ConnectRefusal::Unavailable),
+        }
+    }
+
+    /// `caller` asking to end `lease` (`EndLease`'s decision). Granted, nothing; refused, the
+    /// reason the D-Bus caller is told.
+    pub fn end_lease(&mut self, caller: &Proven, lease: u64) -> Result<(), ConnectRefusal> {
+        match connect::answer(
+            &mut self.state,
+            ConnectAsk::end_lease(lease, caller.clone()),
+        ) {
+            ConnectReply::Ended => Ok(()),
+            ConnectReply::Refused(why) => Err(why),
+            _ => Err(ConnectRefusal::Unavailable),
+        }
+    }
+
     /// An input event from a remote session, by the path a remote socket's input takes into
     /// the model, then a pump.
     pub fn deliver_remote(&mut self, event: InputEvent) {

@@ -7,6 +7,7 @@
 
 use super::connect_ask::{ConnectAsk, ConnectRefusal, Proven};
 use super::intake::Intake;
+use peephole_bus::peephole_core::roles;
 use std::collections::BTreeMap;
 use std::future::poll_fn;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -25,22 +26,28 @@ const RETRY_AFTER: Duration = Duration::from_millis(250);
 /// How often to ask again before giving up.
 const RETRIES: u32 = 40;
 
-/// The connections that asked for remote sockets, and who each had proven to be.
+/// The connections that asked for remote sockets or leases, and who each had proven to be. The
+/// agent tier's connections are kept apart from the portal's, each table with its own room, so
+/// one cannot fill the other's.
 #[derive(Debug, Default)]
 pub struct PortalWatch {
-    watched: Mutex<BTreeMap<String, Proven>>,
+    portal: Mutex<BTreeMap<String, Proven>>,
+    agent: Mutex<BTreeMap<String, Proven>>,
 }
 
 impl PortalWatch {
-    /// Starts watching the connection `owner`, which proved to be `portal`.
-    pub fn watch(&self, owner: &str, portal: &Proven) -> Watching {
-        let mut watched = self.watched.lock().unwrap_or_else(PoisonError::into_inner);
+    /// Starts watching the connection `owner`, which proved to be `caller`.
+    pub fn watch(&self, owner: &str, caller: &Proven) -> Watching {
+        let mut watched = self
+            .table_of(caller)
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         if watched.contains_key(owner) {
             return Watching::Yes;
         }
         match watched.len() < MAX_WATCHED {
             true => {
-                watched.insert(owner.to_owned(), portal.clone());
+                watched.insert(owner.to_owned(), caller.clone());
                 Watching::Yes
             }
             false => Watching::TableFull,
@@ -49,10 +56,19 @@ impl PortalWatch {
 
     /// Stops watching `owner` because it left; who it had proven to be, if it was watched.
     pub fn left(&self, owner: &str) -> Option<Proven> {
-        self.watched
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .remove(owner)
+        [&self.portal, &self.agent].into_iter().find_map(|table| {
+            table
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .remove(owner)
+        })
+    }
+
+    fn table_of(&self, caller: &Proven) -> &Mutex<BTreeMap<String, Proven>> {
+        match caller.role == roles::AGENT_TIER {
+            true => &self.agent,
+            false => &self.portal,
+        }
     }
 }
 
@@ -113,7 +129,23 @@ async fn tell_the_loop(intake: &Intake, ask: ConnectAsk) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use peephole_bus::peephole_core::{AppKey, roles};
+    use peephole_bus::peephole_core::AppKey;
+
+    /// The agent tier filling its table leaves the portal's room alone.
+    #[test]
+    fn the_agent_tier_cannot_fill_the_portals_table() {
+        let watch = PortalWatch::default();
+        let agent = Proven::new(
+            AppKey::new("org.quire.Cua").expect("an app"),
+            roles::AGENT_TIER,
+        );
+        for n in 0..MAX_WATCHED {
+            assert_eq!(watch.watch(&format!(":2.{n}"), &agent), Watching::Yes);
+        }
+        assert_eq!(watch.watch(":2.99", &agent), Watching::TableFull);
+        assert_eq!(watch.watch(":1.5", &portal()), Watching::Yes);
+        assert_eq!(watch.left(":2.0"), Some(agent));
+    }
 
     fn portal() -> Proven {
         Proven::new(

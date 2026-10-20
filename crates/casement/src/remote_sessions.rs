@@ -85,6 +85,24 @@ impl RemoteSessions {
             .collect()
     }
 
+    /// How many leases the bus connection `owner` holds open.
+    pub fn leases_of(&self, owner: Option<&str>) -> usize {
+        self.open
+            .values()
+            .filter(|open| matches!(open.handle.owner(), RemoteFor::Agent(_)))
+            .filter(|open| open.owner.as_deref() == owner)
+            .count()
+    }
+
+    /// Who asked for the open connection of `owner_of`, if it is open: the bus connection
+    /// (its unique name), when known.
+    pub fn asked_by(&self, owner_of: RemoteFor) -> Option<Option<&str>> {
+        self.open
+            .values()
+            .find(|open| open.handle.owner() == owner_of)
+            .map(|open| open.owner.as_deref())
+    }
+
     /// How many connections are open.
     pub fn len(&self) -> usize {
         self.open.len()

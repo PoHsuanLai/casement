@@ -3,6 +3,7 @@
 //! One integration binary: every former `tests/*.rs` is a module here, and `support` is shared.
 
 mod adopt;
+mod agent_lease;
 mod bindings;
 mod fixture;
 mod globals;

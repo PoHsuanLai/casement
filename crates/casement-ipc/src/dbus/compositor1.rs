@@ -156,23 +156,33 @@ impl Compositor1 {
         #[zbus(header)] header: Header<'_>,
     ) -> fdo::Result<(u64, zbus::zvariant::OwnedFd)> {
         let caller = self.proven(&header, &roles::AGENT_TIER).await?;
+        let owner = sender_of(&header)?;
+        let ask = ConnectAsk::lease_window(&window, devices, caller.clone()).from_owner(&owner);
+        let (lease, socket) = match self.answer(ask).await? {
+            ConnectReply::Leased { lease, socket } => (lease, socket),
+            ConnectReply::Refused(why) => return Err(why.to_error()),
+            _ => return Err(ConnectRefusal::Unavailable.to_error()),
+        };
         // The lease belongs to the agent tier's bus connection: when it goes, so does the lease.
-        let owner = self.watched_owner(&header, &caller)?;
-        let ask = ConnectAsk::lease_window(&window, devices, caller).from_owner(&owner);
-        match self.answer(ask).await? {
-            ConnectReply::Leased { lease, socket } => {
-                Ok((lease, zbus::zvariant::OwnedFd::from(socket)))
-            }
-            ConnectReply::Refused(why) => Err(why.to_error()),
-            _ => Err(ConnectRefusal::Unavailable.to_error()),
+        // It is watched only once a lease was granted, so a refused ask takes no room.
+        if self.portals.watch(&owner, &caller) == Watching::TableFull {
+            let _ = self
+                .answer(ConnectAsk::end_lease(lease, caller).from_owner(&owner))
+                .await;
+            return Err(ConnectRefusal::TooMany.to_error());
         }
+        Ok((lease, zbus::zvariant::OwnedFd::from(socket)))
     }
 
     /// `EndLease(lease: t)`: the lease's input stops and its socket closes. Only the agent tier
     /// may ask, as for `LeaseWindow`.
     async fn end_lease(&self, lease: u64, #[zbus(header)] header: Header<'_>) -> fdo::Result<()> {
         let caller = self.proven(&header, &roles::AGENT_TIER).await?;
-        match self.answer(ConnectAsk::end_lease(lease, caller)).await? {
+        let owner = sender_of(&header)?;
+        match self
+            .answer(ConnectAsk::end_lease(lease, caller).from_owner(&owner))
+            .await?
+        {
             ConnectReply::Ended => Ok(()),
             ConnectReply::Refused(why) => Err(why.to_error()),
             _ => Err(ConnectRefusal::Unavailable.to_error()),
@@ -180,14 +190,19 @@ impl Compositor1 {
     }
 }
 
+/// The unique bus name of the connection that sent `header`.
+fn sender_of(header: &Header<'_>) -> fdo::Result<String> {
+    header
+        .sender()
+        .map(|name| name.as_str().to_owned())
+        .ok_or_else(|| ConnectRefusal::NotTheCaller.to_error())
+}
+
 impl Compositor1 {
     /// The unique bus name of the connection that sent `header`, now watched so what it asked
     /// for ends when it leaves the bus.
     fn watched_owner(&self, header: &Header<'_>, caller: &Proven) -> fdo::Result<String> {
-        let owner = header
-            .sender()
-            .map(|name| name.as_str().to_owned())
-            .ok_or_else(|| ConnectRefusal::NotTheCaller.to_error())?;
+        let owner = sender_of(header)?;
         match self.portals.watch(&owner, caller) {
             Watching::Yes => Ok(owner),
             Watching::TableFull => Err(ConnectRefusal::TooMany.to_error()),

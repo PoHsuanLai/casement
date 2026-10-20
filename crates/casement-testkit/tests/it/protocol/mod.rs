@@ -71,6 +71,6 @@ mod xdg_decoration;
 mod xdg_dialog;
 mod xdg_foreign;
 mod xdg_grab;
-mod xdg_shell;
+pub(crate) mod xdg_shell;
 mod xdg_toplevel_icon;
 mod xdg_toplevel_tag;

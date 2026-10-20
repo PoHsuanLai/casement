@@ -28,6 +28,7 @@ mod overview;
 mod picture;
 mod pip;
 pub mod privilege;
+pub use leases::Leasable;
 mod published;
 mod query;
 mod requests;

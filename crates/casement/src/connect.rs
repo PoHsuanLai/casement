@@ -16,7 +16,7 @@ use casement_agent::{
     agent_may_lease, hand_out, open_remote_eis, portal_may_connect,
 };
 use casement_core::input::{InputEvent, PortalSessionId};
-use casement_core::{Event, LeaseId};
+use casement_core::{Event, Leasable, LeaseId};
 use casement_ipc::dbus::{
     ConnectAsk, ConnectCall, ConnectRefusal, ConnectReply, EndAsk, EndLeaseAsk, GoneAsk, LeaseAsk,
     RemoteAsk,
@@ -61,7 +61,7 @@ pub fn answer(state: &mut State, ask: ConnectAsk) -> ConnectReply {
         return answer_lease(state, lease, ask.owner, &ask.caller.role);
     }
     if let Some(end) = ask.end_lease {
-        return answer_end_lease(state, end, &ask.caller.role);
+        return answer_end_lease(state, end, ask.owner.as_deref(), &ask.caller.role);
     }
     let handed = match hand_out(&ask.role, &ask.caller.role) {
         HandOut::Granted(handed) => handed,
@@ -178,6 +178,14 @@ fn open_socket(
     }
 }
 
+/// The most leases one bus connection of the agent tier may hold at once: a run leases one
+/// window, so a few is plenty, and each lease holds a socket and a loop source.
+pub const MAX_LEASES: usize = 8;
+
+/// The keyboard and pointer bits of a device set.
+const KEYBOARD: u32 = 1;
+const POINTER: u32 = 2;
+
 /// Whether the caller holds the agent tier's role: the one caller that may lease a window
 /// (the bus thread proved the role; this is the second line).
 fn agent_only(caller: &RoleName) -> Result<(), ConnectRefusal> {
@@ -200,14 +208,22 @@ pub fn answer_lease(
     if let Err(why) = agent_only(caller) {
         return ConnectReply::Refused(why);
     }
-    let window = window_of_identifier(&ask.window)
-        .filter(|window| state.core.model.windows().contains_key(window));
-    let Some(window) = window else {
+    let Some(window) = window_of_identifier(&ask.window) else {
         return ConnectReply::Refused(ConnectRefusal::NoSuchWindow);
     };
+    match state.core.model.leasable(window) {
+        Leasable::Yes => {}
+        Leasable::NoSuchWindow => return ConnectReply::Refused(ConnectRefusal::NoSuchWindow),
+        Leasable::Shell => return ConnectReply::Refused(ConnectRefusal::NotLeasable),
+    }
+    if state.agent.remote.leases_of(owner.as_deref()) >= MAX_LEASES {
+        return ConnectReply::Refused(ConnectRefusal::TooMany);
+    }
     let lease = mint_lease(state);
     feed(state, vec![Event::LeaseGranted { lease, window }]);
-    match open_socket(state, RemoteFor::Agent(lease), ask.devices, owner) {
+    // Keys and the pointer only: the gate drops an agent's touch (`core_loop::agent_gate`).
+    let devices = ask.devices & (KEYBOARD | POINTER);
+    match open_socket(state, RemoteFor::Agent(lease), devices, owner) {
         Ok(socket) => ConnectReply::Leased {
             lease: lease.0,
             socket,
@@ -227,14 +243,25 @@ fn mint_lease(state: &mut State) -> LeaseId {
     lease
 }
 
-/// Decides one `EndLease`: only the agent tier may end a lease. Its socket is taken out of the
-/// loop, what it held is let go, and the model forgets the lease. A lease that is not open is
-/// not an error.
-pub fn answer_end_lease(state: &mut State, end: EndLeaseAsk, caller: &RoleName) -> ConnectReply {
+/// Decides one `EndLease`: only the agent tier may end a lease, and only from the bus connection
+/// that asked for it. Its socket is taken out of the loop, what it held is let go, and the model
+/// forgets the lease. A lease that is not open is not an error.
+pub fn answer_end_lease(
+    state: &mut State,
+    end: EndLeaseAsk,
+    owner: Option<&str>,
+    caller: &RoleName,
+) -> ConnectReply {
     if let Err(why) = agent_only(caller) {
         return ConnectReply::Refused(why);
     }
     let lease = LeaseId(end.lease);
+    match state.agent.remote.asked_by(RemoteFor::Agent(lease)) {
+        Some(asked) if asked != owner => {
+            return ConnectReply::Refused(ConnectRefusal::NotTheCaller);
+        }
+        _ => {}
+    }
     let ended = state.agent.remote.end_for(RemoteFor::Agent(lease));
     close(state, ended);
     end_lease_of(state, RemoteFor::Agent(lease));

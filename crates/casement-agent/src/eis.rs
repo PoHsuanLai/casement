@@ -388,7 +388,7 @@ impl Link {
     fn input(&mut self, request: EisRequest) -> Vec<RemoteInput> {
         let (class, kind) = match request {
             EisRequest::KeyboardKey(key) => {
-                if self.held.key(key.key, key_edge(key.state)) == Fit::Full {
+                if self.held.key(key.key, key_edge(key.state)) != Fit::Held {
                     return Vec::new();
                 }
                 (DeviceClass::Keyboard, key_kind(key.key, key.state))
@@ -401,7 +401,7 @@ impl Link {
                 motion_to_kind(self.extent, motion.dx_absolute, motion.dy_absolute),
             ),
             EisRequest::Button(button) => {
-                if self.held.button(button.button, button_edge(button.state)) == Fit::Full {
+                if self.held.button(button.button, button_edge(button.state)) != Fit::Held {
                     return Vec::new();
                 }
                 (

@@ -9,6 +9,7 @@
 use crate::serial::PressRecord;
 use crate::states::GlobalFilter;
 use casement_core::focus::TokenCheck;
+use casement_core::input::Origin;
 use casement_core::time::Mono;
 use casement_core::{ClientKey, Event, ToplevelRequest, WindowId};
 use smithay::reexports::wayland_protocols::xdg::activation::v1::server::xdg_activation_v1::XdgActivationV1;
@@ -96,9 +97,11 @@ pub enum TokenVerdict {
 }
 
 /// Whether the press `record` (what the seat remembers of the serial the token carried, for the
-/// asking client) earns a token requested at `now`.
+/// asking client) earns a token requested at `now`. An agent lease's press earns none: the
+/// agent drives one window, and a token would let that app bring another to the front.
 pub fn proof_of(record: Option<&PressRecord>, now: Mono) -> PressProof {
     match record {
+        Some(press) if matches!(press.origin, Origin::Agent(_)) => PressProof::Unproven,
         Some(press) if now.since(press.at) <= TOKEN_LIFETIME => PressProof::Pressed,
         Some(_) | None => PressProof::Unproven,
     }
@@ -212,6 +215,20 @@ mod tests {
             by: Some(ClientKey(1)),
             proof,
         }
+    }
+
+    /// An agent lease's press earns no activation token, however fresh.
+    #[test]
+    fn an_agent_press_earns_no_token() {
+        let agent = PressRecord {
+            origin: Origin::Agent(casement_core::LeaseId(3)),
+            ..press(1_000)
+        };
+        assert_eq!(proof_of(Some(&agent), at(1_001)), PressProof::Unproven);
+        assert_eq!(
+            proof_of(Some(&press(1_000)), at(1_001)),
+            PressProof::Pressed
+        );
     }
 
     /// The A7 rule on session time: a recent press earns the token, and the token is good for

@@ -5276,3 +5276,19 @@ Code: `crates/casement/src/timing/` (pure records, table-tested; `Sink` is the o
 - **One raster type.** `casement_core::raster::RasterImage` (premultiplied RGBA8 plus a `RasterId`) replaces
   `casement_chrome::TitlePixels` and `casement_render::TitleDraw`; chrome now depends on `casement-core`. `casement_icons::Pixels`
   stays: an icon has no id of its own (the cache's slot has).
+
+## Agent leases (interim P4 input, 2026-10-20)
+
+- **What it is.** `Compositor1.LeaseWindow` gives the agent tier (cuad) an EIS socket for one window. Its input is
+  `Origin::Agent(lease)`: the reach table lets it reach that window and its popups only; `core_loop::agent_gate` drops it on
+  Mission Control, window frames and Split View dividers, during a move, resize or divider drag, while another client holds the
+  pointer or keyboard grab or focus, and for touch, gestures and switches. Keys never fire bindings, Escape never leaves Mission
+  Control, and an agent press is no proof for an interactive move or resize or an activation token. The shell's windows are
+  never leased. Still the person's seat and cursor: the agent seat of its own, compositor masking and the agent Space are P4.
+- **Releases.** A lease's release goes past the reach table (its press was delivered; the socket drops releases of what it does
+  not hold and a held-back press takes its release with it), so a key or button is never left down when the lease ends or its
+  window closes first.
+- **Residuals (reviewed 2026-10-20).** The grab and focus check is per client, not per window: a second window of the leased app
+  under a grab would still hear it. An agent key or button serial still proves a popup grab and a clipboard selection inside
+  the leased app. A window that closes ends its lease in the model at once (all input refused), but the socket stays open
+  until `EndLease`, a hang-up or the caller leaving the bus. cuad ends it on the window's close.

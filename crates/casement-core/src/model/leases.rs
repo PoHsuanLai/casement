@@ -5,17 +5,41 @@
 use super::Model;
 use super::moved::Moved;
 use crate::ids::{LeaseId, WindowId};
+use casement_protocols::vocab::WindowRole;
+
+/// Whether a window may be leased to the agent tier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Leasable {
+    /// It may.
+    Yes,
+    /// No window has that id.
+    NoSuchWindow,
+    /// The shell's own window (sill's menus, sheets and panels, or any window of a client that
+    /// came through the shell's connection): the agent never drives the desktop's own surfaces.
+    Shell,
+}
 
 impl Model {
-    /// `lease` now holds `window`. A window that is not there is not leased: the lease stays
-    /// unknown, so its events reach nothing.
+    /// Whether `window` may be leased: it is there and it is not the shell's.
+    pub fn leasable(&self, window: WindowId) -> Leasable {
+        match self.windows.get(&window) {
+            None => Leasable::NoSuchWindow,
+            Some(held) if held.role == WindowRole::Shell || self.is_shell(held.client) => {
+                Leasable::Shell
+            }
+            Some(_) => Leasable::Yes,
+        }
+    }
+
+    /// `lease` now holds `window`. A window that may not be leased ([`Model::leasable`]) is
+    /// not: the lease stays unknown, so its events reach nothing.
     pub(super) fn grant_lease(self, lease: LeaseId, window: WindowId) -> Moved {
-        match self.windows.contains_key(&window) {
-            true => Moved::of(Model {
+        match self.leasable(window) {
+            Leasable::Yes => Moved::of(Model {
                 leases: self.leases.granted(lease, window),
                 ..self
             }),
-            false => Moved::of(self),
+            Leasable::NoSuchWindow | Leasable::Shell => Moved::of(self),
         }
     }
 

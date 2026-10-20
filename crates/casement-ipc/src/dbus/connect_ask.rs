@@ -290,6 +290,8 @@ pub enum ConnectRefusal {
     Unavailable,
     /// No window has that identifier (`LeaseWindow`).
     NoSuchWindow,
+    /// The window is the desktop's own and is never leased (`LeaseWindow`).
+    NotLeasable,
 }
 
 impl ConnectRefusal {
@@ -311,6 +313,9 @@ impl ConnectRefusal {
             }
             ConnectRefusal::NoSuchWindow => {
                 fdo::Error::InvalidArgs("no window has that identifier".to_owned())
+            }
+            ConnectRefusal::NotLeasable => {
+                fdo::Error::AccessDenied("that window is the desktop's own".to_owned())
             }
         }
     }

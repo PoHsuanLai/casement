@@ -31,6 +31,7 @@ use smithay::wayland::compositor::{
 };
 use std::collections::BTreeSet;
 
+mod agent_gate;
 mod bodies;
 mod closing;
 mod deliver;
