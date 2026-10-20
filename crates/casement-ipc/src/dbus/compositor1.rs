@@ -191,11 +191,7 @@ impl Compositor1 {
 
     /// `FocusLease(lease: t)`: the window `lease` holds takes the key. Only the agent tier may
     /// ask, and only for a lease that connection holds.
-    async fn focus_lease(
-        &self,
-        lease: u64,
-        #[zbus(header)] header: Header<'_>,
-    ) -> fdo::Result<()> {
+    async fn focus_lease(&self, lease: u64, #[zbus(header)] header: Header<'_>) -> fdo::Result<()> {
         let caller = self.proven(&header, &roles::AGENT_TIER).await?;
         let owner = sender_of(&header)?;
         match self

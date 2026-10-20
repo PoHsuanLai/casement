@@ -16,7 +16,7 @@ use casement_agent::{
     agent_may_lease, hand_out, open_remote_eis, portal_may_connect,
 };
 use casement_core::input::{InputEvent, PortalSessionId};
-use casement_core::{Event, LeaseFocusRefusal, Leasable, LeaseId};
+use casement_core::{Event, Leasable, LeaseFocusRefusal, LeaseId};
 use casement_ipc::dbus::{
     ConnectAsk, ConnectCall, ConnectRefusal, ConnectReply, EndAsk, EndLeaseAsk, FocusLeaseAsk,
     GoneAsk, LeaseAsk, RemoteAsk,

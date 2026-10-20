@@ -353,9 +353,7 @@ impl ConnectRefusal {
             ConnectRefusal::ScreenLocked => {
                 fdo::Error::AccessDenied("the screen is locked".to_owned())
             }
-            ConnectRefusal::InTheDock => {
-                fdo::Error::Failed("the window is in the dock".to_owned())
-            }
+            ConnectRefusal::InTheDock => fdo::Error::Failed("the window is in the dock".to_owned()),
         }
     }
 }
