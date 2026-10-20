@@ -228,6 +228,7 @@ pub fn answer_lease(
         return ConnectReply::Refused(ConnectRefusal::TooMany);
     }
     let lease = mint_lease(state);
+    tracing::info!(lease = lease.0, asked = %ask.window, ?window, "lease granted");
     feed(state, vec![Event::LeaseGranted { lease, window }]);
     // Keys and the pointer only: the gate drops an agent's touch (`core_loop::agent_gate`).
     let devices = ask.devices & (KEYBOARD | POINTER);

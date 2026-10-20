@@ -140,10 +140,15 @@ fn refused(state: &State, event: &InputEvent, target: &InputTarget, use_: InputU
         Reach::Allowed => false,
         Reach::Refused(why) => {
             if let Origin::Agent(lease) = event.origin {
-                tracing::debug!(
+                // At info, with what was under the pointer and what the lease holds: a refused
+                // agent click is otherwise silent, and the two keys are what tell why.
+                tracing::info!(
                     lease = lease.0,
                     ?why,
                     ?use_,
+                    ?target,
+                    held = ?state.core.model.leases().window_of(lease),
+                    cursor = ?state.render.chrome.cursor_at,
                     "agent input refused by the reach table"
                 );
             }
