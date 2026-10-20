@@ -4,6 +4,7 @@ use super::Model;
 use super::moved::Moved;
 use super::states::toplevel_states;
 use crate::app::AppKey;
+use crate::cause::Cause;
 use crate::effect::{ConfigureSize, ConfigureSpec, Effect};
 use crate::focus::{self, FocusIn, FocusOut};
 use crate::geometry::LogicalSize;
@@ -43,25 +44,38 @@ impl Model {
     }
 
     /// `windows` (bottom first) go to the top of the stack, and to the end of their apps'
-    /// own order.
+    /// own order. The drawing follows the arrangement, so a window that moved up is arranged
+    /// again: otherwise it stays drawn under the others until something else lays them out (a
+    /// click on the key window under another app's window changes nothing else).
     pub(super) fn raised(self, windows: &[WindowId]) -> Moved {
-        let model = windows.iter().fold(self, |mut model, id| {
-            let rank = model.top_rank();
-            let Some(window) = model.windows.get_mut(id) else {
-                return model;
-            };
-            let on_top = rank.0 == window.stack.0.saturating_add(1);
-            if !on_top {
-                window.stack = rank;
-            }
-            let app = window.app.clone();
-            if let Some(record) = model.apps.get_mut(&app) {
-                record.windows.retain(|held| held != id);
-                record.windows.push(*id);
-            }
-            model
-        });
-        Moved::of(model).with(Effect::Raise(windows.to_vec()))
+        let (model, moved) =
+            windows
+                .iter()
+                .fold((self, Vec::new()), |(mut model, mut moved), id| {
+                    let rank = model.top_rank();
+                    let Some(window) = model.windows.get_mut(id) else {
+                        return (model, moved);
+                    };
+                    let on_top = rank.0 == window.stack.0.saturating_add(1);
+                    if !on_top {
+                        window.stack = rank;
+                        moved.push(*id);
+                    }
+                    let app = window.app.clone();
+                    if let Some(record) = model.apps.get_mut(&app) {
+                        record.windows.retain(|held| held != id);
+                        record.windows.push(*id);
+                    }
+                    (model, moved)
+                });
+        let raised = Moved::of(model).with(Effect::Raise(windows.to_vec()));
+        match moved.is_empty() {
+            true => raised,
+            false => raised.then(|model| {
+                let outputs = model.outputs_of(&moved);
+                model.redrawn(Cause::Configure, outputs)
+            }),
+        }
     }
 
     /// The windows' emphasis changed: each is told, and a window that gained or lost the key

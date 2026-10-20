@@ -56,6 +56,17 @@ fn new_windows_centre_then_cascade() {
             ],
         ),
         (
+            "the first window raised over the second keeps its place: the cascade follows the order they opened, not the stack",
+            vec![
+                (2, WindowPlacement::New(size(800, 600))),
+                (1, WindowPlacement::New(size(800, 600))),
+            ],
+            vec![
+                (1, rect(560, 252, 800, 600), ConfigureNeed::Keep),
+                (2, rect(588, 280, 800, 600), ConfigureNeed::Keep),
+            ],
+        ),
+        (
             "floating windows do not count toward the cascade",
             vec![
                 (1, WindowPlacement::Floating(rect(10, 40, 300, 200))),

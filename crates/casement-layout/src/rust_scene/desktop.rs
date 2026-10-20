@@ -74,6 +74,24 @@ pub(super) fn below_chrome(usable: LogicalRect, reserve: u32) -> LogicalRect {
     )
 }
 
+/// Each new window's step in the cascade: its place among the Space's new windows in the order
+/// they opened (window ids grow as windows map), not in the stack, so a click that raises one
+/// moves none of them.
+fn cascade_slots(space: &SpaceSpec) -> BTreeMap<WindowId, u32> {
+    let mut opened: Vec<WindowId> = space
+        .windows
+        .iter()
+        .filter(|window| matches!(window.placement, WindowPlacement::New(_)))
+        .map(|window| window.window)
+        .collect();
+    opened.sort();
+    opened
+        .into_iter()
+        .enumerate()
+        .map(|(slot, window)| (window, u32::try_from(slot).unwrap_or(u32::MAX)))
+        .collect()
+}
+
 /// Adds the targets of `space`'s windows: in the output's usable coordinates, as if the Space
 /// were shown (motion applies the strip origin).
 fn arrange_space(
@@ -86,7 +104,8 @@ fn arrange_space(
         split::arrange_split(output, space, pair, into);
         return;
     }
-    let mut new_so_far = 0;
+    let slots = cascade_slots(space);
+    let mut new_so_far = u32::try_from(slots.len()).unwrap_or(u32::MAX);
     let mut sheets = Vec::new();
     for window in &space.windows {
         let usable = below_chrome(output.usable, window.reserve_top);
@@ -104,8 +123,8 @@ fn arrange_space(
             }
             WindowPlacement::New(asked) => {
                 let size = fit_size(asked, window.limits, usable);
-                let rect = cascade_rect(usable, size, new_so_far, knobs.cascade_step);
-                new_so_far += 1;
+                let slot = slots.get(&window.window).copied().unwrap_or(0);
+                let rect = cascade_rect(usable, size, slot, knobs.cascade_step);
                 placed(window.window, &output.output, asked, rect, window.limits)
             }
             WindowPlacement::Filled => {

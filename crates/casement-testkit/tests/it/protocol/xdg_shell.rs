@@ -356,6 +356,72 @@ fn click_to_focus() {
     );
 }
 
+/// A click on a window another covers brings it to the front, key or not: a later click where
+/// the two overlap lands on it. The key window can be covered: another app's window that maps
+/// without a token goes on top and takes no focus.
+#[test]
+fn a_click_brings_a_covered_window_to_the_front() {
+    let (mut fixture, id) = boot();
+    let base = WmBase::bind(fixture.client(id), 7);
+    let _first = map_named(
+        &mut fixture,
+        id,
+        &base,
+        (400, 300),
+        Some("org.example.First"),
+    );
+    settle(&mut fixture);
+    let first = windows(&fixture)[0];
+    let device = pointer(&mut fixture);
+    let at = corner_of(&fixture, first, Corner::TopLeft);
+    click_at(&mut fixture, device, at);
+    assert_eq!(fixture.model().focus().key, Some(first));
+    let other = fixture.connect(ConnectionRole::Public);
+    fixture.pump();
+    let other_base = WmBase::bind(fixture.client(other), 7);
+    let _second = map_named(
+        &mut fixture,
+        other,
+        &other_base,
+        (400, 300),
+        Some("org.example.Second"),
+    );
+    settle(&mut fixture);
+    let second = windows(&fixture)
+        .into_iter()
+        .find(|window| *window != first)
+        .expect("the second window");
+    assert_eq!(
+        fixture.model().focus().key,
+        Some(first),
+        "the second maps on top without the key"
+    );
+    // The second is cascaded down and right of the first: its top-left corner lies over both.
+    let overlap = corner_of(&fixture, second, Corner::TopLeft);
+    let on_first = corner_of(&fixture, first, Corner::TopLeft);
+    let on_second = corner_of(&fixture, second, Corner::BottomRight);
+    let cases = [
+        ("the covered key window", on_first, first),
+        ("the covered window that is not key", on_second, second),
+        ("the key window covered again", on_first, first),
+    ];
+    for (name, at, want) in cases {
+        click_at(&mut fixture, device, at);
+        fixture.pump();
+        assert_eq!(fixture.model().focus().key, Some(want), "{name}: key");
+        let rank = |window: WindowId| fixture.model().windows().get(&window).map(|w| w.stack);
+        let top = if want == first { second } else { first };
+        assert!(rank(want) > rank(top), "{name}: the model stacks it on top");
+        click_at(&mut fixture, device, overlap);
+        fixture.pump();
+        assert_eq!(
+            fixture.model().focus().key,
+            Some(want),
+            "{name}: a click where both lie lands on it, at the front"
+        );
+    }
+}
+
 /// P0 never sends tiled_* states.
 #[test]
 fn a_floating_configure_has_no_tiled_edges() {
