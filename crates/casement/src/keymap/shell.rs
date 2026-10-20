@@ -52,9 +52,15 @@ const ROWS: &[Row] = &[
         StandardAction::Launcher,
         Does::Shell(ShellVerb::LauncherToggle),
     ),
-    (StandardAction::NextApp, Does::Shell(ShellVerb::SwitcherNext)),
+    (
+        StandardAction::NextApp,
+        Does::Shell(ShellVerb::SwitcherNext),
+    ),
     // The front app's next window (the Mac's Command+`).
-    (StandardAction::NextWindow, Does::Shell(ShellVerb::NextWindow)),
+    (
+        StandardAction::NextWindow,
+        Does::Shell(ShellVerb::NextWindow),
+    ),
     // Flips the dock's auto-hide (the Mac's Option+Command+D).
     (
         StandardAction::ToggleDock,
@@ -77,7 +83,10 @@ const ROWS: &[Row] = &[
         StandardAction::ScreenshotTools,
         Does::Shell(ShellVerb::ScreenshotArea),
     ),
-    (StandardAction::LogOut, Does::Shell(ShellVerb::PowerMenuOpen)),
+    (
+        StandardAction::LogOut,
+        Does::Shell(ShellVerb::PowerMenuOpen),
+    ),
     // Window > Move & Resize (macOS Sequoia's tiling keys).
     (
         StandardAction::TileLeft,
@@ -203,6 +212,18 @@ mod tests {
         Some(spawn_of(verb))
     }
 
+    #[test]
+    fn a_shell_verb_spawns_sill_with_its_argv() {
+        assert_eq!(
+            spawn_of(ShellVerb::DockToggleHide),
+            BindingAction::Spawn(Argv(vec![
+                "sill".to_owned(),
+                "dock".to_owned(),
+                "toggle-hide".to_owned()
+            ]))
+        );
+    }
+
     fn space(n: u8) -> Option<BindingAction> {
         itself(DesktopCommand::SwitchSpace(SpaceStep::Number(n)))
     }
@@ -244,14 +265,22 @@ mod tests {
             ),
             ("launcher", "cmd+space", shell(ShellVerb::LauncherToggle)),
             ("next app", "cmd+Tab", shell(ShellVerb::SwitcherNext)),
-            ("previous app", "shift+cmd+Tab", shell(ShellVerb::SwitcherPrev)),
+            (
+                "previous app",
+                "shift+cmd+Tab",
+                shell(ShellVerb::SwitcherPrev),
+            ),
             (
                 "screen shot",
                 "shift+cmd+3",
                 shell(ShellVerb::ScreenshotScreen),
             ),
             ("area shot", "shift+cmd+4", shell(ShellVerb::ScreenshotArea)),
-            ("shot tools", "shift+cmd+5", shell(ShellVerb::ScreenshotArea)),
+            (
+                "shot tools",
+                "shift+cmd+5",
+                shell(ShellVerb::ScreenshotArea),
+            ),
             ("log out", "shift+cmd+q", shell(ShellVerb::PowerMenuOpen)),
             (
                 "tile left",
