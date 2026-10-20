@@ -946,6 +946,7 @@ dependencies = [
  "ds-style",
  "futures-timer",
  "notify",
+ "objc2-core-foundation",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
