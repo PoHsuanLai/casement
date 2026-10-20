@@ -133,6 +133,7 @@ fn spec(path: String, power: Power, label: &str, kind: KeyKind, default: toml::V
         places: Default::default(),
         note: None,
         agent: AgentSetting::HandsOff,
+        control: None,
     }
 }
 

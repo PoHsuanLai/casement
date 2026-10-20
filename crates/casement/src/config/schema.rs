@@ -34,6 +34,7 @@ pub fn schema() -> Schema {
         .into_iter()
         .flat_map(|schema| schema.key)
         .collect(),
+        pages: Vec::new(),
     }
 }
 
