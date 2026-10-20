@@ -72,6 +72,11 @@ const ROWS: &[Row] = &[
         StandardAction::EmojiAndSymbols,
         Does::Shell(ShellVerb::EmojiAndSymbols),
     ),
+    // The Mac's Select Next Source in Input Menu (Control+Space): sill steps the input method.
+    (
+        StandardAction::NextInputSource,
+        Does::Shell(ShellVerb::NextInputSource),
+    ),
     (
         StandardAction::PreviousApp,
         Does::Shell(ShellVerb::SwitcherPrev),
@@ -346,7 +351,17 @@ mod tests {
             ("hide is the app's menu", "cmd+h", None),
             ("hide others is the app's menu", "option+cmd+h", None),
             ("quit is the app's menu", "cmd+q", None),
-            ("the input language is fcitx's", "ctrl+space", None),
+            // sill steps fcitx5 over its controller, as the Mac's input menu does.
+            (
+                "next input source",
+                "ctrl+space",
+                shell(ShellVerb::NextInputSource),
+            ),
+            (
+                "emoji and symbols",
+                "ctrl+cmd+space",
+                shell(ShellVerb::EmojiAndSymbols),
+            ),
             ("an unbound chord", "cmd+F13", None),
         ];
         for (case, chord, want) in cases {
