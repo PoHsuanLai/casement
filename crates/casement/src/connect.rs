@@ -16,10 +16,10 @@ use casement_agent::{
     agent_may_lease, hand_out, open_remote_eis, portal_may_connect,
 };
 use casement_core::input::{InputEvent, PortalSessionId};
-use casement_core::{Event, Leasable, LeaseId};
+use casement_core::{Event, LeaseFocusRefusal, Leasable, LeaseId};
 use casement_ipc::dbus::{
-    ConnectAsk, ConnectCall, ConnectRefusal, ConnectReply, EndAsk, EndLeaseAsk, GoneAsk, LeaseAsk,
-    RemoteAsk,
+    ConnectAsk, ConnectCall, ConnectRefusal, ConnectReply, EndAsk, EndLeaseAsk, FocusLeaseAsk,
+    GoneAsk, LeaseAsk, RemoteAsk,
 };
 use casement_wayland::ClientState;
 use casement_wayland::foreign_toplevel_list::window_of_identifier;
@@ -60,6 +60,9 @@ pub fn answer(state: &mut State, ask: ConnectAsk) -> ConnectReply {
     }
     if let Some(lease) = ask.lease {
         return answer_lease(state, lease, ask.owner, &ask.caller.role);
+    }
+    if let Some(focus) = ask.focus_lease {
+        return answer_focus_lease(state, focus, ask.owner.as_deref(), &ask.caller.role);
     }
     if let Some(end) = ask.end_lease {
         return answer_end_lease(state, end, ask.owner.as_deref(), &ask.caller.role);
@@ -246,6 +249,36 @@ fn mint_lease(state: &mut State) -> LeaseId {
     let (mint, lease) = mint.lease();
     state.core.mint = mint;
     lease
+}
+
+/// Decides one `FocusLease`: only the agent tier, only a lease from the bus connection that
+/// asked for it, and only one the model lets key its window (it is open, the screen is not
+/// locked, the window is not in the dock). The model raises and keys that window, bringing its
+/// Space and app back first; this is the lease's own path into focus, not an app activation
+/// (rule A7 is unchanged).
+pub fn answer_focus_lease(
+    state: &mut State,
+    ask: FocusLeaseAsk,
+    owner: Option<&str>,
+    caller: &RoleName,
+) -> ConnectReply {
+    if let Err(why) = agent_only(caller) {
+        return ConnectReply::Refused(why);
+    }
+    let lease = LeaseId(ask.lease);
+    match state.agent.remote.asked_by(RemoteFor::Agent(lease)) {
+        Some(asked) if asked == owner => {}
+        _ => return ConnectReply::Refused(ConnectRefusal::NoSuchLease),
+    }
+    if let Err(why) = state.core.model.lease_focus(lease) {
+        return ConnectReply::Refused(match why {
+            LeaseFocusRefusal::Locked => ConnectRefusal::ScreenLocked,
+            LeaseFocusRefusal::Minimised => ConnectRefusal::InTheDock,
+            _ => ConnectRefusal::NoSuchLease,
+        });
+    }
+    feed(state, vec![Event::LeaseFocus { lease }]);
+    ConnectReply::Focused
 }
 
 /// Decides one `EndLease`: only the agent tier may end a lease, and only from the bus connection

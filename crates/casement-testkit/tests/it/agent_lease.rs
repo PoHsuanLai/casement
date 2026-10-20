@@ -143,6 +143,36 @@ fn only_the_agent_tier_may_lease_and_only_a_window_that_is_there() {
     );
 }
 
+/// A run about to send keys has its leased window keyed: it comes to the front and takes the
+/// keyboard though nothing else moved focus. The lease must be open (an ended or unknown one is
+/// refused) and only the agent tier may ask.
+#[test]
+fn a_lease_keys_its_window_while_it_is_open() {
+    let (mut fixture, [(_, under), (_, over)], _kept) = two_windows();
+    let agent = callers::agent_tier();
+    let (lease, _socket) = fixture
+        .lease_window(&agent, &identifier_of(under), 7)
+        .expect("granted");
+    assert_eq!(
+        fixture.focus_lease(&callers::shell(), lease),
+        Err(ConnectRefusal::RoleNotAllowed)
+    );
+    assert_eq!(
+        fixture.focus_lease(&agent, lease + 100),
+        Err(ConnectRefusal::NoSuchLease)
+    );
+    assert_ne!(fixture.model().focus().key, Some(under));
+    assert_eq!(fixture.focus_lease(&agent, lease), Ok(()));
+    assert_eq!(fixture.model().focus().key, Some(under));
+    assert_ne!(fixture.model().focus().key, Some(over));
+    assert_eq!(fixture.end_lease(&agent, lease), Ok(()));
+    assert_eq!(
+        fixture.focus_lease(&agent, lease),
+        Err(ConnectRefusal::NoSuchLease),
+        "an ended lease keys nothing"
+    );
+}
+
 /// The shell's own windows are never leased.
 #[test]
 fn a_shell_window_is_not_leased() {

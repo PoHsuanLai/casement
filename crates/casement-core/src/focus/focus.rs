@@ -68,6 +68,12 @@ pub enum FocusIn {
         /// Who asked.
         by: ActorKind,
     },
+    /// An assistant run's live lease keys the window it holds. Not an app's activation: the
+    /// actor is the person's own request carried by the lease, so A7 still refuses every app.
+    LeaseFocus {
+        /// The window the lease holds.
+        window: WindowId,
+    },
     /// An app was hidden.
     HideApp(AppKey),
     /// An app was unhidden.

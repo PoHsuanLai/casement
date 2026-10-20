@@ -144,6 +144,70 @@ fn activation_hiding_and_who_may_move_focus() {
     rows.into_iter().for_each(run);
 }
 
+/// A run's lease keys exactly the window it holds, as its own actor: the same move an
+/// activation by the person makes, where an app's own ask only asks for attention (A7, above).
+#[test]
+fn a_lease_keys_the_window_it_holds() {
+    let b_keyed = focus(Some(b()), Some(3), Some(3), vec![b(), a()], &[3, 1, 2]);
+    let lease_on = |n: u64| FocusIn::LeaseFocus {
+        window: WindowId(n),
+    };
+    let rows = vec![
+        row(
+            "a lease on another app's window raises and keys it, and its app is active",
+            start(),
+            lease_on(3),
+            windows(&[], vec![]),
+            b_keyed.clone(),
+            vec![
+                FocusOut::Raise(ids(&[3])),
+                FocusOut::Keyboard(Some(WindowId(3))),
+                FocusOut::Emphasis(vec![
+                    (WindowId(1), Emphasis::Inactive),
+                    (WindowId(3), Emphasis::Key),
+                ]),
+                FocusOut::ActiveApp(Some(b())),
+            ],
+        ),
+        row(
+            "a lease on the key window only raises it",
+            start(),
+            lease_on(1),
+            windows(&[], vec![]),
+            start(),
+            vec![FocusOut::Raise(ids(&[1]))],
+        ),
+        row(
+            "a lease on a window of a Space no output shows moves nothing",
+            start(),
+            lease_on(3),
+            windows(&[], vec![on(3, &b(), "s-2")]),
+            start(),
+            nothing(),
+        ),
+        Row {
+            hidden: vec![b()],
+            ..row(
+                "a lease on a window of a hidden app moves nothing (the model unhides first)",
+                start(),
+                lease_on(3),
+                windows(&[], vec![]),
+                start(),
+                nothing(),
+            )
+        },
+        row(
+            "a lease on a window that is gone moves nothing",
+            start(),
+            lease_on(9),
+            windows(&[], vec![]),
+            start(),
+            nothing(),
+        ),
+    ];
+    rows.into_iter().for_each(run);
+}
+
 #[test]
 fn spaces_and_sheets() {
     let on_s2 = |extra: Vec<Window>| windows(&[], extra);

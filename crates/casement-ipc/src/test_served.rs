@@ -71,6 +71,9 @@ fn decide(ask: &ConnectAsk) -> ConnectReply {
     if ask.end.is_some() || ask.gone.is_some() || ask.end_lease.is_some() {
         return ConnectReply::Ended;
     }
+    if ask.focus_lease.is_some() {
+        return ConnectReply::Focused;
+    }
     match UnixStream::pair() {
         Ok((_server, client)) if ask.lease.is_some() => ConnectReply::Leased {
             lease: 1,

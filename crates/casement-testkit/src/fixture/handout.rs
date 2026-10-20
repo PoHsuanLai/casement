@@ -148,6 +148,22 @@ impl Fixture {
         }
     }
 
+    /// `caller` asking that the window `lease` holds take the key (`FocusLease`'s decision).
+    /// Granted, nothing; refused, the reason the D-Bus caller is told.
+    pub fn focus_lease(&mut self, caller: &Proven, lease: u64) -> Result<(), ConnectRefusal> {
+        match connect::answer(
+            &mut self.state,
+            ConnectAsk::focus_lease(lease, caller.clone()),
+        ) {
+            ConnectReply::Focused => {
+                self.pump();
+                Ok(())
+            }
+            ConnectReply::Refused(why) => Err(why),
+            _ => Err(ConnectRefusal::Unavailable),
+        }
+    }
+
     /// `caller` asking to end `lease` (`EndLease`'s decision). Granted, nothing; refused, the
     /// reason the D-Bus caller is told.
     pub fn end_lease(&mut self, caller: &Proven, lease: u64) -> Result<(), ConnectRefusal> {

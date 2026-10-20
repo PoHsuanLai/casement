@@ -18,6 +18,7 @@ mod display_trial;
 mod focus_feed;
 mod keyboard;
 mod layers;
+mod lease_focus;
 mod leases;
 mod lock;
 mod moved;
@@ -28,6 +29,7 @@ mod overview;
 mod picture;
 mod pip;
 pub mod privilege;
+pub use lease_focus::LeaseFocusRefusal;
 pub use leases::Leasable;
 mod published;
 mod query;
@@ -270,6 +272,7 @@ impl Model {
             Event::ToplevelMapped(mapped) => self.map(mapped),
             Event::ToplevelUnmapped { window } => self.unmap(window),
             Event::LeaseGranted { lease, window } => self.grant_lease(lease, window),
+            Event::LeaseFocus { lease } => self.focus_leased(lease),
             Event::LeaseEnded { lease } => self.end_lease(lease),
             Event::ToplevelCommitted { window, size } => self.commit(window, size),
             Event::ToplevelRequest { window, request } => {

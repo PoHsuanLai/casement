@@ -153,6 +153,17 @@ pub(super) fn activate_app(focus: Focus, app: AppKey, by: ActorKind, view: &Focu
     Outcome::of(focus.activated(&app, key, view)).raising(raise)
 }
 
+/// A live lease keys the window it holds (a run about to send keys): the window the person can
+/// see takes the key and comes to the front, its app active. Any other window (on a Space not
+/// shown, in the dock, of a hidden app) moves nothing; the model brings the Space and the app
+/// back first. This is not [`activate_app`]: A7 is for apps, and a lease is the person's run.
+pub(super) fn lease_focus(focus: Focus, window: WindowId, view: &FocusView) -> Outcome {
+    let Some(window) = view.window(window).filter(|w| view.is_visible(w)) else {
+        return Outcome::of(focus);
+    };
+    Outcome::of(focus.keyed(through_sheet(window, view), view)).raising(vec![window.id])
+}
+
 /// An app was hidden. If it was the active app, the previous app in MRU with a window the
 /// person can see becomes active and takes its most recent window as key; with none, nothing
 /// is active. Hiding any other app moves nothing.

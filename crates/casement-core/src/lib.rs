@@ -65,6 +65,6 @@ pub use ids::{
 pub use invariants::InvariantBreak;
 pub use model::privilege;
 pub use model::{
-    Leasable, MAX_DESKTOPS_PER_OUTPUT, Model, OpeningRoom, OutputBook, OutputState, OverviewPick,
+    LeaseFocusRefusal, Leasable, MAX_DESKTOPS_PER_OUTPUT, Model, OpeningRoom, OutputBook, OutputState, OverviewPick,
     SpaceStrip, SwipeOwner,
 };

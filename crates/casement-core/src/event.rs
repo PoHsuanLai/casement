@@ -60,6 +60,13 @@ pub enum Event {
         /// The window it holds.
         window: WindowId,
     },
+    /// The run holding `lease` is about to send keys: its window is raised and keyed (Space and
+    /// app brought back first). Refused while the screen is locked, for a lease that is not
+    /// open and for a window in the dock; see [`crate::Model::lease_focus`].
+    LeaseFocus {
+        /// The lease.
+        lease: LeaseId,
+    },
     /// `lease` ended (`EndLease`, its socket closed, or the agent tier left the bus).
     LeaseEnded {
         /// The lease.

@@ -78,6 +78,8 @@ pub struct ConnectAsk {
     pub lease: Option<LeaseAsk>,
     /// Set for `EndLease`: the question is to end a lease.
     pub end_lease: Option<EndLeaseAsk>,
+    /// Set for `FocusLease`: the question is to key a lease's window.
+    pub focus_lease: Option<FocusLeaseAsk>,
 }
 
 /// What the agent tier asked of `LeaseWindow`.
@@ -93,6 +95,13 @@ pub struct LeaseAsk {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EndLeaseAsk {
     /// The lease to end.
+    pub lease: u64,
+}
+
+/// What the agent tier asked of `FocusLease`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FocusLeaseAsk {
+    /// The lease whose window is to take the key.
     pub lease: u64,
 }
 
@@ -141,6 +150,7 @@ impl ConnectAsk {
             gone: None,
             lease: None,
             end_lease: None,
+            focus_lease: None,
         }
     }
 
@@ -168,6 +178,7 @@ impl ConnectAsk {
             }),
             lease: None,
             end_lease: None,
+            focus_lease: None,
         }
     }
 
@@ -193,6 +204,7 @@ impl ConnectAsk {
             gone: None,
             lease: None,
             end_lease: None,
+            focus_lease: None,
         }
     }
 
@@ -217,6 +229,7 @@ impl ConnectAsk {
             gone: None,
             lease: None,
             end_lease: None,
+            focus_lease: None,
         }
     }
 }
@@ -244,6 +257,15 @@ impl ConnectAsk {
         }
     }
 
+    /// The question of `caller`, asking that the window `lease` holds take the key.
+    pub fn focus_lease(lease: u64, caller: Proven) -> ConnectAsk {
+        ConnectAsk {
+            focus_lease: Some(FocusLeaseAsk { lease }),
+            // Not read: `focus_lease` decides.
+            ..ConnectAsk::new(ConnectionRole::Public, caller)
+        }
+    }
+
     /// The question of `caller`, asking to end `lease`.
     pub fn end_lease(lease: u64, caller: Proven) -> ConnectAsk {
         ConnectAsk {
@@ -262,6 +284,8 @@ pub enum ConnectReply {
     Granted(OwnedFd),
     /// The remote session's sockets are closed (`EndEis`, `EndLease`).
     Ended,
+    /// The lease's window is the key window (`FocusLease`).
+    Focused,
     /// The lease's number and the client end of its input socket (`LeaseWindow`).
     Leased {
         /// The lease.
@@ -292,6 +316,12 @@ pub enum ConnectRefusal {
     NoSuchWindow,
     /// The window is the desktop's own and is never leased (`LeaseWindow`).
     NotLeasable,
+    /// The lease is not open, or another connection holds it (`FocusLease`).
+    NoSuchLease,
+    /// The screen is locked, so nothing moves focus (`FocusLease`).
+    ScreenLocked,
+    /// The window is in the dock; only the person brings it back (`FocusLease`).
+    InTheDock,
 }
 
 impl ConnectRefusal {
@@ -316,6 +346,15 @@ impl ConnectRefusal {
             }
             ConnectRefusal::NotLeasable => {
                 fdo::Error::AccessDenied("that window is the desktop's own".to_owned())
+            }
+            ConnectRefusal::NoSuchLease => {
+                fdo::Error::InvalidArgs("no open lease of yours has that number".to_owned())
+            }
+            ConnectRefusal::ScreenLocked => {
+                fdo::Error::AccessDenied("the screen is locked".to_owned())
+            }
+            ConnectRefusal::InTheDock => {
+                fdo::Error::Failed("the window is in the dock".to_owned())
             }
         }
     }

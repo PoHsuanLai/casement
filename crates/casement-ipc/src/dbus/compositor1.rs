@@ -22,6 +22,11 @@
 //!                            trusted surface, and never a compositor binding); the lease ends
 //!                            with the window, with `EndLease`, or when the caller's bus
 //!                            connection goes
+//! FocusLease(lease: t)       only the agent tier may ask, for a lease it holds that is open:
+//!                            the window the lease holds is raised and takes the keyboard (its
+//!                            Space shown, its app shown again); refused while the screen is
+//!                            locked and for a window in the dock. The person's own request
+//!                            carried by the run, not an app's activation (A7 is unchanged)
 //! EndLease(lease: t)         only the agent tier may ask: the lease's input stops (keys it
 //!                            still holds are let go) and its socket closes; a lease it does not
 //!                            know is not an error
@@ -182,6 +187,25 @@ impl Compositor1 {
             return Err(why.to_error());
         }
         Ok((lease, zbus::zvariant::OwnedFd::from(socket)))
+    }
+
+    /// `FocusLease(lease: t)`: the window `lease` holds takes the key. Only the agent tier may
+    /// ask, and only for a lease that connection holds.
+    async fn focus_lease(
+        &self,
+        lease: u64,
+        #[zbus(header)] header: Header<'_>,
+    ) -> fdo::Result<()> {
+        let caller = self.proven(&header, &roles::AGENT_TIER).await?;
+        let owner = sender_of(&header)?;
+        match self
+            .answer(ConnectAsk::focus_lease(lease, caller).from_owner(&owner))
+            .await?
+        {
+            ConnectReply::Focused => Ok(()),
+            ConnectReply::Refused(why) => Err(why.to_error()),
+            _ => Err(ConnectRefusal::Unavailable.to_error()),
+        }
     }
 
     /// `EndLease(lease: t)`: the lease's input stops and its socket closes. Only the agent tier
