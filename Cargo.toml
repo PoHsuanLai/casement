@@ -67,7 +67,7 @@ ds-helpers = { path = "../quire/crates/ds-helpers", default-features = false }
 # The desktop's keymap (chordkit's layers) and keycap's program end, `KeycapSource`: casement
 # reads its shell bindings from them (`casement::keymap`). The revs are the ones sill, quire and
 # cua pin.
-chordkit      = { git = "https://github.com/PoHsuanLai/chordkit.git", rev = "7b80eddb86559909eeb63b882d5563d36f5bad37" }
+chordkit      = { git = "https://github.com/PoHsuanLai/chordkit.git", rev = "eb0deff12add543565ec41eecffda646ede43cf0" }
 keycap-client = { git = "https://github.com/PoHsuanLai/keycap", rev = "52c66c7c768eac3b9ad6749f22ec3a43b08bd48f" }
 # Which program is calling (caller identity): the bus adapter (casement-ipc checks every
 # `org.quire.Compositor1` call with it, on casement's tokio runtime) and the pure vocabulary
