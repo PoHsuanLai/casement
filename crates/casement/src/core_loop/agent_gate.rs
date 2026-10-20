@@ -7,6 +7,9 @@
 //! - it never reaches a client through another client's grab: while the pointer or the keyboard
 //!   is held by a surface that is not the leased window's client, it is dropped (a key waits a
 //!   short bounded time for the keyboard to come back, `agent_wait`);
+//! - it never lands on the shell's Overlay layer (a sheet that is up, or still closing after the
+//!   person's answer to it): a pointer event there waits the same bounded time for the sheet to
+//!   go, and is dropped if it stays;
 //! - only keys, pointer motion, buttons and scrolling: no touch, gestures or switches.
 //!
 //! A press that goes on is noted as the lease's (`seat.agent_down`, [`note`]); one held back
@@ -16,10 +19,12 @@
 //! the lease ended or the window lost focus, so nothing is left down; a release of anything else
 //! reaches no one, and the person's own presses are never touched by a lease's.
 
+use super::scene::{Hit, hit_test, stack};
 use super::{divider, frames, overview};
 use crate::state::State;
 use casement_core::geometry::LogicalPoint;
 use casement_core::input::{Edge, InputEvent, InputKind, Origin};
+use casement_core::layer::{LayerLevel, LayerOwner};
 use casement_core::{LeaseId, WindowId};
 use casement_wayland::compositor::root_of;
 use casement_wayland::seat::Pressed;
@@ -46,9 +51,12 @@ pub(super) enum Rule {
     KeyFocusElsewhere,
     /// The pointer is grabbed by a surface outside the lease.
     PointerGrabElsewhere,
+    /// The pointer event lands on the shell's Overlay layer. It waits for the layer to go
+    /// ([`Gate::Wait`]).
+    ShellOverlay,
     /// A press on the window's frame or the divider.
     Chrome,
-    /// A key waited the bound for the keyboard to come back to the window and it did not.
+    /// An event waited the bound for its rule to lift and it did not.
     HoldExpired,
 }
 
@@ -60,7 +68,8 @@ pub(super) enum Gate {
     /// It is dropped, by this rule.
     Shut(Rule),
     /// It is held for a short time: this rule may lift (a key while the keyboard is on a surface
-    /// outside the lease, which the person's answer to a sheet gives back to the window).
+    /// outside the lease, or a pointer event on the shell's sheet: the person's answer to the
+    /// sheet closes it and gives the window back).
     Wait(Rule),
 }
 
@@ -86,10 +95,11 @@ pub(super) fn gate(
         .or_else(|| state.wl.seat.grab.is_some().then_some(Rule::Grab))
         .or_else(|| divider::is_dragging(state).then_some(Rule::Divider))
         .or_else(|| held_by_another(state, window, &event.kind))
+        .or_else(|| on_shell_overlay(state, &event.kind, at).then_some(Rule::ShellOverlay))
         .or_else(|| on_compositor_chrome(state, &event.kind, at).then_some(Rule::Chrome));
     match rule {
         None => Gate::Open,
-        Some(rule @ Rule::KeyFocusElsewhere) => Gate::Wait(rule),
+        Some(rule @ (Rule::KeyFocusElsewhere | Rule::ShellOverlay)) => Gate::Wait(rule),
         Some(rule) => Gate::Shut(rule),
     }
 }
@@ -175,4 +185,27 @@ fn on_compositor_chrome(state: &State, kind: &InputKind, at: Option<LogicalPoint
     };
     let stacked = super::scene::stack(state);
     frames::pick(state, at).0.is_some() || divider::under_pointer(state, &stacked, at).is_some()
+}
+
+/// Whether a pointer event lands on a layer of the shell's at the Overlay level: where it moves
+/// to (`MotionTo`), or the pointer `at` (a relative move starts there, a button or a scroll
+/// is there).
+fn on_shell_overlay(state: &State, kind: &InputKind, at: Option<LogicalPoint>) -> bool {
+    let point = match kind {
+        InputKind::MotionTo { at } => Some(*at),
+        InputKind::Motion { .. } | InputKind::Button { .. } | InputKind::Axis(_) => at,
+        _ => None,
+    };
+    let Some(point) = point else {
+        return false;
+    };
+    let Some((Hit::Layer(layer), _)) = hit_test(&stack(state), point) else {
+        return false;
+    };
+    state
+        .core
+        .model
+        .layers()
+        .get(&layer)
+        .is_some_and(|spec| spec.level == LayerLevel::Overlay && spec.owner == LayerOwner::Shell)
 }

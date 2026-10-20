@@ -453,3 +453,81 @@ fn a_lease_key_is_dropped_after_the_bound_when_the_keyboard_stays_elsewhere() {
         "dropped, not delivered late"
     );
 }
+
+/// How many buttons the client's pointers were sent.
+fn buttons_heard(fixture: &mut Fixture, id: ClientId) -> usize {
+    count(fixture.client(id), "wl_pointer#", "button")
+}
+
+/// A lease on the top window while the shell's sheet covers the output (as a confirm sheet does
+/// until it is unmapped after the person's answer). The lease clicks the middle of the window.
+/// Returns the window's client, the shell's, the sheet, and what keeps the windows mapped.
+fn click_while_a_sheet_covers_the_window() -> (Fixture, ClientId, ClientId, LayerSurface, Kept) {
+    let (mut fixture, [_, (over_id, over)], kept) = two_windows();
+    let (lease, _socket) = fixture
+        .lease_window(&callers::agent_tier(), &identifier_of(over), 7)
+        .expect("granted");
+    let shell = fixture.connect(ConnectionRole::Shell);
+    fixture.pump();
+    let sheet = LayerSurface::create(
+        fixture.client(shell),
+        &LayerAsk {
+            level: Layer::Overlay,
+            namespace: "sheet",
+            anchor: Anchor::Top | Anchor::Bottom | Anchor::Left | Anchor::Right,
+            exclusive_zone: 0,
+            keyboard: KeyboardInteractivity::None,
+            size: (0, 0),
+        },
+    )
+    .expect("layer");
+    fixture.pump();
+    let rect = rect_of(&fixture, over);
+    let middle = LogicalPoint {
+        x: rect.origin.x + rect.size.w as i32 / 2,
+        y: rect.origin.y + rect.size.h as i32 / 2,
+    };
+    click(&mut fixture, lease, middle);
+    fixture.pump();
+    (fixture, over_id, shell, sheet, kept)
+}
+
+/// A click of the lease that lands on the shell's sheet waits, and reaches the leased window,
+/// press then release, once the sheet is gone.
+#[test]
+fn a_lease_click_on_the_shells_sheet_waits_and_goes_when_it_closes() {
+    let (mut fixture, window, shell, sheet, _kept) = click_while_a_sheet_covers_the_window();
+    assert_eq!(
+        buttons_heard(&mut fixture, window),
+        0,
+        "not while the sheet covers the window"
+    );
+    fixture.advance(Duration::from_millis(100));
+    assert_eq!(
+        buttons_heard(&mut fixture, window),
+        0,
+        "still waiting inside the bound"
+    );
+    sheet.destroy(fixture.client(shell));
+    fixture.advance(Duration::from_millis(100));
+    assert_eq!(
+        buttons_heard(&mut fixture, window),
+        2,
+        "the press and the release reach the leased window"
+    );
+}
+
+/// A click that waited the whole bound with the sheet still up is dropped: nothing reaches the
+/// window once it closes.
+#[test]
+fn a_lease_click_is_dropped_after_the_bound_when_the_sheet_stays() {
+    let (mut fixture, window, shell, sheet, _kept) = click_while_a_sheet_covers_the_window();
+    fixture.advance(Duration::from_millis(600));
+    sheet.destroy(fixture.client(shell));
+    fixture.advance(Duration::from_millis(100));
+    assert_eq!(
+        buttons_heard(&mut fixture, window),
+        0,
+        "dropped, not delivered late"
+    );
+}
