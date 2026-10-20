@@ -459,14 +459,17 @@ fn buttons_heard(fixture: &mut Fixture, id: ClientId) -> usize {
     count(fixture.client(id), "wl_pointer#", "button")
 }
 
-/// A lease on the top window while the shell's sheet covers the output (as a confirm sheet does
-/// until it is unmapped after the person's answer). The lease clicks the middle of the window.
+/// A lease on the top window, focused for it (`FocusLease`, so its first click is not only an
+/// activation), while the shell's sheet covers the output (as a confirm sheet does until it is
+/// unmapped after the person's answer). The lease clicks the middle of the window.
 /// Returns the window's client, the shell's, the sheet, and what keeps the windows mapped.
 fn click_while_a_sheet_covers_the_window() -> (Fixture, ClientId, ClientId, LayerSurface, Kept) {
     let (mut fixture, [_, (over_id, over)], kept) = two_windows();
+    let agent = callers::agent_tier();
     let (lease, _socket) = fixture
-        .lease_window(&callers::agent_tier(), &identifier_of(over), 7)
+        .lease_window(&agent, &identifier_of(over), 7)
         .expect("granted");
+    assert_eq!(fixture.focus_lease(&agent, lease), Ok(()));
     let shell = fixture.connect(ConnectionRole::Shell);
     fixture.pump();
     let sheet = LayerSurface::create(

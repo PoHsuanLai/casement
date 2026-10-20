@@ -81,7 +81,6 @@ pub(super) fn settle(state: &mut State) {
         return;
     }
     let now = state.clock.now();
-    let at = pointer(state);
     let mut kept = VecDeque::new();
     let mut blocked: Vec<LeaseId> = Vec::new();
     for key in held {
@@ -89,6 +88,8 @@ pub(super) fn settle(state: &mut State) {
             kept.push_back(key);
             continue;
         }
+        // The pointer is read for each event: one that went before (a move) may have moved it.
+        let at = pointer(state);
         match agent_gate::gate(state, key.lease, &key.event, at) {
             Gate::Open => through(state, &key.event),
             Gate::Shut(rule) => log_shut(key.lease, rule),
