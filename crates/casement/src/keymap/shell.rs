@@ -238,6 +238,26 @@ mod tests {
     }
 
     #[test]
+    fn the_rows_are_the_handled_table() {
+        use keycap_client::Handler;
+        for action in StandardAction::all() {
+            let want = match shell_action(action) {
+                None => None,
+                Some(BindingAction::Desktop(_)) => Some(Handler::Compositor),
+                Some(BindingAction::Spawn(argv)) => {
+                    let args: Vec<&str> = argv.0.iter().skip(1).map(String::as_str).collect();
+                    ShellVerb::parse(&args).map(Handler::Shell)
+                }
+                Some(_) => None,
+            };
+            assert_eq!(keycap_client::handler(action), want, "{}", action.slug());
+        }
+        assert!(
+            keycap_client::handled_actions().all(|(action, _)| shell_action(action).is_some())
+        );
+    }
+
+    #[test]
     fn the_conventions_of_our_desktop_bind_the_shell() {
         let bindings = bindings_of(&Keymap::conventional(OURS));
         let cases: Vec<(&str, &str, Option<BindingAction>)> = vec![
