@@ -52,6 +52,14 @@ const ROWS: &[Row] = &[
         Does::Sill(&["launcher", "toggle"]),
     ),
     (StandardAction::NextApp, Does::Sill(&["switcher", "next"])),
+    // The front app's next window (the Mac's Command+`).
+    (StandardAction::NextWindow, Does::Sill(&["next-window"])),
+    // Flips the dock's auto-hide (the Mac's Option+Command+D).
+    (
+        StandardAction::ToggleDock,
+        Does::Sill(&["dock", "toggle-hide"]),
+    ),
+    (StandardAction::LockScreen, Does::Sill(&["lock"])),
     (
         StandardAction::PreviousApp,
         Does::Sill(&["switcher", "prev"]),
