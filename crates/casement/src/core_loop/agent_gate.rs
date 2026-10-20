@@ -160,12 +160,17 @@ fn window_holding(state: &State, surface: &WlSurface) -> Option<WindowId> {
 }
 
 /// The rule that applies when the pointer (for pointer events) or the keyboard (for keys) is
-/// grabbed by, or focused on, a surface that is not `leased` or one of its popups: a popup grab, a drag, an
+/// grabbed by, or focused on, a surface that is not `leased`, one of its popups or a window it
+/// opened over itself: a popup grab, a drag, an
 /// input method's, another window's or another app's implicit grab would carry the event there.
 fn held_by_another(state: &State, leased: WindowId, kind: &InputKind) -> Option<Rule> {
     let seat = &state.wl.seat;
+    // The leased window's own dialogs (a file chooser it opened) are inside the lease.
     let elsewhere = |surface: Option<WlSurface>| {
-        surface.is_some_and(|surface| window_holding(state, &surface) != Some(leased))
+        surface.is_some_and(|surface| {
+            !window_holding(state, &surface)
+                .is_some_and(|window| state.core.model.within(leased, window))
+        })
     };
     match kind {
         InputKind::Key { .. } => {

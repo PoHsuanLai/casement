@@ -4,18 +4,21 @@
 
 use crate::protocol::{map_layer, map_toplevel, rect_of, settle, windows};
 use casement_core::DeviceId;
-use casement_core::geometry::{LogicalPoint, LogicalRect};
-use casement_core::input::{ButtonCode, DeviceClass, Edge, InputEvent, InputKind, KeyCode, Origin};
+use casement_core::geometry::{LogicalPoint, LogicalRect, PhysicalSize};
+use casement_core::input::{
+    ButtonCode, DeviceClass, Edge, InputEvent, InputKind, InputTarget, InputUse, KeyCode, Origin,
+    Reach, Refusal,
+};
 use casement_core::policy::ConnectionRole;
 use casement_core::{LeaseId, WindowId};
 use casement_ipc::dbus::ConnectRefusal;
-use casement_testclient::TestClient;
 use casement_testclient::seat::keyboard::Keyboard;
 use casement_testclient::seat::pointer::Pointer;
 use casement_testclient::surface::layer::{
     Anchor, KeyboardInteractivity, Layer, LayerAsk, LayerSurface,
 };
 use casement_testclient::surface::toplevel::{Toplevel, WmBase};
+use casement_testclient::{Pattern, TestClient, shm_buffer};
 use casement_testkit::fakes::callers;
 use casement_testkit::{ClientId, Fixture, FixtureSpec, TestOrigin};
 use casement_wayland::foreign_toplevel_list::identifier_of;
@@ -532,4 +535,66 @@ fn a_lease_click_is_dropped_after_the_bound_when_the_sheet_stays() {
         0,
         "dropped, not delivered late"
     );
+}
+
+/// A window the leased window opened over itself (a file chooser: a toplevel whose parent is the
+/// leased window) is inside the lease; a window of the same app that it did not open is not.
+#[test]
+fn a_lease_reaches_the_dialog_its_window_opened_and_no_other_window_of_the_app() {
+    let mut fixture = Fixture::start(FixtureSpec::desktop()).expect("fixture");
+    let id = fixture.connect(ConnectionRole::Public);
+    fixture.pump();
+    let _pointer = Pointer::bind(fixture.client(id)).expect("pointer");
+    let base = WmBase::bind(fixture.client(id), 7);
+    let new_since = |fixture: &Fixture, before: &[WindowId]| {
+        windows(fixture)
+            .into_iter()
+            .find(|window| !before.contains(window))
+            .expect("a new window")
+    };
+    let other = map_toplevel(&mut fixture, id, &base, (300, 200));
+    let unrelated = windows(&fixture)[0];
+    let parent = map_toplevel(&mut fixture, id, &base, (600, 400));
+    let held = new_since(&fixture, &[unrelated]);
+    let before = windows(&fixture);
+    let dialog = base.toplevel(fixture.client(id));
+    dialog.set_parent(Some(&parent));
+    dialog.commit_bare();
+    fixture.pump();
+    dialog.ack_latest();
+    let buffer = shm_buffer(
+        fixture.client(id),
+        PhysicalSize { w: 300, h: 200 },
+        Pattern::Gradient,
+    );
+    dialog.show(&buffer);
+    fixture.pump();
+    settle(&mut fixture);
+    let chooser = new_since(&fixture, &before);
+    let agent = callers::agent_tier();
+    let (lease, _socket) = fixture
+        .lease_window(&agent, &identifier_of(held), 7)
+        .expect("granted");
+    let as_lease = |target| {
+        fixture
+            .model()
+            .reach(&Origin::Agent(LeaseId(lease)), &target, InputUse::Press)
+    };
+    assert_eq!(as_lease(InputTarget::Window(chooser)), Reach::Allowed);
+    assert_eq!(as_lease(InputTarget::Popup(chooser)), Reach::Allowed);
+    assert_eq!(
+        as_lease(InputTarget::Window(unrelated)),
+        Reach::Refused(Refusal::OutsideLease),
+        "another window of the same app"
+    );
+    // A click of the lease on the dialog reaches it (the first may only activate it).
+    let middle = rect_of(&fixture, chooser).centre();
+    let heard = count(fixture.client(id), "wl_pointer#", "button");
+    click(&mut fixture, lease, middle);
+    click(&mut fixture, lease, middle);
+    assert!(
+        count(fixture.client(id), "wl_pointer#", "button") >= heard + 2,
+        "the dialog hears the lease's click"
+    );
+    drop((other, parent, dialog));
 }

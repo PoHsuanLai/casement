@@ -15,18 +15,54 @@ use crate::input::{DesktopCommand, InputTarget, InputUse, Origin, Reach, ReachFa
 use crate::lock::LockState;
 use crate::settings::Enabled;
 use crate::time::Mono;
-use crate::window::{SpacePlace, Window, WindowState};
+use crate::window::{Parent, SpacePlace, Window, WindowState};
 use casement_protocols::vocab::{ActorKind, Toggle};
 
 impl Model {
     /// Whether an input from `origin` may reach `target` for `use_` now (the lock, the agent,
-    /// the feed and trusted surfaces: the reach table over this model's lock and leases).
+    /// the feed and trusted surfaces: the reach table over this model's lock and leases). A
+    /// lease's window includes the windows it opened over itself: a dialog or file chooser whose
+    /// parent chain leads to the held window is reached as that window, and so are its popups.
     pub fn reach(&self, origin: &Origin, target: &InputTarget, use_: InputUse) -> Reach {
         let facts = ReachFacts {
             lock: &self.lock,
             leases: &self.leases,
         };
-        reach(origin, target, use_, &facts)
+        reach(origin, &self.as_leased(origin, target), use_, &facts)
+    }
+
+    /// Whether `window` is `held` or a window whose parent chain leads to it. The chain is
+    /// walked at most once per window, so a loop in it ends the walk.
+    pub fn within(&self, held: WindowId, window: WindowId) -> bool {
+        let mut at = Some(window);
+        for _ in 0..=self.windows.len() {
+            match at {
+                Some(found) if found == held => return true,
+                Some(found) => {
+                    at = match self.windows.get(&found).map(|w| w.parent) {
+                        Some(Parent::Window(parent)) => Some(parent),
+                        _ => None,
+                    }
+                }
+                None => return false,
+            }
+        }
+        false
+    }
+
+    /// `target` as the lease's own window when it is one of the windows that window opened.
+    fn as_leased(&self, origin: &Origin, target: &InputTarget) -> InputTarget {
+        let Origin::Agent(lease) = origin else {
+            return *target;
+        };
+        let Some(held) = self.leases.window_of(*lease) else {
+            return *target;
+        };
+        match *target {
+            InputTarget::Window(window) if self.within(held, window) => InputTarget::Window(held),
+            InputTarget::Popup(window) if self.within(held, window) => InputTarget::Popup(held),
+            other => other,
+        }
     }
 
     /// A press on a window, routed before any client sees it (03 §1.2). The effects say how:

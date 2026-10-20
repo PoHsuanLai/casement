@@ -81,7 +81,8 @@ pub enum Refusal {
 ///    reaches only the lock surface; everything else is [`Refusal::Locked`], whoever sends it.
 /// 2. **The agent.** An event of a lease reaches only the window that lease holds, its
 ///    surfaces and its popups; anything else (another window, a layer surface, the desktop, a
-///    lease that ended) is [`Refusal::OutsideLease`].
+///    lease that ended) is [`Refusal::OutsideLease`]. `Model::reach` first takes a window the
+///    held window opened over itself (a dialog, a file chooser) as the held window.
 /// 3. **The feed.** A feed scrolls and gestures only: [`Refusal::FeedKind`].
 /// 4. **Trusted surfaces.** Only physical (and test) input reaches one (I3), and virtual
 ///    devices are never physical (I8): [`Refusal::NotPhysical`].
