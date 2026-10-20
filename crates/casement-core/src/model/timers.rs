@@ -46,6 +46,7 @@ impl Model {
             }
             TimerKey::KeyRepeat(_)
             | TimerKey::ImeHold
+            | TimerKey::AgentHold
             | TimerKey::IdleNotify(..)
             | TimerKey::SwitcherDelay
             | TimerKey::HotCorner(_)

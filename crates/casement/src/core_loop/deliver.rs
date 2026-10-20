@@ -8,6 +8,7 @@
 //! text-input gate while an input method is about to grab the keyboard.
 
 use super::agent_gate;
+use super::agent_wait;
 use super::divider;
 use super::frames;
 use super::grab;
@@ -45,12 +46,17 @@ const ESCAPE: u32 = 0xff1b;
 /// Delivers one event. A refused or unhandled event is dropped (a delivery that fails is
 /// logged: the loop degrades, it does not stop).
 pub(super) fn deliver(state: &mut State, event: &InputEvent) {
+    match event.origin {
+        // An agent lease's event meets the gate first, and may wait there (`agent_wait`).
+        Origin::Agent(lease) => agent_wait::arrive(state, lease, event),
+        _ => through(state, event),
+    }
+}
+
+/// An event past the agent gate (or one that never meets it): the rest of delivery.
+pub(super) fn through(state: &mut State, event: &InputEvent) {
     let seat = state.wl.seat.seat.clone();
     if let Origin::Agent(lease) = event.origin {
-        let at = pointer_at(&seat).map(|(x, y)| LogicalPoint { x, y });
-        if agent_gate::gate(state, lease, event, at) == agent_gate::Gate::Shut {
-            return;
-        }
         agent_gate::note(state, lease, &event.kind);
     }
     // Mission Control keeps scrolls, gestures and touches from the windows.
@@ -122,7 +128,7 @@ fn sub_of(at: (f64, f64)) -> SubPoint {
 }
 
 /// Where the seat's pointer is.
-fn pointer_at(seat: &Seat<State>) -> Option<(i32, i32)> {
+pub(super) fn pointer_at(seat: &Seat<State>) -> Option<(i32, i32)> {
     let pointer: PointerHandle<State> = seat.get_pointer()?;
     let at = pointer.current_location();
     Some((at.x.floor() as i32, at.y.floor() as i32))
@@ -130,10 +136,20 @@ fn pointer_at(seat: &Seat<State>) -> Option<(i32, i32)> {
 
 /// Whether the reach table refuses `event` on `target` for `use_`.
 fn refused(state: &State, event: &InputEvent, target: &InputTarget, use_: InputUse) -> bool {
-    !matches!(
-        state.core.model.reach(&event.origin, target, use_),
-        Reach::Allowed
-    )
+    match state.core.model.reach(&event.origin, target, use_) {
+        Reach::Allowed => false,
+        Reach::Refused(why) => {
+            if let Origin::Agent(lease) = event.origin {
+                tracing::debug!(
+                    lease = lease.0,
+                    ?why,
+                    ?use_,
+                    "agent input refused by the reach table"
+                );
+            }
+            true
+        }
+    }
 }
 
 /// A press of `button` that no client gets: its release is not delivered either. An agent

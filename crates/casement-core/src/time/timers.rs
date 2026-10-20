@@ -26,6 +26,8 @@ pub enum TimerKey {
     PingGap(ClientKey),
     /// The text-input gate has held a key for the input method's grab as long as it may.
     ImeHold,
+    /// An agent key has waited as long as it may for the keyboard to come back to its window.
+    AgentHold,
     /// A client's idle notification is due.
     IdleNotify(ClientKey, IdleNotifierId),
     /// An app asked to quit has had its grace period.

@@ -197,7 +197,10 @@ impl Model {
             // Timers and ticks that change nothing a client is shown, at key-repeat and idle
             // rates (CASC-03).
             Event::TimerFired(
-                TimerKey::KeyRepeat(_) | TimerKey::IdleNotify(..) | TimerKey::ImeHold,
+                TimerKey::KeyRepeat(_)
+                | TimerKey::IdleNotify(..)
+                | TimerKey::ImeHold
+                | TimerKey::AgentHold,
             )
             | Event::NightLightTick(_) => Watch::Nothing,
             // Consent changes nothing a window-list or desktop client is shown.

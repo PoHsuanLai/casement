@@ -5,7 +5,8 @@
 //! - it never drives the compositor: no Mission Control, no window frame, no Split View
 //!   divider, nothing while a move, resize or divider drag is in progress;
 //! - it never reaches a client through another client's grab: while the pointer or the keyboard
-//!   is held by a surface that is not the leased window's client, it is dropped;
+//!   is held by a surface that is not the leased window's client, it is dropped (a key waits a
+//!   short bounded time for the keyboard to come back, `agent_wait`);
 //! - only keys, pointer motion, buttons and scrolling: no touch, gestures or switches.
 //!
 //! A press that goes on is noted as the lease's (`seat.agent_down`, [`note`]); one held back
@@ -25,13 +26,42 @@ use casement_wayland::seat::Pressed;
 use smithay::desktop::{PopupKind, find_popup_root_surface};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 
+/// The rule that shut an agent event, named so it can be logged and told to the agent without
+/// saying what the event was.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(super) enum Rule {
+    /// A release of a press the lease never had delivered.
+    NoPress,
+    /// The lease ended, or its window is gone.
+    NoLease,
+    /// Not a key, motion, button or scroll.
+    Kind,
+    /// Mission Control has the input.
+    Overview,
+    /// A move or resize is in progress.
+    Grab,
+    /// A Split View divider is being dragged.
+    Divider,
+    /// The keyboard is on a surface outside the lease. A key waits for it ([`Gate::Wait`]).
+    KeyFocusElsewhere,
+    /// The pointer is grabbed by a surface outside the lease.
+    PointerGrabElsewhere,
+    /// A press on the window's frame or the divider.
+    Chrome,
+    /// A key waited the bound for the keyboard to come back to the window and it did not.
+    HoldExpired,
+}
+
 /// Whether an agent event goes on to delivery.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Gate {
     /// It goes on (the reach table still has its say).
     Open,
-    /// It is dropped.
-    Shut,
+    /// It is dropped, by this rule.
+    Shut(Rule),
+    /// It is held for a short time: this rule may lift (a key while the keyboard is on a surface
+    /// outside the lease, which the person's answer to a sheet gives back to the window).
+    Wait(Rule),
 }
 
 /// The gate for `event` of `lease`, with the pointer at `at`.
@@ -44,21 +74,23 @@ pub(super) fn gate(
     if let Some((what, Edge::Release)) = pressed_of(&event.kind) {
         return match state.wl.seat.agent_down.holds(lease, what) {
             true => Gate::Open,
-            false => Gate::Shut,
+            false => Gate::Shut(Rule::NoPress),
         };
     }
     let Some(window) = state.core.model.leases().window_of(lease) else {
-        return Gate::Shut;
+        return Gate::Shut(Rule::NoLease);
     };
-    let shut = !allowed_kind(&event.kind)
-        || overview::takes_input(state)
-        || state.wl.seat.grab.is_some()
-        || divider::is_dragging(state)
-        || held_by_another(state, window, &event.kind)
-        || on_compositor_chrome(state, &event.kind, at);
-    match shut {
-        true => Gate::Shut,
-        false => Gate::Open,
+    let rule = (!allowed_kind(&event.kind))
+        .then_some(Rule::Kind)
+        .or_else(|| overview::takes_input(state).then_some(Rule::Overview))
+        .or_else(|| state.wl.seat.grab.is_some().then_some(Rule::Grab))
+        .or_else(|| divider::is_dragging(state).then_some(Rule::Divider))
+        .or_else(|| held_by_another(state, window, &event.kind))
+        .or_else(|| on_compositor_chrome(state, &event.kind, at).then_some(Rule::Chrome));
+    match rule {
+        None => Gate::Open,
+        Some(rule @ Rule::KeyFocusElsewhere) => Gate::Wait(rule),
+        Some(rule) => Gate::Shut(rule),
     }
 }
 
@@ -117,20 +149,21 @@ fn window_holding(state: &State, surface: &WlSurface) -> Option<WindowId> {
     })
 }
 
-/// Whether the pointer (for pointer events) or the keyboard (for keys) is grabbed by, or
-/// focused on, a surface that is not `leased` or one of its popups: a popup grab, a drag, an
+/// The rule that applies when the pointer (for pointer events) or the keyboard (for keys) is
+/// grabbed by, or focused on, a surface that is not `leased` or one of its popups: a popup grab, a drag, an
 /// input method's, another window's or another app's implicit grab would carry the event there.
-fn held_by_another(state: &State, leased: WindowId, kind: &InputKind) -> bool {
+fn held_by_another(state: &State, leased: WindowId, kind: &InputKind) -> Option<Rule> {
     let seat = &state.wl.seat;
     let elsewhere = |surface: Option<WlSurface>| {
         surface.is_some_and(|surface| window_holding(state, &surface) != Some(leased))
     };
     match kind {
-        InputKind::Key { .. } => elsewhere(seat.keyboard.current_focus()),
-        _ => {
-            seat.pointer.is_grabbed()
-                && elsewhere(seat.pointer.current_focus().and_then(Into::into))
+        InputKind::Key { .. } => {
+            elsewhere(seat.keyboard.current_focus()).then_some(Rule::KeyFocusElsewhere)
         }
+        _ => (seat.pointer.is_grabbed()
+            && elsewhere(seat.pointer.current_focus().and_then(Into::into)))
+        .then_some(Rule::PointerGrabElsewhere),
     }
 }
 

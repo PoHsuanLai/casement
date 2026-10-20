@@ -167,6 +167,9 @@ pub struct AgentState {
     /// The remote EIS connections that are open, one device slot each (`connect::answer_remote`),
     /// so `EndEis` can end a portal session's sockets.
     pub remote: crate::remote_sessions::RemoteSessions,
+    /// The agent keys waiting for the keyboard to come back to their leased window
+    /// (`core_loop::agent_wait`).
+    pub waiting: crate::core_loop::agent_wait::Waiting,
 }
 
 /// The D-Bus servers' handles (owned by `casement-ipc`, so their lanes change them there).

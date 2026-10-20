@@ -5,16 +5,21 @@
 use crate::protocol::{map_toplevel, rect_of, settle, windows};
 use casement_core::DeviceId;
 use casement_core::geometry::{LogicalPoint, LogicalRect};
-use casement_core::input::{ButtonCode, DeviceClass, Edge, InputEvent, InputKind, Origin};
+use casement_core::input::{ButtonCode, DeviceClass, Edge, InputEvent, InputKind, KeyCode, Origin};
 use casement_core::policy::ConnectionRole;
 use casement_core::{LeaseId, WindowId};
 use casement_ipc::dbus::ConnectRefusal;
 use casement_testclient::TestClient;
+use casement_testclient::seat::keyboard::Keyboard;
 use casement_testclient::seat::pointer::Pointer;
+use casement_testclient::surface::layer::{
+    Anchor, KeyboardInteractivity, Layer, LayerAsk, LayerSurface,
+};
 use casement_testclient::surface::toplevel::{Toplevel, WmBase};
 use casement_testkit::fakes::callers;
 use casement_testkit::{ClientId, Fixture, FixtureSpec, TestOrigin};
 use casement_wayland::foreign_toplevel_list::identifier_of;
+use std::time::Duration;
 
 const BTN_LEFT: ButtonCode = ButtonCode(0x110);
 
@@ -323,5 +328,98 @@ fn a_held_back_lease_press_leaves_the_persons_click_whole() {
         count(fixture.client(under_id), "wl_pointer#", "button"),
         before + 2,
         "the window hears the person's press and release"
+    );
+}
+
+const KEY_A: KeyCode = KeyCode(30);
+
+/// How many keys the client's keyboards were sent.
+fn keys_heard(fixture: &mut Fixture, id: ClientId) -> usize {
+    count(fixture.client(id), "wl_keyboard#", "key")
+}
+
+/// A lease on the key window with a keyboard bound for it, while the shell's exclusive layer
+/// holds the keyboard (as the confirm sheet does while it takes the person's answer). The lease
+/// sends A, pressed and released. Returns the window's client, the shell's, the layer, and what
+/// keeps the windows mapped.
+fn key_while_a_layer_holds_the_keyboard() -> (Fixture, ClientId, ClientId, LayerSurface, Kept) {
+    let (mut fixture, [_, (over_id, over)], kept) = two_windows();
+    let (lease, _socket) = fixture
+        .lease_window(&callers::agent_tier(), &identifier_of(over), 7)
+        .expect("granted");
+    let _keys = Keyboard::bind(fixture.client(over_id)).expect("a keyboard");
+    // The person clicks the window: it has the keyboard before the sheet takes it.
+    let rect = rect_of(&fixture, over);
+    let mouse = fixture.input().plug(
+        DeviceClass::Pointer,
+        TestOrigin::Physical(DeviceClass::Pointer),
+    );
+    let middle = LogicalPoint {
+        x: rect.origin.x + rect.size.w as i32 / 2,
+        y: rect.origin.y + rect.size.h as i32 / 2,
+    };
+    fixture.input().pointer_to(mouse, middle);
+    fixture.input().button(mouse, BTN_LEFT, Edge::Press);
+    fixture.input().button(mouse, BTN_LEFT, Edge::Release);
+    fixture.pump();
+    let shell = fixture.connect(ConnectionRole::Shell);
+    fixture.pump();
+    let _shell_keys = Keyboard::bind(fixture.client(shell)).expect("a keyboard");
+    let sheet = LayerSurface::create(
+        fixture.client(shell),
+        &LayerAsk {
+            level: Layer::Overlay,
+            namespace: "sheet",
+            anchor: Anchor::empty(),
+            exclusive_zone: 0,
+            keyboard: KeyboardInteractivity::Exclusive,
+            size: (400, 300),
+        },
+    )
+    .expect("layer");
+    fixture.pump();
+    for edge in [Edge::Press, Edge::Release] {
+        send(&mut fixture, lease, InputKind::Key { code: KEY_A, edge });
+    }
+    (fixture, over_id, shell, sheet, kept)
+}
+
+/// A key of the lease that finds the keyboard on a surface outside the lease waits, and goes to
+/// the leased window, press then release, once the keyboard is back there.
+#[test]
+fn a_lease_key_waits_for_the_keyboard_and_goes_when_it_returns() {
+    let (mut fixture, window, shell, sheet, _kept) = key_while_a_layer_holds_the_keyboard();
+    assert_eq!(
+        keys_heard(&mut fixture, window),
+        0,
+        "not while the sheet has the keyboard"
+    );
+    fixture.advance(Duration::from_millis(100));
+    assert_eq!(
+        keys_heard(&mut fixture, window),
+        0,
+        "still waiting inside the bound"
+    );
+    sheet.destroy(fixture.client(shell));
+    fixture.advance(Duration::from_millis(100));
+    assert_eq!(
+        keys_heard(&mut fixture, window),
+        2,
+        "the press and the release reach the leased window"
+    );
+}
+
+/// A key that waited the whole bound without the keyboard coming back is dropped, and its release
+/// with it: nothing reaches the window later.
+#[test]
+fn a_lease_key_is_dropped_after_the_bound_when_the_keyboard_stays_elsewhere() {
+    let (mut fixture, window, shell, sheet, _kept) = key_while_a_layer_holds_the_keyboard();
+    fixture.advance(Duration::from_millis(600));
+    sheet.destroy(fixture.client(shell));
+    fixture.advance(Duration::from_millis(100));
+    assert_eq!(
+        keys_heard(&mut fixture, window),
+        0,
+        "dropped, not delivered late"
     );
 }

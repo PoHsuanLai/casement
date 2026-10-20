@@ -32,6 +32,7 @@ use smithay::wayland::compositor::{
 use std::collections::BTreeSet;
 
 mod agent_gate;
+pub(crate) mod agent_wait;
 mod bodies;
 mod closing;
 mod deliver;
@@ -103,6 +104,7 @@ pub fn feed(state: &mut State, events: Vec<Event>) {
             _ => None,
         })
         .for_each(|input| deliver::deliver(state, input));
+    agent_wait::settle(state);
     deliver::refocus(state);
     presence::update(state);
     crate::timing::leave(state, outer);
@@ -573,7 +575,8 @@ fn spec_config(state: &State, name: &OutputName) -> Option<OutputConfig> {
 }
 
 /// What happens once per loop turn: the input the backend queued is delivered, a locker that
-/// died is noticed (smithay has no callback for it), and clients that left are told to the model. How many things moved.
+/// died is noticed (smithay has no callback for it), clients that left are told to the model,
+/// and agent keys waiting for the keyboard are looked at again. How many things moved.
 pub fn turn(state: &mut State) -> usize {
     let events = session_lock::poll_locker(&mut state.wl.session_lock);
     let polled = events.len();
@@ -587,6 +590,9 @@ pub fn turn(state: &mut State) -> usize {
     let drained = drain_input(state);
     let reported = tty::drain(state);
     ime::settle(state);
+    // A client's own request (a sheet that closes) can give the keyboard back to a leased
+    // window outside any feed: a waiting agent key goes on the same turn.
+    agent_wait::settle(state);
     drained + polled + departed + reported
 }
 
