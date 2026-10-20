@@ -31,6 +31,7 @@ casement-agent = { workspace = true }
 casement-ipc = { workspace = true }
 casement-privacy = { workspace = true }
 casement-protocols = { workspace = true, features = ["server"] }
+shell-verbs = { workspace = true }
 porter-core = { workspace = true }
 ds-helpers = { workspace = true }
 ds-core = { workspace = true }

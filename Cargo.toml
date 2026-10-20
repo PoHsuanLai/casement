@@ -54,6 +54,8 @@ casement-protocols = { path = "../casement-protocols" }
 # The one desktop client library (toplevels, workspaces, outputs, output capture): `casementctl
 # shot` uses its wire layer, the test client its reducer and Frame.
 desktop-client = { path = "../casement-protocols/desktop-client" }
+# The verbs casement's keymap sends sill, the type sill's command line parses back.
+shell-verbs = { path = "../casement-protocols/shell-verbs" }
 porter-core        = { path = "../porter/crates/porter-core" }
 # accountd's D-Bus proxies: casement-ipc registers the Spaces it mints (`Spaces1.Register`).
 porter-dbus        = { path = "../porter/crates/porter-dbus" }

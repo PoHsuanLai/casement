@@ -8,15 +8,16 @@ use super::chord::chord_of;
 use casement_core::input::{Argv, Binding, BindingAction, Bindings, DesktopCommand, SpaceStep};
 use casement_protocols::vocab::PlaceTarget;
 use chordkit::{Action, Keymap, StandardAction};
+use shell_verbs::ShellVerb;
 
 /// How the compositor carries out one action.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Does {
     /// A command casement runs itself.
     Itself(DesktopCommand),
-    /// A command line of sill, the shell (its launcher, switcher, screenshots, power menu, Force
-    /// Quit panel).
-    Sill(&'static [&'static str]),
+    /// A verb for sill, the shell (its launcher, switcher, screenshots, power menu, Force Quit
+    /// panel), sent as its command line.
+    Shell(ShellVerb),
 }
 
 type Row = (StandardAction, Does);
@@ -28,7 +29,7 @@ const ROWS: &[Row] = &[
     // the panel yet).
     (
         StandardAction::ForceQuit,
-        Does::Sill(&["force-quit", "toggle"]),
+        Does::Shell(ShellVerb::ForceQuitToggle),
     ),
     (
         StandardAction::MissionControl,
@@ -49,34 +50,35 @@ const ROWS: &[Row] = &[
     ),
     (
         StandardAction::Launcher,
-        Does::Sill(&["launcher", "toggle"]),
+        Does::Shell(ShellVerb::LauncherToggle),
     ),
-    (StandardAction::NextApp, Does::Sill(&["switcher", "next"])),
+    (StandardAction::NextApp, Does::Shell(ShellVerb::SwitcherNext)),
     // The front app's next window (the Mac's Command+`).
-    (StandardAction::NextWindow, Does::Sill(&["next-window"])),
+    (StandardAction::NextWindow, Does::Shell(ShellVerb::NextWindow)),
     // Flips the dock's auto-hide (the Mac's Option+Command+D).
     (
         StandardAction::ToggleDock,
-        Does::Sill(&["dock", "toggle-hide"]),
+        Does::Shell(ShellVerb::DockToggleHide),
     ),
-    (StandardAction::LockScreen, Does::Sill(&["lock"])),
+    (StandardAction::LockScreen, Does::Shell(ShellVerb::Lock)),
     (
         StandardAction::PreviousApp,
-        Does::Sill(&["switcher", "prev"]),
+        Does::Shell(ShellVerb::SwitcherPrev),
     ),
     (
         StandardAction::ScreenshotScreen,
-        Does::Sill(&["screenshot", "screen"]),
+        Does::Shell(ShellVerb::ScreenshotScreen),
     ),
     (
         StandardAction::ScreenshotSelection,
-        Does::Sill(&["screenshot", "area"]),
+        Does::Shell(ShellVerb::ScreenshotArea),
     ),
     (
         StandardAction::ScreenshotTools,
-        Does::Sill(&["screenshot", "area"]),
+        Does::Shell(ShellVerb::ScreenshotArea),
     ),
-    (StandardAction::LogOut, Does::Sill(&["power-menu", "open"])), // Window > Move & Resize (macOS Sequoia's tiling keys).
+    (StandardAction::LogOut, Does::Shell(ShellVerb::PowerMenuOpen)),
+    // Window > Move & Resize (macOS Sequoia's tiling keys).
     (
         StandardAction::TileLeft,
         Does::Itself(DesktopCommand::Place(PlaceTarget::Left)),
@@ -142,13 +144,18 @@ pub fn shell_action(action: StandardAction) -> Option<BindingAction> {
 fn binding_action(does: Does) -> BindingAction {
     match does {
         Does::Itself(command) => BindingAction::Desktop(command),
-        Does::Sill(words) => BindingAction::Spawn(Argv(
-            std::iter::once(SILL)
-                .chain(words.iter().copied())
-                .map(str::to_owned)
-                .collect(),
-        )),
+        Does::Shell(verb) => spawn_of(verb),
     }
+}
+
+/// The command line that sends `verb` to sill.
+fn spawn_of(verb: ShellVerb) -> BindingAction {
+    BindingAction::Spawn(Argv(
+        std::iter::once(SILL)
+            .chain(verb.argv().iter().copied())
+            .map(str::to_owned)
+            .collect(),
+    ))
 }
 
 /// Every binding `keymap` gives the compositor's actions, one per chord, actions in
@@ -192,13 +199,8 @@ mod tests {
         Some(BindingAction::Desktop(command))
     }
 
-    fn sill(words: &[&str]) -> Option<BindingAction> {
-        Some(BindingAction::Spawn(Argv(
-            std::iter::once(SILL)
-                .chain(words.iter().copied())
-                .map(str::to_owned)
-                .collect(),
-        )))
+    fn shell(verb: ShellVerb) -> Option<BindingAction> {
+        Some(spawn_of(verb))
     }
 
     fn space(n: u8) -> Option<BindingAction> {
@@ -221,7 +223,7 @@ mod tests {
             (
                 "force quit",
                 "option+cmd+Escape",
-                sill(&["force-quit", "toggle"]),
+                shell(ShellVerb::ForceQuitToggle),
             ),
             (
                 "Mission Control",
@@ -240,17 +242,17 @@ mod tests {
                 "ctrl+Right",
                 itself(DesktopCommand::SwitchSpace(SpaceStep::Next)),
             ),
-            ("launcher", "cmd+space", sill(&["launcher", "toggle"])),
-            ("next app", "cmd+Tab", sill(&["switcher", "next"])),
-            ("previous app", "shift+cmd+Tab", sill(&["switcher", "prev"])),
+            ("launcher", "cmd+space", shell(ShellVerb::LauncherToggle)),
+            ("next app", "cmd+Tab", shell(ShellVerb::SwitcherNext)),
+            ("previous app", "shift+cmd+Tab", shell(ShellVerb::SwitcherPrev)),
             (
                 "screen shot",
                 "shift+cmd+3",
-                sill(&["screenshot", "screen"]),
+                shell(ShellVerb::ScreenshotScreen),
             ),
-            ("area shot", "shift+cmd+4", sill(&["screenshot", "area"])),
-            ("shot tools", "shift+cmd+5", sill(&["screenshot", "area"])),
-            ("log out", "shift+cmd+q", sill(&["power-menu", "open"])),
+            ("area shot", "shift+cmd+4", shell(ShellVerb::ScreenshotArea)),
+            ("shot tools", "shift+cmd+5", shell(ShellVerb::ScreenshotArea)),
+            ("log out", "shift+cmd+q", shell(ShellVerb::PowerMenuOpen)),
             (
                 "tile left",
                 "ctrl+option+Left",
@@ -341,7 +343,7 @@ mod tests {
         let bindings = bindings_of(&keymap);
         assert_eq!(
             what(&bindings, "ctrl+option+space"),
-            sill(&["launcher", "toggle"])
+            shell(ShellVerb::LauncherToggle)
         );
         assert_eq!(what(&bindings, "cmd+space"), None);
     }
