@@ -67,6 +67,11 @@ const ROWS: &[Row] = &[
         Does::Shell(ShellVerb::DockToggleHide),
     ),
     (StandardAction::LockScreen, Does::Shell(ShellVerb::Lock)),
+    // The Mac's Character Viewer (Control+Command+Space): sill's launcher on emoji and symbols.
+    (
+        StandardAction::EmojiAndSymbols,
+        Does::Shell(ShellVerb::EmojiAndSymbols),
+    ),
     (
         StandardAction::PreviousApp,
         Does::Shell(ShellVerb::SwitcherPrev),
