@@ -181,7 +181,7 @@ async fn the_remote_input_calls_are_the_portals_alone() {
         .into_iter()
         .filter(|ask| ask.gone.is_none())
         .collect();
-    assert_eq!(asks.len(), 3, "{asks:?}");
+    assert_eq!(asks.len(), 2, "{asks:?}");
     assert_eq!(
         asks[0].remote,
         Some(crate::dbus::RemoteAsk {
@@ -244,7 +244,7 @@ async fn leasing_a_window_is_the_agent_tiers_alone() {
         .into_iter()
         .filter(|ask| ask.gone.is_none())
         .collect();
-    assert_eq!(asks.len(), 2, "{asks:?}");
+    assert_eq!(asks.len(), 3, "{asks:?}");
     assert_eq!(
         asks[0].lease,
         Some(crate::dbus::LeaseAsk {
