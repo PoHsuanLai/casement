@@ -18,6 +18,7 @@ mod display_trial;
 mod focus_feed;
 mod keyboard;
 mod layers;
+mod leases;
 mod lock;
 mod moved;
 mod night_light;
@@ -52,7 +53,7 @@ use crate::effect::Effect;
 use crate::event::Event;
 use crate::focus::Focus;
 use crate::ids::{ClientKey, LayerKey, OutputKey, WindowId};
-use crate::input::InputKind;
+use crate::input::{InputKind, Leases};
 use crate::invariants::{self, InvariantBreak};
 use crate::layer::LayerBook;
 use crate::lock::LockState;
@@ -112,6 +113,8 @@ pub struct Model {
     /// The session lock, with who asked for it: a lock whose locker is gone is taken over only
     /// by the shell or by that client again.
     lock: LockState,
+    /// The agent's leases, each holding one window: what an agent event may reach.
+    leases: Leases,
     /// Mission Control's life (`model/overview.rs`).
     overview: Overview,
     focus: Focus,
@@ -163,6 +166,7 @@ impl Model {
             demand: None,
             split_choice: None,
             lock: LockState::Unlocked,
+            leases: Leases::none(),
             overview: Overview::Closed,
             focus: Focus::none(),
             swipe: swipe::SwipeState::default(),
@@ -261,6 +265,8 @@ impl Model {
             Event::ClientGone { client } => self.disconnect(client),
             Event::ToplevelMapped(mapped) => self.map(mapped),
             Event::ToplevelUnmapped { window } => self.unmap(window),
+            Event::LeaseGranted { lease, window } => self.grant_lease(lease, window),
+            Event::LeaseEnded { lease } => self.end_lease(lease),
             Event::ToplevelCommitted { window, size } => self.commit(window, size),
             Event::ToplevelRequest { window, request } => {
                 self.unless_locked(|model| model.request(window, request))
@@ -355,6 +361,11 @@ impl Model {
     /// The session lock.
     pub fn lock(&self) -> &LockState {
         &self.lock
+    }
+
+    /// The agent's leases.
+    pub fn leases(&self) -> &Leases {
+        &self.leases
     }
 
     /// Focus.

@@ -68,10 +68,14 @@ impl StandInLoop {
 }
 
 fn decide(ask: &ConnectAsk) -> ConnectReply {
-    if ask.end.is_some() || ask.gone.is_some() {
+    if ask.end.is_some() || ask.gone.is_some() || ask.end_lease.is_some() {
         return ConnectReply::Ended;
     }
     match UnixStream::pair() {
+        Ok((_server, client)) if ask.lease.is_some() => ConnectReply::Leased {
+            lease: 1,
+            socket: client.into(),
+        },
         Ok((_server, client)) => ConnectReply::Granted(client.into()),
         Err(_) => ConnectReply::Refused(crate::dbus::ConnectRefusal::Unavailable),
     }

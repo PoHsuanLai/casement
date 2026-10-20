@@ -2,7 +2,7 @@
 
 use casement_core::input::{
     Binding, BindingAction, Bindings, Chord, DesktopCommand, DeviceClass, FeedSource, InputTarget,
-    InputUse, Keysym, Origin, PortalSessionId, Reach, ReachFacts, Refusal, Resolved, reach,
+    InputUse, Keysym, Leases, Origin, PortalSessionId, Reach, ReachFacts, Refusal, Resolved, reach,
     resolve,
 };
 use casement_core::lock::{LockHolder, LockState, LockSurfaces};
@@ -166,7 +166,15 @@ fn the_reach_table() {
     ];
     for (name, origin, target, use_, lock, want) in cases {
         assert_eq!(
-            reach(&origin, &target, use_, &ReachFacts { lock }),
+            reach(
+                &origin,
+                &target,
+                use_,
+                &ReachFacts {
+                    lock,
+                    leases: &Leases::none()
+                }
+            ),
             want,
             "{name}"
         );

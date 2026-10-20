@@ -4,7 +4,7 @@ use crate::app::{AppKey, MenuSource};
 use crate::desktop::DesktopRequest;
 use crate::focus::TokenCheck;
 use crate::geometry::{LogicalPoint, LogicalRect, LogicalSize};
-use crate::ids::{ClientKey, InputSerial, LayerKey, OutputKey, WindowId};
+use crate::ids::{ClientKey, InputSerial, LayerKey, LeaseId, OutputKey, WindowId};
 use crate::input::InputEvent;
 use crate::layer::LayerSpec;
 use crate::lock::LockEvent;
@@ -51,6 +51,19 @@ pub enum Event {
     ToplevelUnmapped {
         /// The window.
         window: WindowId,
+    },
+    /// The agent tier was granted `lease` on `window` (`org.quire.Compositor1.LeaseWindow`):
+    /// input of that lease reaches the window and its popups, nothing else.
+    LeaseGranted {
+        /// The lease.
+        lease: LeaseId,
+        /// The window it holds.
+        window: WindowId,
+    },
+    /// `lease` ended (`EndLease`, its socket closed, or the agent tier left the bus).
+    LeaseEnded {
+        /// The lease.
+        lease: LeaseId,
     },
     /// A toplevel committed a new size.
     ToplevelCommitted {

@@ -14,6 +14,17 @@
 //!                            out for `session` stops (keys it still holds are let go) and the
 //!                            compositor's end of each is closed; a session it does not know is
 //!                            not an error
+//! LeaseWindow(window: s, devices: u) -> (t, h)
+//!                            only the agent tier may ask: a lease on the window whose
+//!                            ext-foreign-toplevel identifier is `window`, and the client end of
+//!                            an EIS socket whose input reaches that window and its popups and
+//!                            nothing else (never another window, a layer surface, the lock or a
+//!                            trusted surface, and never a compositor binding); the lease ends
+//!                            with the window, with `EndLease`, or when the caller's bus
+//!                            connection goes
+//! EndLease(lease: t)         only the agent tier may ask: the lease's input stops (keys it
+//!                            still holds are let go) and its socket closes; a lease it does not
+//!                            know is not an error
 //! ```
 //!
 //! Who asks is decided on the bus thread, before anything reaches the event loop (CASW-05):
@@ -117,13 +128,7 @@ impl Compositor1 {
         let caller = self.proven(&header, &roles::PORTAL).await?;
         // The socket belongs to the portal's connection to the bus, not to the portal as a
         // program: when that connection goes (a restart, a crash), so do its sockets.
-        let owner = header
-            .sender()
-            .map(|name| name.as_str().to_owned())
-            .ok_or_else(|| ConnectRefusal::NotTheCaller.to_error())?;
-        if self.portals.watch(&owner, &caller) == Watching::TableFull {
-            return Err(ConnectRefusal::TooMany.to_error());
-        }
+        let owner = self.watched_owner(&header, &caller)?;
         self.ask(ConnectAsk::remote_eis(session, devices, caller).from_owner(&owner))
             .await
     }
@@ -139,9 +144,56 @@ impl Compositor1 {
             _ => Err(ConnectRefusal::Unavailable.to_error()),
         }
     }
+
+    /// `LeaseWindow(window: s, devices: u) -> (t, h)`: a lease on the window whose
+    /// ext-foreign-toplevel identifier is `window` and the client end of its input socket,
+    /// offering the device kinds in `devices` (1 keyboard, 2 pointer, 4 touchscreen). Only the
+    /// agent tier may ask. Input sent down the socket reaches that window and its popups only.
+    async fn lease_window(
+        &self,
+        window: String,
+        devices: u32,
+        #[zbus(header)] header: Header<'_>,
+    ) -> fdo::Result<(u64, zbus::zvariant::OwnedFd)> {
+        let caller = self.proven(&header, &roles::AGENT_TIER).await?;
+        // The lease belongs to the agent tier's bus connection: when it goes, so does the lease.
+        let owner = self.watched_owner(&header, &caller)?;
+        let ask = ConnectAsk::lease_window(&window, devices, caller).from_owner(&owner);
+        match self.answer(ask).await? {
+            ConnectReply::Leased { lease, socket } => {
+                Ok((lease, zbus::zvariant::OwnedFd::from(socket)))
+            }
+            ConnectReply::Refused(why) => Err(why.to_error()),
+            _ => Err(ConnectRefusal::Unavailable.to_error()),
+        }
+    }
+
+    /// `EndLease(lease: t)`: the lease's input stops and its socket closes. Only the agent tier
+    /// may ask, as for `LeaseWindow`.
+    async fn end_lease(&self, lease: u64, #[zbus(header)] header: Header<'_>) -> fdo::Result<()> {
+        let caller = self.proven(&header, &roles::AGENT_TIER).await?;
+        match self.answer(ConnectAsk::end_lease(lease, caller)).await? {
+            ConnectReply::Ended => Ok(()),
+            ConnectReply::Refused(why) => Err(why.to_error()),
+            _ => Err(ConnectRefusal::Unavailable.to_error()),
+        }
+    }
 }
 
 impl Compositor1 {
+    /// The unique bus name of the connection that sent `header`, now watched so what it asked
+    /// for ends when it leaves the bus.
+    fn watched_owner(&self, header: &Header<'_>, caller: &Proven) -> fdo::Result<String> {
+        let owner = header
+            .sender()
+            .map(|name| name.as_str().to_owned())
+            .ok_or_else(|| ConnectRefusal::NotTheCaller.to_error())?;
+        match self.portals.watch(&owner, caller) {
+            Watching::Yes => Ok(owner),
+            Watching::TableFull => Err(ConnectRefusal::TooMany.to_error()),
+        }
+    }
+
     /// Counts the call against its caller's rate, then proves the caller holds `needed`.
     async fn proven(&self, header: &Header<'_>, needed: &RoleName) -> fdo::Result<Proven> {
         let sender = header.sender().map(zbus::names::UniqueName::as_str);

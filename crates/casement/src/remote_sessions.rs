@@ -1,9 +1,9 @@
-//! The remote EIS connections that are open (`org.quire.Compositor1.ConnectEis`), numbered one
-//! slot each (CASW-19) and findable by portal session, so `EndEis` can stop a session's input
-//! and close the compositor's end of each of its sockets (PORTAL-05).
+//! The remote EIS connections that are open (`org.quire.Compositor1.ConnectEis` and
+//! `LeaseWindow`), numbered one slot each (CASW-19) and findable by portal session or lease, so
+//! `EndEis` and `EndLease` can stop the input and close the compositor's end of each socket
+//! (PORTAL-05).
 
-use casement_agent::{RemoteHandle, RemoteSlot, RemoteSlots};
-use casement_core::input::PortalSessionId;
+use casement_agent::{RemoteFor, RemoteHandle, RemoteSlot, RemoteSlots};
 use smithay::reexports::calloop::RegistrationToken;
 use std::collections::BTreeMap;
 
@@ -55,10 +55,11 @@ impl RemoteSessions {
         self.open.remove(&slot);
     }
 
-    /// Takes every open connection of `session` out of the book: for each, the handle (to release
-    /// what the app held) and the loop token (to remove the source).
-    pub fn end(&mut self, session: PortalSessionId) -> Vec<(RemoteHandle, RegistrationToken)> {
-        self.take_where(|open| open.handle.session() == session)
+    /// Takes every open connection of `owner_of` (a portal session, an agent lease) out of the
+    /// book: for each, the handle (to release what the app held) and the loop token (to remove
+    /// the source).
+    pub fn end_for(&mut self, owner_of: RemoteFor) -> Vec<(RemoteHandle, RegistrationToken)> {
+        self.take_where(|open| open.handle.owner() == owner_of)
     }
 
     /// Takes every open connection the bus connection `owner` asked for out of the book, as

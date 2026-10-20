@@ -150,7 +150,7 @@ impl Model {
         let outputs = self.outputs_of(&[id]);
         let was_seen = window.role != WindowRole::Shell && self.sees_window(id);
         let held = self.spaces_naming(id);
-        let mut model = self.without_app_window(&window.app, id);
+        let mut model = self.without_app_window(&window.app, id).drop_leases_of(id);
         model.windows.remove(&id);
         for child in model.windows.values_mut() {
             if child.parent == Parent::Window(id) {

@@ -193,6 +193,65 @@ async fn the_remote_input_calls_are_the_portals_alone() {
     assert_eq!(asks[1].end, Some(crate::dbus::EndAsk { session: 7 }));
 }
 
+/// `LeaseWindow` and `EndLease` are the agent tier's alone, proven all the way: the shell, the
+/// portal and an agent tier shown by its image only are refused on the bus thread, and the lease
+/// ask carries the window and who asked, from the connection that is now watched.
+#[tokio::test]
+async fn leasing_a_window_is_the_agent_tiers_alone() {
+    let served = Served::start(WHOLE_TEST, Loop::Reads, None);
+    let agent = served.caller(service("agent_tier", Proof::Full)).await;
+    let shell = served.caller(service("shell", Proof::Full)).await;
+    let portal = served.caller(service("portal", Proof::Full)).await;
+    let half = served.caller(service("agent_tier", Proof::Exe)).await;
+    let lease = |proxy: zbus::Proxy<'static>| async move {
+        match proxy
+            .call::<_, _, (u64, zbus::zvariant::OwnedFd)>("LeaseWindow", &("w7", 7_u32))
+            .await
+        {
+            Ok((lease, _socket)) => format!("lease {lease}"),
+            Err(zbus::Error::MethodError(name, ..)) => name.to_string(),
+            Err(other) => format!("{other}"),
+        }
+    };
+    let end = |proxy: zbus::Proxy<'static>| async move {
+        match proxy.call::<_, _, ()>("EndLease", &(1_u64,)).await {
+            Ok(()) => "ended".to_owned(),
+            Err(zbus::Error::MethodError(name, ..)) => name.to_string(),
+            Err(other) => format!("{other}"),
+        }
+    };
+    assert_eq!(lease(agent.clone()).await, "lease 1");
+    for refused in [shell.clone(), portal.clone(), half.clone()] {
+        assert_eq!(lease(refused).await, DENIED);
+    }
+    assert_eq!(end(agent).await, "ended");
+    for refused in [shell, portal, half] {
+        assert_eq!(end(refused).await, DENIED);
+    }
+    let asks: Vec<_> = served
+        .asks()
+        .into_iter()
+        .filter(|ask| ask.gone.is_none())
+        .collect();
+    assert_eq!(asks.len(), 2, "{asks:?}");
+    assert_eq!(
+        asks[0].lease,
+        Some(crate::dbus::LeaseAsk {
+            window: "w7".to_owned(),
+            devices: 7
+        })
+    );
+    assert_eq!(asks[0].caller.role.as_str(), "agent_tier");
+    assert!(
+        asks[0].owner.is_some(),
+        "the lease belongs to a watched connection"
+    );
+    assert_eq!(
+        asks[1].end_lease,
+        Some(crate::dbus::EndLeaseAsk { lease: 1 })
+    );
+}
+
 /// One caller gets `CALLS_PER_WINDOW` calls in a window; the rest are told to wait and never
 /// reach the loop, proven caller or not.
 #[tokio::test]

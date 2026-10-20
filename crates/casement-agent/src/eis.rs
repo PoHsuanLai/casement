@@ -13,12 +13,12 @@
 //! Wayland role.
 //! This is the only file that names `reis` (B14). The agent seat's EIS (P4) is not here.
 
-use crate::remote::{Fit, Held, RemoteHandle, RemoteSlot, releases, tagged};
+use crate::remote::{Fit, Held, RemoteFor, RemoteHandle, RemoteSlot, releases, tagged};
 use casement_core::DeviceId;
 use casement_core::geometry::{LogicalPoint, LogicalRect, SubPoint, SubPx};
 use casement_core::input::{
     AxisFrame, AxisSource, AxisStop, ButtonCode, DeviceClass, Edge, InputEvent, InputKind, KeyCode,
-    Origin, PortalSessionId, TouchStep,
+    Origin, TouchStep,
 };
 use casement_core::time::Mono;
 use peephole_core::{RoleName, roles};
@@ -37,6 +37,13 @@ use std::os::unix::net::UnixStream;
 /// another role is refused there too.
 pub fn portal_may_connect(held: &RoleName) -> bool {
     *held == roles::PORTAL
+}
+
+/// Whether `held`, the role the caller proved, is the agent tier: the one caller that may lease
+/// a window for its input (`LeaseWindow`). The bus thread proves the role; this is the second
+/// line.
+pub fn agent_may_lease(held: &RoleName) -> bool {
+    *held == roles::AGENT_TIER
 }
 
 /// A kind of device a remote session may offer.
@@ -81,7 +88,7 @@ impl RemoteKinds {
 /// One input event from a remote session, not yet stamped with a time.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RemoteInput {
-    /// Always `Origin::Remote` with the session's id.
+    /// `Origin::Remote` with the portal session's id, or `Origin::Agent` with the lease's.
     pub origin: Origin,
     /// The virtual device it came from.
     pub device: DeviceId,
@@ -122,11 +129,11 @@ pub struct RemoteGrant {
     pub handle: RemoteHandle,
 }
 
-/// Opens a remote EIS connection for portal session `session`, numbered `slot` (minted by the
+/// Opens a remote EIS connection for `owner` (a portal session or an agent lease), numbered `slot` (minted by the
 /// compositor, one per connection), offering `kinds`. Absolute pointer and touch positions are
 /// over `extent` (the union of the outputs now).
 pub fn open(
-    session: PortalSessionId,
+    owner: RemoteFor,
     slot: RemoteSlot,
     kinds: RemoteKinds,
     extent: LogicalRect,
@@ -134,8 +141,8 @@ pub fn open(
     let (server, client) = UnixStream::pair()?;
     server.set_nonblocking(true)?;
     let context = eis::Context::new(server)?;
-    let link = Link::new(session, slot, kinds, extent);
-    let handle = RemoteHandle::new(session, slot, link.held.clone());
+    let link = Link::new(owner, slot, kinds, extent);
+    let handle = RemoteHandle::new(owner, slot, link.held.clone());
     Ok(RemoteGrant {
         source: RemoteEisSource {
             inner: EisRequestSource::new(context, 1),
@@ -219,7 +226,7 @@ enum Made {
 
 /// The protocol state of one connection: what was offered and what is held down.
 struct Link {
-    session: PortalSessionId,
+    owner: RemoteFor,
     slot: RemoteSlot,
     kinds: RemoteKinds,
     extent: LogicalRect,
@@ -231,7 +238,7 @@ struct Link {
 impl fmt::Debug for Link {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Link")
-            .field("session", &self.session)
+            .field("owner", &self.owner)
             .field("slot", &self.slot)
             .field("kinds", &self.kinds)
             .field("devices", &self.devices.len())
@@ -240,14 +247,9 @@ impl fmt::Debug for Link {
 }
 
 impl Link {
-    fn new(
-        session: PortalSessionId,
-        slot: RemoteSlot,
-        kinds: RemoteKinds,
-        extent: LogicalRect,
-    ) -> Link {
+    fn new(owner: RemoteFor, slot: RemoteSlot, kinds: RemoteKinds, extent: LogicalRect) -> Link {
         Link {
-            session,
+            owner,
             slot,
             kinds,
             extent,
@@ -475,13 +477,13 @@ impl Link {
     }
 
     fn tag(&self, class: DeviceClass, kind: InputKind) -> RemoteInput {
-        tagged(self.session, self.slot, class, kind)
+        tagged(self.owner, self.slot, class, kind)
     }
 
     /// The connection is over: release what the app held (nothing, when the compositor ended
     /// the session first), then say so.
     fn end(&mut self) -> Vec<RemoteEvent> {
-        releases(self.session, self.slot, &self.held)
+        releases(self.owner, self.slot, &self.held)
             .into_iter()
             .map(RemoteEvent::Input)
             .chain(std::iter::once(RemoteEvent::Ended))
@@ -614,6 +616,7 @@ fn touch_kind(which: TouchWhere, extent: LogicalRect, slot: u32, x: f32, y: f32)
 mod tests {
     use super::*;
     use casement_core::geometry::LogicalSize;
+    use casement_core::input::PortalSessionId;
 
     fn extent() -> LogicalRect {
         LogicalRect::new(
@@ -632,6 +635,19 @@ mod tests {
             roles::SETTINGS,
         ] {
             assert!(!portal_may_connect(&other), "{other}");
+        }
+    }
+
+    #[test]
+    fn only_the_agent_tier_may_lease() {
+        assert!(agent_may_lease(&roles::AGENT_TIER));
+        for other in [
+            roles::SHELL,
+            roles::PORTAL,
+            roles::PORTAL_FRONTEND,
+            roles::SETTINGS,
+        ] {
+            assert!(!agent_may_lease(&other), "{other}");
         }
     }
 
@@ -722,7 +738,7 @@ mod tests {
     fn every_event_of_a_session_is_remote_and_its_devices_are_apart() {
         let session = PortalSessionId(9);
         let link = Link::new(
-            session,
+            RemoteFor::Portal(session),
             RemoteSlot::default(),
             RemoteKinds::from_wire(7),
             extent(),
@@ -746,10 +762,28 @@ mod tests {
         assert!(ids[0] != ids[1] && ids[1] != ids[2] && ids[0] != ids[2]);
     }
 
+    /// An agent lease's connection tags every event with the lease, so the reach table limits it
+    /// to the leased window; it never fires a binding and is never the person's hand.
+    #[test]
+    fn every_event_of_a_lease_is_the_agents() {
+        let lease = casement_core::LeaseId(4);
+        let link = Link::new(
+            RemoteFor::Agent(lease),
+            RemoteSlot::default(),
+            RemoteKinds::from_wire(7),
+            extent(),
+        );
+        let input = link.tag(DeviceClass::Keyboard, InputKind::Touch(TouchStep::Cancel));
+        assert_eq!(input.origin, Origin::Agent(lease));
+        assert!(!input.origin.fires_bindings());
+        assert!(!input.origin.is_physical());
+        assert!(!input.origin.switches_vt());
+    }
+
     #[test]
     fn ending_releases_what_was_held() {
         let mut link = Link::new(
-            PortalSessionId(3),
+            RemoteFor::Portal(PortalSessionId(3)),
             RemoteSlot::default(),
             RemoteKinds::from_wire(7),
             extent(),
@@ -788,7 +822,7 @@ mod tests {
     #[test]
     fn a_session_ended_from_outside_releases_once() {
         let grant = open(
-            PortalSessionId(5),
+            RemoteFor::Portal(PortalSessionId(5)),
             RemoteSlot::default(),
             RemoteKinds::from_wire(7),
             extent(),
@@ -809,7 +843,7 @@ mod tests {
     #[test]
     fn a_connection_opens_with_a_client_end() {
         let grant = open(
-            PortalSessionId(1),
+            RemoteFor::Portal(PortalSessionId(1)),
             RemoteSlot::default(),
             RemoteKinds::from_wire(3),
             extent(),

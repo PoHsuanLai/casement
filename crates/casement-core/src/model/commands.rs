@@ -20,9 +20,13 @@ use casement_protocols::vocab::{ActorKind, Toggle};
 
 impl Model {
     /// Whether an input from `origin` may reach `target` for `use_` now (the lock, the agent,
-    /// the feed and trusted surfaces: the reach table over this model's lock).
+    /// the feed and trusted surfaces: the reach table over this model's lock and leases).
     pub fn reach(&self, origin: &Origin, target: &InputTarget, use_: InputUse) -> Reach {
-        reach(origin, target, use_, &ReachFacts { lock: &self.lock })
+        let facts = ReachFacts {
+            lock: &self.lock,
+            leases: &self.leases,
+        };
+        reach(origin, target, use_, &facts)
     }
 
     /// A press on a window, routed before any client sees it (03 §1.2). The effects say how:

@@ -7,6 +7,7 @@ mod event;
 pub mod gesture_route;
 mod key;
 mod keysym_names;
+mod lease;
 pub mod lift;
 mod maker;
 mod origin;
@@ -21,6 +22,7 @@ pub use event::{
     LidState, PinchDelta, SwitchStep, TabletState, TouchStep,
 };
 pub use key::{ButtonCode, KeyCode, Keysym};
+pub use lease::Leases;
 pub use maker::Maker;
 pub use origin::{BUS_VIRTUAL, DeviceClass, FeedSource, KernelIds, Origin, PortalSessionId};
 pub use reach::{InputTarget, InputUse, Reach, ReachFacts, Refusal, reach};

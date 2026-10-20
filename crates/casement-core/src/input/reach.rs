@@ -1,6 +1,6 @@
 //! Which targets an event of each origin may reach, for which use (I3, I8, the lock, the feed).
 
-use super::Origin;
+use super::{Leases, Origin};
 use crate::ids::{LayerKey, WindowId};
 use crate::lock::LockState;
 
@@ -43,6 +43,8 @@ pub enum InputUse {
 pub struct ReachFacts<'a> {
     /// The session lock.
     pub lock: &'a LockState,
+    /// The agent's leases: which window each holds.
+    pub leases: &'a Leases,
 }
 
 /// Whether an event may reach its target.
@@ -77,8 +79,9 @@ pub enum Refusal {
 ///
 /// 1. **The lock.** While the session is locked (or locking), only physical (and test) input
 ///    reaches only the lock surface; everything else is [`Refusal::Locked`], whoever sends it.
-/// 2. **The agent.** The agent reaches nothing until leases arrive (P4-Z extends
-///    [`ReachFacts`]): [`Refusal::OutsideLease`].
+/// 2. **The agent.** An event of a lease reaches only the window that lease holds, its
+///    surfaces and its popups; anything else (another window, a layer surface, the desktop, a
+///    lease that ended) is [`Refusal::OutsideLease`].
 /// 3. **The feed.** A feed scrolls and gestures only: [`Refusal::FeedKind`].
 /// 4. **Trusted surfaces.** Only physical (and test) input reaches one (I3), and virtual
 ///    devices are never physical (I8): [`Refusal::NotPhysical`].
@@ -88,7 +91,7 @@ pub enum Refusal {
 pub fn reach(origin: &Origin, target: &InputTarget, use_: InputUse, facts: &ReachFacts) -> Reach {
     [
         refuse_by_lock(origin, target, *facts),
-        refuse_agent(origin),
+        refuse_agent(origin, target, facts.leases),
         refuse_feed(origin, use_),
         refuse_untrusted(origin, target),
     ]
@@ -110,8 +113,15 @@ fn refuse_by_lock(origin: &Origin, target: &InputTarget, facts: ReachFacts) -> O
     }
 }
 
-fn refuse_agent(origin: &Origin) -> Option<Refusal> {
-    matches!(origin, Origin::Agent(_)).then_some(Refusal::OutsideLease)
+fn refuse_agent(origin: &Origin, target: &InputTarget, leases: &Leases) -> Option<Refusal> {
+    let Origin::Agent(lease) = origin else {
+        return None;
+    };
+    let inside = match (leases.window_of(*lease), target) {
+        (Some(held), InputTarget::Window(window) | InputTarget::Popup(window)) => held == *window,
+        _ => false,
+    };
+    (!inside).then_some(Refusal::OutsideLease)
 }
 
 fn refuse_feed(origin: &Origin, use_: InputUse) -> Option<Refusal> {

@@ -73,6 +73,27 @@ pub struct ConnectAsk {
     /// Set when a portal connection left the bus (made by casement's own bus thread, never by a
     /// caller): the question is to end every remote socket that connection asked for.
     pub gone: Option<GoneAsk>,
+    /// Set for `LeaseWindow`: the question is for a lease on one window and the input socket
+    /// of that lease; `role` is not read.
+    pub lease: Option<LeaseAsk>,
+    /// Set for `EndLease`: the question is to end a lease.
+    pub end_lease: Option<EndLeaseAsk>,
+}
+
+/// What the agent tier asked of `LeaseWindow`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LeaseAsk {
+    /// The window, by the identifier its `ext_foreign_toplevel_handle_v1` carries.
+    pub window: String,
+    /// The device kinds, as a bit set (1 keyboard, 2 pointer, 4 touchscreen).
+    pub devices: u32,
+}
+
+/// What the agent tier asked of `EndLease`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EndLeaseAsk {
+    /// The lease to end.
+    pub lease: u64,
 }
 
 /// A portal connection that left the bus.
@@ -118,6 +139,8 @@ impl ConnectAsk {
             end: None,
             owner: None,
             gone: None,
+            lease: None,
+            end_lease: None,
         }
     }
 
@@ -143,6 +166,8 @@ impl ConnectAsk {
             gone: Some(GoneAsk {
                 owner: owner.to_owned(),
             }),
+            lease: None,
+            end_lease: None,
         }
     }
 
@@ -166,6 +191,8 @@ impl ConnectAsk {
             end: None,
             owner: None,
             gone: None,
+            lease: None,
+            end_lease: None,
         }
     }
 
@@ -188,6 +215,41 @@ impl ConnectAsk {
             end: Some(EndAsk { session }),
             owner: None,
             gone: None,
+            lease: None,
+            end_lease: None,
+        }
+    }
+}
+
+impl ConnectAsk {
+    /// The question of `caller`, asking for a lease on the window whose foreign-toplevel
+    /// identifier is `window`, with an input socket offering the `devices` bit set.
+    ///
+    /// ```
+    /// use casement_ipc::dbus::{ConnectAsk, Proven};
+    /// use peephole_bus::peephole_core::{AppKey, roles};
+    ///
+    /// let caller = Proven::new(AppKey::new("org.quire.Cua").expect("an app"), roles::AGENT_TIER);
+    /// let ask = ConnectAsk::lease_window("w7", 7, caller);
+    /// assert_eq!(ask.lease.map(|lease| lease.window), Some("w7".to_owned()));
+    /// ```
+    pub fn lease_window(window: &str, devices: u32, caller: Proven) -> ConnectAsk {
+        ConnectAsk {
+            lease: Some(LeaseAsk {
+                window: window.to_owned(),
+                devices,
+            }),
+            // Not read: `lease` decides.
+            ..ConnectAsk::new(ConnectionRole::Public, caller)
+        }
+    }
+
+    /// The question of `caller`, asking to end `lease`.
+    pub fn end_lease(lease: u64, caller: Proven) -> ConnectAsk {
+        ConnectAsk {
+            end_lease: Some(EndLeaseAsk { lease }),
+            // Not read: `end_lease` decides.
+            ..ConnectAsk::new(ConnectionRole::Public, caller)
         }
     }
 }
@@ -198,8 +260,15 @@ impl ConnectAsk {
 pub enum ConnectReply {
     /// The client end of the new connection.
     Granted(OwnedFd),
-    /// The remote session's sockets are closed (`EndEis`).
+    /// The remote session's sockets are closed (`EndEis`, `EndLease`).
     Ended,
+    /// The lease's number and the client end of its input socket (`LeaseWindow`).
+    Leased {
+        /// The lease.
+        lease: u64,
+        /// The client end of the socket.
+        socket: OwnedFd,
+    },
     /// No connection, and why.
     Refused(ConnectRefusal),
 }
@@ -219,6 +288,8 @@ pub enum ConnectRefusal {
     TooMany,
     /// The connection could not be made.
     Unavailable,
+    /// No window has that identifier (`LeaseWindow`).
+    NoSuchWindow,
 }
 
 impl ConnectRefusal {
@@ -237,6 +308,9 @@ impl ConnectRefusal {
             ),
             ConnectRefusal::Unavailable => {
                 fdo::Error::Failed("casement could not make the connection".to_owned())
+            }
+            ConnectRefusal::NoSuchWindow => {
+                fdo::Error::InvalidArgs("no window has that identifier".to_owned())
             }
         }
     }

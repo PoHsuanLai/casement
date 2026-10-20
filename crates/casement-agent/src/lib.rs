@@ -8,10 +8,10 @@ mod socket;
 
 pub use eis::{
     RemoteEisSource, RemoteEvent, RemoteGrant, RemoteInput, RemoteKind, RemoteKinds,
-    open as open_remote_eis, portal_may_connect,
+    agent_may_lease, open as open_remote_eis, portal_may_connect,
 };
 pub use remote::{
-    MAX_HELD, MAX_REMOTE_SLOTS, RemoteHandle, RemoteSlot, RemoteSlots,
+    MAX_HELD, MAX_REMOTE_SLOTS, RemoteFor, RemoteHandle, RemoteSlot, RemoteSlots,
     device_id as remote_device_id,
 };
 

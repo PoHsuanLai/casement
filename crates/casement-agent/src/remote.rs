@@ -9,6 +9,7 @@
 
 use crate::eis::RemoteInput;
 use casement_core::DeviceId;
+use casement_core::LeaseId;
 use casement_core::input::{
     ButtonCode, DeviceClass, Edge, InputKind, KeyCode, Origin, PortalSessionId,
 };
@@ -24,6 +25,27 @@ pub const MAX_REMOTE_SLOTS: u32 = 1 << 28;
 /// fewer than 256 keys, so a peer that "holds" more is broken or hostile, and its presses are
 /// dropped instead of growing the set without end.
 pub const MAX_HELD: usize = 256;
+
+/// Whom a remote connection's input belongs to: a RemoteDesktop portal session (it reaches
+/// windows like the person's hand, never the lock or a trusted surface) or an agent lease (it
+/// reaches only the window the lease holds). Fixed when the connection opens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RemoteFor {
+    /// A portal session (`ConnectEis`).
+    Portal(PortalSessionId),
+    /// An agent lease (`LeaseWindow`).
+    Agent(LeaseId),
+}
+
+impl RemoteFor {
+    /// The origin every event of the connection carries.
+    pub fn origin(self) -> Origin {
+        match self {
+            RemoteFor::Portal(session) => Origin::Remote(session),
+            RemoteFor::Agent(lease) => Origin::Agent(lease),
+        }
+    }
+}
 
 /// The number of one remote connection among all the compositor has opened.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -133,41 +155,37 @@ pub fn device_id(slot: RemoteSlot, class: DeviceClass) -> DeviceId {
     DeviceId(0x8000_0000 | (slot.0 << 2) | kind)
 }
 
-/// An input event of portal session `session` on connection `slot`, tagged remote.
+/// An input event of `owner` on connection `slot`, tagged with its origin.
 pub(crate) fn tagged(
-    session: PortalSessionId,
+    owner: RemoteFor,
     slot: RemoteSlot,
     class: DeviceClass,
     kind: InputKind,
 ) -> RemoteInput {
     RemoteInput {
-        origin: Origin::Remote(session),
+        origin: owner.origin(),
         device: device_id(slot, class),
         kind,
     }
 }
 
-/// The compositor's hold on one open remote connection: which session it is for, and enough to
-/// release what the app still holds down when the session ends from outside.
+/// The compositor's hold on one open remote connection: whom it is for, and enough to release
+/// what the app still holds down when it ends from outside.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RemoteHandle {
-    session: PortalSessionId,
+    owner: RemoteFor,
     slot: RemoteSlot,
     held: Held,
 }
 
 impl RemoteHandle {
-    pub(crate) fn new(session: PortalSessionId, slot: RemoteSlot, held: Held) -> RemoteHandle {
-        RemoteHandle {
-            session,
-            slot,
-            held,
-        }
+    pub(crate) fn new(owner: RemoteFor, slot: RemoteSlot, held: Held) -> RemoteHandle {
+        RemoteHandle { owner, slot, held }
     }
 
-    /// The portal session the connection is for.
-    pub fn session(&self) -> PortalSessionId {
-        self.session
+    /// Whom the connection is for.
+    pub fn owner(&self) -> RemoteFor {
+        self.owner
     }
 
     /// The connection's slot.
@@ -178,21 +196,17 @@ impl RemoteHandle {
     /// The releases of every key and button the app still holds, once: a second call (or the
     /// source ending afterwards) finds nothing held.
     pub fn release(&self) -> Vec<RemoteInput> {
-        releases(self.session, self.slot, &self.held)
+        releases(self.owner, self.slot, &self.held)
     }
 }
 
 /// The releases of what `held` holds, which is forgotten.
-pub(crate) fn releases(
-    session: PortalSessionId,
-    slot: RemoteSlot,
-    held: &Held,
-) -> Vec<RemoteInput> {
+pub(crate) fn releases(owner: RemoteFor, slot: RemoteSlot, held: &Held) -> Vec<RemoteInput> {
     let (keys, buttons) = held.take();
     keys.into_iter()
         .map(|code| {
             tagged(
-                session,
+                owner,
                 slot,
                 DeviceClass::Keyboard,
                 InputKind::Key {
@@ -203,7 +217,7 @@ pub(crate) fn releases(
         })
         .chain(buttons.into_iter().map(|code| {
             tagged(
-                session,
+                owner,
                 slot,
                 DeviceClass::Pointer,
                 InputKind::Button {
@@ -276,7 +290,11 @@ mod tests {
         let held = Held::default();
         held.key(30, Edge::Press);
         held.button(0x110, Edge::Press);
-        let handle = RemoteHandle::new(PortalSessionId(4), RemoteSlot(2), held.clone());
+        let handle = RemoteHandle::new(
+            RemoteFor::Portal(PortalSessionId(4)),
+            RemoteSlot(2),
+            held.clone(),
+        );
         let kinds: Vec<InputKind> = handle
             .release()
             .into_iter()
@@ -299,6 +317,6 @@ mod tests {
             handle.release().is_empty(),
             "a second release finds nothing"
         );
-        assert!(releases(PortalSessionId(4), RemoteSlot(2), &held).is_empty());
+        assert!(releases(RemoteFor::Portal(PortalSessionId(4)), RemoteSlot(2), &held).is_empty());
     }
 }
