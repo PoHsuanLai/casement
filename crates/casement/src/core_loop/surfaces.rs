@@ -50,6 +50,9 @@ pub(super) fn sync(state: &mut State, events: &[Event]) {
                 state.render.textures = book.with_layer(*layer, entry);
             }
             Event::LayerUnmapped { layer } => {
+                // At info, as its mapping is: how long a sheet stays over the output after the
+                // person's answer is what decides whether an agent's held input goes on.
+                tracing::info!(?layer, "layer unmapped");
                 // Whatever shell role the surface held is free again.
                 casement_wayland::quire::shell::on_layer_gone(&mut state.wl.quire_shell, *layer);
                 let book = std::mem::take(&mut state.render.textures);
