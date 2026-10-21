@@ -19,7 +19,7 @@ if [ -z "$members" ]; then
   echo "ERROR: cargo metadata found no members; the boundary was not checked"
   exit 1
 fi
-is_member() { printf '%s\n' "$members" | grep -qx "$1"; }
+is_member() { grep -qx "$1" <<<"$members"; }
 
 # Every package a crate reaches through normal edges, one name per line.
 reached() {
