@@ -151,6 +151,28 @@ fn a_grabbed_popup_is_done_when_the_client_maps_another_toplevel() {
     assert_eq!(popup.log.with(|seen| seen.done), 1);
 }
 
+/// A press on the window a grabbed popup hangs from, outside the popup, dismisses it, though the
+/// window is the popup's own client; the press does not reach the window.
+#[test]
+fn a_press_on_the_popup_s_own_window_dismisses_it() {
+    let mut desk = desk();
+    let serial = desk.seat.last_button().expect("a release");
+    let popup = desk.popup_grabbing(desk.id, serial);
+    assert_eq!(popup.log.with(|seen| seen.done), 0);
+    let before = desk.seat.last_press();
+    desk.click_again();
+    assert_eq!(
+        popup.log.with(|seen| seen.done),
+        1,
+        "the popup was dismissed"
+    );
+    assert_eq!(
+        desk.seat.last_press(),
+        before,
+        "the window was not given the press"
+    );
+}
+
 /// A submenu that grabs with the serial its parent grabbed with (a timer opens it, with no new
 /// input) keeps the grab: the keyboard stays with the submenu, not the window below.
 #[test]

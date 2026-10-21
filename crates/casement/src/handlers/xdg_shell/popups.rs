@@ -1,5 +1,6 @@
 //! Popups: placed inside their output, grabbed on a press, repositioned on request.
 
+use super::menu_grab::MenuPointerGrab;
 use crate::core_loop;
 use crate::state::State;
 use casement_core::InputSerial;
@@ -13,8 +14,8 @@ use casement_wayland::xdg_shell::{
     popups_of,
 };
 use smithay::desktop::{
-    PopupKeyboardGrab, PopupKind, PopupManager, PopupPointerGrab, PopupUngrabStrategy,
-    find_popup_root_surface, get_popup_toplevel_coords,
+    PopupKeyboardGrab, PopupKind, PopupManager, PopupUngrabStrategy, find_popup_root_surface,
+    get_popup_toplevel_coords,
 };
 use smithay::input::pointer::Focus;
 use smithay::reexports::wayland_server::Resource;
@@ -148,11 +149,12 @@ pub(super) fn grab(state: &mut State, surface: PopupSurface, _seat: WlSeat, seri
         return;
     };
     let seat = state.wl.seat.seat.clone();
-    let Ok(mut grab) = state
-        .wl
-        .xdg_shell
-        .popups
-        .grab_popup::<State>(root, kind, &seat, serial)
+    let Ok(mut grab) =
+        state
+            .wl
+            .xdg_shell
+            .popups
+            .grab_popup::<State>(root.clone(), kind, &seat, serial)
     else {
         return;
     };
@@ -175,7 +177,12 @@ pub(super) fn grab(state: &mut State, surface: PopupSurface, _seat: WlSeat, seri
     // fork's rule; a submenu opened with its parent's serial keeps the keyboard).
     keyboard.set_focus(state, grab.current_grab(), serial);
     keyboard.set_grab(state, PopupKeyboardGrab::new(&grab), serial);
-    pointer.set_grab(state, PopupPointerGrab::new(&grab), serial, Focus::Keep);
+    pointer.set_grab(
+        state,
+        MenuPointerGrab::new(&grab, root),
+        serial,
+        Focus::Keep,
+    );
 }
 
 /// The keyboard is about to go to `next` while a popup holds the grab: when `next` is not the

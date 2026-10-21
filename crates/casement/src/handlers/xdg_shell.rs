@@ -3,6 +3,7 @@
 //! (where a window goes, whether a press focuses it, what a configure says); a move or resize
 //! only goes on after the seat says its serial answers a real press.
 
+mod menu_grab;
 pub(super) mod popups;
 
 use crate::core_loop;

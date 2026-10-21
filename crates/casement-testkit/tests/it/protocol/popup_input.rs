@@ -272,18 +272,37 @@ fn a_click_inside_a_bar_popup_reaches_the_popup() {
     );
 }
 
-/// The same press a little left of the menu's box is on the bar, not the menu: still the
-/// shell's, so the menu stays (the grab's client is the shell).
+/// The same press a little left of the menu's box is on the bar, not the menu: the menu goes,
+/// though the bar is the menu's own client, and the press and its release reach nobody (a Mac
+/// menu: the click that closes it does nothing else).
 #[test]
-fn a_press_on_the_bar_beside_the_popup_does_not_dismiss_it() {
+fn a_press_on_the_bar_beside_the_popup_dismisses_it_and_goes_nowhere() {
     let mut desk = Desk::open();
+    let before = desk.presses.log.with(|seen| seen.buttons.len());
     desk.fixture
         .input()
         .pointer_to(desk.mouse, LogicalPoint { x: 40, y: 10 });
     desk.fixture.input().button(desk.mouse, LEFT, Edge::Press);
     desk.fixture.input().button(desk.mouse, LEFT, Edge::Release);
     desk.fixture.pump();
-    assert_eq!(desk.popup.log.with(|seen| seen.done), 0);
+    assert_eq!(
+        desk.popup.log.with(|seen| seen.done),
+        1,
+        "the menu was dismissed"
+    );
+    assert_eq!(
+        desk.presses.log.with(|seen| seen.buttons.len()),
+        before,
+        "the bar was given neither the press nor its release"
+    );
+    desk.fixture.input().button(desk.mouse, LEFT, Edge::Press);
+    desk.fixture.input().button(desk.mouse, LEFT, Edge::Release);
+    desk.fixture.pump();
+    assert_eq!(
+        desk.presses.log.with(|seen| seen.buttons.len()),
+        before + 2,
+        "the next click on the bar reaches it"
+    );
 }
 
 /// A popup of a toplevel is hit where it hangs outside its parent's box too.
