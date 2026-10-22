@@ -323,6 +323,65 @@ fn a_lease_reaches_its_window_and_no_other() {
     assert_eq!(fixture.end_lease(&agent, lease), Ok(()), "ending twice");
 }
 
+/// A drag of the lease inside its window: the press, every move while the button is down and
+/// the release reach the window, as a person's drag would.
+#[test]
+fn a_lease_drags_inside_its_window() {
+    let (mut fixture, [(under_id, under), (_, over)], _kept) = two_windows();
+    let agent = callers::agent_tier();
+    let (lease, _socket) = fixture
+        .lease_window(&agent, &identifier_of(under), 7)
+        .expect("granted");
+    let (under_rect, over_rect) = (rect_of(&fixture, under), rect_of(&fixture, over));
+    let from = uncovered(under_rect, over_rect);
+    // The first click only brings the window forward.
+    click(&mut fixture, lease, from);
+    send(&mut fixture, lease, InputKind::MotionTo { at: from });
+    let (buttons, motions) = (
+        count(fixture.client(under_id), "wl_pointer#", "button"),
+        count(fixture.client(under_id), "wl_pointer#", "motion"),
+    );
+    send(
+        &mut fixture,
+        lease,
+        InputKind::Button {
+            button: BTN_LEFT,
+            edge: Edge::Press,
+        },
+    );
+    let step = if from.x > under_rect.centre().x {
+        -10
+    } else {
+        10
+    };
+    for n in 1..=4 {
+        let at = LogicalPoint {
+            x: from.x + step * n,
+            y: from.y + step.signum() * -5 * n,
+        };
+        send(&mut fixture, lease, InputKind::MotionTo { at });
+    }
+    send(
+        &mut fixture,
+        lease,
+        InputKind::Button {
+            button: BTN_LEFT,
+            edge: Edge::Release,
+        },
+    );
+    fixture.pump();
+    assert_eq!(
+        count(fixture.client(under_id), "wl_pointer#", "button"),
+        buttons + 2,
+        "the press and the release"
+    );
+    assert_eq!(
+        count(fixture.client(under_id), "wl_pointer#", "motion"),
+        motions + 4,
+        "every move while the button is down"
+    );
+}
+
 /// A press of the lease that the desktop held back (here, on the window's title bar) never
 /// takes the person's own release of the same button: their click after it is whole.
 #[test]
