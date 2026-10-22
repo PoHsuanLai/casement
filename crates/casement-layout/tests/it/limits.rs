@@ -66,6 +66,7 @@ fn scene(usable: LogicalRect, draws: &[Draw], spaces: usize, shown: usize) -> Sc
         outputs: vec![OutputSpec {
             output: output_key("HEADLESS-1"),
             full: usable,
+            covered: usable,
             usable,
             scale: ds_core::geometry::scale::Scale::ONE,
             mode: SceneMode::Desktop {

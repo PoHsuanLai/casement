@@ -10,14 +10,19 @@ use casement_core::layer::{
     Anchor, Anchors, BlurStrength, ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerSpec,
     Margins, ShellRoleTag,
 };
+use casement_core::reveal::{FullScreenBar, Reduced};
 use casement_core::shell::{ShellNote, ShellRequest};
 use casement_core::window::WlrToplevelRequest;
-use casement_core::{Effect, Event, LayerKey, WindowId};
-use casement_protocols::vocab::ShellRole;
+use casement_core::{Cause, Effect, Event, LayerKey, WindowId};
+use casement_protocols::vocab::{Motion, ShellRole};
 
 fn layer(layer_key: u64, spec_role: ShellRoleTag) -> Op {
+    layer_on("HEADLESS-1", layer_key, spec_role)
+}
+
+fn layer_on(output: &str, layer_key: u64, spec_role: ShellRoleTag) -> Op {
     let spec = LayerSpec {
-        output: headless("HEADLESS-1").key,
+        output: headless(output).key,
         level: LayerLevel::Top,
         anchor: Anchors {
             top: Anchor::Free,
@@ -79,6 +84,84 @@ fn a_shell_role_is_held_by_one_surface() {
         "a role another surface holds is not given twice"
     );
     assert!(last(&again).is_empty());
+}
+
+#[test]
+fn a_bar_and_a_dock_are_held_once_per_output() {
+    let role = |layer: u64, role: ShellRole| {
+        shell(ShellRequest::Role {
+            layer: LayerKey(layer),
+            role,
+        })
+    };
+    let held = run(vec![
+        plug("HEADLESS-1"),
+        plug("HEADLESS-2"),
+        layer_on("HEADLESS-1", 1, ShellRoleTag::Unassigned),
+        layer_on("HEADLESS-2", 2, ShellRoleTag::Unassigned),
+        layer_on("HEADLESS-1", 3, ShellRoleTag::Unassigned),
+        role(1, ShellRole::Bar),
+        role(2, ShellRole::Bar),
+    ]);
+    let layers = held.model.layers();
+    let (one, two) = (headless("HEADLESS-1").key, headless("HEADLESS-2").key);
+    assert_eq!(
+        layers.role_holder_on(ShellRole::Bar, &one),
+        Some(LayerKey(1))
+    );
+    assert_eq!(
+        layers.role_holder_on(ShellRole::Bar, &two),
+        Some(LayerKey(2))
+    );
+    assert_eq!(layers.role_holder_near(ShellRole::Dock, &two), None);
+
+    let again = run_from(held.model, vec![role(3, ShellRole::Bar)]);
+    assert_eq!(
+        again.model.layers().role_holder_on(ShellRole::Bar, &one),
+        Some(LayerKey(1)),
+        "a second bar on the same output is not given the role"
+    );
+    assert!(last(&again).is_empty());
+}
+
+#[test]
+fn the_shell_chooses_the_bar_in_full_screen_and_the_motion_the_last_one_wins() {
+    let kept = run(vec![
+        plug("HEADLESS-1"),
+        shell(ShellRequest::FullScreenBar(FullScreenBar::Keep)),
+    ]);
+    assert_eq!(kept.model.full_screen_bar(), FullScreenBar::Keep);
+    assert!(
+        last(&kept).contains(&Effect::Relayout(Cause::Configure)),
+        "the full-screen windows are laid out again"
+    );
+    let same = run_from(
+        kept.model,
+        vec![shell(ShellRequest::FullScreenBar(FullScreenBar::Keep))],
+    );
+    assert!(last(&same).is_empty(), "the same choice changes nothing");
+    let back = run_from(
+        same.model,
+        vec![shell(ShellRequest::FullScreenBar(FullScreenBar::Reveal))],
+    );
+    assert_eq!(back.model.full_screen_bar(), FullScreenBar::Reveal);
+    assert!(last(&back).contains(&Effect::Relayout(Cause::Configure)));
+
+    assert_eq!(
+        back.model.motion(),
+        Reduced::No,
+        "full until told otherwise"
+    );
+    let reduced = run_from(
+        back.model,
+        vec![shell(ShellRequest::Motion(Motion::Reduced))],
+    );
+    assert_eq!(reduced.model.motion(), Reduced::Yes);
+    let full = run_from(
+        reduced.model,
+        vec![shell(ShellRequest::Motion(Motion::Full))],
+    );
+    assert_eq!(full.model.motion(), Reduced::No);
 }
 
 #[test]

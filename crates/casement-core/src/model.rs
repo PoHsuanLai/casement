@@ -62,6 +62,7 @@ use crate::layer::LayerBook;
 use crate::lock::LockState;
 use crate::output::{OutputConfig, OutputFacts};
 use crate::overview::Overview;
+use crate::reveal::{FullScreenBar, Reduced};
 use crate::settings::CasementSettings;
 use crate::space::{SpaceBook, SpaceFile, SpaceSeed};
 use crate::time::{Mono, TimerBook, TimerKey};
@@ -134,6 +135,11 @@ pub struct Model {
     night: night_light::NightDrive,
     /// Which programs may use the powers that need the person's consent (`model/privilege`).
     privilege: Privilege,
+    /// What the bar does in full screen (`quire_shell_v1.set_full_screen_bar`); the last request
+    /// wins. Layout reads it for the rectangle a full-screen window covers.
+    full_screen_bar: FullScreenBar,
+    /// How much motion the shell says the person allows (`set_motion`); the last request wins.
+    motion: Reduced,
     seed: SpaceSeed,
     now: Mono,
 }
@@ -179,9 +185,22 @@ impl Model {
             settings,
             night: night_light::NightDrive::default(),
             privilege: Privilege::new(epoch),
+            full_screen_bar: FullScreenBar::Reveal,
+            motion: Reduced::No,
             seed,
             now: epoch,
         }
+    }
+
+    /// What the bar does in full screen now (it slides in over the window until the shell says
+    /// to keep it).
+    pub fn full_screen_bar(&self) -> FullScreenBar {
+        self.full_screen_bar
+    }
+
+    /// How much motion the shell says the person allows (full until it says otherwise).
+    pub fn motion(&self) -> Reduced {
+        self.motion
     }
 
     /// The model after `event` at `now`, and the effects it asks for. Routes the event to the

@@ -1,7 +1,8 @@
 //! The reveal machine, step by step on a script of (instant, input) pairs.
 
 use super::{
-    Cover, Place, Popup, Reduced, Reveal, RevealEdge, RevealIn, RevealOut, RevealTiming, Stacking,
+    Cover, FullScreenBar, Look, Place, Popup, Reduced, Reveal, RevealEdge, RevealIn, RevealOut,
+    RevealTiming, Stacking,
 };
 use crate::time::Mono;
 use casement_protocols::vocab::Shown;
@@ -275,4 +276,76 @@ fn leaving_full_screen_puts_it_away_at_once() {
         assert_eq!(after.last().copied(), told.last().copied(), "{name}");
         assert!(after.ends_with(&told), "{name}: {after:?}");
     }
+}
+
+#[test]
+fn with_the_bar_kept_the_top_edge_never_reveals_and_the_dock_still_does() {
+    // name, edge, the stacking after the script, the outputs
+    let cases: [(&str, RevealEdge, Stacking, Told); 2] = [
+        ("bar", RevealEdge::Top, Stacking::Behind, vec![]),
+        (
+            "dock",
+            RevealEdge::Bottom,
+            Stacking::Above,
+            vec![(1000, arm(1200)), (1200, SHOWN), (1200, arm(1700))],
+        ),
+    ];
+    for (name, edge, stacking, outputs) in cases {
+        let cover = RevealIn::Cover(edge.covered(FullScreenBar::Keep, Cover::Yes));
+        let script = [
+            (0, cover),
+            (1000, AT_EDGE),
+            (1200, RevealIn::Tick),
+            (3000, RevealIn::Tick),
+        ];
+        let (machine, seen) = run(edge, Reduced::No, &script);
+        assert_eq!(machine.stacking(), stacking, "{name}");
+        assert_eq!(seen, outputs, "{name}");
+    }
+}
+
+#[test]
+fn switching_to_keep_puts_a_shown_bar_away_at_once_and_back_to_reveal_starts_the_rest_again() {
+    let top = RevealEdge::Top;
+    let keep = RevealIn::Cover(top.covered(FullScreenBar::Keep, Cover::Yes));
+    let script = [
+        (0, COVERED),
+        (1000, AT_EDGE),
+        (1450, RevealIn::Tick),
+        (1500, keep),
+        (2000, COVERED),
+    ];
+    let (machine, seen) = run(top, Reduced::No, &script);
+    assert_eq!(
+        seen,
+        [
+            (1000, arm(1450)),
+            (1450, SHOWN),
+            (1450, arm(1650)),
+            (1500, RevealOut::Cancel),
+            (1500, HIDDEN),
+            (2000, arm(2450)),
+        ]
+    );
+    assert_eq!(machine.stacking(), Stacking::Behind);
+}
+
+#[test]
+fn reduced_motion_fades_in_place_for_the_quick_duration_and_keeps_the_rest() {
+    let timing = RevealTiming::of(RevealEdge::Top, Reduced::Yes);
+    assert_eq!(timing.look, Look::CrossFade);
+    let script = [
+        (0, COVERED),
+        (1000, AT_EDGE),
+        (1449, RevealIn::Tick),
+        (1450, RevealIn::Tick),
+    ];
+    let (machine, seen) = run(RevealEdge::Top, Reduced::Yes, &script);
+    assert_eq!(
+        seen,
+        [(1000, arm(1450)), (1450, SHOWN), (1450, arm(1570))],
+        "the rest is still 450 ms; the fade takes 120 ms"
+    );
+    assert_eq!(machine.visible(timing, at(1450)).0, 0);
+    assert_eq!(machine.visible(timing, at(1570)).0, 1000);
 }

@@ -3,12 +3,14 @@
 
 use super::Model;
 use super::moved::Moved;
+use crate::cause::Cause;
 use crate::effect::Effect;
 use crate::geometry::{LogicalPoint, LogicalRect, LogicalSize};
-use crate::ids::{LayerKey, WindowId};
+use crate::ids::{LayerKey, OutputKey, WindowId};
 use crate::layer::ShellRoleTag;
+use crate::reveal::{FullScreenBar, Reduced};
 use crate::shell::{ShellNote, ShellRequest};
-use casement_protocols::vocab::ShellRole;
+use casement_protocols::vocab::{Motion, ShellRole};
 
 impl Model {
     /// The shell said something.
@@ -29,17 +31,40 @@ impl Model {
             ShellRequest::SplitCancel => self.split_cancel(),
             ShellRequest::SplitDivide { window, share } => self.split_divide(window, share),
             ShellRequest::Overview { mode, toggle } => self.overview_asked(mode, toggle),
+            ShellRequest::FullScreenBar(mode) => self.with_full_screen_bar(mode),
+            ShellRequest::Motion(motion) => Moved::of(Model {
+                motion: match motion {
+                    Motion::Reduced => Reduced::Yes,
+                    _ => Reduced::No,
+                },
+                ..self
+            }),
         }
     }
 
-    /// `layer` holds `role` from now. A surface never mapped, or a role another surface holds,
-    /// changes nothing (the wire layer answered the client with an error).
+    /// The bar does `mode` in full screen from now. A change lays the scene out again (the
+    /// full-screen windows are sized to it) and asks every output for a frame.
+    fn with_full_screen_bar(self, mode: FullScreenBar) -> Moved {
+        match self.full_screen_bar == mode {
+            true => Moved::of(self),
+            false => {
+                let outputs: Vec<OutputKey> = self.outputs.0.keys().cloned().collect();
+                Model {
+                    full_screen_bar: mode,
+                    ..self
+                }
+                .redrawn(Cause::Configure, outputs)
+            }
+        }
+    }
+
+    /// `layer` holds `role` from now. A surface never mapped, or a role another surface holds
+    /// (on its output, for a bar or a dock), changes nothing (the wire layer answered the client
+    /// with an error).
     fn with_shell_role(self, layer: LayerKey, role: ShellRole) -> Moved {
-        let taken = self
-            .layers
-            .role_holder(role)
-            .is_some_and(|held| held != layer);
-        let Some(spec) = self.layers.get(&layer).cloned().filter(|_| !taken) else {
+        let free =
+            |spec: &crate::layer::LayerSpec| !self.layers.role_taken(role, layer, &spec.output);
+        let Some(spec) = self.layers.get(&layer).cloned().filter(free) else {
             return Moved::of(self);
         };
         let spec = crate::layer::LayerSpec {
@@ -73,11 +98,24 @@ impl Model {
 
     /// A window-list client's `set_rectangle` for `window`. While a dock holds a role the dock's
     /// tiles are where windows minimise to, so the window-list client's rectangle is ignored
-    /// (the shell's target wins whichever asked last); with no dock it is the only source.
+    /// (the shell's target wins whichever asked last); with no dock it is the only source. The
+    /// dock is the one on the window's output, else any.
     pub(super) fn with_window_list_rect(self, window: WindowId, rect: LogicalRect) -> Model {
-        match self.layers.role_holder(ShellRole::Dock) {
+        match self.dock_for(window) {
             Some(_) => self,
             None => self.with_minimise_rect(window, rect),
+        }
+    }
+
+    /// The dock `window` minimises into: the one on the window's output, else any dock.
+    fn dock_for(&self, window: WindowId) -> Option<LayerKey> {
+        let home = self
+            .windows
+            .get(&window)
+            .and_then(|window| window.home.clone());
+        match home {
+            Some(output) => self.layers.role_holder_near(ShellRole::Dock, &output),
+            None => self.layers.role_holder(ShellRole::Dock),
         }
     }
 

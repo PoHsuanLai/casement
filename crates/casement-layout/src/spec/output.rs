@@ -10,8 +10,11 @@ use ds_core::geometry::scale::Scale;
 pub struct OutputSpec {
     /// The output.
     pub output: OutputKey,
-    /// Its whole rectangle, in global logical coordinates (what a full-screen window covers).
+    /// Its whole rectangle, in global logical coordinates (what a Split View covers).
     pub full: LogicalRect,
+    /// What a full-screen window covers: all of `full`, or (the shell keeps the bar up in full
+    /// screen) `full` less the bar's exclusive zone. Inside `full`.
+    pub covered: LogicalRect,
     /// Its area left after layer exclusive zones, in global logical coordinates.
     pub usable: LogicalRect,
     /// Its scale.

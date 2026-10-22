@@ -4,7 +4,7 @@
 use crate::state::State;
 use casement_core::privilege::UnixSeconds;
 use casement_core::time::Mono;
-use casement_core::{LayerKey, WindowId};
+use casement_core::{LayerKey, OutputKey, WindowId};
 use casement_protocols::vocab::TrialId;
 use casement_wayland::quire::shell::{QuireShellHandler, QuireShellPart};
 use casement_wayland::quire::shell_trial;
@@ -28,6 +28,14 @@ impl QuireShellHandler for State {
     fn layer_of_surface(&self, client: &Client, surface: &WlSurface) -> Option<LayerKey> {
         let key = self.wl.layer_shell.key_of(surface)?;
         (surface.client().as_ref() == Some(client)).then_some(key)
+    }
+
+    fn layer_output(&self, layer: LayerKey) -> Option<OutputKey> {
+        self.wl
+            .layer_shell
+            .records
+            .get(&layer)
+            .and_then(|record| record.output.clone())
     }
 
     fn window_known(&self, window: WindowId) -> bool {

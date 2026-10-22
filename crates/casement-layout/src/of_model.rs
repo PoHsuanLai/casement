@@ -68,6 +68,9 @@ fn output_spec(
         .clone();
     let full = state.config.logical_rect();
     let usable = model.layers().usable_area(key, full);
+    let covered = model
+        .layers()
+        .full_screen_area(model.full_screen_bar(), key, full);
     let spaces = row
         .into_iter()
         .map(|space| {
@@ -81,6 +84,7 @@ fn output_spec(
     Some(OutputSpec {
         output: key.clone(),
         full,
+        covered,
         usable,
         scale: state.config.scale,
         mode: mode_of(model.overview(), shown),

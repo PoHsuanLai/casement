@@ -131,7 +131,7 @@ fn arrange_space(
                 filled_target(window.window, &output.output, window.limits, usable)
             }
             WindowPlacement::FullScreen => (
-                full_screen_target(window.window, &output.output, output.full),
+                full_screen_target(window.window, &output.output, output.covered),
                 None,
             ),
             WindowPlacement::Sheet { parent, size } => {

@@ -4,7 +4,7 @@
 use crate::geometry::LogicalRect;
 use crate::ids::{LayerKey, WindowId};
 use crate::window::MenuEntry;
-use casement_protocols::vocab::{OverviewMode, ShellRole, Toggle};
+use casement_protocols::vocab::{FullScreenBar, Motion, OverviewMode, ShellRole, Toggle};
 use ds_core::vocab::Fraction;
 
 /// One request from the shell.
@@ -70,4 +70,9 @@ pub enum ShellRequest {
         /// Open (on) or close (off).
         toggle: Toggle,
     },
+    /// The shell chose what the bar does in full screen (`set_full_screen_bar`, version 7). The
+    /// full-screen windows already shown are laid out and configured again.
+    FullScreenBar(FullScreenBar),
+    /// The shell said how much motion the person allows (`set_motion`, version 7).
+    Motion(Motion),
 }

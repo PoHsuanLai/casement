@@ -5309,8 +5309,8 @@ pointer resting at the top edge brings the surface with the role `bar` over the 
 - **Numbers.** Bar: rest 450 ms (design/27 section 4.5), slide 200 ms (`--t-move`, `DurationToken::Move`), out curve in, exit curve
   out. Dock: rest 200 ms, slide 500 ms, the settled defaults of `dock.autohide_delay_ms` / `dock.autohide_slide_ms` (design/10
   section 10.3.11); casement reads neither key, they are constants in `reveal/timing.rs` (a test pins the bar's to the token table).
-  The trigger strip is 4 px on both edges. Reduced motion keeps the rest and cross-fades for `--t-quick` (120 ms) in place; casement
-  has no reduced-motion setting yet, so the loop passes `Reduced::No` (`core_loop/reveal.rs::MOTION`) until one lands.
+  The trigger strip is 4 px on both edges. Reduced motion keeps the rest and cross-fades for `--t-quick` (120 ms) in place; the
+  setting is the shell's `set_motion` (v7, below), kept in the model (`Model::motion`, default `Reduced::No`).
 - **What counts.** The output shows a `SpaceContent::FullScreen` Space and a layer surface holds the edge's role on that output.
   Split View halves do not reveal. A pop-up of the surface (`PopupManager`) keeps it up; the pointer on the surface, or still in
   the strip, keeps it up. It hides with no delay (the dock's 0 ms hide trigger); `reveal(edge, shown)` is sent when the slide
@@ -5319,5 +5319,33 @@ pointer resting at the top edge brings the surface with the role `bar` over the 
 - **Stacking and hits.** A raised surface is drawn and hit between the overlay level and the full-screen windows
   (`LayerDraw::raised`, `scene::stack`), at the slid rectangle (`reveal::slid`: toward its edge until wholly off the output, or
   faded in place). It is removed from its own level while raised. The window is never told: no configure, no layout change.
-- **Not done.** A keep mode (a later protocol request). A bar or dock per output beyond what `role_taken` allows (one holder per
-  role). The `dock.autohide_*` settings keys. Popups of a fading surface are drawn at full opacity.
+- **Not done.** The `dock.autohide_*` settings keys. Popups of a fading surface are drawn at full opacity.
+
+### Version 7 (wh-fsbar, 2026-10-22; built, uncompiled)
+
+`quire_shell_v1` is served at version 7: `set_full_screen_bar`, `set_motion`, `reveal_on_output`, and one bar and dock per output.
+
+- **State.** `Model::full_screen_bar` (`FullScreenBar::Reveal` default, `Keep`) and `Model::motion` (`Reduced`, default `No`) are
+  set by `ShellRequest::FullScreenBar` / `ShellRequest::Motion`; the last request wins and both are global. A mode change asks for
+  `Effect::Relayout(Cause::Configure)` and a frame on every output, so full-screen windows already shown are configured again; a
+  repeat of the same mode changes nothing. The loop's old `MOTION` const is gone: `RevealTiming::of(edge, model.motion())`.
+- **Keep, the machine.** `RevealEdge::covered(mode, cover)` gives the Top edge `Cover::No` in keep mode (so a bar that was shown goes
+  away with `hidden` at once, and nothing reveals); the Bottom edge, the dock, is unchanged. Table tests in `reveal/machine_tests.rs`.
+- **Keep, layout.** The rectangle comes from the model, the pure way: `LayerBook::full_screen_area(mode, output, full)` is `full` in
+  reveal mode and, in keep mode, `usable_area` of a book holding only the bar-role layers of that output (the bar's exclusive zone,
+  and not the dock's). `casement_layout::of_model` puts it in the new `OutputSpec::covered`, and `rust_scene/desktop.rs` hands it to
+  `full_screen_target` in place of `OutputSpec::full`. Split View halves still use `full` (the bar is not kept over them: not decided by the
+  protocol, which names only a full-screen window).
+- **Keep, stacking.** Today a bar is a `Top` layer, behind full-screen windows. In keep mode `core_loop/reveal.rs::raised_on` returns
+  the output's bar as a permanently raised surface (at its rest rectangle, opacity 1000) while the output shows a full-screen Space,
+  so the one place the renderer and the hit test both read (`LayerDraw::raised`, `scene::stack`) draws and hits it above the window.
+- **`reveal_on_output`.** `ShellNote::Reveal(OutputKey, ScreenEdge, Shown)`; `exec/shell.rs` hands it to
+  `quire::shell_screen::send_reveal`, which sends `reveal_on_output` (the client's own `wl_output` of that output, as
+  `overview_output` does) to objects of version 7 or later and plain `reveal` to older ones.
+- **One holder per role per output, for `bar` and `dock`.** `LayerBook::role_taken(role, layer, output)` (model) and
+  `RoleHolder { role, output }` (wire, `QuireShellPart::roles` is now keyed by layer) raise `role_taken` only for a second live bar or
+  dock on the same output (the layer's `LayerRecord::output`); other roles stay global. `LayerBook::role_holder_on(role, output)` is
+  the holder the reveal uses; the minimise target of a window uses the dock of the window's home output, falling back to any dock
+  (`role_holder_near`). `role_holder(role)` remains for "any holder".
+- **Hot corners.** Nothing armed `TimerKey::HotCorner` and nothing sent `ShellNote::HotCorner`, so both are gone, with the
+  `hot_corner` send in `quire/shell.rs`. The XML event `hot_corner` stays in the protocol; casement just never sends it.

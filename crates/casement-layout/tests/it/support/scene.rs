@@ -63,6 +63,7 @@ pub fn one_desktop(usable: LogicalRect, windows: Vec<WindowSpec>) -> SceneSpec {
         outputs: vec![OutputSpec {
             output: output_key("HEADLESS-1"),
             full: usable,
+            covered: usable,
             usable,
             scale: Scale::ONE,
             mode: SceneMode::Desktop {

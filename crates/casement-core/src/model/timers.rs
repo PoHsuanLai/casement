@@ -49,7 +49,6 @@ impl Model {
             | TimerKey::AgentHold
             | TimerKey::IdleNotify(..)
             | TimerKey::SwitcherDelay
-            | TimerKey::HotCorner(_)
             | TimerKey::LightDwell
             | TimerKey::TrustedArm(_)
             | TimerKey::LeaseYield(_) => None,

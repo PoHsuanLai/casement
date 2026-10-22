@@ -10,8 +10,8 @@ use wayland_client::{Connection, Dispatch, QueueHandle, WEnum};
 
 pub use casement_protocols::client::quire_desktop_v1::quire_desktop_window_v1::Toggle;
 pub use casement_protocols::client::quire_shell_v1::quire_shell_v1::{
-    DragOutcome, Error as ShellError, MacMods, OverviewMode, OverviewState, ScreenEdge, ShellRole,
-    Shown, SplitSide, WindowEntry,
+    DragOutcome, Error as ShellError, FullScreenBar, MacMods, Motion, OverviewMode, OverviewState,
+    ScreenEdge, ShellRole, Shown, SplitSide, WindowEntry,
 };
 
 /// What a shell object was told.
@@ -45,6 +45,9 @@ pub struct ShellEvents {
     /// Every `reveal`, in order: the edge and whether its surface is shown (`None` for a code
     /// this client does not know).
     pub reveals: Vec<(Option<ScreenEdge>, Option<Shown>)>,
+    /// Every `reveal_on_output` (version 7), in order: the output, the edge and whether its
+    /// surface is shown (`None` for a code this client does not know).
+    pub reveals_on_outputs: Vec<(WlOutput, Option<ScreenEdge>, Option<Shown>)>,
 }
 
 /// A bound `wl_output` and the connector name it reported.
@@ -98,7 +101,7 @@ pub struct ShellHandle {
 }
 
 impl ShellHandle {
-    /// Binds the global at `version` (1, 2, 3 or 4).
+    /// Binds the global at `version` (1 to 7).
     pub fn bind(client: &mut TestClient, version: u32) -> ShellHandle {
         let log = ShellLog::default();
         let object = client
@@ -155,6 +158,22 @@ impl ShellHandle {
     /// The `reveal` events, in order: the edge and whether its surface was shown or hidden.
     pub fn reveals(&self) -> Vec<(Option<ScreenEdge>, Option<Shown>)> {
         self.log.with(|seen| seen.reveals.clone())
+    }
+
+    /// The `reveal_on_output` events, in order: the output, the edge and whether its surface was
+    /// shown or hidden.
+    pub fn reveals_on_outputs(&self) -> Vec<(WlOutput, Option<ScreenEdge>, Option<Shown>)> {
+        self.log.with(|seen| seen.reveals_on_outputs.clone())
+    }
+
+    /// Chooses what the bar does in full screen (version 7).
+    pub fn set_full_screen_bar(&self, mode: FullScreenBar) {
+        self.object.set_full_screen_bar(mode);
+    }
+
+    /// Says how much motion the person allows (version 7).
+    pub fn set_motion(&self, motion: Motion) {
+        self.object.set_motion(motion);
     }
 
     /// The `window_drag_begin` events, in order.
@@ -359,6 +378,21 @@ impl Dispatch<QuireShellV1, ShellLog> for Host {
                     WEnum::Unknown(_) => None,
                 };
                 seen.reveals.push((edge, shown));
+            }),
+            quire_shell_v1::Event::RevealOnOutput {
+                output,
+                edge,
+                shown,
+            } => log.with(|seen| {
+                let edge = match edge {
+                    WEnum::Value(edge) => Some(edge),
+                    WEnum::Unknown(_) => None,
+                };
+                let shown = match shown {
+                    WEnum::Value(shown) => Some(shown),
+                    WEnum::Unknown(_) => None,
+                };
+                seen.reveals_on_outputs.push((output, edge, shown));
             }),
             _ => {}
         }

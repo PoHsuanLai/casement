@@ -5,7 +5,7 @@ use crate::geometry::{LogicalPoint, LogicalRect};
 use crate::ids::{LayerKey, OutputKey, WindowId};
 use crate::overview::Overview;
 use crate::window::{MenuItem, SplitSide, enabled_mask};
-use casement_protocols::vocab::{Corner, DragOutcome, MacMods, ScreenEdge, ShellRole, Shown};
+use casement_protocols::vocab::{DragOutcome, MacMods, ScreenEdge, ShellRole, Shown};
 
 /// Something the shell's protocol layer records or sends.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -17,13 +17,11 @@ pub enum ShellNote {
     /// `window` now minimises into this rectangle (global logical pixels); the protocol layer
     /// has nothing to send until P3's dock bounce, so it only keeps the table.
     MinimiseTarget(WindowId, LogicalRect),
-    /// The modifier keys held changed (`quire_shell_v1.modifiers`, to the role surfaces that
-    /// ask for hot corners and the like).
+    /// The modifier keys held changed (`quire_shell_v1.modifiers`, to the role surfaces).
     Modifiers(MacMods),
-    /// The pointer entered a hot corner (P3).
-    HotCorner(Corner),
-    /// An edge reveal (the dock or the bar over a full-screen window) opened or closed (P3).
-    Reveal(ScreenEdge, Shown),
+    /// An edge reveal (the dock or the bar over a full-screen window) opened or closed on
+    /// `output` (`reveal_on_output` to a shell that bound version 7, `reveal` to an older one).
+    Reveal(OutputKey, ScreenEdge, Shown),
     /// Show the window menu: the shell draws it and answers with
     /// [`ShellRequest::WindowMenuPick`](super::ShellRequest::WindowMenuPick).
     WindowMenu(WindowMenuShow),

@@ -3,7 +3,7 @@
 use super::{LayerSpec, ShellRoleTag};
 use crate::geometry::{LogicalPoint, LogicalRect};
 use crate::ids::{LayerKey, OutputKey};
-use casement_protocols::vocab::ShellRole;
+use casement_protocols::vocab::{FullScreenBar, ShellRole};
 use std::collections::BTreeMap;
 
 /// Every mapped layer surface.
@@ -47,13 +47,66 @@ impl LayerBook {
         LayerBook { layers, pins }
     }
 
-    /// The surface that holds the shell role `role`, if one does (`quire_shell_v1`: one surface
-    /// per role).
+    /// A surface that holds the shell role `role`, if one does: the lowest key when a bar or a
+    /// dock is held on several outputs (use [`LayerBook::role_holder_on`] to name the output).
     pub fn role_holder(&self, role: ShellRole) -> Option<LayerKey> {
         self.layers
             .iter()
             .find(|(_, spec)| spec.role == ShellRoleTag::Assigned(role))
             .map(|(key, _)| *key)
+    }
+
+    /// The surface that holds `role` for `output`: on that output for a bar or a dock (each
+    /// output has its own), the one holder of any other role.
+    pub fn role_holder_on(&self, role: ShellRole, output: &OutputKey) -> Option<LayerKey> {
+        self.layers
+            .iter()
+            .find(|(_, spec)| holds(spec, role, output))
+            .map(|(key, _)| *key)
+    }
+
+    /// The surface that serves `output` as `role`: the one on `output`, else (a bar or a dock on
+    /// no such output) any other holder.
+    pub fn role_holder_near(&self, role: ShellRole, output: &OutputKey) -> Option<LayerKey> {
+        self.role_holder_on(role, output)
+            .or_else(|| self.role_holder(role))
+    }
+
+    /// Whether a surface other than `layer` already holds `role` where `layer` (on `output`)
+    /// would take it: on the same output for a bar or a dock, anywhere for any other role.
+    pub fn role_taken(&self, role: ShellRole, layer: LayerKey, output: &OutputKey) -> bool {
+        self.layers
+            .iter()
+            .any(|(key, spec)| *key != layer && holds(spec, role, output))
+    }
+
+    /// The rectangle a full-screen window covers on `output` (whose whole rectangle is `full`)
+    /// under `mode`: all of it with `Reveal`, less the exclusive zone of the output's bar with
+    /// `Keep` (the dock's zone is not taken: the dock still reveals over the window).
+    pub fn full_screen_area(
+        &self,
+        mode: FullScreenBar,
+        output: &OutputKey,
+        full: LogicalRect,
+    ) -> LogicalRect {
+        match mode {
+            FullScreenBar::Reveal => full,
+            FullScreenBar::Keep => {
+                let bars = LayerBook {
+                    layers: self
+                        .layers
+                        .iter()
+                        .filter(|(_, spec)| {
+                            spec.output == *output
+                                && spec.role == ShellRoleTag::Assigned(ShellRole::Bar)
+                        })
+                        .map(|(key, spec)| (*key, spec.clone()))
+                        .collect(),
+                    pins: BTreeMap::new(),
+                };
+                bars.usable_area(output, full)
+            }
+        }
     }
 
     /// Where `layer` was put by hand, if it was.
@@ -77,6 +130,16 @@ impl LayerBook {
     pub fn usable_area(&self, output: &OutputKey, full: LogicalRect) -> LogicalRect {
         self.arrange(output, full).usable()
     }
+}
+
+/// Whether `spec` holds `role` for `output`: a bar or a dock is held once per output, every
+/// other role once overall.
+fn holds(spec: &LayerSpec, role: ShellRole, output: &OutputKey) -> bool {
+    let here = match role {
+        ShellRole::Bar | ShellRole::Dock => spec.output == *output,
+        _ => true,
+    };
+    spec.role == ShellRoleTag::Assigned(role) && here
 }
 
 #[cfg(test)]
@@ -243,5 +306,100 @@ mod tests {
                 "{name}"
             );
         }
+    }
+
+    #[test]
+    fn a_bar_and_a_dock_are_held_once_per_output() {
+        let held = |on: &str, edges: &str, role: ShellRole| LayerSpec {
+            role: ShellRoleTag::Assigned(role),
+            ..layer(on, edges, ExclusiveZone::Reserve(24), NO_MARGIN)
+        };
+        let book = LayerBook::empty()
+            .with_layer(LayerKey(1), held("HEADLESS-1", "tlr", ShellRole::Bar))
+            .with_layer(LayerKey(2), held("HEADLESS-1", "blr", ShellRole::Dock))
+            .with_layer(LayerKey(3), held("HEADLESS-2", "tlr", ShellRole::Bar))
+            .with_layer(LayerKey(4), held("HEADLESS-1", "tlr", ShellRole::Switcher));
+        let (one, two) = (output("HEADLESS-1"), output("HEADLESS-2"));
+        // name, role, the asking layer, its output, taken
+        let cases = [
+            (
+                "a second bar on the same output",
+                ShellRole::Bar,
+                5,
+                &one,
+                true,
+            ),
+            ("a bar on the other output", ShellRole::Bar, 5, &two, true),
+            (
+                "a dock on the other output",
+                ShellRole::Dock,
+                5,
+                &two,
+                false,
+            ),
+            ("the holder itself", ShellRole::Bar, 1, &one, false),
+            (
+                "a second dock on the same output",
+                ShellRole::Dock,
+                5,
+                &one,
+                true,
+            ),
+            (
+                "another role stays global",
+                ShellRole::Switcher,
+                5,
+                &two,
+                true,
+            ),
+        ];
+        for (name, role, asking, on, taken) in cases {
+            assert_eq!(book.role_taken(role, LayerKey(asking), on), taken, "{name}");
+        }
+        assert_eq!(book.role_holder_on(ShellRole::Bar, &two), Some(LayerKey(3)));
+        assert_eq!(book.role_holder_on(ShellRole::Dock, &two), None);
+        assert_eq!(
+            book.role_holder_near(ShellRole::Dock, &two),
+            Some(LayerKey(2)),
+            "a dock on no such output falls back to any dock"
+        );
+        assert_eq!(
+            book.role_holder_on(ShellRole::Dock, &one),
+            Some(LayerKey(2))
+        );
+    }
+
+    #[test]
+    fn keep_mode_sizes_a_full_screen_window_below_the_bar_only() {
+        let full = rect(0, 0, 1920, 1080);
+        let book = LayerBook::empty()
+            .with_layer(
+                LayerKey(1),
+                LayerSpec {
+                    role: ShellRoleTag::Assigned(ShellRole::Bar),
+                    ..layer("HEADLESS-1", "tlr", ExclusiveZone::Reserve(32), NO_MARGIN)
+                },
+            )
+            .with_layer(
+                LayerKey(2),
+                LayerSpec {
+                    role: ShellRoleTag::Assigned(ShellRole::Dock),
+                    ..layer("HEADLESS-1", "blr", ExclusiveZone::Reserve(80), NO_MARGIN)
+                },
+            );
+        let on = output("HEADLESS-1");
+        assert_eq!(
+            book.full_screen_area(FullScreenBar::Reveal, &on, full),
+            full
+        );
+        assert_eq!(
+            book.full_screen_area(FullScreenBar::Keep, &on, full),
+            rect(0, 32, 1920, 1048)
+        );
+        assert_eq!(
+            book.full_screen_area(FullScreenBar::Keep, &output("HEADLESS-2"), full),
+            full,
+            "another output's bar takes nothing here"
+        );
     }
 }

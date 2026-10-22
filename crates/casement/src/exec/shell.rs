@@ -5,7 +5,7 @@ use crate::state::State;
 use casement_core::overview::Overview;
 use casement_core::shell::ShellNote;
 use casement_protocols::server::quire_shell_v1::quire_shell_v1::Shown;
-use casement_wayland::quire::{shell, shell_space};
+use casement_wayland::quire::{shell, shell_screen, shell_space};
 
 /// Carries out one note for the shell. Also the way the edge reports the real modifier keys
 /// (`ShellNote::Modifiers`), which no model transition makes.
@@ -66,6 +66,16 @@ pub(super) fn note(state: &mut State, note: ShellNote) {
                 output,
                 *window,
                 shell_space::wire_outcome(*outcome),
+            );
+            return;
+        }
+        ShellNote::Reveal(output, edge, shown) => {
+            shell_screen::send_reveal(
+                &state.wl.quire_shell,
+                &state.wl.output.outputs,
+                output,
+                *edge,
+                *shown,
             );
             return;
         }

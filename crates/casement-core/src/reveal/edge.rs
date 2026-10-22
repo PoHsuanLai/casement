@@ -1,8 +1,9 @@
 //! The two edges that reveal, the strip that triggers them and where the pointer is relative to
 //! one.
 
+use super::Cover;
 use crate::geometry::{LogicalPoint, LogicalRect, LogicalSize};
-use casement_protocols::vocab::{ScreenEdge, ShellRole};
+use casement_protocols::vocab::{FullScreenBar, ScreenEdge, ShellRole};
 
 /// How thick the trigger strip along the output's edge is, in logical pixels (the dock's
 /// auto-hide strip, design/10 section 10.3.11; the bar uses the same).
@@ -34,6 +35,26 @@ impl RevealEdge {
         match self {
             RevealEdge::Top => ShellRole::Bar,
             RevealEdge::Bottom => ShellRole::Dock,
+        }
+    }
+
+    /// Whether this edge reveals in full screen under `mode`, given `shown` (whether the output
+    /// shows a full-screen Space with a surface to reveal). With `Keep` the bar stays up, so the
+    /// top edge never covers; the dock's edge is not affected.
+    ///
+    /// ```
+    /// use casement_core::reveal::{Cover, RevealEdge};
+    /// use casement_protocols::vocab::FullScreenBar;
+    ///
+    /// let top = RevealEdge::Top;
+    /// assert_eq!(top.covered(FullScreenBar::Keep, Cover::Yes), Cover::No);
+    /// assert_eq!(top.covered(FullScreenBar::Reveal, Cover::Yes), Cover::Yes);
+    /// assert_eq!(RevealEdge::Bottom.covered(FullScreenBar::Keep, Cover::Yes), Cover::Yes);
+    /// ```
+    pub fn covered(self, mode: FullScreenBar, shown: Cover) -> Cover {
+        match (self, mode) {
+            (RevealEdge::Top, FullScreenBar::Keep) => Cover::No,
+            _ => shown,
         }
     }
 

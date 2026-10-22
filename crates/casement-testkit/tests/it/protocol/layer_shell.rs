@@ -13,6 +13,7 @@ use casement_testclient::surface::subsurface::{Compositor, H1Data};
 use casement_testclient::surface::toplevel::{State, WmBase};
 use casement_testclient::{Pattern, TestClient, shm_buffer};
 use casement_testkit::{ClientId, Fixture, FixtureSpec, FrameCount, ShotTarget, TestOrigin};
+use wayland_client::protocol::wl_output::WlOutput;
 
 use crate::protocol::xdg_shell::{make_key, map_toplevel, settle, windows};
 
@@ -45,7 +46,17 @@ fn events_of(client: &TestClient, object_prefix: &str) -> Vec<(String, Vec<Strin
 /// Maps `ask` the way a shell does: create, wait for the configure, acknowledge it and attach
 /// a buffer of the configured size.
 pub(crate) fn map(fixture: &mut Fixture, id: ClientId, ask: &LayerAsk) -> LayerSurface {
-    let layer = LayerSurface::create(fixture.client(id), ask).expect("a layer surface");
+    map_on(fixture, id, ask, None)
+}
+
+/// As [`map`], on `output` when one is named.
+pub(crate) fn map_on(
+    fixture: &mut Fixture,
+    id: ClientId,
+    ask: &LayerAsk,
+    output: Option<&WlOutput>,
+) -> LayerSurface {
+    let layer = LayerSurface::create_on(fixture.client(id), ask, output).expect("a layer surface");
     fixture.pump();
     let configure = layer.configure().expect("the initial configure");
     assert!(layer.ack(fixture.client(id)));

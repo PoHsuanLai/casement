@@ -13,6 +13,7 @@ pub mod desktop;
 pub mod shell;
 pub mod shell_overview;
 pub mod shell_permission;
+pub mod shell_screen;
 pub mod shell_space;
 pub mod shell_split;
 pub mod shell_trial;

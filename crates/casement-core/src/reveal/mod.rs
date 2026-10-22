@@ -21,6 +21,7 @@ mod slide;
 mod timing;
 
 pub use book::RevealBook;
+pub use casement_protocols::vocab::FullScreenBar;
 pub use ds_behaviour::space_swipe::Reduced;
 pub use edge::{Over, Place, RevealEdge, STRIP};
 pub use machine::{Cover, Popup, Reveal, RevealIn, RevealOut, Stacking};

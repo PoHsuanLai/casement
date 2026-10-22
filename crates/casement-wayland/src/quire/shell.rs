@@ -1,6 +1,6 @@
 //! `quire_shell_v1`: the shell's surface roles (which layer surface is the bar, the dock, the
 //! switcher), the minimise targets the dock gives its tiles, and the events only the
-//! compositor sees (the real modifier keys, hot corners, edge reveals). Shell connections
+//! compositor sees (the real modifier keys, edge reveals). Shell connections
 //! only. Frozen at P2-Z; filled by P2-Q2.
 //!
 //! The wire glue is written: the part, the handler trait, the global's and the object's
@@ -11,7 +11,7 @@
 use super::code_of;
 use super::shell_permission::{self, SentAsk};
 use super::space_shot::SpaceShotPart;
-use super::{shell_overview, shell_space, shell_split, shell_trial};
+use super::{shell_overview, shell_screen, shell_space, shell_split, shell_trial};
 use crate::foreign_toplevel_list::{identifier_of, window_of_identifier};
 use crate::handler::{EventSink, OutputLookup};
 use crate::states::{GlobalFilter, WaylandFault};
@@ -22,7 +22,7 @@ use casement_core::privilege::UnixSeconds;
 use casement_core::shell::{ShellNote, ShellRequest};
 use casement_core::time::Mono;
 use casement_core::window::MenuEntry;
-use casement_core::{Event, LayerKey, WindowId};
+use casement_core::{Event, LayerKey, OutputKey, WindowId};
 use casement_protocols::server::quire_shell_v1::quire_shell_v1::{self, QuireShellV1};
 use casement_protocols::vocab::{MacMods, ShellRole, WireCode};
 use porter_core::SpaceId;
@@ -35,16 +35,30 @@ use smithay::wayland::image_capture_source::ImageCaptureSourceHandler;
 use smithay::wayland::{Dispatch2, GlobalDispatch2};
 use std::collections::BTreeMap;
 
-/// The version casement serves (6: the display trial, `displays_trial` and its two siblings).
-pub const VERSION: u32 = 6;
+/// The version casement serves (7: the bar in full screen, reduced motion, `reveal_on_output`).
+pub const VERSION: u32 = 7;
 
 /// The surface that holds a role.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RoleHolder {
     /// The layer surface's key in the model.
     pub layer: LayerKey,
+    /// The role it holds.
+    pub role: ShellRole,
+    /// The output it was made for (none when no output could be picked): a bar and a dock are
+    /// held once per output.
+    pub output: Option<OutputKey>,
     /// The surface (the target of the events addressed to the role).
     pub surface: WlSurface,
+}
+
+/// A role a layer surface asked for and the model has not yet answered.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AskedRole {
+    /// The surface.
+    pub surface: WlSurface,
+    /// Its output.
+    pub output: Option<OutputKey>,
 }
 
 /// `quire_shell_v1` and the objects bound on it.
@@ -54,11 +68,12 @@ pub struct QuireShellPart {
     pub global: GlobalId,
     /// Every bound `quire_shell_v1`.
     pub bound: Vec<QuireShellV1>,
-    /// The surface holding each role.
-    pub roles: BTreeMap<ShellRole, RoleHolder>,
+    /// The surface holding a role, by layer (a layer holds one role at a time; a bar and a dock
+    /// are held once per output, every other role once).
+    pub roles: BTreeMap<LayerKey, RoleHolder>,
     /// The surface each layer asked a role from, until the model's answer (`ShellNote::Role`)
     /// says which one holds it: the note carries the layer, the wire knows the surface.
-    pub asked: BTreeMap<LayerKey, WlSurface>,
+    pub asked: BTreeMap<LayerKey, AskedRole>,
     /// The modifier keys last sent, so a repeat of the same set sends nothing.
     pub mods: MacMods,
     /// The rectangles the shell set for dropping a window on a Space (version 2).
@@ -110,6 +125,8 @@ pub trait QuireShellHandler:
     fn quire_shell_wall(&self) -> UnixSeconds;
     /// The layer surface `surface` is, when it is a live one of `client`.
     fn layer_of_surface(&self, client: &Client, surface: &WlSurface) -> Option<LayerKey>;
+    /// The output `layer` was made for, or the one the compositor put it on.
+    fn layer_output(&self, layer: LayerKey) -> Option<OutputKey>;
     /// Whether the model knows the window `window` (a live toplevel).
     fn window_known(&self, window: WindowId) -> bool;
     /// Whether the model has the Space `space` (version 2: a picture of one that is gone is a
@@ -192,7 +209,8 @@ where
                     return;
                 };
                 let layer = state.layer_of_surface(client, &surface);
-                match on_set_role(state.quire_shell_part(), layer, &surface, role) {
+                let output = layer.and_then(|layer| state.layer_output(layer));
+                match on_set_role(state.quire_shell_part(), layer, output, &surface, role) {
                     Ok(events) => state.feed(events),
                     Err(RoleRefusal::NotALayer) => resource.post_error(
                         quire_shell_v1::Error::BadSurface,
@@ -263,6 +281,12 @@ where
                         .post_error(quire_shell_v1::Error::AnsweredTooSoon, fault.to_string()),
                 }
             }
+            quire_shell_v1::Request::SetFullScreenBar { mode } => {
+                state.feed(shell_screen::on_set_full_screen_bar(code_of(mode)));
+            }
+            quire_shell_v1::Request::SetMotion { motion } => {
+                state.feed(shell_screen::on_set_motion(code_of(motion)));
+            }
             // The switcher and show-desktop requests arrive with P3-Z; the version 2 requests
             // are `shell_space`'s, which ignores the rest.
             other => shell_space::on_request(state, resource, other, data_init),
@@ -290,25 +314,41 @@ fn refuse_target(resource: &QuireShellV1, refusal: TargetRefusal) {
     }
 }
 
-/// `set_role`: `surface` (the layer `layer`, when it is one of the client's) takes `role`.
-/// Refuses a surface that is no layer surface of the client and a role another live surface
-/// holds; otherwise the request the model takes (`Event::Shell(ShellRequest::Role)`).
+/// `set_role`: `surface` (the layer `layer` made for `output`, when it is one of the client's)
+/// takes `role`. Refuses a surface that is no layer surface of the client and a role another live
+/// surface holds (for a bar or a dock, another on the same output); otherwise the request the
+/// model takes (`Event::Shell(ShellRequest::Role)`).
 pub fn on_set_role(
     part: &mut QuireShellPart,
     layer: Option<LayerKey>,
+    output: Option<OutputKey>,
     surface: &WlSurface,
     role: ShellRole,
 ) -> Result<Vec<Event>, RoleRefusal> {
     let layer = layer.ok_or(RoleRefusal::NotALayer)?;
-    let taken = part
-        .roles
-        .get(&role)
-        .is_some_and(|holder| holder.layer != layer);
+    let taken = part.roles.values().any(|holder| {
+        holder.layer != layer && holder.role == role && shares(role, holder, output.as_ref())
+    });
     if taken {
         return Err(RoleRefusal::Taken);
     }
-    part.asked.insert(layer, surface.clone());
+    part.asked.insert(
+        layer,
+        AskedRole {
+            surface: surface.clone(),
+            output,
+        },
+    );
     Ok(vec![Event::Shell(ShellRequest::Role { layer, role })])
+}
+
+/// Whether `holder` stands in the way of a second surface on `output` taking `role`: a bar or a
+/// dock only on the same output, any other role anywhere.
+fn shares(role: ShellRole, holder: &RoleHolder, output: Option<&OutputKey>) -> bool {
+    match role {
+        ShellRole::Bar | ShellRole::Dock => holder.output.as_ref() == output,
+        _ => true,
+    }
 }
 
 /// `set_minimise_target`: where the window `window` (the `ext_foreign_toplevel_list`
@@ -370,22 +410,24 @@ pub fn on_shell_gone(part: &mut QuireShellPart, shell: &QuireShellV1) {
 
 /// A layer surface unmapped: whatever role it held is free again.
 pub fn on_layer_gone(part: &mut QuireShellPart, layer: LayerKey) {
-    part.roles.retain(|_, holder| holder.layer != layer);
+    part.roles.remove(&layer);
     part.asked.remove(&layer);
 }
 
 /// The model said `note`: record it (a role taken, a minimise target) or send it to the
-/// shell (`modifiers` to the role surfaces, `hot_corner`, `reveal`).
+/// shell (`modifiers` to the role surfaces; a reveal is sent by [`shell_screen::send_reveal`], which
+/// needs the outputs).
 pub fn apply_note(part: &mut QuireShellPart, note: &ShellNote) -> Result<(), WaylandFault> {
     match note {
         ShellNote::Role(layer, role) => {
-            if let Some(surface) = part.asked.remove(layer) {
+            if let Some(AskedRole { surface, output }) = part.asked.remove(layer) {
                 // A layer holds one role at a time: the one it had before is free.
-                part.roles.retain(|_, holder| holder.layer != *layer);
                 part.roles.insert(
-                    *role,
+                    *layer,
                     RoleHolder {
                         layer: *layer,
+                        role: *role,
+                        output,
                         surface,
                     },
                 );
@@ -397,23 +439,6 @@ pub fn apply_note(part: &mut QuireShellPart, note: &ShellNote) -> Result<(), Way
             if part.mods != *mods {
                 part.mods = *mods;
                 send_modifiers(part, *mods);
-            }
-        }
-        ShellNote::HotCorner(corner) => {
-            if let Ok(corner) = quire_shell_v1::Corner::try_from(corner.code()) {
-                for shell in &part.bound {
-                    shell.hot_corner(corner);
-                }
-            }
-        }
-        ShellNote::Reveal(edge, shown) => {
-            let sent = quire_shell_v1::ScreenEdge::try_from(edge.code())
-                .ok()
-                .zip(quire_shell_v1::Shown::try_from(shown.code()).ok());
-            if let Some((edge, shown)) = sent {
-                for shell in &part.bound {
-                    shell.reveal(edge, shown);
-                }
             }
         }
         ShellNote::WindowMenu(show) => {

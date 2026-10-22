@@ -158,6 +158,7 @@ fn a_full_screen_window_covers_the_whole_output_whatever_its_limits() {
     for (name, limits) in [("no limits", ANY_SIZE), ("a maximum", max)] {
         let mut spec = one_desktop(usable, vec![window(1, WindowPlacement::FullScreen, limits)]);
         spec.outputs[0].full = full;
+        spec.outputs[0].covered = full;
         let got = RustScene.arrange(&spec, &knobs());
         let t = target(&got, 1);
         assert_eq!(

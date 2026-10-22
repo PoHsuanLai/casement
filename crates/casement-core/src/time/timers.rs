@@ -5,7 +5,6 @@ use super::Mono;
 use crate::app::AppKey;
 use crate::ids::{ClientKey, DeviceId, LeaseId, OutputKey};
 use crate::reveal::RevealEdge;
-use casement_protocols::vocab::Corner;
 use std::collections::BTreeMap;
 
 /// One `ext_idle_notification_v1` a client asked for.
@@ -37,8 +36,6 @@ pub enum TimerKey {
     FrameWatch(OutputKey),
     /// The app switcher's appearance delay.
     SwitcherDelay,
-    /// The pointer has rested in a hot corner long enough.
-    HotCorner(Corner),
     /// The pointer has rested on a window's green light long enough for its menu.
     LightDwell,
     /// The edge reveal of this output's edge needs a look: the pointer has rested long enough,
