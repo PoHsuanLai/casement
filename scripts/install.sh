@@ -6,8 +6,8 @@
 #
 #   scripts/install.sh [--prefix P] [--destdir D] [--no-build] [--locked] [--dry-run]
 #
-#   --prefix P    where it is installed (default /usr/local): P/bin/casement, P/bin/casementctl and
-#                 P/lib/systemd/user/casement.service
+#   --prefix P    where it is installed (default /usr/local): P/bin/casement, P/bin/casementctl,
+#                 P/lib/systemd/user/casement.service and P/share/quire/settings/casement.settings.toml
 #   --destdir D   a staging root put in front of every path (for a package build); nothing then
 #                 talks to systemd or SELinux
 #   --no-build    use the release binaries that are already built (under $CARGO_TARGET_DIR, else
@@ -119,7 +119,7 @@ portable_link() {
 
 target="${CARGO_TARGET_DIR:-$ROOT/target}/release"
 
-step "1/4 build"
+step "1/5 build"
 if [ "$build" = no ]; then
   note "skipped (--no-build): using $target"
 elif [ "$dry" = yes ]; then
@@ -133,13 +133,13 @@ else
   cargo build "${flags[@]}"
 fi
 
-step "2/4 the programs ($destdir$prefix/bin)"
+step "2/5 the programs ($destdir$prefix/bin)"
 for bin in "${BINS[@]}"; do
   [ "$dry" = yes ] || [ -x "$target/$bin" ] || die "no $target/$bin: build first (drop --no-build)"
   put 755 "$target/$bin" "$prefix/bin/$bin"
 done
 
-step "3/4 the user unit ($destdir$prefix/lib/systemd/user)"
+step "3/5 the user unit ($destdir$prefix/lib/systemd/user)"
 [ -f "$UNIT" ] || die "$UNIT is missing"
 rendered=$(mktemp)
 # Kept when its install needs root: the printed command names it.
@@ -149,7 +149,18 @@ sed 's|^ExecStart=[^ ]*|ExecStart='"$prefix"'/bin/casement|' "$UNIT" >"$rendered
 grep -q "^ExecStart=$prefix/bin/casement\( \|\$\)" "$rendered" || die "$UNIT has no ExecStart= line to point at $prefix/bin/casement"
 put 644 "$rendered" "$prefix/lib/systemd/user/casement.service"
 
-step "4/4 SELinux labels and the user manager"
+step "4/5 the settings schema ($destdir$prefix/share/quire/settings)"
+# The Settings app finds casement's keys (Spaces, pointer, keyboard...) by this file.
+if [ "$dry" = yes ]; then
+  note "would run: $target/casement --write-schema and install casement.settings.toml"
+else
+  schema=$(mktemp -d)
+  "$target/casement" --write-schema "$schema" >/dev/null || die "casement --write-schema failed"
+  put 644 "$schema/casement.settings.toml" "$prefix/share/quire/settings/casement.settings.toml"
+  rm -rf "$schema"
+fi
+
+step "5/5 SELinux labels and the user manager"
 if [ -n "$destdir" ]; then
   note "skipped: staging into $destdir"
 else

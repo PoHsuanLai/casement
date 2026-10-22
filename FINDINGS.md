@@ -5349,3 +5349,18 @@ pointer resting at the top edge brings the surface with the role `bar` over the 
   (`role_holder_near`). `role_holder(role)` remains for "any holder".
 - **Hot corners.** Nothing armed `TimerKey::HotCorner` and nothing sent `ShellNote::HotCorner`, so both are gone, with the
   `hot_corner` send in `quire/shell.rs`. The XML event `hot_corner` stays in the protocol; casement just never sends it.
+
+## Settings schema and launch tokens (wh-csset, 2026-10-23)
+
+- **Spaces row.** `spaces.switch_on_activate` takes the Mac's wording ("When switching to an app, switch to a Space with its
+  open windows"). Off, from the model: a valid token for a window on a Space not shown keys nothing and switches nothing (the
+  window only asks for attention, A7); an app activated from the switcher, dock or launcher becomes active where the person is.
+  `spaces.per_display` and `spaces.auto_rearrange` are `#[settings(skip)]`: nothing reads them yet (D4), so the Settings app
+  draws no row that changes nothing; the document still holds them (`NOT_DRAWN` in the schema test).
+- **Installer.** `scripts/install.sh` step 4/5 writes `casement --write-schema` into `P/share/quire/settings`, where detent
+  scans; the schema existed but no installer put it there, so the row never showed.
+- **Launch tokens.** A token asked for naming an `app_id` (a launcher's) is good for `LAUNCH_LIFETIME` (60 s, = `TOKEN_MEMORY`)
+  instead of `TOKEN_LIFETIME` (5 s): a slow app's first window (a cold browser, Blender) mapped with a stale token, so it
+  took no focus and its Space did not show. The press must still be within 5 s when the token is issued. The using window's
+  app id is not matched against the token's: launchers name desktop ids that often differ from Wayland app ids, and the
+  token is one-use and reaches only the launched process.

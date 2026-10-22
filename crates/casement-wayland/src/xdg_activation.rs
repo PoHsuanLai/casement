@@ -25,6 +25,14 @@ use std::time::Duration;
 /// this recent (A7).
 pub const TOKEN_LIFETIME: Duration = Duration::from_secs(5);
 
+/// How long a launch token stays good: one asked for naming the app it launches (`app_id`), as a
+/// launcher, the dock or the Spotlight panel does. The press still earns it within
+/// [`TOKEN_LIFETIME`]; only its use may come later, because an app can take this long to show its
+/// first window (a cold browser, Blender), and the Mac has no cut-off for an app the person
+/// launched. Tokens are one-use and handed only to the launched process, so the longer life lets
+/// nothing else in. Not longer than [`TOKEN_MEMORY`], so the table still holds it.
+pub const LAUNCH_LIFETIME: Duration = Duration::from_secs(60);
+
 /// How long a spent-looking token is remembered, so a late use is still judged (`Stale`, which
 /// asks for attention) instead of vanishing.
 pub const TOKEN_MEMORY: Duration = Duration::from_secs(60);
@@ -50,6 +58,35 @@ pub struct IssuedToken {
     pub by: Option<ClientKey>,
     /// Whether that client held a recent press.
     pub proof: PressProof,
+    /// What the token is for, which sets how long it stays good.
+    pub reach: TokenReach,
+}
+
+/// What a token was asked for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TokenReach {
+    /// Activating a window of the asker's, or one it hands on: good for [`TOKEN_LIFETIME`].
+    Press,
+    /// Launching an app it named: good for [`LAUNCH_LIFETIME`].
+    Launch,
+}
+
+impl TokenReach {
+    /// The reach of a token asked for naming `app_id` (or none).
+    pub fn of(app_id: Option<&str>) -> TokenReach {
+        match app_id {
+            Some(_) => TokenReach::Launch,
+            None => TokenReach::Press,
+        }
+    }
+
+    /// How long a token of this reach stays good once issued.
+    pub fn lifetime(self) -> Duration {
+        match self {
+            TokenReach::Press => TOKEN_LIFETIME,
+            TokenReach::Launch => LAUNCH_LIFETIME,
+        }
+    }
 }
 
 /// Whether a token was earned by a recent press.
@@ -108,12 +145,13 @@ pub fn proof_of(record: Option<&PressRecord>, now: Mono) -> PressProof {
 }
 
 /// The verdict on a token `issued` (if the compositor issued it) used at `now`: `Valid` only
-/// for a token earned by a press and still recent; everything else is `Stale` (an unknown token
-/// is a bad one, not a missing one).
+/// for a token earned by a press and still within its reach's lifetime; everything else is
+/// `Stale` (an unknown token is a bad one, not a missing one).
 pub fn judge(issued: Option<&IssuedToken>, now: Mono) -> TokenCheck {
     match issued {
         Some(token)
-            if token.proof == PressProof::Pressed && now.since(token.at) <= TOKEN_LIFETIME =>
+            if token.proof == PressProof::Pressed
+                && now.since(token.at) <= token.reach.lifetime() =>
         {
             TokenCheck::Valid
         }
@@ -138,7 +176,8 @@ fn forget_old(part: &mut XdgActivationPart, now: Mono) {
 }
 
 /// A client asked for a token at `now`. It is issued unless its asker already holds
-/// [`TOKENS_PER_CLIENT`] live ones. (`data` is smithay's stamp, ignored: A36.)
+/// [`TOKENS_PER_CLIENT`] live ones. Of `data` only the app it names is read (its reach); smithay's
+/// stamp is ignored (A36).
 pub fn on_token_request(
     part: &mut XdgActivationPart,
     token: &XdgActivationToken,
@@ -146,7 +185,6 @@ pub fn on_token_request(
     now: Mono,
     ask: TokenAsk,
 ) -> TokenVerdict {
-    let _ = data;
     forget_old(part, now);
     let held = part
         .issued
@@ -162,6 +200,7 @@ pub fn on_token_request(
             at: now,
             by: ask.requester,
             proof: ask.proof,
+            reach: TokenReach::of(data.app_id.as_deref()),
         },
     );
     TokenVerdict::Issue
@@ -214,6 +253,14 @@ mod tests {
             at: at(ms),
             by: Some(ClientKey(1)),
             proof,
+            reach: TokenReach::Press,
+        }
+    }
+
+    fn launch(ms: u64, proof: PressProof) -> IssuedToken {
+        IssuedToken {
+            reach: TokenReach::Launch,
+            ..issued(ms, proof)
         }
     }
 
@@ -232,7 +279,8 @@ mod tests {
     }
 
     /// The A7 rule on session time: a recent press earns the token, and the token is good for
-    /// five seconds; nothing here reads a wall clock.
+    /// five seconds, or a minute when it launches an app it named; nothing here reads a wall
+    /// clock.
     #[test]
     fn a_token_is_valid_only_when_pressed_and_recent() {
         let rows = [
@@ -261,6 +309,30 @@ mod tests {
                 TokenCheck::Stale,
             ),
             ("unknown token", None, 1_100, TokenCheck::Stale),
+            (
+                "a launch, used late",
+                Some(launch(1_000, PressProof::Pressed)),
+                30_000,
+                TokenCheck::Valid,
+            ),
+            (
+                "a launch, at its limit",
+                Some(launch(1_000, PressProof::Pressed)),
+                61_000,
+                TokenCheck::Valid,
+            ),
+            (
+                "a launch, a millisecond over",
+                Some(launch(1_000, PressProof::Pressed)),
+                61_001,
+                TokenCheck::Stale,
+            ),
+            (
+                "a launch with no press",
+                Some(launch(1_000, PressProof::Unproven)),
+                1_100,
+                TokenCheck::Stale,
+            ),
             (
                 "used before issue (clock never goes back)",
                 Some(issued(2_000, PressProof::Pressed)),

@@ -111,6 +111,32 @@ fn activation_follows_the_a7_rule() {
         Some(windows(&fixture)[3]),
         "a stale token does not activate"
     );
+
+    // 4. A launch token (it names the app) earned by a press, used after the press lifetime:
+    // a slow app's first window still takes focus.
+    click_at(&mut fixture, device, on_launcher);
+    let serial = launcher_pointer.last_press().expect("a fresh press");
+    let launch = activation.token(
+        fixture.client(launcher),
+        Some((&launcher_pointer.seat, serial)),
+        Some("org.example.Slow"),
+    );
+    fixture.pump();
+    let launch_token = launch.with(|seen| seen.clone()).expect("a token arrives");
+    fixture.advance(Duration::from_secs(20));
+    let fourth = app_base.toplevel(fixture.client(app));
+    fourth.set_app_id("org.example.Slow");
+    app_activation.activate(&launch_token, &fourth);
+    fourth.commit_bare();
+    fixture.pump();
+    fourth.ack_latest();
+    fourth.show(&buffer);
+    fixture.pump();
+    assert_eq!(
+        fixture.model().focus().key,
+        Some(windows(&fixture)[4]),
+        "a launch token outlives the press lifetime"
+    );
 }
 
 /// A token request committed twice is `already_used`; the global binds at version 1.
