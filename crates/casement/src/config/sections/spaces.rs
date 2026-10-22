@@ -10,24 +10,18 @@ use serde::{Deserialize, Serialize};
 #[serde(default)]
 #[settings(file = "casement/settings.toml", domain = "spaces", page = Page::Spaces)]
 pub struct SpacesSection {
-    /// `spaces.per_display`.
-    #[settings(
-        label = "Displays have separate Spaces",
-        help = "Each display has its own Spaces.",
-        section = "Spaces"
-    )]
+    /// `spaces.per_display`. Held but not yet a behaviour (every display has its own Spaces), so
+    /// the Settings app draws no row for it.
+    #[settings(skip)]
     pub per_display: Enabled,
-    /// `spaces.auto_rearrange`.
-    #[settings(
-        label = "Automatically rearrange Spaces",
-        help = "Spaces reorder themselves by most recent use.",
-        section = "Spaces"
-    )]
+    /// `spaces.auto_rearrange`. Held but not yet a behaviour (open D4), so the Settings app draws
+    /// no row for it.
+    #[settings(skip)]
     pub auto_rearrange: Enabled,
     /// `spaces.switch_on_activate`.
     #[settings(
-        label = "Switch to a Space with open windows",
-        help = "Activating an app shows a Space that has its windows.",
+        label = "When switching to an app, switch to a Space with its open windows",
+        help = "Opening or switching to an app shows the Space its window is on, and the window takes the keyboard. When off, you stay on this Space, and a window on another Space asks for your attention in the Dock instead.",
         section = "Spaces"
     )]
     pub switch_on_activate: Enabled,

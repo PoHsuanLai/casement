@@ -374,6 +374,10 @@ fn every_kind_of_binding_survives_the_document() {
     assert_eq!(got, want);
 }
 
+/// Keys the document holds that are not yet a behaviour: the schema leaves them out, so the
+/// Settings app draws no row that changes nothing.
+const NOT_DRAWN: [&str; 2] = ["spaces.per_display", "spaces.auto_rearrange"];
+
 /// A schema row for a key the document does not hold, or a document key with no row, is a
 /// settings key a person could not set or one the Settings app would draw for nothing.
 #[test]
@@ -385,7 +389,11 @@ fn the_schema_and_the_document_name_the_same_keys() {
             continue;
         }
         for (key, default) in value.as_table().expect("a section") {
-            in_document.push((format!("{section}.{key}"), default.clone()));
+            let path = format!("{section}.{key}");
+            if NOT_DRAWN.contains(&path.as_str()) {
+                continue;
+            }
+            in_document.push((path, default.clone()));
         }
     }
     let in_schema: Vec<(String, toml::Value)> = schema()
