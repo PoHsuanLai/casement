@@ -5313,8 +5313,9 @@ pointer resting at the top edge brings the surface with the role `bar` over the 
   has no reduced-motion setting yet, so the loop passes `Reduced::No` (`core_loop/reveal.rs::MOTION`) until one lands.
 - **What counts.** The output shows a `SpaceContent::FullScreen` Space and a layer surface holds the edge's role on that output.
   Split View halves do not reveal. A pop-up of the surface (`PopupManager`) keeps it up; the pointer on the surface, or still in
-  the strip, keeps it up. It hides with no delay (the dock's 0 ms hide trigger); `reveal(edge, hidden)` is sent when the
-  slide away starts, as `reveal(edge, shown)` is when the slide in starts.
+  the strip, keeps it up. It hides with no delay (the dock's 0 ms hide trigger); `reveal(edge, shown)` is sent when the slide
+  in starts and `reveal(edge, hidden)` when the slide away ends (sill drops the bar's content on `hidden`, so sent at the start
+  it would vanish from a surface still on screen); a pointer coming back mid-slide turns it round and the shell hears nothing.
 - **Stacking and hits.** A raised surface is drawn and hit between the overlay level and the full-screen windows
   (`LayerDraw::raised`, `scene::stack`), at the slid rectangle (`reveal::slid`: toward its edge until wholly off the output, or
   faded in place). It is removed from its own level while raised. The window is never told: no configure, no layout change.

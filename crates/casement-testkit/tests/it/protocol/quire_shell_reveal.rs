@@ -135,7 +135,7 @@ fn the_bar_and_the_dock_come_after_their_own_rest_and_go_when_the_pointer_moves_
         assert_eq!(shell.reveals(), [told(edge, Shown::Shown)], "{name}");
 
         // Resting on it keeps it; the middle of the screen is the window's, and leaving puts it
-        // away at once.
+        // away: the shell hears `hidden` when the slide-away ends.
         fixture.advance(ms(1000));
         assert_eq!(
             shell.reveals().len(),
@@ -146,6 +146,8 @@ fn the_bar_and_the_dock_come_after_their_own_rest_and_go_when_the_pointer_moves_
             .input()
             .pointer_to(mouse, LogicalPoint { x: 960, y: 540 });
         fixture.pump();
+        assert_eq!(shell.reveals().len(), 1, "{name}: not while it slides away");
+        fixture.advance(ms(1000));
         assert_eq!(
             shell.reveals(),
             [told(edge, Shown::Shown), told(edge, Shown::Hidden)],

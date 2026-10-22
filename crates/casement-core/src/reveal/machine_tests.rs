@@ -134,9 +134,9 @@ fn it_goes_when_the_pointer_leaves_and_drops_behind_the_window_after_the_slide()
     let (machine, seen) = run(RevealEdge::Top, Reduced::No, &script);
     assert_eq!(machine.stacking(), Stacking::Above, "sliding away");
     assert_eq!(
-        seen[seen.len() - 2..],
-        [(3000, HIDDEN), (3000, arm(3200))],
-        "told at once, the slide timed"
+        seen.last(),
+        Some(&(3000, arm(3200))),
+        "the slide timed, nothing told yet"
     );
 
     script.push((3100, RevealIn::Tick));
@@ -146,7 +146,7 @@ fn it_goes_when_the_pointer_leaves_and_drops_behind_the_window_after_the_slide()
     script.push((3200, RevealIn::Tick));
     let (machine, seen) = run(RevealEdge::Top, Reduced::No, &script);
     assert_eq!(machine.stacking(), Stacking::Behind, "below the window");
-    assert_eq!(seen.last(), Some(&(3000, arm(3200))), "nothing more to say");
+    assert_eq!(seen.last(), Some(&(3200, HIDDEN)), "told when it is gone");
 }
 
 #[test]
@@ -164,7 +164,11 @@ fn an_open_popup_keeps_it_up_until_it_closes() {
     script.push((5000, RevealIn::Popup(Popup::Closed)));
     let (machine, seen) = run(RevealEdge::Top, Reduced::No, &script);
     assert_eq!(machine.stacking(), Stacking::Above, "sliding away");
-    assert_eq!(seen[seen.len() - 2..], [(5000, HIDDEN), (5000, arm(5200))]);
+    assert_eq!(seen.last(), Some(&(5000, arm(5200))), "the slide timed");
+
+    script.push((5200, RevealIn::Tick));
+    let (_, seen) = run(RevealEdge::Top, Reduced::No, &script);
+    assert_eq!(seen.last(), Some(&(5200, HIDDEN)), "told when it is gone");
 }
 
 #[test]
@@ -174,7 +178,11 @@ fn the_pointer_coming_back_while_it_goes_turns_it_round_from_where_it_is() {
     script.extend([(3000, AWAY), (3100, ON_SURFACE)]);
     let (machine, seen) = run(RevealEdge::Top, Reduced::No, &script);
     assert_eq!(machine.stacking(), Stacking::Above);
-    assert_eq!(seen[seen.len() - 2..], [(3100, SHOWN), (3100, arm(3300))]);
+    assert_eq!(
+        seen[seen.len() - 2..],
+        [(3000, arm(3200)), (3100, arm(3300))],
+        "the shell still holds shown, so it hears nothing"
+    );
     let back = machine.visible(timing, at(3100));
     assert!(
         back.0 > 0 && back.0 < 1000,
@@ -246,7 +254,7 @@ fn leaving_full_screen_puts_it_away_at_once() {
         (
             "already going",
             vec![(3000, AWAY), (3100, RevealIn::Cover(Cover::No))],
-            vec![RevealOut::Cancel],
+            vec![RevealOut::Cancel, HIDDEN],
         ),
     ];
     for (name, tail, told) in cases {

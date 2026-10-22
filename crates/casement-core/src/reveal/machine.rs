@@ -169,10 +169,8 @@ impl Reveal {
     fn settled(self, timing: RevealTiming, now: Mono) -> (Reveal, Vec<RevealOut>) {
         match (self.cover, self.phase) {
             (Cover::No, Phase::Hidden) => (self, Vec::new()),
-            (Cover::No, Phase::Pending { .. } | Phase::Hiding { .. }) => {
-                (self.at(Phase::Hidden), vec![RevealOut::Cancel])
-            }
-            (Cover::No, Phase::Showing { .. } | Phase::Shown) => (
+            (Cover::No, Phase::Pending { .. }) => (self.at(Phase::Hidden), vec![RevealOut::Cancel]),
+            (Cover::No, Phase::Showing { .. } | Phase::Shown | Phase::Hiding { .. }) => (
                 self.at(Phase::Hidden),
                 vec![RevealOut::Cancel, RevealOut::Tell(Shown::Hidden)],
             ),
@@ -214,7 +212,8 @@ impl Reveal {
         }
     }
 
-    /// In (or coming in): it goes when nothing holds it.
+    /// In (or coming in): it goes when nothing holds it. The shell hears `hidden` only when the
+    /// slide-away ends, so what it shows does not vanish while the surface is still going.
     fn leaving(self, timing: RevealTiming, now: Mono) -> (Reveal, Vec<RevealOut>) {
         match self.held() {
             true => (self, Vec::new()),
@@ -223,16 +222,14 @@ impl Reveal {
                     since: now,
                     from: self.visible(timing, now),
                 }),
-                vec![
-                    RevealOut::Tell(Shown::Hidden),
-                    RevealOut::Arm(now.after(timing.travel)),
-                ],
+                vec![RevealOut::Arm(now.after(timing.travel))],
             ),
         }
     }
 
-    /// Going away since `since`: the pointer coming back turns it round from where it is; when
-    /// it is gone it drops behind the window.
+    /// Going away since `since`: the pointer coming back turns it round from where it is (the
+    /// shell still holds `shown`, so it hears nothing); when it is gone it drops behind the window
+    /// and the shell hears `hidden`.
     fn returning(self, timing: RevealTiming, since: Mono, now: Mono) -> (Reveal, Vec<RevealOut>) {
         match (self.held(), now.since(since) >= timing.travel) {
             (true, _) => (
@@ -240,12 +237,9 @@ impl Reveal {
                     since: now,
                     from: self.visible(timing, now),
                 }),
-                vec![
-                    RevealOut::Tell(Shown::Shown),
-                    RevealOut::Arm(now.after(timing.travel)),
-                ],
+                vec![RevealOut::Arm(now.after(timing.travel))],
             ),
-            (false, true) => (self.at(Phase::Hidden), Vec::new()),
+            (false, true) => (self.at(Phase::Hidden), vec![RevealOut::Tell(Shown::Hidden)]),
             (false, false) => (self, Vec::new()),
         }
     }
