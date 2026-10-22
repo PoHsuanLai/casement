@@ -9,6 +9,7 @@ use crate::focus::FocusIn;
 use crate::ids::OutputKey;
 use crate::layer::LayerBook;
 use crate::output::{OutputConfig, OutputFacts, OutputPower, SavedOutputs, place_outputs};
+use crate::reveal::RevealEdge;
 use crate::space::SpaceContent;
 use crate::time::TimerKey;
 use crate::window::{SpacePlace, WindowState};
@@ -116,6 +117,8 @@ impl Model {
         let timers = [
             TimerKey::FrameWatch(output.clone()),
             TimerKey::SpaceFinish(output.clone()),
+            TimerKey::Reveal(output.clone(), RevealEdge::Top),
+            TimerKey::Reveal(output.clone(), RevealEdge::Bottom),
         ];
         let model = timers.iter().fold(model, |mut model, key| {
             model.timers = model.timers.cancel(key);

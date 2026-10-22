@@ -37,19 +37,9 @@ const NAMESPACE: usize = 1;
 
 /// The blur v0 a surface asked for through ext-background-effect (its committed blur region,
 /// surface-local), behind `root` whose top-left is at `origin` (global sub-pixels) on `view`,
-/// looking as `look` says; none without a region or with an empty one.
-pub(crate) fn behind(
-    root: &WlSurface,
-    origin: SubPoint,
-    look: BlurLook,
-    view: &OutputView,
-) -> Option<BlurV0Element> {
-    behind_scaled(root, origin, (1.0, 1.0), (1.0, look), view)
-}
-
-/// [`behind`] stretched by `ratio` about its top-left (a window in a Scale flight) and drawn at
-/// the first of `(alpha, look)` (the window's, so the blur fades with it); none without a region
-/// or with an empty one.
+/// stretched by `ratio` about its top-left (a window in a Scale flight) and drawn at the first of
+/// `(alpha, look)` (the surface's, so the blur fades with it); none without a region or with an
+/// empty one.
 pub(crate) fn behind_scaled(
     root: &WlSurface,
     origin: SubPoint,

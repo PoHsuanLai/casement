@@ -38,7 +38,7 @@ pub(crate) use frame::{Raster, ShadowKey, ShadowSet, Tiles, WholeShadow};
 pub(crate) use frame::{shadow_key, shadow_tiles};
 pub use genie::{GenieParts, GenieWindow, genie_elements, genie_window, strip_plans};
 pub use geometry::{geometry_size, surface_origin, surface_origin_logical};
-pub use layer::layer_elements;
+pub use layer::{layer_elements, layer_elements_faded};
 pub use lock_cover::LockCoverElement;
 pub use overview::{OverviewLook, dim_elements, lift_last, ring_elements};
 pub use overview_icon::{IconPlace, OverviewIcon, icon_element, icon_place};

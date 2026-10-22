@@ -10,8 +10,8 @@ use wayland_client::{Connection, Dispatch, QueueHandle, WEnum};
 
 pub use casement_protocols::client::quire_desktop_v1::quire_desktop_window_v1::Toggle;
 pub use casement_protocols::client::quire_shell_v1::quire_shell_v1::{
-    DragOutcome, Error as ShellError, MacMods, OverviewMode, OverviewState, ShellRole, Shown,
-    SplitSide, WindowEntry,
+    DragOutcome, Error as ShellError, MacMods, OverviewMode, OverviewState, ScreenEdge, ShellRole,
+    Shown, SplitSide, WindowEntry,
 };
 
 /// What a shell object was told.
@@ -42,6 +42,9 @@ pub struct ShellEvents {
     /// Every `window_drag_end` (version 4), in order: the output, the window's identifier and the
     /// outcome (`None` for a code this client does not know).
     pub drag_ends: Vec<(WlOutput, String, Option<DragOutcome>)>,
+    /// Every `reveal`, in order: the edge and whether its surface is shown (`None` for a code
+    /// this client does not know).
+    pub reveals: Vec<(Option<ScreenEdge>, Option<Shown>)>,
 }
 
 /// A bound `wl_output` and the connector name it reported.
@@ -147,6 +150,11 @@ impl ShellHandle {
     pub fn space_target_new(&self, output: &WlOutput, at: (i32, i32), size: (u32, u32)) {
         self.object
             .space_target_new(output, at.0, at.1, size.0, size.1);
+    }
+
+    /// The `reveal` events, in order: the edge and whether its surface was shown or hidden.
+    pub fn reveals(&self) -> Vec<(Option<ScreenEdge>, Option<Shown>)> {
+        self.log.with(|seen| seen.reveals.clone())
     }
 
     /// The `window_drag_begin` events, in order.
@@ -340,6 +348,17 @@ impl Dispatch<QuireShellV1, ShellLog> for Host {
                     WEnum::Unknown(_) => None,
                 };
                 seen.drag_ends.push((output, toplevel, outcome));
+            }),
+            quire_shell_v1::Event::Reveal { edge, shown } => log.with(|seen| {
+                let edge = match edge {
+                    WEnum::Value(edge) => Some(edge),
+                    WEnum::Unknown(_) => None,
+                };
+                let shown = match shown {
+                    WEnum::Value(shown) => Some(shown),
+                    WEnum::Unknown(_) => None,
+                };
+                seen.reveals.push((edge, shown));
             }),
             _ => {}
         }

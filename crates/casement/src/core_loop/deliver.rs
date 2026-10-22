@@ -535,6 +535,7 @@ fn motion(
         return;
     }
     let stacked = stack(state);
+    super::reveal::moved(state, &stacked, logical(at));
     if divider::moved(state, &stacked, logical(at)) == grab::Follow::Taken {
         // The strip between Split View halves (or a drag of it).
         move_unheard(state, seat, event, at, delta);

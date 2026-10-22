@@ -8,9 +8,9 @@ use crate::element::{
     BlurFinish, CasementElement, ClipShape, ClosingFrame, FlightDraw, FrameDraw, GenieWindow,
     LockCoverElement, OverviewIcon, OverviewLook, PopupRide, Rgba8, TilePreview, choose,
     closing_elements, cursor_elements, dim_elements, drawn_content, frame_elements, genie_window,
-    icon_element, icon_place, label_element, layer_elements, lift_last, popup_elements,
-    popup_elements_riding, ring_elements, shown_length, shown_outline, surface_origin_logical,
-    tile_preview_elements, under_finish, window_content, window_elements,
+    icon_element, icon_place, label_element, layer_elements, layer_elements_faded, lift_last,
+    popup_elements, popup_elements_riding, ring_elements, shown_length, shown_outline,
+    surface_origin_logical, tile_preview_elements, under_finish, window_content, window_elements,
 };
 use crate::element::{alpha, flight_ratio};
 use crate::texture_book::TextureBook;
@@ -58,6 +58,10 @@ pub struct LayerDraw {
     pub top: Vec<LayerKey>,
     /// `overlay`.
     pub overlay: Vec<LayerKey>,
+    /// The surfaces an edge reveal has raised over the full-screen windows (the bar, the dock),
+    /// back first, each where it is drawn now. They are drawn from here, not from the level they
+    /// are also listed in.
+    pub raised: Vec<RaisedDraw>,
     /// Where each of them is arranged: the one placement the hit test reads too
     /// (`LayerBook::arrange`). `None` when there are no layers.
     pub arranged: Option<Arranged>,
@@ -89,6 +93,17 @@ pub struct LayerDraw {
     /// The row of Spaces: each window is drawn in its Space's column, shifted by the row's
     /// position. `None` draws every window where the frame has it.
     pub row: Option<RowDraw>,
+}
+
+/// A layer surface raised over the full-screen windows by an edge reveal, as it is drawn now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RaisedDraw {
+    /// The surface.
+    pub layer: LayerKey,
+    /// Where it is, in global logical pixels: slid toward its edge while it comes or goes.
+    pub area: LogicalRect,
+    /// How opaque it is, in thousandths: below 1000 while it cross-fades.
+    pub opacity: Fraction,
 }
 
 /// Mission Control on an output: its windows are drawn scaled to the size they have been sampled
@@ -180,8 +195,9 @@ pub enum CursorShape {
 }
 
 /// The elements of one output's frame, front first (smithay's order): chrome (cursor, lock
-/// covers), overlay layers, full-screen windows, top layers, the frame's other windows top of
-/// the stack first with their popups, bottom and background layers. Windows and layers missing from `book` are skipped.
+/// covers), overlay layers, the surfaces an edge reveal raised, full-screen windows, top layers,
+/// the frame's other windows top of the stack first with their popups, bottom and background
+/// layers. Windows and layers missing from `book` are skipped.
 ///
 /// A locked output (one with a lock surface in `book`, or listed in `chrome.covers`) shows the
 /// cursor, its lock surface if any, and under it an opaque cover over the whole output; nothing
@@ -206,6 +222,9 @@ pub fn output_elements<R: Compositor>(
     let draw_level =
         |keys: &[LayerKey], elements: &mut Vec<CasementElement<R>>, renderer: &mut R| {
             for key in keys.iter().rev() {
+                if layers.raised.iter().any(|raised| raised.layer == *key) {
+                    continue;
+                }
                 let Some(entry) = book.layer(key) else {
                     continue;
                 };
@@ -376,6 +395,31 @@ pub fn output_elements<R: Compositor>(
             }
         };
     draw_level(&layers.overlay, &mut elements, renderer);
+    for raised in layers.raised.iter().rev() {
+        let Some(entry) = book.layer(&raised.layer) else {
+            continue;
+        };
+        let strength = layers
+            .blur_strengths
+            .get(&raised.layer)
+            .copied()
+            .unwrap_or_default();
+        elements.extend(popup_elements(
+            &entry.root,
+            raised.area.origin,
+            view,
+            renderer,
+        ));
+        elements.extend(layer_elements_faded(
+            &raised.layer,
+            raised.area,
+            strength,
+            raised.opacity,
+            view,
+            book,
+            renderer,
+        ));
+    }
     draw_windows(&covering, &mut elements, renderer);
     if let Some(colour) = layers.backdrop {
         elements.push(CasementElement::Cover(cover(view, book, colour)));

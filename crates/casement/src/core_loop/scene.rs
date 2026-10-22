@@ -214,10 +214,10 @@ pub(super) enum Hit {
     Window(WindowId),
 }
 
-/// Every drawn surface that takes input, front to back: lock surfaces, overlay layers, full-screen
-/// windows, top layers, the other windows by stacking (the sampled frame's, top first), bottom
-/// then background layers; each
-/// root is preceded by its popups. Each with where its top-left is in global logical pixels.
+/// Every drawn surface that takes input, front to back: lock surfaces, overlay layers, the bar and
+/// dock an edge reveal raised, full-screen windows, top layers, the other windows by stacking (the
+/// sampled frame's, top first), bottom then background layers; each root is preceded by its
+/// popups. Each with where its top-left is in global logical pixels.
 pub(super) fn stack(state: &State) -> Vec<(Hit, Candidate)> {
     let model = &state.core.model;
     let book = &state.render.textures;
@@ -246,11 +246,30 @@ pub(super) fn stack(state: &State) -> Vec<(Hit, Candidate)> {
             (output.clone(), model.layers().arrange(output, full))
         })
         .collect();
+    // The bar and the dock an edge reveal has raised: over the full-screen window, where they
+    // are drawn now.
+    let raised = super::reveal::raised(state, state.clock.now());
+    let raised_hits: Vec<(Hit, Candidate)> = raised
+        .iter()
+        .rev()
+        .filter_map(|draw| {
+            let entry = book.layer(&draw.layer)?;
+            Some((
+                Hit::Layer(draw.layer),
+                Candidate {
+                    root: entry.root.clone(),
+                    origin: draw.area.origin,
+                    clip: Some(draw.area),
+                },
+            ))
+        })
+        .collect();
     let layer = |levels: &'static [LayerLevel]| {
         let mut found: Vec<(Hit, Candidate)> = model
             .layers()
             .iter()
             .filter(|(_, spec)| levels.contains(&spec.level))
+            .filter(|(key, _)| !raised.iter().any(|draw| draw.layer == **key))
             .filter_map(|(key, spec)| {
                 let entry = book.layer(key)?;
                 let area = arranged.get(&spec.output)?.place(key, entry.committed)?;
@@ -297,6 +316,7 @@ pub(super) fn stack(state: &State) -> Vec<(Hit, Candidate)> {
         .partition(|(hit, _)| matches!(hit, Hit::Window(id) if full_screen.contains(id)));
     locks
         .chain(layer(&[LayerLevel::Overlay]))
+        .chain(raised_hits)
         .chain(covering)
         .chain(layer(&[LayerLevel::Top]))
         .chain(others)

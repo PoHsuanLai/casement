@@ -48,6 +48,7 @@ pub(crate) mod nested;
 mod overview;
 mod overview_drag;
 mod presence;
+mod reveal;
 mod scene;
 mod surfaces;
 mod tile;
@@ -97,6 +98,8 @@ pub fn feed(state: &mut State, events: Vec<Event>) {
     idle::hear(state, &events_seen, now);
     ime::hear(state, &events_seen);
     menu::hear(state, &events_seen);
+    reveal::hear(state, &events_seen);
+    reveal::sync(state);
     events_seen
         .iter()
         .filter_map(|event| match event {
@@ -145,6 +148,7 @@ fn note_settings(state: &mut State, events: &[Event]) {
 /// present, send frame callbacks and presentation feedback at the frame's instant.
 pub fn frame(state: &mut State, output: &OutputKey) {
     windows::refresh_layers(state);
+    reveal::sync(state);
     presence::update(state);
     let now = state.clock.now();
     let Some(plugged) = state.core.model.outputs().0.get(output) else {
@@ -184,6 +188,7 @@ pub fn frame(state: &mut State, output: &OutputKey) {
         backdrop: divider::backdrop(state, output),
         tile_preview: tile::preview(state, output),
         row: row_of(state, &frame, now),
+        raised: reveal::raised(state, now),
         ..layers_on(&state.core.model, output)
     };
     let capture = tty::capture_watch(&state.wl.image_capture.book, &state.wl.screencopy, output);

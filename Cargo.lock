@@ -432,6 +432,7 @@ dependencies = [
  "ds-behaviour",
  "ds-core",
  "ds-motion",
+ "ds-style",
  "porter-core",
  "proptest",
  "serde",

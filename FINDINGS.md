@@ -5296,3 +5296,27 @@ Code: `crates/casement/src/timing/` (pure records, table-tested; `Sink` is the o
   refused a lease: a privileged window of another program (a password prompt) is leasable until the reach table's `Trusted`
   target is wired. A window that closes ends its lease in the model at once (all input refused), but the socket stays open
   until `EndLease`, a hang-up or the caller leaving the bus. cuad ends it on the window's close.
+
+## Edge reveal (wh-reveal, 2026-10-22)
+
+Built, uncompiled (the lane does not build). The two full-screen rows of 03 section 1.6, owner OK 2026-10-22: in full screen the
+pointer resting at the top edge brings the surface with the role `bar` over the window, and at the bottom edge the `dock`'s.
+
+- **Pure machine.** `casement_core::reveal`: one `Reveal` per output and edge in a `RevealBook` (`Hidden`, `Pending`, `Showing`,
+  `Shown`, `Hiding`; typed inputs `Cover`, `Pointer(Place)`, `Popup`, `Tick`; outputs `Arm`, `Cancel`, `Tell(Shown)`). Table tests
+  in `reveal/*_tests.rs`. The loop (`core_loop/reveal.rs`) feeds it and carries out the timer (`TimerKey::Reveal(output, edge)`) and
+  the `reveal` note; the dwell is the same shape as the green light's (`window::Dwell`).
+- **Numbers.** Bar: rest 450 ms (design/27 section 4.5), slide 200 ms (`--t-move`, `DurationToken::Move`), out curve in, exit curve
+  out. Dock: rest 200 ms, slide 500 ms, the settled defaults of `dock.autohide_delay_ms` / `dock.autohide_slide_ms` (design/10
+  section 10.3.11); casement reads neither key, they are constants in `reveal/timing.rs` (a test pins the bar's to the token table).
+  The trigger strip is 4 px on both edges. Reduced motion keeps the rest and cross-fades for `--t-quick` (120 ms) in place; casement
+  has no reduced-motion setting yet, so the loop passes `Reduced::No` (`core_loop/reveal.rs::MOTION`) until one lands.
+- **What counts.** The output shows a `SpaceContent::FullScreen` Space and a layer surface holds the edge's role on that output.
+  Split View halves do not reveal. A pop-up of the surface (`PopupManager`) keeps it up; the pointer on the surface, or still in
+  the strip, keeps it up. It hides with no delay (the dock's 0 ms hide trigger); `reveal(edge, hidden)` is sent when the
+  slide away starts, as `reveal(edge, shown)` is when the slide in starts.
+- **Stacking and hits.** A raised surface is drawn and hit between the overlay level and the full-screen windows
+  (`LayerDraw::raised`, `scene::stack`), at the slid rectangle (`reveal::slid`: toward its edge until wholly off the output, or
+  faded in place). It is removed from its own level while raised. The window is never told: no configure, no layout change.
+- **Not done.** A keep mode (a later protocol request). A bar or dock per output beyond what `role_taken` allows (one holder per
+  role). The `dock.autohide_*` settings keys. Popups of a fading surface are drawn at full opacity.

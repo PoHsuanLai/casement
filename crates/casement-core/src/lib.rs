@@ -42,6 +42,7 @@ pub mod overview;
 pub mod overview_drag;
 pub mod policy;
 pub mod raster;
+pub mod reveal;
 pub mod settings;
 pub mod shell;
 pub mod space;

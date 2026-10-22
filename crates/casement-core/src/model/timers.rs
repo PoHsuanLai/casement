@@ -41,9 +41,9 @@ impl Model {
                 Some(exists(self.clients.get(client).map(|_| ())))
             }
             TimerKey::QuitGrace(app) => Some(exists(self.apps.get(app).map(|_| ()))),
-            TimerKey::FrameWatch(output) | TimerKey::SpaceFinish(output) => {
-                Some(exists(self.outputs.0.get(output).map(|_| ())))
-            }
+            TimerKey::FrameWatch(output)
+            | TimerKey::SpaceFinish(output)
+            | TimerKey::Reveal(output, _) => Some(exists(self.outputs.0.get(output).map(|_| ()))),
             TimerKey::KeyRepeat(_)
             | TimerKey::ImeHold
             | TimerKey::AgentHold

@@ -128,6 +128,8 @@ pub struct RenderState {
     pub light_arm: casement_core::window::LightArm,
     /// Hover intent on the green light: when it rests long enough the window menu shows.
     pub light_dwell: casement_core::window::Dwell,
+    /// The edge reveal of the bar and the dock over a full-screen window, per output and edge.
+    pub reveal: casement_core::reveal::RevealBook,
     /// The person's light or dark scheme, which the server-side frame is drawn in.
     pub scheme: casement_layout::Scheme,
     /// Whether the person reduced transparency (quire's `appearance.transparency`): every blur is
@@ -375,6 +377,7 @@ impl State {
             clicks: casement_core::window::ClickTracker::default(),
             light_arm: casement_core::window::LightArm::default(),
             light_dwell: casement_core::window::Dwell::default(),
+            reveal: casement_core::reveal::RevealBook::new(),
             scheme: casement_layout::Scheme::default(),
             transparency: match config.mode {
                 StartMode::Safe => casement_layout::Transparency::Reduced,
