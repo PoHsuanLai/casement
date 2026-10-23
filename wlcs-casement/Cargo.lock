@@ -375,6 +375,7 @@ dependencies = [
  "porter-core",
  "rustix 1.1.5",
  "serde",
+ "shell-verbs 0.1.0",
  "smithay",
  "thiserror 2.0.21",
  "tokio",
@@ -390,7 +391,9 @@ dependencies = [
  "casement-core",
  "peephole-core",
  "reis",
+ "rustix 1.1.5",
  "smithay",
+ "tracing",
 ]
 
 [[package]]
@@ -411,6 +414,7 @@ dependencies = [
 name = "casement-chrome"
 version = "0.1.0"
 dependencies = [
+ "casement-core",
  "ds-core",
  "ds-style",
  "parley",
@@ -426,6 +430,7 @@ dependencies = [
  "ds-behaviour",
  "ds-core",
  "ds-motion",
+ "ds-style",
  "porter-core",
  "serde",
  "serde_json",
@@ -437,6 +442,7 @@ dependencies = [
 name = "casement-icons"
 version = "0.1.0"
 dependencies = [
+ "ds-helpers",
  "freedesktop-icons",
  "image",
  "resvg",
@@ -456,7 +462,6 @@ dependencies = [
  "peephole-bus",
  "porter-core",
  "porter-dbus",
- "serde_json",
  "thiserror 2.0.21",
  "tokio",
  "toml",
@@ -534,7 +539,6 @@ dependencies = [
  "casement-protocols",
  "desktop-client",
  "rustix 1.1.5",
- "serde",
  "serde_json",
  "thiserror 2.0.21",
  "tokio",
@@ -551,7 +555,6 @@ dependencies = [
 name = "casement-testkit"
 version = "0.1.0"
 dependencies = [
- "calloop",
  "casement",
  "casement-backend",
  "casement-core",
@@ -585,6 +588,7 @@ dependencies = [
  "smithay",
  "thiserror 2.0.21",
  "tracing",
+ "xkbcommon",
 ]
 
 [[package]]
@@ -625,8 +629,17 @@ dependencies = [
 [[package]]
 name = "chordkit"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/chordkit.git?rev=934a2d71f6516bee5919ee29278003702a4ea5e1#934a2d71f6516bee5919ee29278003702a4ea5e1"
+source = "git+https://github.com/PoHsuanLai/chordkit.git?rev=99eec9ddd03ee345b669fcc7954ed44590724290#99eec9ddd03ee345b669fcc7954ed44590724290"
 dependencies = [
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "chordkit-file"
+version = "0.1.0"
+source = "git+https://github.com/PoHsuanLai/chordkit.git?rev=99eec9ddd03ee345b669fcc7954ed44590724290#99eec9ddd03ee345b669fcc7954ed44590724290"
+dependencies = [
+ "libc",
  "thiserror 2.0.21",
 ]
 
@@ -913,6 +926,7 @@ dependencies = [
  "ds-style",
  "futures-timer",
  "notify",
+ "objc2-core-foundation",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -1697,17 +1711,19 @@ dependencies = [
 [[package]]
 name = "keycap-client"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/keycap?rev=b04bf0696a7af0b2086d5930bf821b092e34cd6d#b04bf0696a7af0b2086d5930bf821b092e34cd6d"
+source = "git+https://github.com/PoHsuanLai/keycap?rev=bc3d41754fa716f4183c901915f95b70a5c4d0b8#bc3d41754fa716f4183c901915f95b70a5c4d0b8"
 dependencies = [
  "chordkit",
+ "chordkit-file",
  "keycap-protocol",
  "rustix 1.1.5",
+ "shell-verbs 0.1.0 (git+https://github.com/PoHsuanLai/casement-protocols?rev=fa664f1fcb312abd7e7a0e38ccae216406e88139)",
 ]
 
 [[package]]
 name = "keycap-protocol"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/keycap?rev=b04bf0696a7af0b2086d5930bf821b092e34cd6d#b04bf0696a7af0b2086d5930bf821b092e34cd6d"
+source = "git+https://github.com/PoHsuanLai/keycap?rev=bc3d41754fa716f4183c901915f95b70a5c4d0b8#bc3d41754fa716f4183c901915f95b70a5c4d0b8"
 dependencies = [
  "serde",
  "serde_json",
@@ -2191,8 +2207,8 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "peephole"
-version = "0.1.6"
-source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.6#87a3d225d7526d03f16acff2245374cb00a27e24"
+version = "0.1.9"
+source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.9#f22e99b447d1ef7f84d81ddce6ceb614088ee0ef"
 dependencies = [
  "nix 0.31.3",
  "peephole-core",
@@ -2202,8 +2218,8 @@ dependencies = [
 
 [[package]]
 name = "peephole-bus"
-version = "0.1.6"
-source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.6#87a3d225d7526d03f16acff2245374cb00a27e24"
+version = "0.1.9"
+source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.9#f22e99b447d1ef7f84d81ddce6ceb614088ee0ef"
 dependencies = [
  "futures-timer",
  "peephole",
@@ -2215,8 +2231,8 @@ dependencies = [
 
 [[package]]
 name = "peephole-core"
-version = "0.1.6"
-source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.6#87a3d225d7526d03f16acff2245374cb00a27e24"
+version = "0.1.9"
+source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.9#f22e99b447d1ef7f84d81ddce6ceb614088ee0ef"
 dependencies = [
  "serde",
  "thiserror 2.0.21",
@@ -2370,6 +2386,7 @@ dependencies = [
 name = "porter-core"
 version = "0.1.0"
 dependencies = [
+ "peephole-core",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -2826,6 +2843,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "shell-verbs"
+version = "0.1.0"
+
+[[package]]
+name = "shell-verbs"
+version = "0.1.0"
+source = "git+https://github.com/PoHsuanLai/casement-protocols?rev=fa664f1fcb312abd7e7a0e38ccae216406e88139#fa664f1fcb312abd7e7a0e38ccae216406e88139"
+
+[[package]]
 name = "shlex"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2999,7 +3025,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3171,9 +3197,9 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "1.53.2"
+version = "1.53.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e95f91fcc7a621e8b030f6aa23c71fe9838ae2fb4d8118b75602a328f5144044"
+checksum = "ce3335fa71841cda333a58d7615b03901380ecf09d59b3296d21f8bbac0dde4e"
 dependencies = [
  "bytes",
  "libc",
@@ -3304,7 +3330,7 @@ checksum = "f2f6fb2847f6742cd76af783a2a2c49e9375d0a111c7bef6f71cd9e738c72d6e"
 dependencies = [
  "memoffset 0.9.1",
  "tempfile",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

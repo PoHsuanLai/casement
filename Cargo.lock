@@ -1769,7 +1769,7 @@ dependencies = [
 [[package]]
 name = "keycap-client"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/keycap?rev=57143ff2a1431744f2c961f81ec4e2d104b3b07d#57143ff2a1431744f2c961f81ec4e2d104b3b07d"
+source = "git+https://github.com/PoHsuanLai/keycap?rev=bc3d41754fa716f4183c901915f95b70a5c4d0b8#bc3d41754fa716f4183c901915f95b70a5c4d0b8"
 dependencies = [
  "chordkit",
  "chordkit-file",
@@ -1781,7 +1781,7 @@ dependencies = [
 [[package]]
 name = "keycap-protocol"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/keycap?rev=57143ff2a1431744f2c961f81ec4e2d104b3b07d#57143ff2a1431744f2c961f81ec4e2d104b3b07d"
+source = "git+https://github.com/PoHsuanLai/keycap?rev=bc3d41754fa716f4183c901915f95b70a5c4d0b8#bc3d41754fa716f4183c901915f95b70a5c4d0b8"
 dependencies = [
  "serde",
  "serde_json",
@@ -3093,7 +3093,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -3265,9 +3265,9 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "1.53.2"
+version = "1.53.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e95f91fcc7a621e8b030f6aa23c71fe9838ae2fb4d8118b75602a328f5144044"
+checksum = "ce3335fa71841cda333a58d7615b03901380ecf09d59b3296d21f8bbac0dde4e"
 dependencies = [
  "bytes",
  "libc",
@@ -3410,7 +3410,7 @@ checksum = "f2f6fb2847f6742cd76af783a2a2c49e9375d0a111c7bef6f71cd9e738c72d6e"
 dependencies = [
  "memoffset",
  "tempfile",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
