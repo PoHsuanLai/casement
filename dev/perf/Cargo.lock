@@ -43,6 +43,7 @@ dependencies = [
  "ds-behaviour",
  "ds-core",
  "ds-motion",
+ "ds-style",
  "porter-core",
  "serde",
  "serde_json",
@@ -105,7 +106,7 @@ checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 [[package]]
 name = "chordkit"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/chordkit.git?rev=934a2d71f6516bee5919ee29278003702a4ea5e1#934a2d71f6516bee5919ee29278003702a4ea5e1"
+source = "git+https://github.com/PoHsuanLai/chordkit.git?rev=99eec9ddd03ee345b669fcc7954ed44590724290#99eec9ddd03ee345b669fcc7954ed44590724290"
 dependencies = [
  "thiserror",
 ]
@@ -293,6 +294,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "peephole-core"
+version = "0.1.9"
+source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.9#f22e99b447d1ef7f84d81ddce6ceb614088ee0ef"
+dependencies = [
+ "serde",
+ "thiserror",
+]
+
+[[package]]
 name = "png"
 version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -309,6 +319,7 @@ dependencies = [
 name = "porter-core"
 version = "0.1.0"
 dependencies = [
+ "peephole-core",
  "serde",
  "serde_json",
  "thiserror",
