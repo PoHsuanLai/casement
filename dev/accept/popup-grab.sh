@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Acceptance script 'popup-grab' (20-FREEZE-PLAN §4.3, P0): a popup that grabs (xdg_popup.grab, on a
 # button press the client received) takes the keyboard, a click inside it leaves it open, a click
-# outside dismisses it (`popup_done`), and the keyboard goes back to its window. Asserted on the
-# client's transcript. Exit: 0 pass, 1 fail, 2 could not run, 3 environment.
+# outside dismisses it (`popup_done`), and the keyboard goes back to its window; a popup its client
+# closes itself does not take the next click with it. Asserted on the client's transcript. Exit: 0 pass, 1 fail, 2 could not run, 3 environment.
 #
 # Owner: P0-accept (fills the P0-H2 stub).
 set -euo pipefail
@@ -62,4 +62,21 @@ inject "key b down" "key b up" >/dev/null
 probe_wait A "$KEY_EVENT"
 probe_sync A
 assert_ok "keys reach the window after the popup is gone" test "$(probe_count A "$KEY_EVENT")" -gt "$keys_before"
+
+# A menu its client closes itself (Escape: the client destroys the popup, no popup_done): the
+# next click reaches the window at once, not only the one after it.
+BUTTON='^< wl_pointer#[0-9]+\.button\(.*, 1\)$'
+click $((x + 200)) $((y + 200))
+probe_sync A
+probe_do A popup n w grab at=20,20 size=100x50
+probe_wait A '^probe: popup-mapped n 20,20 100x50$'
+probe_sync A
+inject "key Escape down" "key Escape up" >/dev/null
+probe_do A popup-close n
+probe_sync A
+settle
+presses_before=$(probe_count A "$BUTTON")
+click $((x + 300)) $((y + 250))
+probe_sync A
+assert_ok "the first click after the client closed its menu reaches the window" test "$(probe_count A "$BUTTON")" -gt "$presses_before"
 assert_summary

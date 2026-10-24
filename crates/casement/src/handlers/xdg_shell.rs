@@ -282,6 +282,10 @@ impl XdgShellHandler for State {
     fn popup_destroyed(&mut self, surface: PopupSurface) {
         let held = holds_the_keyboard(self, &surface);
         let events = xdg_shell::on_popup_destroyed(&mut self.wl.xdg_shell, &surface);
+        // smithay counts a grab as active until its popups are cleaned up: without this a
+        // menu its client closed (Escape) kept the pointer grab open, and the next click was
+        // taken as one outside the menu and swallowed.
+        self.wl.xdg_shell.popups.cleanup();
         core_loop::feed(self, events);
         if held {
             // The menu's own client closed it: its grab is over, and smithay would give the

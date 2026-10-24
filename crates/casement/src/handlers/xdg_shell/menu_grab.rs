@@ -96,9 +96,16 @@ impl PointerGrab<State> for MenuPointerGrab {
                     handle.unset_grab(self, data, event.serial, event.time, true);
                 }
             }
+            // The client closed its menu itself (Escape: it destroys the popup and no
+            // popup_done is sent), and the grab is still here: the grab ends and this press is
+            // the person's next click, so it goes where it lands. smithay's grab would end at
+            // this button and drop it, so the first click after the menu needed a second.
+            Phase::Open if self.popups.has_ended() => {
+                handle.unset_grab(self, data, event.serial, event.time, true);
+                handle.button(data, event);
+            }
             Phase::Open => {
                 let outside = event.state == ButtonState::Pressed
-                    && !self.popups.has_ended()
                     && !handle
                         .current_focus()
                         .and_then(|(focus, _)| focus.wl_surface().map(|s| s.into_owned()))
