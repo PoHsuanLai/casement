@@ -20,6 +20,7 @@ mod popup;
 mod reduced;
 mod rounded_clip;
 mod shared;
+mod soft_edge;
 mod solid;
 mod strip;
 mod tile_preview;
@@ -40,7 +41,7 @@ pub use frame::{
 pub(crate) use frame::{Raster, ShadowKey, ShadowSet, Tiles, WholeShadow};
 #[cfg(test)]
 pub(crate) use frame::{shadow_key, shadow_tiles};
-pub use genie::{GenieParts, GenieWindow, genie_elements, genie_window, strip_plans};
+pub use genie::{GenieParts, GenieWindow, SoftParts, genie_elements, genie_window, strip_plans};
 pub use geometry::{geometry_size, margin_of, surface_origin, surface_origin_logical};
 pub use layer::{layer_elements, layer_elements_faded};
 pub use lock_cover::LockCoverElement;
@@ -51,6 +52,7 @@ pub use reduced::{BlurFinish, under_finish};
 pub(crate) use rounded_clip::bake_corners;
 pub use rounded_clip::{ClipShape, RoundedClipElement, Rounding};
 pub use shared::SharedElement;
+pub use soft_edge::{Part, Weight};
 pub use solid::{Rgba8, solid_rect};
 pub(crate) use strip::pixman_can_draw;
 pub use strip::{Margins, StripElement, StripPlan};

@@ -5390,3 +5390,30 @@ pointer resting at the top edge brings the surface with the role `bar` over the 
   one-pixel buffers) already did that. The shader's new `mode` uniform and `ClipShape::coverage` are the same formula.
 - **Not done.** A closing window's fade (`closing_elements`) still draws only the frame of a framed window: a client window
   fades square and without its shadow. The window's last image is baked square on the GPU, as before.
+
+## Soft genie edges and a Mission Control picture (wh-cgenie, 2026-10-24)
+
+- **The stair-step.** Each genie strip was one band whose left and right edges were rounded to whole pixels, so along the
+  curve a side moved a whole pixel every few rows (`minimise-genie-2x-mid`: the sides and the titlebar edge).
+- **Choice: coverage on the two edge columns of each strip.** Thinner strips cannot help: the quantisation is across the
+  strip, not along it, and at 2x a strip is already a physical row. Sub-pixel x positions do not exist in smithay's integer
+  element geometry. A shader (GLES) and a piecewise draw (pixman) would be two implementations of one thing, and the memory
+  elements (titlebar, shadow) expose no texture to draw by hand. What both renderers do share is the element's alpha, so the
+  strip now covers the whole columns it touches (`floor(left)` to `ceil(right)`, stretched over them), and
+  `StripPlan::soft_parts` cuts it into its body and its two edge columns. An edge column is drawn at the share of the pixel
+  the window covers, in `STEPS` (4) quarters, from copies of the window's titlebar and surfaces built at that fraction of
+  the opacity (`genie_window` builds three extra sets, `GenieParts::soft`); a column covered to within an eighth joins the
+  body, one covered by under an eighth is left out, and at rest there are no edge columns at all (the same elements as
+  before). Parts get their own ids (`index * 8 + code`, the strength in the code) so the damage tracker never takes a
+  column for the body or one strength for another. Timing is untouched: only the horizontal cut and the alpha of the edge
+  columns changed. The rounded clip, blur and shadow use the same whole-column plan; the shadow is soft anyway.
+- **Not done.** The error is one quarter of a pixel in coverage per row, and the edge is per strip row (not slanted within
+  a row), which is smooth enough at 2x. The edge columns show the window stretched up to a pixel wider than the exact
+  curve (the content is fitted to the whole columns). Goldens: `minimise-genie-1.5x-mid` and `minimise-genie-2x-mid` change
+  and want blessing (Scale ones do not).
+- **Test without a golden.** `a_genie_flight_mid_way...` goldens still cover the picture; `the_sides_of_a_genie_are_anti_aliased`
+  checks a quarter of the content rows start with a blended pixel. `soft_edge.rs` unit tests cover the cut.
+- **Mission Control picture.** `scene/mission.rs`: three framed windows, opened by a shell connection, settled 1.5 s, at 1x
+  and 2x (`mission-control-1x`, `mission-control-2x`). Reduce Motion only makes the windows snap (`cause_travel`: Reduced is
+  `Travel::Snap`); the slots are the same, so `reduce_motion_settles_to_the_same_picture` asserts the settled picture is
+  byte-equal to the standard one instead of adding a third golden.

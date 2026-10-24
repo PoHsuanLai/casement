@@ -283,3 +283,37 @@ fn a_scale_flight_mid_way_is_whole_at_fractional_and_double_scale() {
 fn a_genie_flight_mid_way_is_whole_at_fractional_and_double_scale() {
     whole_mid_flight(MinimiseEffect::Genie);
 }
+
+/// How many rows of the content in `shot` start (from the left) with a pixel between the
+/// window's colour and the black behind it, out of how many rows have content at all. The
+/// washed content is `(a, 0, a)` over black, so a blend is `(b, 0, b)` with `0 < b < a`.
+fn soft_rows(shot: &image::RgbaImage) -> (u32, u32) {
+    let content = |p: [u8; 4]| p[1] == 0 && p[0] > 0 && p[0] == p[2];
+    (CURSOR_REACH..shot.height())
+        .filter_map(|y| {
+            let row: Vec<[u8; 4]> = (CURSOR_REACH..shot.width())
+                .map(|x| shot.get_pixel(x, y).0)
+                .collect();
+            let first = row.iter().position(|p| content(*p))?;
+            let inside = *row.get(first + 3).filter(|p| content(**p))?;
+            Some(row[first][0] < inside[0])
+        })
+        .fold((0, 0), |(soft, all), is_soft| {
+            (soft + u32::from(is_soft), all + 1)
+        })
+}
+
+/// A genie's sides are smooth: caught mid-flight at 2x, the pixels beside the window's left
+/// side are blends of its colour and the black behind (a share of the pixel covered), not
+/// only the window's colour or nothing, which is what a side drawn in whole pixels steps through.
+#[test]
+fn the_sides_of_a_genie_are_anti_aliased() {
+    let (_, output, dpi) = SCALED[1];
+    let shot = mid_flight(MinimiseEffect::Genie, output, dpi);
+    let (soft, all) = soft_rows(&shot);
+    assert!(all > 100, "the content has {all} rows");
+    assert!(
+        soft * 4 >= all,
+        "{soft} of {all} rows have a blended pixel on the left side"
+    );
+}

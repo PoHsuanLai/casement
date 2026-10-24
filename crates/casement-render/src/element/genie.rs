@@ -7,12 +7,19 @@
 //! sideways by the shadow's margin (and the first and last also above and below), so the halo
 //! follows the bent silhouette. The blur is one element over the strips' rectangles. Strips meet
 //! on one rounded edge and never overlap, so a translucent window is blended once everywhere.
+//!
+//! A strip covers whole pixel columns, so a side drawn plainly steps from row to row. Each
+//! strip's two edge columns are drawn at the share of the pixel the window covers, from copies
+//! of the window's pieces at that fraction of their alpha (`soft_edge.rs`), which smooths the
+//! sides alike on pixman and on GLES.
+//!
 //! The window's popups are not drawn (FINDINGS, `wave-2026-10-15/flight2`).
 
 use super::clip_strip::ClipStripElement;
 use super::flight::at_rest;
 use super::frame::SHADOW_MARGIN;
 use super::shared::SharedElement;
+use super::soft_edge::Weight;
 use super::strip::{Margins, StripElement, StripPlan};
 use super::window::{alpha, window_blur, window_content, window_surfaces};
 use super::{
@@ -32,13 +39,17 @@ use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Physical, Point, Rectangle};
 
+/// How far off a whole column an edge may be and still count as on it (float noise).
+const EDGE_NOISE: f64 = 1e-6;
+
 /// The strips of the window whose visible rectangle (frame included) is `visual` at `progress`
 /// (0 to 1) of the flight to `tile`, in `view`'s physical pixels. Empty when the window has no
 /// area. Pure arithmetic.
 ///
 /// The cut is finer where the curve is steep (`strips_fine`), but never finer than one strip
 /// per physical row of the window. Two strips share one rounded edge between them, so they
-/// meet without a gap and without an overlap.
+/// meet without a gap and without an overlap. Each band is the whole columns its strip touches
+/// (`StripPlan::edges` says how much of the first and last the window covers).
 pub fn strip_plans(
     visual: LogicalRect,
     tile: LogicalRect,
@@ -78,13 +89,22 @@ pub fn strip_plans(
         .enumerate()
         .filter_map(|(index, strip)| {
             let d = drawn[index];
-            let (x0, x1) = (d.x.round() as i32, (d.x + d.w).round() as i32);
+            // The whole columns the strip touches; the share of the first and last that the
+            // window covers is drawn by the strip's soft parts.
+            let (left, right) = (d.x, d.x + d.w);
+            let x0 = (left + EDGE_NOISE).floor() as i32;
+            let x1 = (right - EDGE_NOISE).ceil() as i32;
             let (y0, y1) = (edges[index], edges[index + 1]);
             let source_h = src.h * (strip.bottom - strip.top);
             if x1 <= x0 || y1 <= y0 || source_h <= 1e-3 {
                 return None;
             }
-            let ratio = (d.w / src.w, d.h / source_h);
+            let covered = |share: f64| share.clamp(0.0, 1.0);
+            let edges = (
+                covered(f64::from(x0 + 1) - left),
+                covered(right - f64::from(x1 - 1)),
+            );
+            let ratio = (f64::from(x1 - x0) / src.w, d.h / source_h);
             // The shift is one rounded difference, so a strip at rest (where the difference is
             // float noise round zero) is not moved by a half-pixel tie between two roundings.
             let shift_y = (d.y - (src.y + strip.top * src.h * ratio.1)).round() as i32;
@@ -95,6 +115,7 @@ pub fn strip_plans(
                 band: Rectangle::new((origin.x, y0 - shift_y).into(), (x1 - x0, y1 - y0).into()),
                 shift: (x0 - origin.x, shift_y).into(),
                 source: (src.y + strip.top * src.h, src.y + strip.bottom * src.h),
+                edges,
             })
         })
         .collect()
@@ -111,12 +132,60 @@ pub struct GenieParts<R: Compositor> {
     pub front: Vec<MemoryRenderBufferRenderElement<R>>,
     /// The window's surface tree, front first.
     pub surfaces: Vec<WaylandSurfaceRenderElement<R>>,
+    /// The same two at each partial strength, for the strips' soft edges.
+    pub soft: Vec<SoftParts<R>>,
     /// The shadow's pieces (behind everything).
     pub shadow: Vec<MemoryRenderBufferRenderElement<R>>,
     /// The blur behind the surfaces, as it is at rest.
     pub blur: Option<BlurV0Element>,
     /// The rounded clip of the window at rest, when it has one.
     pub clip: Option<ClipShape>,
+}
+
+/// The titlebar and surfaces of a window drawn at `weight` of its alpha.
+#[derive(Debug)]
+pub struct SoftParts<R: Compositor> {
+    /// How strongly they are drawn.
+    pub weight: Weight,
+    /// The titlebar and title.
+    pub front: Vec<MemoryRenderBufferRenderElement<R>>,
+    /// The window's surface tree, front first.
+    pub surfaces: Vec<WaylandSurfaceRenderElement<R>>,
+}
+
+/// The pieces of the window at one strength, held by every strip that draws them.
+struct Pieces<R: Compositor> {
+    weight: Weight,
+    front: Vec<SharedElement<MemoryRenderBufferRenderElement<R>>>,
+    surfaces: Vec<SharedElement<WaylandSurfaceRenderElement<R>>>,
+}
+
+/// One strip part's titlebar and surfaces, the surfaces through the clip where it reaches them.
+fn part_elements<R: Compositor>(
+    pieces: &Pieces<R>,
+    plan: &StripPlan,
+    scale: f64,
+    clip: Option<ClipShape>,
+) -> Vec<CasementElement<R>> {
+    let mut elements: Vec<CasementElement<R>> = pieces
+        .front
+        .iter()
+        .filter_map(|piece| StripElement::new(piece.clone(), scale, plan))
+        .map(CasementElement::MemoryStrip)
+        .collect();
+    let clipped = clip.filter(|shape| shape.touches(plan.source));
+    for piece in &pieces.surfaces {
+        match clipped {
+            Some(shape) => elements.extend(
+                ClipStripElement::new(piece.clone(), scale, plan, shape)
+                    .map(CasementElement::ClipStrip),
+            ),
+            None => elements.extend(
+                StripElement::new(piece.clone(), scale, plan).map(CasementElement::SurfaceStrip),
+            ),
+        }
+    }
+    elements
 }
 
 /// The genie's elements, front first: each strip's titlebar and surfaces, the blur, then the
@@ -128,28 +197,24 @@ pub fn genie_elements<R: Compositor>(
     let progress = f64::from(parts.flight.progress.0.min(1000)) / 1000.0;
     let scale = view.scale.as_f64();
     let plans = strip_plans(parts.visual, parts.flight.tile, progress, view);
-    let front = shared(parts.front);
     let shadow = shared(parts.shadow);
-    let surfaces = shared(parts.surfaces);
+    let pieces: Vec<Pieces<R>> = std::iter::once(SoftParts {
+        weight: Weight::FULL,
+        front: parts.front,
+        surfaces: parts.surfaces,
+    })
+    .chain(parts.soft)
+    .map(|soft| Pieces {
+        weight: soft.weight,
+        front: shared(soft.front),
+        surfaces: shared(soft.surfaces),
+    })
+    .collect();
     let mut elements = Vec::new();
     for plan in &plans {
-        elements.extend(
-            front
-                .iter()
-                .filter_map(|piece| StripElement::new(piece.clone(), scale, plan))
-                .map(CasementElement::MemoryStrip),
-        );
-        let clipped = parts.clip.filter(|shape| shape.touches(plan.source));
-        for piece in &surfaces {
-            match clipped {
-                Some(shape) => elements.extend(
-                    ClipStripElement::new(piece.clone(), scale, plan, shape)
-                        .map(CasementElement::ClipStrip),
-                ),
-                None => elements.extend(
-                    StripElement::new(piece.clone(), scale, plan)
-                        .map(CasementElement::SurfaceStrip),
-                ),
+        for part in plan.soft_parts() {
+            if let Some(at) = pieces.iter().find(|set| set.weight == part.weight) {
+                elements.extend(part_elements(at, &part.plan, scale, parts.clip));
             }
         }
     }
@@ -265,6 +330,29 @@ pub fn genie_window<R: Compositor>(
         visual,
         front: memory(front),
         surfaces: window_surfaces(&rest, view, book, renderer),
+        soft: Weight::partial()
+            .map(|weight| {
+                let faint = PlacedWindow {
+                    opacity: weight.of_opacity(placed.opacity),
+                    ..rest
+                };
+                let front = style.map(|style| {
+                    let draw = FrameDraw {
+                        style,
+                        title,
+                        content,
+                        full: content.size,
+                        opacity: faint.opacity,
+                    };
+                    frame_elements(placed.window, draw, view, book, renderer).0
+                });
+                SoftParts {
+                    weight,
+                    front: memory(front.unwrap_or_default()),
+                    surfaces: window_surfaces(&faint, view, book, renderer),
+                }
+            })
+            .collect(),
         shadow: memory(back),
         blur,
         clip: clip

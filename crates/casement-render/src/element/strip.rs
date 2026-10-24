@@ -34,6 +34,10 @@ pub struct StripPlan {
     /// The rows of the window at rest this strip shows (top, bottom), in physical pixels from
     /// the output's top: what the clip and the blur ask to know which strips they touch.
     pub source: (f64, f64),
+    /// How much of the band's first and last column the window covers (0 to 1): the band is
+    /// the whole columns the strip touches, and its edge columns are partly covered where the
+    /// edge falls inside them (`soft_edge.rs`).
+    pub edges: (f64, f64),
 }
 
 /// How far to reach past a strip's band, in physical pixels of the window at rest.
@@ -254,6 +258,7 @@ mod tests {
             band,
             shift: (10, 20).into(),
             source: (100.0, 150.0),
+            edges: (1.0, 1.0),
         }
     }
 
