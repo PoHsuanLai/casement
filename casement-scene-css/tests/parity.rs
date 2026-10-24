@@ -32,8 +32,8 @@ use casement_scene_css::CssScene;
 use ds_core::geometry::scale::Scale;
 use porter_core::{ClaimedId, SpaceId};
 
-/// Mission Control's slots and its `SpreadOverflow` report: an iterative push-apart with a
-/// shelf-pack fallback, which no CSS expression states. Dropped from both arrangements.
+/// Mission Control's slots and its `SpreadOverflow` report: a search over row counts and
+/// scales, which no CSS expression states. Dropped from both arrangements.
 const SPREAD: &str = "mission-control spread";
 
 /// `WindowPlacement::Tiled` is not generated (a tile zone is a `casement-protocols` type).

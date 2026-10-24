@@ -2,15 +2,14 @@
 //! for new ones. P3-Z adds tile zones, fill, full screen, Split View, the spread, Exposé, the
 //! Space row and Show Desktop, one file each.
 //!
-//! The Mission Control spread (P3-Z, 03 §1.8; SP8 and 21-FREEZE-AMENDMENTS A21): windows keep
-//! their order and rough relative positions (each axis's centres mapped monotonically onto the
-//! area) and shrink by one common factor from a closed-form start
-//! (`s² Σwh + s·g·Σ(w+h) + n·g² = 0.55·A`, replaced by 1 when within 20% of it); a greedy
-//! pairwise push, in canonical order (position, then id), moves each window by the full overlap
-//! (overlaps under 1e-6 count as none) for at most 24 passes per trial; each failed trial scales
-//! by 0.85, never below the floor; at the floor a deterministic shelf pack is tried, and if that
-//! fails too the windows are clamped inside and `LayoutReport::SpreadOverflow` is reported. No
-//! refinement trials. App Exposé orders windows by `StackIndex` then id, minimised thumbnails at
+//! The Mission Control spread (P3-Z, 03 §1.8; SP8, with A21's push-apart replaced by the Mac's
+//! rows on 2026-10-24): the windows, ordered top to bottom by their centres (then left to right,
+//! then id), are dealt into k rows of near-equal length, each row left to right; for each k up
+//! to `2·√n + 2` the largest common scale (at most 1) at which the rows fit is found, and the k
+//! with the largest scale wins (fewer rows on a tie). The rows are centred as a group below the
+//! Spaces strip, inside a 5% margin at the sides and the bottom, with a gap of at least 2% of
+//! the width. Below the floor scale the windows are laid out at the floor, clamped inside, and
+//! `LayoutReport::SpreadOverflow` is reported. App Exposé orders windows by `StackIndex` then id, minimised thumbnails at
 //! 16:9.
 
 mod cascade;

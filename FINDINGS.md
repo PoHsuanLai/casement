@@ -5425,3 +5425,12 @@ pointer resting at the top edge brings the surface with the role `bar` over the 
   picture is the same on every machine), over a light wallpaper so the dim shows. Reduce Motion only makes the windows snap (`cause_travel`: Reduced is
   `Travel::Snap`); the slots are the same, so `reduce_motion_settles_to_the_same_picture` asserts the settled picture is
   byte-equal to the standard one instead of adding a third golden.
+
+## wh-cmc (2026-10-24): Mission Control in rows
+
+- The spread's A21 push-apart (centres mapped onto the area, pairwise pushes, 0.85 trials, shelf at the floor) is replaced by
+  the Mac's rows, at shell's request under the full-Mac-native rule: a cascade came out as a diagonal staircase reaching the
+  screen's edges. Windows are dealt top to bottom into k rows, each left to right; the k giving the largest scale (at most 1)
+  wins; the group is centred below the Spaces strip in a 5% margin with a gap of at least 2% of the width. 6% and 2.5% (the
+  top of shell's ranges) left twelve 800x500 windows on 1872x860 below the 0.3 floor, so the low end was taken.
+- mission-control-1x/2x re-blessed: three cascaded windows now sit 2+1.

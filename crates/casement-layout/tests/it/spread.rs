@@ -1,5 +1,5 @@
 //! Mission Control's spread (P3-Z freezes `rust_scene/spread.rs`; the recipe is in
-//! `RustScene`'s module doc and 21-FREEZE-AMENDMENTS A21). Written now so the P3 lane inherits
+//! `RustScene`'s module doc). Written now so the P3 lane inherits
 //! the properties SP8 proved.
 
 use crate::support;

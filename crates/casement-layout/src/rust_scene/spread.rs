@@ -2,6 +2,11 @@
 //! window of the shown Space shrunk by one common factor and laid out without overlap, in whole
 //! numbers, below a strip the shell fills with the Spaces bar.
 //!
+//! As the Mac does it, the windows go into rows: dealt top to bottom by where their centres
+//! are, each row left to right, so a window keeps its place relative to the others. The row
+//! count is the one that lets the windows be largest (never above their own size), and the
+//! rows are centred as a group inside a margin at the sides and the bottom.
+//!
 //! A window's slot holds its content; a server-side frame reaches `reserve` logical pixels above
 //! it at the window's own size, and the renderer draws the frame scaled with the window, so the
 //! box laid out is the scaled content plus the scaled reserve. Below the content the cell keeps
@@ -9,7 +14,7 @@
 //! icon never covers the window beneath.
 
 use super::icon_rect::{below, icon_rect};
-use super::spread_fit::{Cell, held, push_apart, shelf, start};
+use super::spread_fit::{Cell, extent, held, placed, rows};
 use crate::{LayoutKnobs, OverviewSlot, SlotKind};
 use casement_core::WindowId;
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
@@ -17,20 +22,13 @@ use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 /// One part in a million: the scale's unit.
 const WHOLE: i64 = 1_000_000;
 
-/// The share of the area the windows (and their gaps) may fill at the start, in percent.
-const DENSITY: i64 = 55;
+/// The margin left at each side and below the windows, in percent of the area's width and
+/// height.
+const MARGIN: i64 = 5;
 
-/// A start scale this close to 1 (a fifth) is replaced by 1.
-const NEAR_WHOLE: i64 = 800_000;
-
-/// Each failed trial scales by 85 percent.
-const FAILED_TRIAL: i64 = 85;
-
-/// The most windows the pushing trials run for. The trials cost up to 24 passes of every pair
-/// at about fourteen scales, so a Space with thousands of windows (a client that opens them in
-/// a loop) would stall the compositor for seconds; above this the spread goes straight to the
-/// shelf pack at the floor scale, which is linear after one sort.
-const MAX_PUSHED: usize = 96;
+/// The least gap between two windows, in thousandths of the area's width (the knob's gap is
+/// kept when it is larger).
+const GAP: i64 = 20;
 
 /// The strip the Spaces bar takes at the top, in logical pixels (at most a quarter of the area).
 const STRIP: u32 = 112;
@@ -61,43 +59,51 @@ pub(super) fn spread(
     if entries.is_empty() {
         return (Vec::new(), Fit::Apart);
     }
-    let strip = STRIP.min(usable.size.h / 4);
+    let strip = i64::from(STRIP.min(usable.size.h / 4));
+    let (width, height) = (i64::from(usable.size.w), i64::from(usable.size.h) - strip);
+    let (side, bottom) = (width * MARGIN / 100, height * MARGIN / 100);
     let area = Cell {
-        x: i64::from(usable.origin.x),
-        y: i64::from(usable.origin.y) + i64::from(strip),
-        w: i64::from(usable.size.w),
-        h: i64::from(usable.size.h - strip),
+        x: i64::from(usable.origin.x) + side,
+        y: i64::from(usable.origin.y) + strip,
+        w: width - 2 * side,
+        h: height - bottom,
     };
-    let ruler = Ruler::of(entries, knobs);
-    let mut order: Vec<usize> = (0..entries.len()).collect();
-    order.sort_by_key(|&i| {
-        (
-            entries[i].rect.origin.x,
-            entries[i].rect.origin.y,
-            entries[i].window.0,
-        )
-    });
+    let ruler = Ruler::of(entries, knobs, width);
     let centres: Vec<(i64, i64)> = entries.iter().map(centre).collect();
-    let floor = ruler.floor;
-    let (trials, mut at_floor) = match entries.len() > MAX_PUSHED {
-        true => (Vec::new(), start(&centres, &ruler.sizes(floor), area)),
-        false => (ruler.trials(area), Vec::new()),
-    };
-    for scale in trials {
-        let sizes = ruler.sizes(scale);
-        let mut cells = start(&centres, &sizes, area);
-        if push_apart(&mut cells, area, &order) {
-            return (ruler.slots(&cells, scale, usable), Fit::Apart);
+    let mut order: Vec<usize> = (0..entries.len()).collect();
+    order.sort_by_key(|&i| (centres[i].1, centres[i].0, entries[i].window.0));
+    let across: Vec<i64> = centres.iter().map(|c| c.0).collect();
+    let (scale, dealt) = (1..=most_rows(entries.len()))
+        .map(|count| {
+            let dealt = rows(&order, count, &across);
+            (ruler.largest(&dealt, area), dealt)
+        })
+        .fold(
+            None,
+            |best: Option<(i64, Vec<Vec<usize>>)>, next| match best {
+                Some(best) if best.0 >= next.0 => Some(best),
+                _ => Some(next),
+            },
+        )
+        .unwrap_or((ruler.floor, vec![order.clone()]));
+    match scale >= ruler.floor {
+        true => {
+            let cells = placed(&dealt, &ruler.sizes(scale), area);
+            (ruler.slots(&cells, scale, usable), Fit::Apart)
         }
-        at_floor = cells;
+        false => {
+            let mut cells = placed(&dealt, &ruler.sizes(ruler.floor), area);
+            held(&mut cells, area);
+            (ruler.slots(&cells, ruler.floor, usable), Fit::Overflow)
+        }
     }
-    let sizes = ruler.sizes(floor);
-    if let Some(cells) = shelf(&sizes, area, &order) {
-        (ruler.slots(&cells, floor, usable), Fit::Apart)
-    } else {
-        held(&mut at_floor, area);
-        (ruler.slots(&at_floor, floor, usable), Fit::Overflow)
-    }
+}
+
+/// The most rows tried for `count` windows: twice the square root, enough for any window
+/// shape a screen holds, and few enough that a Space with thousands of windows (a client that
+/// opens them in a loop) is spread at once.
+fn most_rows(count: usize) -> usize {
+    (2 * count.isqrt() + 2).min(count)
 }
 
 /// A window's original centre.
@@ -117,10 +123,10 @@ struct Ruler<'a> {
 }
 
 impl<'a> Ruler<'a> {
-    fn of(entries: &'a [Entry], knobs: &LayoutKnobs) -> Ruler<'a> {
+    fn of(entries: &'a [Entry], knobs: &LayoutKnobs, width: i64) -> Ruler<'a> {
         Ruler {
             entries,
-            gap: i64::from(knobs.spread_gap),
+            gap: i64::from(knobs.spread_gap).max(width * GAP / 1000),
             floor: (i64::from(knobs.spread_floor.0) * 1000).clamp(1, WHOLE),
         }
     }
@@ -153,45 +159,21 @@ impl<'a> Ruler<'a> {
             .collect()
     }
 
-    /// The scales to try, first to last: the closed-form start, each trial after a failure 85
-    /// percent of the one before, the last the floor.
-    fn trials(&self, area: Cell) -> Vec<i64> {
-        let mut scale = self.start(area);
-        let mut all = vec![scale];
-        while scale > self.floor {
-            scale = (scale * FAILED_TRIAL / 100).max(self.floor);
-            all.push(scale);
-        }
-        all
-    }
-
-    /// Whether every cell at `scale` fits the area, and the sum of their areas.
-    fn measure(&self, scale: i64, area: Cell) -> (bool, i64) {
-        let sizes = self.sizes(scale);
-        let fits = sizes.iter().all(|s| s.0 <= area.w && s.1 <= area.h);
-        (fits, sizes.iter().map(|s| s.0 * s.1).sum())
-    }
-
-    /// The largest scale whose cells fit and fill at most [`DENSITY`] percent of the area,
-    /// else the floor; 1 when that is within a fifth of it and the cells fit at 1.
-    fn start(&self, area: Cell) -> i64 {
-        let budget = area.w * area.h * DENSITY / 100;
-        let ok = |scale: i64| {
-            let (fits, used) = self.measure(scale, area);
-            fits && used <= budget
+    /// The largest scale, at most 1, at which the rows `dealt` fit `area`; 0 when none does.
+    fn largest(&self, dealt: &[Vec<usize>], area: Cell) -> i64 {
+        let fits = |scale: i64| {
+            let (w, h) = extent(dealt, &self.sizes(scale));
+            w <= area.w && h <= area.h
         };
-        let (mut low, mut high) = (self.floor, WHOLE);
+        let (mut low, mut high) = (0, WHOLE);
         while low < high {
             let mid = low + (high - low + 1) / 2;
-            match ok(mid) {
+            match fits(mid) {
                 true => low = mid,
                 false => high = mid - 1,
             }
         }
-        match (low >= NEAR_WHOLE, self.measure(WHOLE, area).0) {
-            (true, true) => WHOLE,
-            _ => low,
-        }
+        low
     }
 
     /// The slots of the windows in `cells` at `scale`, held to `usable`.
@@ -259,10 +241,10 @@ mod tests {
         size: LogicalSize { w: 1872, h: 860 },
     };
 
-    /// CASC-03: a Space with far more windows than the pushing trials can afford is still given
-    /// a slot for every window, inside the usable area, without running the trials.
+    /// CASC-03: a Space with thousands of windows is still given a slot for every window,
+    /// inside the usable area.
     #[test]
-    fn a_crowd_of_windows_is_packed_without_the_trials() {
+    fn a_crowd_of_windows_is_packed() {
         let offset = |n: u64, modulo: u64, step: i32| i32::try_from(n % modulo).unwrap_or(0) * step;
         let entries: Vec<Entry> = (0..3000)
             .map(|n| {
@@ -330,7 +312,7 @@ mod tests {
             ..entry(1, rect(0, 0, 1000, 600))
         };
         let entries = [framed];
-        let ruler = Ruler::of(&entries, &knobs());
+        let ruler = Ruler::of(&entries, &knobs(), 0);
         // name, scale (millionths), the box's height: content + reserve + the room below + the gap of 24
         let cases = [
             ("whole", 1_000_000, 600 + 28 + 68 + 24),
@@ -402,5 +384,58 @@ mod tests {
                 .iter()
                 .all(|s| s.rect.intersection(&USABLE) == Some(s.rect))
         );
+    }
+
+    /// Three windows of one size cascaded down the screen are not laid out as a staircase: they
+    /// share rows, centred as a group, with a margin at the sides and the bottom and a gap of
+    /// at least 2 percent of the width between them.
+    #[test]
+    fn a_cascade_is_spread_in_rows_inside_a_margin() {
+        let entries = [
+            entry(1, rect(100, 100, 1100, 700)),
+            entry(2, rect(400, 250, 1100, 700)),
+            entry(3, rect(700, 400, 1100, 700)),
+        ];
+        let (slots, fit) = spread(&entries, USABLE, &knobs());
+        assert_eq!(fit, Fit::Apart);
+        let tops: std::collections::BTreeSet<i32> = slots.iter().map(|s| s.rect.origin.y).collect();
+        assert!(tops.len() < 3, "a staircase: {slots:?}");
+        let side = 1872 * 5 / 100;
+        let left = slots.iter().map(|s| s.rect.origin.x).min().unwrap_or(0);
+        let right = slots
+            .iter()
+            .map(|s| s.rect.origin.x + s.rect.size.w as i32)
+            .max()
+            .unwrap_or(0);
+        assert!(left >= side && right <= 1872 - side, "{left}..{right}");
+        assert!(
+            (left - (1872 - right)).abs() <= 2,
+            "not centred: {left}..{right}"
+        );
+        let bottom = slots
+            .iter()
+            .map(|s| s.icon.origin.y + s.icon.size.h as i32)
+            .max()
+            .unwrap_or(0);
+        assert!(bottom <= 24 + 860 - (860 - 112) * 5 / 100, "{bottom}");
+        let mut row: Vec<&OverviewSlot> = slots
+            .iter()
+            .filter(|s| s.rect.origin.y == slots[0].rect.origin.y)
+            .collect();
+        row.sort_by_key(|s| s.rect.origin.x);
+        for pair in row.windows(2) {
+            let gap = pair[1].rect.origin.x - (pair[0].rect.origin.x + pair[0].rect.size.w as i32);
+            assert!(gap >= 1872 * 20 / 1000, "{gap}");
+        }
+    }
+
+    #[test]
+    fn a_window_on_the_left_stays_left_of_one_on_the_right() {
+        let entries = [
+            entry(1, rect(1200, 100, 600, 400)),
+            entry(2, rect(0, 120, 600, 400)),
+        ];
+        let (slots, _) = spread(&entries, USABLE, &knobs());
+        assert!(slots[1].rect.origin.x < slots[0].rect.origin.x, "{slots:?}");
     }
 }
