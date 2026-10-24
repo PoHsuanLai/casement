@@ -418,6 +418,8 @@ pub enum WindowHintChange {
     FirstMouse(FirstMouse),
     /// Its frame.
     Frame(FrameHint),
+    /// Its frame is forgotten: the client's object is gone, and it has said nothing since.
+    FrameForgotten,
     /// Its role.
     Role(WindowRole),
     /// Its accessibility root.

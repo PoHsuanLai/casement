@@ -21,7 +21,16 @@ impl QuireWindowHandler for State {
     fn quire_window_events(&mut self, events: Vec<Event>) {
         // A root a client claims is checked before the model adopts it (PORTAL-15).
         let events = crate::a11y::claimed(self, events);
-        core_loop::feed(self, events);
+        let (early, now): (Vec<Event>, Vec<Event>) = events
+            .into_iter()
+            .partition(|event| before_map(self, event));
+        for event in early {
+            if let Event::WindowHint { window, .. } = &event {
+                let held = self.wl.quire_window.early.entry(*window).or_default();
+                held.push(event);
+            }
+        }
+        core_loop::feed(self, now);
     }
 
     fn window_facts(&self, window: WindowId) -> Option<WindowFacts> {
@@ -51,4 +60,24 @@ impl QuireWindowHandler for State {
     fn press_proves(&self, client: &Client, serial: InputSerial) -> bool {
         grab_proven(self.press_of(client, serial).as_ref(), GrabUse::AnyPress)
     }
+}
+
+/// Whether `event` is a hint about a window the model does not hold yet (it has not mapped).
+fn before_map(state: &State, event: &Event) -> bool {
+    matches!(event, Event::WindowHint { window, .. }
+        if !state.core.model.windows().contains_key(window))
+}
+
+/// The hints each window in `events` that just mapped said before it did, fed now that the
+/// model holds it.
+pub(crate) fn replay_early(state: &mut State, events: &[Event]) {
+    let early: Vec<Event> = events
+        .iter()
+        .filter_map(|event| match event {
+            Event::ToplevelMapped(mapped) => state.wl.quire_window.early.remove(&mapped.window),
+            _ => None,
+        })
+        .flatten()
+        .collect();
+    core_loop::feed(state, early);
 }

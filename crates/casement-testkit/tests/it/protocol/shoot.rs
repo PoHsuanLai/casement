@@ -7,6 +7,7 @@ use casement_core::input::DeviceClass;
 use casement_core::policy::ConnectionRole;
 use casement_render::golden::{Golden, GoldenOutcome, GoldenTier, compare};
 use casement_testclient::TestClient;
+use casement_testclient::quire::window::{FrameMode, Window, WindowManager};
 use casement_testclient::surface::subsurface::Surface;
 use casement_testclient::surface::toplevel::{Toplevel, WmBase};
 use casement_testkit::{ClientId, Env, Fixture, FixtureSpec, ShotTarget, TestOrigin};
@@ -42,19 +43,24 @@ pub(crate) fn surface_of(top: &Toplevel) -> Surface {
 
 /// A toplevel that maps: created, committed bare, acked, then `attach` gives it a buffer (and
 /// whatever adjunct objects the test is about; what it returns is kept for the test) and the
-/// commit that maps it is made; the opening motion is run out.
+/// commit that maps it is made; the opening motion is run out. The window says it draws its own
+/// frame, so the shot is its buffer alone, with no corners clipped (the shaping of a window that
+/// says nothing is tested in `scene::client_round`).
 pub(crate) fn map_with<K>(
     fixture: &mut Fixture,
     id: ClientId,
     base: &WmBase,
     attach: impl FnOnce(&mut TestClient, &Toplevel) -> K,
-) -> (Toplevel, K) {
+) -> (Toplevel, (K, WindowManager, Window)) {
     let top = base.toplevel(fixture.client(id));
     top.set_app_id("org.example.shoot");
+    let manager = WindowManager::bind(fixture.client(id), 1);
+    let said = manager.window(fixture.client(id), &top);
+    said.set_frame(FrameMode::Client, 0);
     top.commit_bare();
     fixture.pump();
     assert!(top.ack_latest().is_some(), "the initial configure arrives");
-    let kept = attach(fixture.client(id), &top);
+    let kept = (attach(fixture.client(id), &top), manager, said);
     top.surface.damage_buffer(0, 0, i32::MAX, i32::MAX);
     top.surface.commit();
     fixture.pump();

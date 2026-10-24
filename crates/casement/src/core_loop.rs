@@ -111,6 +111,7 @@ pub fn feed(state: &mut State, events: Vec<Event>) {
     deliver::refocus(state);
     presence::update(state);
     crate::timing::leave(state, outer);
+    crate::handlers::replay_early(state, &events_seen);
 }
 
 /// The pointer has not moved but a commit may have changed what is under it (a layer's first
@@ -180,6 +181,7 @@ pub fn frame(state: &mut State, output: &OutputKey) {
     titles.extend(titles::of_closing(state, &frame, &view, &leaving));
     let layers = LayerDraw {
         frames: styles,
+        rounds: frames::rounds(state),
         titles,
         closing: leaving,
         minimise_effect: state.core.model.settings().windows.minimise_effect,

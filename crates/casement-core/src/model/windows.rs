@@ -11,7 +11,7 @@ use crate::geometry::LogicalSize;
 use crate::ids::WindowId;
 use crate::settings::Enabled;
 use crate::space::SpaceContent;
-use crate::window::{Parent, SpacePlace, Window, WindowHints, WindowState, WindowTitle};
+use crate::window::{FrameSaid, Parent, SpacePlace, Window, WindowHints, WindowState, WindowTitle};
 use casement_protocols::vocab::{Emphasis, Modality, SensitivityLevel, WindowRole};
 
 impl Model {
@@ -275,7 +275,15 @@ impl Model {
         let mut model = self;
         set(&mut model, id, |window| match hint {
             WindowHintChange::FirstMouse(regions) => window.hints.first_mouse = regions,
-            WindowHintChange::Frame(frame) => window.hints.frame = frame,
+            WindowHintChange::Frame(frame) => {
+                window.hints.frame = frame;
+                window.hints.frame_said = FrameSaid::Said;
+            }
+            WindowHintChange::FrameForgotten => {
+                let unset = WindowHints::unset();
+                window.hints.frame = unset.frame;
+                window.hints.frame_said = unset.frame_said;
+            }
             WindowHintChange::Role(role) => window.role = role,
             WindowHintChange::A11y(root) => window.hints.a11y = root,
             WindowHintChange::Edited(edited) => window.hints.edited = edited,

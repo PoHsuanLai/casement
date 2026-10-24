@@ -15,7 +15,10 @@ use super::frame::SHADOW_MARGIN;
 use super::shared::SharedElement;
 use super::strip::{Margins, StripElement, StripPlan};
 use super::window::{alpha, window_blur, window_content, window_surfaces};
-use super::{BlurV0Element, CasementElement, ClipShape, FrameDraw, frame_elements};
+use super::{
+    BlurV0Element, CasementElement, ClipAsk, ClipShape, FrameDraw, client_shadow_elements,
+    frame_elements,
+};
 use crate::compositor::Compositor;
 use crate::scene::OutputView;
 use crate::texture_book::TextureBook;
@@ -203,10 +206,12 @@ pub struct GenieWindow<'a> {
     pub flight: Flight,
     /// The window's frame, when casement decorates it.
     pub style: Option<&'a FrameStyle>,
+    /// The shadow casement casts behind a window with no frame of ours, when it casts one.
+    pub cast: Option<&'a FrameStyle>,
     /// Its title raster.
     pub title: Option<&'a RasterImage>,
-    /// The corner radius to clip the surfaces to, in logical pixels, when they are clipped.
-    pub clip_radius: Option<u32>,
+    /// The clip the surfaces are drawn through, when they are clipped.
+    pub clip: Option<ClipAsk>,
 }
 
 /// A window in a Genie flight as elements: its frame, surfaces, blur, clip and shadow, cut and
@@ -222,13 +227,14 @@ pub fn genie_window<R: Compositor>(
         placed,
         flight,
         style,
+        cast,
         title,
-        clip_radius,
+        clip,
     } = window;
     let rest = at_rest(placed, &flight);
     let content = window_content(&rest, root);
-    let (front, back) = style
-        .map(|style| {
+    let (front, back) = match (style, cast) {
+        (Some(style), _) => {
             let draw = FrameDraw {
                 style,
                 title,
@@ -237,8 +243,21 @@ pub fn genie_window<R: Compositor>(
                 opacity: placed.opacity,
             };
             frame_elements(placed.window, draw, view, book, renderer)
-        })
-        .unwrap_or_default();
+        }
+        (None, Some(cast)) => {
+            let sizes = (content, content.size);
+            let back = client_shadow_elements(
+                placed.window,
+                cast,
+                sizes,
+                placed.opacity,
+                (view, book),
+                renderer,
+            );
+            (Vec::new(), back)
+        }
+        (None, None) => (Vec::new(), Vec::new()),
+    };
     let visual = style.map_or(content, |style| style.around(content).outline());
     let blur = window_blur(&rest, root, ((1.0, 1.0), alpha(placed.opacity)), view);
     let parts = GenieParts {
@@ -248,7 +267,8 @@ pub fn genie_window<R: Compositor>(
         surfaces: window_surfaces(&rest, view, book, renderer),
         shadow: memory(back),
         blur,
-        clip: clip_radius.map(|radius| ClipShape::of_content(content, radius, view)),
+        clip: clip
+            .map(|ask| ClipShape::of_content(content, ask.radius, view).rounded(ask.rounding)),
     };
     genie_elements(parts, view)
 }

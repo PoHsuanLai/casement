@@ -215,7 +215,8 @@ pub(crate) fn lines_of(fixture: &mut Fixture, id: ClientId, prefixes: &[&str]) -
         })
         .map(|line| {
             let args = match (line.object.starts_with("xdg_surface#"), line.event.as_str()) {
-                (true, "configure") => "<serial>".to_owned(),
+                // Serials come from one counter the whole test process shares.
+                (true, "configure") | (false, "ping") => "<serial>".to_owned(),
                 _ => line.args.join(", "),
             };
             format!("{}.{}({args})\n", line.object, line.event)

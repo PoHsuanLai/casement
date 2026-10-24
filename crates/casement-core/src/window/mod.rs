@@ -11,6 +11,7 @@ mod menu_dwell;
 mod origin;
 mod pip;
 mod request;
+mod round;
 mod sheet;
 mod state;
 mod tile_drag;
@@ -27,7 +28,7 @@ pub use frame_draw::{FrameColour, FrameLook, FrameStyle, LightDraw, ShadowLayer}
 pub use frame_press::{
     ChromeAction, ClickTracker, Clicks, DOUBLE_CLICK_SLOP, DOUBLE_CLICK_WITHIN, chrome_action,
 };
-pub use hints::{A11yRoot, FirstMouse, FrameHint, WindowHints};
+pub use hints::{A11yRoot, FirstMouse, FrameChoice, FrameHint, FrameSaid, WindowHints};
 pub use limits::{MaxSize, SizeLimits};
 pub use menu::{
     MenuAction, MenuEntry, MenuGroup, MenuItem, Offer, SplitSide, SplitSupport, enabled_mask,
@@ -39,6 +40,7 @@ pub use pip::{
     PIP_MARGIN, PIP_MAX_AREA, PipSource, fit_aspect, floats_above, pip_source_of, snap_corner,
 };
 pub use request::WlrToplevelRequest;
+pub use round::{Cast, Margin, Round, round_of};
 pub use sheet::{attach_rect, sheet_parent, slide_clip, slide_start};
 pub use state::{Restore, WindowState};
 pub use tile_drag::{

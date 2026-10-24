@@ -34,12 +34,13 @@ pub mod golden;
 pub use compositor::{Compositor, EffectSupport};
 pub use damage::{RenderError, RenderSync, Rendered, render_output};
 pub use element::{
-    BlurFinish, BlurV0Element, CasementElement, ClipShape, ClipStripElement, ClosingBody,
-    ClosingFrame, CursorFace, FlightDraw, FrameDraw, GenieParts, GenieWindow, LockCoverElement,
-    MAX_CLIENT_CURSOR, Margins, Pixels, PopupRide, Rgba8, RoundedClipElement, SharedElement,
-    StripElement, StripPlan, at_rest, choose, closing_content, closing_elements, cursor_elements,
-    cursor_face, cursor_pixels, drawn_content, frame_elements, genie_elements, genie_window,
-    geometry_size, layer_elements, layer_elements_faded, popup_elements, popup_elements_riding,
+    BlurFinish, BlurV0Element, CasementElement, ClientRound, ClientShadow, ClipAsk, ClipShape,
+    ClipStripElement, ClosingBody, ClosingFrame, CursorFace, FlightDraw, FrameDraw, GenieParts,
+    GenieWindow, LockCoverElement, MAX_CLIENT_CURSOR, Margins, Pixels, PopupRide, Rgba8,
+    RoundedClipElement, Rounding, SharedElement, StripElement, StripPlan, at_rest, choose,
+    client_shadow_elements, closing_content, closing_elements, cursor_elements, cursor_face,
+    cursor_pixels, drawn_content, frame_elements, genie_elements, genie_window, geometry_size,
+    layer_elements, layer_elements_faded, margin_of, popup_elements, popup_elements_riding,
     popup_surfaces, rest_place, scale_ratio, scaled_content, solid_rect, strip_plans,
     surface_origin, surface_origin_logical, window_content, window_drawn, window_elements,
     window_surfaces,

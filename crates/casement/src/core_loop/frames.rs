@@ -12,13 +12,15 @@ use casement_core::focus::{HitPart, Press};
 use casement_core::geometry::{LogicalPoint, LogicalRect};
 use casement_core::input::{ButtonCode, InputEvent};
 use casement_core::window::{
-    ArmInput, ArmOutcome, ChromeAction, Clicks, FrameHit, FrameStyle, LightArm, LightAt,
-    WindowState, chrome_action,
+    ArmInput, ArmOutcome, Cast, ChromeAction, Clicks, FrameHit, FrameLook, FrameStyle, LightArm,
+    LightAt, WindowState, chrome_action, round_of,
 };
 use casement_core::{Effect, Event, ResizeEdges, ToplevelRequest, WindowId};
 use casement_layout::{GroupHover, frame_metrics, frame_style, pressed};
-use casement_protocols::vocab::{Emphasis, MacMods};
-use casement_render::{CursorDraw, CursorShape, window_content};
+use casement_protocols::vocab::{Emphasis, MacMods, WindowRole};
+use casement_render::{
+    ClientRound, ClientShadow, CursorDraw, CursorShape, margin_of, window_content,
+};
 use casement_wayland::seat::{Candidate, SurfaceAt, surface_under};
 use casement_wayland::serial::{PressKind, PressRecord};
 use casement_wayland::xdg_decoration::DecorationMode;
@@ -49,6 +51,46 @@ pub(super) fn styles(state: &State) -> BTreeMap<WindowId, FrameStyle> {
 /// rounded clip at the place it was given.
 pub(super) fn drawn(state: &State) -> BTreeMap<WindowId, FrameStyle> {
     styles_where(state, drawn_state)
+}
+
+/// The windows that draw their own frame and that casement shapes: the corners clipped at the
+/// radius `round_of` gives, and the shadow of a framed window's activity where it casts one. Not
+/// the windows casement frames, not a full-screen window (square, as a framed one is), not the
+/// desktop's own shell windows; a window in the dock stays so its genie is cut the same.
+pub(super) fn rounds(state: &State) -> BTreeMap<WindowId, ClientRound> {
+    let book = &state.render.textures;
+    state
+        .core
+        .model
+        .windows()
+        .iter()
+        .filter(|(id, _)| state.wl.xdg_decoration.mode_of(**id) != DecorationMode::ServerSide)
+        .filter(|(_, window)| {
+            !matches!(window.state, WindowState::FullScreen { .. })
+                && window.role != WindowRole::Shell
+        })
+        .filter_map(|(id, window)| {
+            let entry = book.window(id)?;
+            let style = frame_style(state.render.scheme, activity_of(window), GroupHover::Away);
+            let round = round_of(
+                window.hints.frame_choice(),
+                margin_of(&entry.root),
+                style.look.radius,
+            )?;
+            let shadow = match round.shadow {
+                Cast::Casement => ClientShadow::Cast(FrameStyle {
+                    look: FrameLook {
+                        radius: round.radius,
+                        ..style.look
+                    },
+                    ..style
+                }),
+                Cast::Client => ClientShadow::Client,
+            };
+            let radius = round.radius;
+            Some((*id, ClientRound { radius, shadow }))
+        })
+        .collect()
 }
 
 /// Whether a window in `state` has its frame drawn: [`framed`], or on its way into the dock.

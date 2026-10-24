@@ -35,6 +35,7 @@ const SCENES: [(&str, &[&str]); 11] = [
 ];
 
 mod build;
+mod client_round;
 mod clip;
 mod desk;
 mod frames;

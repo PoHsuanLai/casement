@@ -625,3 +625,84 @@ fn one_connection_gets_one_picture_in_picture_window_whatever_app_ids_it_claims(
     let spread_count = [1, 2, 3].into_iter().filter(|n| spread(&run, *n)).count();
     assert_eq!(spread_count, 1, "one window, not one per claimed id");
 }
+
+#[test]
+fn a_window_that_never_called_set_frame_is_silent_and_one_that_did_is_not() {
+    use casement_core::WindowHintChange::{Frame, FrameForgotten};
+    use casement_core::window::{FrameChoice, FrameHint};
+    use casement_protocols::vocab::FrameMode;
+    let web = proven("org.example.Web");
+    let choice = |ops: Vec<Op>| {
+        let state = run(ops);
+        state.model.windows()[&WindowId(1)].hints.frame_choice()
+    };
+    let start = || vec![plug("HEADLESS-1"), map(1, &web, TokenCheck::Valid)];
+    let said = |mode, corner_radius| {
+        let mut ops = start();
+        ops.push(hint(
+            1,
+            Frame(FrameHint {
+                mode,
+                corner_radius,
+            }),
+        ));
+        ops
+    };
+    assert_eq!(choice(start()), FrameChoice::Silent);
+    assert_eq!(choice(said(FrameMode::Client, 0)), FrameChoice::Own);
+    assert_eq!(
+        choice(said(FrameMode::CompositorShadow, 12)),
+        FrameChoice::Shadowed { radius: 12 }
+    );
+    let mut forgotten = said(FrameMode::CompositorShadow, 12);
+    forgotten.push(hint(1, FrameForgotten));
+    assert_eq!(choice(forgotten), FrameChoice::Silent);
+}
+
+#[test]
+fn a_client_framed_window_is_rounded_by_what_it_said_and_what_it_drew() {
+    use casement_core::window::{Cast, FrameChoice, Margin, Round, round_of};
+    // name, what the client said, whether its buffer holds a margin, the desktop radius, the round
+    let cases = [
+        (
+            "shadow asked for",
+            FrameChoice::Shadowed { radius: 12 },
+            Margin::None,
+            10,
+            Some((12, Cast::Casement)),
+        ),
+        (
+            "shadow asked for, margin drawn",
+            FrameChoice::Shadowed { radius: 12 },
+            Margin::Drawn,
+            10,
+            Some((12, Cast::Casement)),
+        ),
+        ("own frame", FrameChoice::Own, Margin::None, 10, None),
+        (
+            "own frame, margin",
+            FrameChoice::Own,
+            Margin::Drawn,
+            10,
+            None,
+        ),
+        (
+            "silent, geometry is the buffer",
+            FrameChoice::Silent,
+            Margin::None,
+            10,
+            Some((10, Cast::Casement)),
+        ),
+        (
+            "silent, shadow in a margin",
+            FrameChoice::Silent,
+            Margin::Drawn,
+            10,
+            Some((10, Cast::Client)),
+        ),
+    ];
+    for (name, choice, margin, desktop, want) in cases {
+        let want = want.map(|(radius, shadow)| Round { radius, shadow });
+        assert_eq!(round_of(choice, margin, desktop), want, "{name}");
+    }
+}

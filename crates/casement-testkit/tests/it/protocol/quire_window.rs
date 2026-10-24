@@ -7,13 +7,14 @@ use crate::protocol::xdg_shell::{
     pointer, settle, windows,
 };
 use casement_core::policy::ConnectionRole;
-use casement_core::window::{A11yRoot, FrameHint};
+use casement_core::window::{A11yRoot, FrameHint, FrameSaid};
 use casement_protocols::vocab::{Edited as ModelEdited, FrameMode as ModelFrame};
 use casement_testclient::quire::window::{
     Edited, Emphasis, FrameMode, ManagerError, PlaceTarget, PlacementMark, WindowError,
     WindowManager, WindowRole,
 };
 use casement_testclient::surface::toplevel::{WmBase, bind_pointer};
+use casement_testclient::{Pattern, shm_buffer};
 
 /// The key window receives emphasis(key), the others inactive.
 #[test]
@@ -174,6 +175,39 @@ fn hints_apply_on_commit_and_are_forgotten_on_destroy() {
     assert_eq!(forgotten.a11y, A11yRoot::Unknown);
     assert_eq!(forgotten.frame.mode, ModelFrame::Client);
     let _ = ConnectionRole::Public;
+}
+
+/// Hints said before the toplevel's first buffer (as a toolkit says them while it builds the
+/// window) reach the model when the window maps, in the order they were said.
+#[test]
+fn hints_said_before_the_window_maps_reach_it_when_it_does() {
+    let (mut fixture, id) = boot();
+    let base = WmBase::bind(fixture.client(id), 7);
+    let manager = WindowManager::bind(fixture.client(id), 1);
+    let top = base.toplevel(fixture.client(id));
+    let ext = manager.window(fixture.client(id), &top);
+    ext.set_frame(FrameMode::Client, 0);
+    ext.set_edited(Edited::Unsaved);
+    top.commit_bare();
+    fixture.pump();
+    assert!(top.ack_latest().is_some(), "the initial configure arrives");
+    ext.set_frame(FrameMode::CompositorShadow, 12);
+    let size = casement_core::geometry::PhysicalSize { w: 400, h: 300 };
+    let buffer = shm_buffer(fixture.client(id), size, Pattern::Gradient);
+    top.show(&buffer);
+    fixture.pump();
+    let window = windows(&fixture)[0];
+    let hints = fixture.model().windows()[&window].hints.clone();
+    assert_eq!(hints.edited, ModelEdited::Unsaved);
+    assert_eq!(
+        hints.frame,
+        FrameHint {
+            mode: ModelFrame::CompositorShadow,
+            corner_radius: 12
+        },
+        "the last frame said, at the commit that maps"
+    );
+    assert_eq!(hints.frame_said, FrameSaid::Said);
 }
 
 /// A new extension object is told its emphasis and placement once, at creation: the transcript

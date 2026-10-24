@@ -11,6 +11,8 @@ pub struct WindowHints {
     pub first_mouse: FirstMouse,
     /// How its frame is drawn.
     pub frame: FrameHint,
+    /// Whether its client has said how its frame is drawn.
+    pub frame_said: FrameSaid,
     /// Whether its document has unsaved changes.
     pub edited: Edited,
     /// Its accessibility tree's root.
@@ -37,6 +39,29 @@ pub struct FrameHint {
     pub corner_radius: u32,
 }
 
+/// Whether a window's client has sent `set_frame`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameSaid {
+    /// It has not, or it forgot what it said.
+    Silent,
+    /// It has, and [`WindowHints::frame`] holds what.
+    Said,
+}
+
+/// What a window's client wants of its frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameChoice {
+    /// It has not said.
+    Silent,
+    /// It draws its own frame, shadow and corners.
+    Own,
+    /// It wants casement's shadow and its corners clipped at this radius, in logical pixels.
+    Shadowed {
+        /// The corner radius.
+        radius: u32,
+    },
+}
+
 /// Where a window's accessibility tree lives.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum A11yRoot {
@@ -61,9 +86,21 @@ impl WindowHints {
                 mode: FrameMode::Client,
                 corner_radius: 0,
             },
+            frame_said: FrameSaid::Silent,
             edited: Edited::Saved,
             a11y: A11yRoot::Unknown,
             menu: MenuSource::None,
+        }
+    }
+
+    /// What the client wants of its frame.
+    pub fn frame_choice(&self) -> FrameChoice {
+        match (self.frame_said, self.frame.mode) {
+            (FrameSaid::Silent, _) => FrameChoice::Silent,
+            (FrameSaid::Said, FrameMode::Client) => FrameChoice::Own,
+            (FrameSaid::Said, FrameMode::CompositorShadow) => FrameChoice::Shadowed {
+                radius: self.frame.corner_radius,
+            },
         }
     }
 }

@@ -1,19 +1,21 @@
 //! A window's surface clipped at its two bottom corners (a Mac window is rounded on all four;
-//! the titlebar rounds the top two itself). The element wraps a surface element of the window's
+//! the titlebar rounds the top two itself), or at all four when there is no titlebar of ours. The element wraps a surface element of the window's
 //! tree and says where the window's rounded rectangle is; on GLES the renderer draws the
 //! surface's texture through a shader that masks outside it (`gles.rs`); every other draw
 //! (Pixman, the dummy renderer, a multi-GPU copy, and the GLES surfaces the shader leaves out)
 //! draws the surface in pieces by coverage (`bands.rs`; FINDINGS, `wave-2026-10-15/corners`).
 //!
-//! Only windows casement decorates are clipped: one that draws its own frame draws its own
-//! corners, a full-screen window has square ones, and popups are never wrapped.
+//! Only windows casement shapes are clipped: the ones it decorates (the bottom corners), and
+//! the ones that draw their own frame but asked for casement's corners or said nothing (all four,
+//! `Rounding::Frameless`). A window that said it draws its own corners, a full-screen window and
+//! popups are not wrapped.
 
 mod bands;
 mod gles;
 mod shape;
 
 pub(crate) use gles::{Mask, bake_corners, draw_masked};
-pub use shape::ClipShape;
+pub use shape::{ClipShape, Rounding};
 
 use crate::compositor::Compositor;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
@@ -164,7 +166,9 @@ impl<R: Renderer + ImportAll> Element for RoundedClipElement<R> {
         let squares = self
             .shape
             .corner_squares()
-            .map(|square| Rectangle::new(square.loc - origin, square.size));
+            .into_iter()
+            .map(|square| Rectangle::new(square.loc - origin, square.size))
+            .collect::<Vec<_>>();
         self.surface
             .opaque_regions(scale)
             .iter()
@@ -172,7 +176,7 @@ impl<R: Renderer + ImportAll> Element for RoundedClipElement<R> {
                 Some(stretch) => stretch.region(*region),
                 None => *region,
             })
-            .flat_map(|region| region.subtract_rects(squares))
+            .flat_map(|region| region.subtract_rects(squares.iter().copied()))
             .collect::<OpaqueRegions<_, _>>()
     }
 

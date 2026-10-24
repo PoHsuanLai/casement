@@ -67,6 +67,10 @@ pub struct QuireWindowPart {
     pub marks: BTreeMap<WindowId, PlacementMark>,
     /// The windows whose surface carries our commit hook (it is added once).
     hooked: BTreeSet<WindowId>,
+    /// The hints each window committed before the model held it, in order: a client may say
+    /// them before its first buffer, and the hook runs before the commit maps the window, so
+    /// they are fed again just after its `ToplevelMapped`.
+    pub early: BTreeMap<WindowId, Vec<Event>>,
     /// Each live manager bound at [`QUIT_VERSION`] or later, with its client: where `quit` goes.
     pub quit_managers: Vec<(ClientKey, QuireWindowManagerV1)>,
 }
@@ -89,6 +93,7 @@ impl QuireWindowPart {
             placements: BTreeMap::new(),
             marks: BTreeMap::new(),
             hooked: BTreeSet::new(),
+            early: BTreeMap::new(),
             quit_managers: Vec::new(),
         }
     }

@@ -145,6 +145,28 @@ pub fn frame_elements<R: Compositor>(
     (front, back)
 }
 
+/// The shadow `style` casts behind a window that draws its own frame: round its content (no
+/// titlebar), at `opacity`, with the corners of `style.look.radius`. `content` and `full` are as
+/// in [`FrameDraw`]: a `content` smaller than `full` shrinks the shadow with the window.
+pub fn client_shadow_elements<R: Compositor>(
+    window: WindowId,
+    style: &FrameStyle,
+    (content, full): (LogicalRect, LogicalSize),
+    opacity: Fraction,
+    (view, book): (&OutputView, &TextureBook),
+    renderer: &mut R,
+) -> Vec<CasementElement<R>> {
+    let shrink = Shrink::of(full, content.size);
+    let outline = LogicalRect::new(content.origin, full);
+    shadow_elements(
+        window,
+        (style, outline, shrink),
+        alpha(opacity),
+        (view, book),
+        renderer,
+    )
+}
+
 /// The outline (titlebar and content) of a frame with `metrics` round `content`, a window whose
 /// own size is `full`, as [`frame_elements`] draws it: the frame shrunk with the window, about
 /// the content's top-left corner. The same as the frame's own outline when `content` is `full`.

@@ -41,19 +41,13 @@ fn level_of(coverage: f32) -> u8 {
         .clamp(0.0, f32::from(LEVELS)) as u8
 }
 
-/// The pixels of `shape`'s two corner squares (output pixels) by how they draw: full runs along
+/// The pixels of `shape`'s corner squares (output pixels) by how they draw: full runs along
 /// a row, and single partial pixels by level.
 fn corner_pieces(shape: &ClipShape) -> (Vec<Rect>, BTreeMap<u8, Vec<Rect>>) {
-    let rect = shape.rect();
-    let radius = i32::try_from(shape.radius()).unwrap_or(0);
-    let (w, h) = (
-        i32::try_from(rect.w).unwrap_or(0),
-        i32::try_from(rect.h).unwrap_or(0),
-    );
-    let top = rect.y + h - radius;
     let mut runs = Vec::new();
     let mut partial: BTreeMap<u8, Vec<Rect>> = BTreeMap::new();
-    for left in [rect.x, rect.x + w - radius] {
+    for square in shape.corner_squares() {
+        let (left, top, radius) = (square.loc.x, square.loc.y, square.size.w);
         for y in top..top + radius {
             let mut start: Option<i32> = None;
             for x in left..=left + radius {

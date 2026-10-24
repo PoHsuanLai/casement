@@ -25,7 +25,9 @@ use std::cell::RefCell;
 
 /// The texture shader: smithay's default one with the corner mask. `from` and `to` turn the
 /// texture coordinate into the pixel position in the element (`position = v_coords * to + from`),
-/// `shape` is the window rectangle (x, y, w, h) in those pixels and `radius` its bottom corners'.
+/// `shape` is the window rectangle (x, y, w, h) in those pixels, `radius` its corners' and `mode`
+/// which are round (x: 1 for the top ones too) and whether what lies outside the rectangle is
+/// kept (y: 1 to keep it).
 const SHADER: &str = r"#version 100
 
 //_DEFINES_
@@ -46,6 +48,7 @@ uniform vec2 to;
 uniform vec2 from;
 uniform vec4 shape;
 uniform float radius;
+uniform vec2 mode;
 varying vec2 v_coords;
 
 #if defined(DEBUG_FLAGS)
@@ -55,8 +58,13 @@ uniform float tint;
 float coverage(vec2 p) {
     vec2 half_size = shape.zw * 0.5;
     vec2 centre = shape.xy + half_size;
-    float r = p.y > centre.y ? radius : 0.0;
-    vec2 q = abs(p - centre) - half_size + vec2(r);
+    float r = (p.y > centre.y || mode.x > 0.5) ? radius : 0.0;
+    vec2 d = abs(p - centre);
+    bool in_corner = d.x > half_size.x - r && d.y > half_size.y - r;
+    bool in_rect = d.x < half_size.x && d.y < half_size.y;
+    if (mode.y > 0.5 && !(in_corner && in_rect))
+        return 1.0;
+    vec2 q = d - half_size + vec2(r);
     float edge = min(max(q.x, q.y), 0.0) + length(max(q, vec2(0.0))) - r;
     return clamp(0.5 - edge, 0.0, 1.0);
 }
@@ -192,7 +200,7 @@ pub(crate) fn bake_corners(
 }
 
 /// The shader's uniforms for `texture` placed as `mask` says.
-fn uniforms(texture: &GlesTexture, mask: Mask) -> [Uniform<'static>; 4] {
+fn uniforms(texture: &GlesTexture, mask: Mask) -> [Uniform<'static>; 5] {
     let (src, dst) = (mask.src, mask.dst);
     let size = texture.size();
     let ratio = (
@@ -213,6 +221,7 @@ fn uniforms(texture: &GlesTexture, mask: Mask) -> [Uniform<'static>; 4] {
         Uniform::new("from", (from.0 as f32, from.1 as f32)),
         Uniform::new("shape", shape),
         Uniform::new("radius", mask.shape.radius() as f32),
+        Uniform::new("mode", mask.shape.rounding().mode()),
     ]
 }
 
@@ -239,6 +248,7 @@ fn program(frame: &mut GlesFrame<'_, '_>) -> Result<GlesTexProgram, GlesError> {
             UniformName::new("from", UniformType::_2f),
             UniformName::new("shape", UniformType::_4f),
             UniformName::new("radius", UniformType::_1f),
+            UniformName::new("mode", UniformType::_2f),
         ],
     )?;
     if let Some(compiled) = renderer.egl_context().user_data().get::<Compiled>() {

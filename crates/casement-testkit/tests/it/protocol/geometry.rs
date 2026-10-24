@@ -87,7 +87,8 @@ fn the_pointer_is_local_to_the_surface_at_the_geometry_offset() {
 }
 
 /// The buffer is drawn offset so that its geometry origin lands at the window's place: the
-/// first pixel of the window is the surface's pixel (20, 30).
+/// window's top edge is the surface's row 30 from column 20 (the corner itself is rounded, as a
+/// window that says nothing of its frame is).
 #[test]
 fn the_buffer_is_drawn_with_its_geometry_origin_at_the_window() {
     let (mut fixture, id) = boot();
@@ -95,11 +96,12 @@ fn the_buffer_is_drawn_with_its_geometry_origin_at_the_window() {
     let _top = map_with_geometry(&mut fixture, id, &base, (400, 300), (20, 30, 360, 240));
     let window = windows(&fixture)[0];
     let shot = fixture.shot(ShotTarget::Window(window));
-    let first = shot.get_pixel(0, 0).0;
+    // Past the corner's curve on the top edge.
+    let first = shot.get_pixel(16, 0).0;
     assert_eq!(
         (first[0], first[1]),
-        (20, 30),
-        "the pixel at the window's corner is the surface's (20, 30): {first:?}"
+        (36, 30),
+        "the pixel 16 along the window's top edge is the surface's (36, 30): {first:?}"
     );
     let inner = shot.get_pixel(10, 10).0;
     assert_eq!((inner[0], inner[1]), (30, 40));

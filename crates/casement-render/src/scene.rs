@@ -5,12 +5,13 @@ mod row;
 
 use crate::compositor::Compositor;
 use crate::element::{
-    BlurFinish, CasementElement, ClipShape, ClosingFrame, FlightDraw, FrameDraw, GenieWindow,
-    LockCoverElement, OverviewIcon, OverviewLook, PopupRide, Rgba8, TilePreview, choose,
-    closing_elements, cursor_elements, dim_elements, drawn_content, frame_elements, genie_window,
-    icon_element, icon_place, label_element, layer_elements, layer_elements_faded, lift_last,
-    popup_elements, popup_elements_riding, ring_elements, shown_length, shown_outline,
-    surface_origin_logical, tile_preview_elements, under_finish, window_content, window_elements,
+    BlurFinish, CasementElement, ClientRound, ClipAsk, ClipShape, ClosingFrame, FlightDraw,
+    FrameDraw, GenieWindow, LockCoverElement, OverviewIcon, OverviewLook, PopupRide, Rgba8,
+    Rounding, TilePreview, choose, client_shadow_elements, closing_elements, cursor_elements,
+    dim_elements, drawn_content, frame_elements, genie_window, icon_element, icon_place,
+    label_element, layer_elements, layer_elements_faded, lift_last, popup_elements,
+    popup_elements_riding, ring_elements, shown_length, shown_outline, surface_origin_logical,
+    tile_preview_elements, under_finish, window_content, window_elements,
 };
 use crate::element::{alpha, flight_ratio};
 use crate::texture_book::TextureBook;
@@ -68,6 +69,9 @@ pub struct LayerDraw {
     /// The windows whose frame casement draws (server-side decoration), and how it looks. A
     /// window not in it is drawn as its client made it.
     pub frames: BTreeMap<WindowId, FrameStyle>,
+    /// The windows that draw their own frame and whose corners casement clips, and the shadow
+    /// it casts for them. A window in `frames` is not in it, nor is one that is full screen.
+    pub rounds: BTreeMap<WindowId, ClientRound>,
     /// The title pixels laid over each framed window's titlebar (made by `casement-chrome`). A
     /// framed window not in it has no title drawn.
     pub titles: BTreeMap<WindowId, RasterImage>,
@@ -286,12 +290,28 @@ pub fn output_elements<R: Compositor>(
                 let placed = &flown;
                 let flight = choose(effect, placed.flight);
                 let style = layers.frames.get(&placed.window);
+                let covers = layers.full_screen.contains(&placed.window);
+                // A window with its own frame that casement shapes: all four corners, and
+                // the shadow when the client has not drawn one.
+                let round = layers
+                    .rounds
+                    .get(&placed.window)
+                    .filter(|_| style.is_none() && !covers);
+                let cast = round.and_then(ClientRound::cast);
                 // A window casement frames is clipped at its bottom corners, unless it
                 // covers the screen (macOS drops the radius in full screen; a zoomed
-                // window keeps it). A window with its own frame is not in `frames`.
-                let clip_radius = style
-                    .filter(|_| !layers.full_screen.contains(&placed.window))
-                    .map(|style| style.look.radius);
+                // window keeps it).
+                let clip_ask = match (style, round) {
+                    (Some(style), _) if !covers => Some(ClipAsk {
+                        radius: style.look.radius,
+                        rounding: Rounding::Bottom,
+                    }),
+                    (None, Some(round)) => Some(ClipAsk {
+                        radius: round.radius,
+                        rounding: Rounding::Frameless,
+                    }),
+                    _ => None,
+                };
                 if let FlightDraw::Genie(flight) = flight {
                     // The genie cuts the window as it stands at rest, and the strips go
                     // where the curve says. Its popups are closed (a menu does not ride
@@ -301,8 +321,9 @@ pub fn output_elements<R: Compositor>(
                         placed,
                         flight,
                         style,
+                        cast,
                         title,
-                        clip_radius,
+                        clip: clip_ask,
                     };
                     elements.extend(genie_window(window, &entry.root, view, book, renderer));
                     continue;
@@ -343,27 +364,37 @@ pub fn output_elements<R: Compositor>(
                     true => at_rest.size,
                     false => content.size,
                 };
-                let clip = clip_radius.map(|radius| {
-                    let radius = shown_length(radius, content.size, full);
-                    ClipShape::of_content(content, radius, view)
+                let clip = clip_ask.map(|ask| {
+                    let radius = shown_length(ask.radius, content.size, full);
+                    ClipShape::of_content(content, radius, view).rounded(ask.rounding)
                 });
-                let (front, back) = style
-                    .map(|style| {
-                        frame_elements(
+                let (front, back) = match (style, cast) {
+                    (Some(style), _) => frame_elements(
+                        placed.window,
+                        FrameDraw {
+                            style,
+                            title,
+                            content,
+                            full,
+                            opacity: placed.opacity,
+                        },
+                        view,
+                        book,
+                        renderer,
+                    ),
+                    (None, Some(cast)) => {
+                        let back = client_shadow_elements(
                             placed.window,
-                            FrameDraw {
-                                style,
-                                title,
-                                content,
-                                full,
-                                opacity: placed.opacity,
-                            },
-                            view,
-                            book,
+                            cast,
+                            (content, full),
+                            placed.opacity,
+                            (view, book),
                             renderer,
-                        )
-                    })
-                    .unwrap_or_default();
+                        );
+                        (Vec::new(), back)
+                    }
+                    (None, None) => (Vec::new(), Vec::new()),
+                };
                 // The app's icon under the window, arriving with its slot.
                 let icon = match (&layers.overview, shrunk) {
                     (OverviewDraw::On { icons, .. }, true) => icons.get(&placed.window),

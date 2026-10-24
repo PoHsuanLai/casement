@@ -147,12 +147,12 @@ pub fn placement_events(
 }
 
 /// What the model goes back to when the extension object is destroyed (the compositor forgets
-/// every value set through it): no first-mouse regions, a client frame with square corners, a
+/// every value set through it): no first-mouse regions, a client frame with square corners that says nothing, a
 /// saved document, no accessibility root, and the role the window had without the object.
 pub fn forgotten(base_role: WindowRole) -> Vec<WindowHintChange> {
     vec![
         WindowHintChange::FirstMouse(FirstMouse::Nowhere),
-        WindowHintChange::Frame(frame_of(FrameMode::Client, 0)),
+        WindowHintChange::FrameForgotten,
         WindowHintChange::Role(base_role),
         WindowHintChange::A11y(A11yRoot::Unknown),
         WindowHintChange::Edited(Edited::Saved),

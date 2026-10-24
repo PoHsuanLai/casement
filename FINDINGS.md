@@ -5364,3 +5364,29 @@ pointer resting at the top edge brings the surface with the role `bar` over the 
   took no focus and its Space did not show. The press must still be within 5 s when the token is issued. The using window's
   app id is not matched against the token's: launchers name desktop ids that often differ from Wayland app ids, and the
   token is one-use and reaches only the launched process.
+
+## Corners and shadow for windows that draw their own frame (wh-ccorner, 2026-10-24)
+
+- **The bug.** Only a window casement frames (`LayerDraw::frames`) was clipped and shadowed, so every quire app, GTK headerbar
+  window and Electron window had square corners and no shadow. `FrameHint.corner_radius` was stored and sampled
+  (`PlacedWindow::corner`) but nothing in the scene read it.
+- **`LayerDraw::rounds`.** `core_loop/frames.rs::rounds` lists the windows that are not server-side framed, not full screen
+  (square, as a framed one is; maximised, tiled and filled keep the radius, as framed ones do), not `WindowRole::Shell`, and
+  that `window::round_of` gives a `Round`. A window in the dock stays in, so its genie clips and casts the same. Popups, menus,
+  layer surfaces and subsurfaces are never in it: they are not model windows, and the clip wraps a window's own tree only.
+- **`WindowHints::frame_said`.** `set_frame` has a default (client, radius 0) that looks like an explicit `set_frame(client, 0)`,
+  and the two must differ: one is a GTK app that never heard of us, the other a window that says it draws its own corners.
+  `FrameSaid` records whether the call came; `WindowHintChange::FrameForgotten` (the object's destroy) puts it back to
+  `Silent`. `WindowHints::frame_choice()` reads both as `FrameChoice::{Silent, Own, Shadowed}`.
+- **The rule, `window::round_of(choice, margin, desktop)`.** `Shadowed { r }`: corners of `r` and casement's shadow. `Own`:
+  nothing. `Silent`: the desktop's window radius (`frame_style(..).look.radius`, quire's `Radius::Window`), and the shadow by
+  `Margin`: a buffer larger than the xdg window geometry (`margin_of`) means the toolkit has drawn its shadow in the margin (GTK),
+  and a second one on top of it would look heavy, so casement casts none; a geometry equal to the buffer (Electron, most
+  frameless windows) has no shadow of its own, so casement casts one. The shadow uses the framed window's look for the same
+  activity (key or main: active), at the window's radius, round the geometry rectangle with no titlebar.
+- **`Rounding::Frameless`.** The clip shader was written for a titled window: two bottom corners, nothing drawn outside the
+  rectangle. A client window has no titlebar, so all four corners round (`ClipShape::rounded`). It also leaves every pixel outside
+  the geometry rectangle alone, so the shadow a GTK window drew in its margin is not cut with it; the piecewise draw (pixman,
+  one-pixel buffers) already did that. The shader's new `mode` uniform and `ClipShape::coverage` are the same formula.
+- **Not done.** A closing window's fade (`closing_elements`) still draws only the frame of a framed window: a client window
+  fades square and without its shadow. The window's last image is baked square on the GPU, as before.
