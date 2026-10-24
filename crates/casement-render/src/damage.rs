@@ -59,11 +59,7 @@ pub fn render_output<R: Compositor>(
     elements: &[CasementElement<R>],
     age: usize,
 ) -> Result<Rendered, RenderError> {
-    let effects = renderer.effects();
-    let routed: Vec<Routed<'_, R>> = elements
-        .iter()
-        .map(|element| Routed { element, effects })
-        .collect();
+    let routed = routed(renderer, elements);
     let result = tracker
         .render_output(renderer, target, age, &routed, CLEAR.color32f())
         .map_err(|error| match error {
@@ -81,11 +77,36 @@ pub fn render_output<R: Compositor>(
     Ok(Rendered { damage, sync })
 }
 
+/// `elements` as anything that draws them must take them: a damage tracker, or smithay's
+/// `DrmCompositor` on a real device. Drawn bare, a clipped window, a genie strip or a blur draws
+/// as its plain surface (smithay knows nothing of our hooks), so a window lost its rounded
+/// corners on real hardware while every headless picture had them.
+pub fn routed<'a, R: Compositor>(
+    renderer: &mut R,
+    elements: &'a [CasementElement<R>],
+) -> Vec<Routed<'a, R>> {
+    let effects = renderer.effects();
+    elements
+        .iter()
+        .map(|element| Routed { element, effects })
+        .collect()
+}
+
 /// One element on its way to the tracker: effect variants go through the renderer's
 /// [`Compositor`] hooks (shaders on GLES, stand-ins elsewhere), everything else as it is.
-struct Routed<'a, R: Compositor> {
+/// Made by [`routed`].
+pub struct Routed<'a, R: Compositor> {
     element: &'a CasementElement<R>,
     effects: EffectSupport,
+}
+
+impl<R: Compositor> std::fmt::Debug for Routed<'_, R> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Routed")
+            .field("element", self.element.id())
+            .field("effects", &self.effects)
+            .finish()
+    }
 }
 
 impl<R: Compositor> Element for Routed<'_, R> {

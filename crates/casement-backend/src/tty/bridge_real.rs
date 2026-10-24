@@ -17,6 +17,7 @@ use crate::headless::FrameSource;
 use casement_core::gpu::{
     FormatEntry, Fourcc as CoreFourcc, Modifier as CoreModifier, bridge_format,
 };
+use casement_render::routed;
 use smithay::backend::allocator::dmabuf::{AsDmabuf, Dmabuf};
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags};
 use smithay::backend::allocator::{Allocator, Format, Fourcc, Modifier};
@@ -170,6 +171,7 @@ impl Bridge {
         };
         let mut render = self.render.borrow_mut();
         let elements = source.gles(&mut render);
+        let elements = routed(&mut *render, &elements);
         let mut framebuffer = render.bind(&mut self.picture).map_err(refused)?;
         let rendered = self
             .tracker

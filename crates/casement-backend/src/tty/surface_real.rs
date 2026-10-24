@@ -25,6 +25,7 @@ use super::surface::{Presented, QueueOutcome, QueuedFrame, ScanoutSurface};
 use crate::headless::transform_of;
 use casement_core::output::OutputConfig;
 use casement_core::time::Mono;
+use casement_render::routed;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags};
 use smithay::backend::drm::compositor::{DrmCompositor, FrameFlags};
@@ -244,6 +245,7 @@ impl ScanoutSurface for RealScanout {
             Draw::Own(renderer) => {
                 let mut renderer = renderer.borrow_mut();
                 let elements = source.gles(&mut renderer);
+                let elements = routed(&mut *renderer, &elements);
                 self.compositor
                     .render_frame(&mut *renderer, &elements, CLEAR, FrameFlags::DEFAULT)
                     .map(|result| result.is_empty)

@@ -5434,3 +5434,13 @@ pointer resting at the top edge brings the surface with the role `bar` over the 
   wins; the group is centred below the Spaces strip in a 5% margin with a gap of at least 2% of the width. 6% and 2.5% (the
   top of shell's ranges) left twelve 800x500 windows on 1872x860 below the 0.3 floor, so the low end was taken.
 - mission-control-1x/2x re-blessed: three cascaded windows now sit 2+1.
+
+## wh-cdrm (2026-10-25): no rounded corners on real hardware
+
+- The owner saw square windows on the real login (tty, GLES, NVIDIA) while every headless picture had rounded ones. The tty
+  surfaces (`surface_real.rs` direct, `bridge_real.rs` copy paint, `soft_real.rs` pixman) handed the bare `CasementElement`s to
+  smithay (`DrmCompositor::render_frame`, the bridge's damage tracker), which draws a `Clip`, `ClipStrip` or `Blur` as its plain
+  surface: only `render_output`'s `Routed` sends them through the `Compositor` hooks. `casement_render::routed` is now public and
+  every tty surface draws through it. The jail never runs `surface_real.rs`, so no test here could see it; a hardware run checks.
+- Left as they were: `pass/window.rs` and `pass/window_texture.rs` (one window alone, for a capture or a closing image, which
+  bakes its own corners).

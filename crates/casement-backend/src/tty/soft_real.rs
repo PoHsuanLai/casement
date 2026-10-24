@@ -23,6 +23,7 @@ use super::surface_real::{CLEAR, Flips, refused, refused_by};
 use crate::headless::transform_of;
 use casement_core::output::OutputConfig;
 use casement_core::time::Mono;
+use casement_render::routed;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::dumb::DumbAllocator;
 use smithay::backend::allocator::{Format, Fourcc};
@@ -137,6 +138,7 @@ impl ScanoutSurface for SoftScanout {
         let rendered = {
             let mut renderer = self.renderer.borrow_mut();
             let elements = source.pixman(&mut renderer);
+            let elements = routed(&mut *renderer, &elements);
             self.compositor
                 .render_frame(&mut *renderer, &elements, CLEAR, FrameFlags::empty())
                 .map(|result| result.is_empty)

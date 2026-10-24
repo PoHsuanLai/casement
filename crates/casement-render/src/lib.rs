@@ -32,7 +32,7 @@ pub mod pass;
 pub mod golden;
 
 pub use compositor::{Compositor, EffectSupport};
-pub use damage::{RenderError, RenderSync, Rendered, render_output};
+pub use damage::{RenderError, RenderSync, Rendered, Routed, render_output, routed};
 pub use element::{
     BlurFinish, BlurV0Element, CasementElement, ClientRound, ClientShadow, ClipAsk, ClipShape,
     ClipStripElement, ClosingBody, ClosingFrame, CursorFace, FlightDraw, FrameDraw, GenieParts,
