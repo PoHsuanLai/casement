@@ -40,6 +40,7 @@ mod clip;
 mod desk;
 mod frames;
 mod minimise;
+mod mission;
 
 /// Compares `actual` with the pixman golden `tests/golden/scenes/<name>.png`; with
 /// `CASEMENT_BLESS=1` the golden is written (deliberate, with a reason in the commit).
