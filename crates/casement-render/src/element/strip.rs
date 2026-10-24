@@ -100,8 +100,11 @@ impl StripPlan {
     }
 }
 
-/// The largest translation pixman's 16.16 fixed-point matrix holds, with a margin.
-const PIXMAN_FIXED_REACH: f64 = 32_000.0;
+/// The largest translation pixman's 16.16 fixed-point matrix holds, with half of it kept as a
+/// margin: a genie edge column 1 pixel wide at x 1971 taking 15.4 source columns from x 1584
+/// (31 937 by the sum below) still failed the whole frame, so the sum alone does not bound what
+/// pixman computes.
+const PIXMAN_FIXED_REACH: f64 = 16_000.0;
 
 /// Whether pixman can draw `src` of a texture into `dst`: it maps the destination back to the
 /// source through one fixed-point matrix whose translation is the destination's corner times

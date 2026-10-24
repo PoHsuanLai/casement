@@ -32,7 +32,7 @@ use crate::texture_book::TextureBook;
 use casement_core::geometry::LogicalRect;
 use casement_core::raster::RasterImage;
 use casement_core::window::FrameStyle;
-use casement_motion::genie::{MAX_STRIPS, RectF, STRIPS, TOLERANCE, strips_fine};
+use casement_motion::genie::{RectF, STRIPS, TOLERANCE, strips_fine, whole_rows};
 use casement_motion::{Flight, PlacedWindow};
 use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
@@ -69,14 +69,18 @@ pub fn strip_plans(
         return Vec::new();
     }
     let rows = (src.h.floor() as usize).max(1);
-    let all = strips_fine(
+    // Within half a physical pixel of the curve, with a strip as thin as a row where the side is
+    // steep: the side then moves under a pixel from strip to strip, and the soft edge columns
+    // blend that step away. A strip squeezed to no whole row joins its neighbour.
+    let fine = strips_fine(
         rect_f(visual),
         rect_f(tile),
         progress,
         STRIPS.min(rows),
-        TOLERANCE,
-        MAX_STRIPS.min(rows),
+        TOLERANCE.min(0.5 / scale),
+        rows,
     );
+    let all = whole_rows(fine, |y| ((y - top) * scale).round() as i32);
     let drawn: Vec<RectF> = all.iter().map(|strip| physical(strip.dst)).collect();
     // One rounded edge between two strips, used by both.
     let edges: Vec<i32> = drawn
@@ -453,7 +457,7 @@ mod tests {
         let visual = rect(200, 176, 800, 624);
         let at = |p: f64| strip_plans(visual, tile(), p, &view(120)).len();
         assert_eq!(at(0.0), STRIPS);
-        assert!(at(0.5) > STRIPS && at(0.5) <= MAX_STRIPS, "{}", at(0.5));
+        assert!(at(0.5) > STRIPS, "{}", at(0.5));
     }
 
     #[test]

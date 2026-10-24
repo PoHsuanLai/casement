@@ -26,7 +26,6 @@ use casement::cli::{
     ClockChoice, ConfigHome, Entropy, StartConfig, StartMode, TtyMode, XwaylandSource,
 };
 use casement::display::{self, SharedDisplay, attach_display};
-use casement::icons::IconSearch;
 use casement::privacy::{FilePrivacyStore, SystemDir};
 use casement::seams::Seams;
 use casement::space_store::StateHome;
@@ -191,7 +190,7 @@ impl Fixture {
             xwayland: XwaylandConfig::off(),
             xwayland_source: XwaylandSource::Flag,
             tty: TtyMode::Seat,
-            icons: IconSearch::Off,
+            icons: spec.icons.clone(),
         };
         let space_store = spec.space_store.clone();
         let lock_marker = spec.lock_marker.clone();

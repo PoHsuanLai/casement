@@ -25,7 +25,7 @@ pub const STRIPS: usize = 48;
 pub const MAX_STRIPS: usize = 120;
 
 /// The most pieces one base strip is cut into, so no piece is thinner than a base strip over this.
-const MAX_SPLIT: usize = 6;
+const MAX_SPLIT: usize = 32;
 
 /// How far the stepped silhouette may stray from the curve, in logical pixels, when the budget
 /// of [`MAX_STRIPS`] allows.
@@ -143,6 +143,42 @@ pub fn strips_fine(
         .chain([1.0])
         .collect();
     strips_at(window, tile, progress, &shares)
+}
+
+/// `strips` with each one that covers no whole row (`row` rounds a logical y to its physical row)
+/// joined to the next, and a last such strip to the one before it: every strip keeps its rows.
+pub fn whole_rows(strips: Vec<Strip>, row: impl Fn(f64) -> i32) -> Vec<Strip> {
+    let rows_of = |strip: &Strip| row(strip.dst.y + strip.dst.h) - row(strip.dst.y);
+    let mut kept: Vec<Strip> = Vec::with_capacity(strips.len());
+    for strip in strips {
+        match kept.last_mut() {
+            Some(last) if rows_of(last) <= 0 => *last = joined(*last, strip),
+            _ => kept.push(strip),
+        }
+    }
+    if kept.len() > 1 && kept.last().is_some_and(|last| rows_of(last) <= 0) {
+        let last = kept.pop().expect("a last strip");
+        let before = kept.pop().expect("a strip before it");
+        kept.push(joined(before, last));
+    }
+    kept
+}
+
+/// One strip from `upper` and the `lower` strip just under it: the rows of both, drawn over the
+/// width of both.
+fn joined(upper: Strip, lower: Strip) -> Strip {
+    let left = upper.dst.x.min(lower.dst.x);
+    let right = (upper.dst.x + upper.dst.w).max(lower.dst.x + lower.dst.w);
+    Strip {
+        top: upper.top,
+        bottom: lower.bottom,
+        dst: RectF {
+            x: left,
+            y: upper.dst.y,
+            w: right - left,
+            h: lower.dst.y + lower.dst.h - upper.dst.y,
+        },
+    }
 }
 
 /// The strips between consecutive `shares` (rows as shares of the height, rising from 0 to 1).
@@ -349,6 +385,30 @@ mod tests {
                 assert!(off <= 2.5, "an edge is {off} px off its rows");
             }
         }
+    }
+
+    #[test]
+    fn a_strip_with_no_whole_row_joins_the_next_and_a_last_one_the_one_before() {
+        let strip = |top: f64, y: f64, h: f64, x: f64| Strip {
+            top,
+            bottom: top + 0.25,
+            dst: RectF { x, y, w: 10.0, h },
+        };
+        let row = |y: f64| y.round() as i32;
+        let joined = whole_rows(
+            vec![
+                strip(0.0, 0.0, 2.0, 0.0),
+                strip(0.25, 2.0, 0.2, 1.0),
+                strip(0.5, 2.2, 2.0, 2.0),
+                strip(0.75, 4.2, 0.1, 3.0),
+            ],
+            row,
+        );
+        assert_eq!(joined.len(), 2);
+        assert_eq!((joined[0].top, joined[0].bottom), (0.0, 0.25));
+        assert_eq!((joined[1].top, joined[1].bottom), (0.25, 1.0));
+        assert_eq!(joined[1].dst.x, 1.0);
+        assert!((joined[1].dst.y + joined[1].dst.h - 4.3).abs() < 1e-9);
     }
 
     #[test]

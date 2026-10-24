@@ -89,7 +89,10 @@ impl StripPlan {
         let body = (to > from).then(|| part(0, from, to - from, Weight::FULL));
         let left_edge = soft(sides.0).map(|w| part(code(w, 0), 0, 1, w));
         let right_edge = soft(sides.1).map(|w| part(code(w, 1), width - 1, 1, w));
-        body.into_iter().chain(left_edge).chain(right_edge).collect()
+        body.into_iter()
+            .chain(left_edge)
+            .chain(right_edge)
+            .collect()
     }
 }
 

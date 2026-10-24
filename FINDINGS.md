@@ -5395,8 +5395,14 @@ pointer resting at the top edge brings the surface with the role `bar` over the 
 
 - **The stair-step.** Each genie strip was one band whose left and right edges were rounded to whole pixels, so along the
   curve a side moved a whole pixel every few rows (`minimise-genie-2x-mid`: the sides and the titlebar edge).
-- **Choice: coverage on the two edge columns of each strip.** Thinner strips cannot help: the quantisation is across the
-  strip, not along it, and at 2x a strip is already a physical row. Sub-pixel x positions do not exist in smithay's integer
+- **Correction (review).** The strips were not a physical row: at most 120 for a window of 1000+ rows, about 10 rows
+  each where the side is steep, and each jumped 5 pixels sideways, so the edge columns alone left the stairs. The strips
+  are now cut to half a physical pixel of the curve (`TOLERANCE.min(0.5 / scale)`), up to one per row (`MAX_SPLIT` 32), and
+  a strip squeezed to no whole row joins its neighbour (`genie::whole_rows`) so no source band is dropped. The finer cut
+  then hit a pixman limit: a one-pixel edge column taking 15.4 source columns at x 1971 failed the whole frame though
+  `pixman_can_draw` passed it (31 937 against 32 000), so `PIXMAN_FIXED_REACH` keeps half of pixman's reach as margin.
+- **Choice: coverage on the two edge columns of each strip.** Thinner strips alone cannot help: the quantisation is across
+  the strip, not along it. Sub-pixel x positions do not exist in smithay's integer
   element geometry. A shader (GLES) and a piecewise draw (pixman) would be two implementations of one thing, and the memory
   elements (titlebar, shadow) expose no texture to draw by hand. What both renderers do share is the element's alpha, so the
   strip now covers the whole columns it touches (`floor(left)` to `ceil(right)`, stretched over them), and
@@ -5414,6 +5420,8 @@ pointer resting at the top edge brings the surface with the role `bar` over the 
 - **Test without a golden.** `a_genie_flight_mid_way...` goldens still cover the picture; `the_sides_of_a_genie_are_anti_aliased`
   checks a quarter of the content rows start with a blended pixel. `soft_edge.rs` unit tests cover the cut.
 - **Mission Control picture.** `scene/mission.rs`: three framed windows, opened by a shell connection, settled 1.5 s, at 1x
-  and 2x (`mission-control-1x`, `mission-control-2x`). Reduce Motion only makes the windows snap (`cause_travel`: Reduced is
+  and 2x (`mission-control-1x`, `mission-control-2x`). The windows are larger than a slot so they shrink and show their
+  app's plate under them (`FixtureSpec::with_icons` over an empty folder of desktop entries: no app has an icon, so the
+  picture is the same on every machine), over a light wallpaper so the dim shows. Reduce Motion only makes the windows snap (`cause_travel`: Reduced is
   `Travel::Snap`); the slots are the same, so `reduce_motion_settles_to_the_same_picture` asserts the settled picture is
   byte-equal to the standard one instead of adding a third golden.

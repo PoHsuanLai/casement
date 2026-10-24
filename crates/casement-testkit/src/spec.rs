@@ -2,6 +2,7 @@
 
 use crate::fakes::{MemoryLockMarker, MemorySpaceStore};
 use crate::gpu::GpuTopology;
+use casement::icons::IconSearch;
 use casement::privacy::PrivacyFiles;
 use casement::relax::AckPolicy;
 use casement::time::WallClock;
@@ -38,6 +39,8 @@ pub struct FixtureSpec {
     pub privacy: Option<PrivacyFiles>,
     /// The date kept answers are stamped with. It never moves.
     pub wall: WallClock,
+    /// Whether Mission Control looks for app icons (off: none are drawn).
+    pub icons: IconSearch,
 }
 
 impl FixtureSpec {
@@ -59,6 +62,7 @@ impl FixtureSpec {
             lock_marker: MemoryLockMarker::absent(),
             privacy: None,
             wall: WallClock::epoch(),
+            icons: IconSearch::Off,
         }
     }
 
@@ -73,6 +77,11 @@ impl FixtureSpec {
     /// The same, with the date fixed at `wall`.
     pub fn with_wall(self, wall: WallClock) -> FixtureSpec {
         FixtureSpec { wall, ..self }
+    }
+
+    /// The same, looking for app icons as `icons` says.
+    pub fn with_icons(self, icons: IconSearch) -> FixtureSpec {
+        FixtureSpec { icons, ..self }
     }
 
     /// The same, with this dma-buf mode.
