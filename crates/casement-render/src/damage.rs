@@ -188,12 +188,12 @@ impl<R: Compositor> RenderElement<R> for Routed<'_, R> {
             CasementElement::ClipStrip(clip) => {
                 R::draw_clip_strip(frame, clip, src, dst, damage, opaque_regions, cache)
             }
-            element => element.draw(frame, src, dst, damage, opaque_regions, cache),
+            element => element.draw_plain(frame, src, dst, damage, opaque_regions, cache),
         }
     }
 
     fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage<'_>> {
-        self.element.underlying_storage(renderer)
+        self.element.storage(renderer)
     }
 
     fn capture_framebuffer(
@@ -205,7 +205,7 @@ impl<R: Compositor> RenderElement<R> for Routed<'_, R> {
     ) -> Result<(), R::Error> {
         match self.element {
             CasementElement::Blur(blur) => R::capture_blur_v0(frame, blur, dst, cache),
-            element => element.capture_framebuffer(frame, src, dst, cache),
+            element => element.capture_plain(frame, src, dst, cache),
         }
     }
 }

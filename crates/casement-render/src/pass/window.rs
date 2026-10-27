@@ -90,13 +90,14 @@ where
     let mode = Size::from((side(size.w)?, side(size.h)?));
     let fault = |error: &dyn std::fmt::Display| RenderError::Renderer(error.to_string());
     let mut tracker = OutputDamageTracker::new(mode, scale.as_f64(), Transform::Normal);
+    let elements = crate::damage::routed(renderer, elements);
     let mut framebuffer = renderer.bind(target).map_err(|e| fault(&e))?;
     tracker
         .render_output(
             renderer,
             &mut framebuffer,
             0,
-            elements,
+            &elements,
             Color32F::TRANSPARENT,
         )
         .map_err(|error| match error {
@@ -145,13 +146,14 @@ where
     }
     let fault = |error: &dyn std::fmt::Display| RenderError::Renderer(error.to_string());
     let mut tracker = OutputDamageTracker::new(mode, scale.as_f64(), Transform::Normal);
+    let elements = crate::damage::routed(renderer, elements);
     let mut framebuffer = renderer.bind(target).map_err(|e| fault(&e))?;
     let rendered = tracker
         .render_output(
             renderer,
             &mut framebuffer,
             0,
-            elements,
+            &elements,
             Color32F::TRANSPARENT,
         )
         .map_err(|error| match error {

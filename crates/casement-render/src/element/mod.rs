@@ -3,6 +3,7 @@
 //! click ring, trust frame).
 
 mod blur_v0;
+mod casement_element;
 mod client_round;
 mod clip_strip;
 mod closing;
@@ -60,37 +61,4 @@ pub use tile_preview::{TilePreview, tile_preview_elements};
 pub(crate) use window::{alpha, flight_ratio};
 pub use window::{window_content, window_drawn, window_elements, window_surfaces};
 
-use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
-use smithay::backend::renderer::element::solid::SolidColorRenderElement;
-use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
-use smithay::backend::renderer::element::texture::TextureRenderElement;
-use smithay::backend::renderer::element::utils::RescaleRenderElement;
-use smithay::backend::renderer::{ImportAll, ImportMem, RendererSuper};
-
-smithay::backend::renderer::element::render_elements! {
-    /// Every element casement draws.
-    pub CasementElement<R> where R: ImportAll + ImportMem;
-    /// A client surface (window, layer, popup, lock surface, cursor surface).
-    Surface = WaylandSurfaceRenderElement<R>,
-    /// A solid rectangle.
-    Solid = SolidColorRenderElement,
-    /// A CPU raster (chrome, the cursor theme).
-    Memory = MemoryRenderBufferRenderElement<R>,
-    /// A GPU image kept by the compositor (a closing window's last image).
-    Texture = TextureRenderElement<<R as RendererSuper>::TextureId>,
-    /// The P0 behind-surface blur (ext-background-effect).
-    Blur = BlurV0Element,
-    /// The cover over a locked output without a live lock surface.
-    Cover = LockCoverElement,
-    /// A framed window's surface clipped at its bottom corners (GLES; unclipped elsewhere).
-    Clip = RoundedClipElement<R>,
-    /// One strip of a genie's client surface.
-    SurfaceStrip = StripElement<SharedElement<WaylandSurfaceRenderElement<R>>>,
-    /// One strip of a genie's frame (titlebar and title).
-    MemoryStrip = StripElement<SharedElement<MemoryRenderBufferRenderElement<R>>>,
-    /// One strip of a genie's client surface that the window's rounded clip reaches.
-    ClipStrip = ClipStripElement<R>,
-    /// A client surface stretched about the window's corner: a window (or a menu of it) in a
-    /// Scale flight.
-    Stretched = RescaleRenderElement<WaylandSurfaceRenderElement<R>>,
-}
+pub use casement_element::CasementElement;

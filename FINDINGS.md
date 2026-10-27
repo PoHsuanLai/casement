@@ -5444,3 +5444,14 @@ pointer resting at the top edge brings the surface with the role `bar` over the 
   every tty surface draws through it. The jail never runs `surface_real.rs`, so no test here could see it; a hardware run checks.
 - Left as they were: `pass/window.rs` and `pass/window_texture.rs` (one window alone, for a capture or a closing image, which
   bakes its own corners).
+
+## wh-croute (2026-10-27): a bare draw is a compile error
+
+- After wh-cdrm (4e769bf), shell asked (owner-approved) that drawing without `Routed` be impossible. `CasementElement` was smithay's
+  `render_elements!`, so smithay could draw it directly, and a clip, strip or blur then fell back to its plain surface. It is now a
+  hand-written enum (`element/casement_element.rs`) that implements smithay's `Element` only; its plain draw, storage and capture
+  are crate-private, called by `Routed` alone. Anything that hands bare elements to a damage tracker or `DrmCompositor` fails to
+  build.
+- The compiler then found three more bare draws: `pass/window.rs` (twice) and `pass/window_texture.rs`. They draw one window's
+  plain surfaces, so routing them changes nothing; they route like everything else, and no opt-out exists.
+- `FrameSource` still hands out `CasementElement`s: with no `RenderElement` on them, a backend can do nothing with them but route.

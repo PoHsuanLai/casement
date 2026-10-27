@@ -62,13 +62,14 @@ fn draw_elements(
     let fault = |error: &dyn std::fmt::Display| RenderError::Renderer(error.to_string());
     let mode = Size::<i32, Physical>::from((w, h));
     let mut tracker = OutputDamageTracker::new(mode, scale.as_f64(), Transform::Normal);
+    let elements = crate::damage::routed(renderer, elements);
     let mut framebuffer = renderer.bind(target).map_err(|e| fault(&e))?;
     tracker
         .render_output(
             renderer,
             &mut framebuffer,
             0,
-            elements,
+            &elements,
             Color32F::TRANSPARENT,
         )
         .map(|_| ())
