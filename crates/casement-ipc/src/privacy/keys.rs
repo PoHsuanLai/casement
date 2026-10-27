@@ -134,6 +134,7 @@ fn spec(path: String, power: Power, label: &str, kind: KeyKind, default: toml::V
         note: None,
         agent: AgentSetting::HandsOff,
         control: None,
+        ends: None,
     }
 }
 

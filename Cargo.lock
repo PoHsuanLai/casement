@@ -941,7 +941,6 @@ dependencies = [
 name = "ds-settings"
 version = "0.1.0"
 dependencies = [
- "ds-behaviour",
  "ds-core",
  "ds-helpers",
  "ds-peer",
