@@ -5,7 +5,7 @@ use super::pace::Pace;
 use super::{
     NO_LOOK, QUEUE_LIMIT, RegisterFailure, RegisterFault, RegistryError, SpaceRegistration,
 };
-use porter_dbus::SpacesProxy;
+use porter_dbus::accounts::SpacesProxy;
 use std::sync::mpsc;
 use tokio::sync::mpsc::{Receiver, Sender, channel, error::TrySendError};
 use zbus::Connection;

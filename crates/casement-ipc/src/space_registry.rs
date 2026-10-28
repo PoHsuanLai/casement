@@ -4,7 +4,7 @@
 //! learns of it here, so an app's own Space can link to it. [`SpaceRegistry`] is the seam:
 //! [`SpaceRegistry::register`] hands a batch to a background thread and returns at once, and
 //! [`SpaceRegistry::failures`] tells what the service answered later. The real implementation,
-//! [`ZbusSpaceRegistry`], calls `porter_dbus::SpacesProxy::register` on the bus at an address it
+//! [`ZbusSpaceRegistry`], calls `porter_dbus::accounts::SpacesProxy::register` on the bus at an address it
 //! is given (the library reads no environment); `casement-testkit` exports `FakeSpaceRegistry`.
 //!
 //! The service registers a known id again without changing it, so the caller registers every
