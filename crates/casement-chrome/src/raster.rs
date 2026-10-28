@@ -10,7 +10,6 @@ use crate::ink::{Ink, ink};
 use crate::key::TitleKey;
 use crate::place::{Margins, left_edge, longest_fit, room};
 use casement_core::raster::{RasterId, RasterImage};
-use ds_style::appearance::typeface::Typeface;
 use ds_style::tokens::chrome::{TitleFont, title_font};
 use parley::{
     FontContext, FontFamily, FontWeight, Layout, LayoutContext, PositionedLayoutItem, StyleProperty,
@@ -69,7 +68,7 @@ impl TitleRaster {
     /// assert_eq!(pixels.rgba.len(), 800 * 56 * 4);
     /// ```
     pub fn system(margins: Margins) -> TitleRaster {
-        TitleRaster::with_font(title_font(Typeface::System), margins)
+        TitleRaster::with_font(title_font(), margins)
     }
 
     /// A rasteriser for `font` (a family, a size in logical pixels and a weight).
