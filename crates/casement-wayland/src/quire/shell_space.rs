@@ -11,7 +11,7 @@ use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::overview_drag::SpaceTarget;
 use casement_core::{OutputKey, WindowId};
 use casement_protocols::server::quire_shell_v1::quire_shell_v1;
-use casement_protocols::vocab::DragOutcome;
+use casement_protocols::vocab::{DragOutcome, WireCode};
 use porter_core::SpaceId;
 use smithay::output::Output;
 use smithay::reexports::wayland_server::{DataInit, Resource};
@@ -191,9 +191,9 @@ pub fn send_window_drag_end(
     outputs: &BTreeMap<OutputKey, Output>,
     output: &OutputKey,
     window: WindowId,
-    outcome: quire_shell_v1::DragOutcome,
+    outcome: DragOutcome,
 ) {
-    let Some(output) = outputs.get(output) else {
+    let (Some(output), Some(outcome)) = (outputs.get(output), outcome.to_wire()) else {
         return;
     };
     let identifier = identifier_of(window);
@@ -204,15 +204,6 @@ pub fn send_window_drag_end(
         for wl_output in output.client_outputs(&client) {
             shell.window_drag_end(&wl_output, identifier.clone(), outcome);
         }
-    }
-}
-
-/// The wire's outcome of a drag.
-pub fn wire_outcome(outcome: DragOutcome) -> quire_shell_v1::DragOutcome {
-    match outcome {
-        DragOutcome::DroppedOnSpace => quire_shell_v1::DragOutcome::DroppedOnSpace,
-        DragOutcome::DroppedOnNew => quire_shell_v1::DragOutcome::DroppedOnNew,
-        _ => quire_shell_v1::DragOutcome::Cancelled,
     }
 }
 

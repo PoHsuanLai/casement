@@ -21,7 +21,7 @@ use crate::lock::LockState;
 use crate::overview::Overview;
 use crate::shell::ShellNote;
 use crate::time::{Due, Mono, TimerKey};
-use casement_protocols::vocab::{MacMods, OverviewMode, Toggle, WindowRole};
+use casement_protocols::vocab::{HeldMods, OverviewMode, Toggle, WindowRole};
 use std::time::Duration;
 
 /// How long the windows take to fly (the Mac's overview takes about this long): the time to
@@ -187,7 +187,7 @@ impl Model {
             Some(pick) => self.feed(FocusIn::Press(Press {
                 window: pick.window,
                 part: HitPart::Content,
-                mods: MacMods::NONE,
+                mods: HeldMods::NONE,
                 origin: pick.origin,
             })),
             None => Moved::of(self),

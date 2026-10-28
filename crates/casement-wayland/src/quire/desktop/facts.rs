@@ -29,11 +29,6 @@ use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use std::collections::BTreeMap;
 
-/// The wire enum that carries the same code as `value` (`None` for a code the XML lacks).
-fn wire<W: TryFrom<u32>>(value: impl WireCode) -> Option<W> {
-    W::try_from(value.code()).ok()
-}
-
 /// The `wl_output` `object`'s client holds for `key`, when it bound one.
 fn output_for(view: &DesktopView<'_>, key: &OutputKey, object: &impl Resource) -> Option<WlOutput> {
     let client = object.client()?;
@@ -61,7 +56,7 @@ impl MenuFacts {
     /// `source` as the wire carries it (`None` for a kind the XML lacks).
     fn of(source: &MenuSource) -> Option<MenuFacts> {
         Some(MenuFacts {
-            kind: wire(source.kind())?,
+            kind: source.kind().to_wire()?,
             bus: source.bus().to_owned(),
             app_path: source.app_path().to_owned(),
             menubar_path: source.menubar_path().to_owned(),
@@ -109,12 +104,12 @@ impl AppFacts {
         };
         Some(AppFacts {
             key: key.wire(),
-            proof: wire(key.proof())?,
+            proof: key.proof().to_wire()?,
             claimed,
             subject,
-            life: wire(held.life.kind())?,
-            visibility: wire(visibility)?,
-            attention: wire(held.attention)?,
+            life: held.life.kind().to_wire()?,
+            visibility: visibility.to_wire()?,
+            attention: held.attention.to_wire()?,
             rank: u32::try_from(rank).unwrap_or(u32::MAX),
             menu: MenuFacts::of(&view.model.app_menu(key))?,
         })
@@ -190,7 +185,7 @@ impl SpaceFacts {
         };
         Some(SpaceFacts {
             id: held.id.as_str().to_owned(),
-            kind: wire(held.content.kind())?,
+            kind: held.content.kind().to_wire()?,
             occupant,
             position: held.position.0,
             output: held.output.clone(),
@@ -297,18 +292,18 @@ impl WindowFacts {
         Some(WindowFacts {
             identifier: crate::foreign_toplevel_list::identifier_of(id),
             app: held.app.clone(),
-            role: wire(held.role)?,
-            modality: wire(held.modality)?,
-            state: wire(held.state.kind())?,
+            role: held.role.to_wire()?,
+            modality: held.modality.to_wire()?,
+            state: held.state.kind().to_wire()?,
             place,
             space,
             output,
             geometry,
             parent: held.parent,
-            emphasis: wire(held.emphasis)?,
-            sensitivity: wire(held.sensitivity)?,
+            emphasis: held.emphasis.to_wire()?,
+            sensitivity: held.sensitivity.to_wire()?,
             responsiveness,
-            mark: wire(held.state.mark())?,
+            mark: held.state.mark().to_wire()?,
             menu_path: held.hints.menu.window_path().to_owned(),
         })
     }

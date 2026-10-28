@@ -3,7 +3,7 @@
 use crate::support;
 
 use casement_core::app::AppKey;
-use casement_core::geometry::{LogicalPoint, Transform};
+use casement_core::geometry::LogicalPoint;
 use casement_core::input::{
     Argv, Binding, BindingAction, Bindings, Chord, DbusCall, DesktopCommand, DeviceClass,
     FeedSource, Keysym, Origin, PortalSessionId, SpaceStep,
@@ -13,7 +13,8 @@ use casement_core::output::{
 };
 use casement_core::space::{Space, SpaceContent, SpaceIndex, SplitPair, TaskToken};
 use casement_core::{LeaseId, WindowId};
-use casement_protocols::vocab::{MacMods, PlaceTarget, SplitSide};
+use casement_protocols::vocab::Transform;
+use casement_protocols::vocab::{HeldMods, PlaceTarget, SplitSide};
 use ds_core::geometry::scale::Scale;
 use ds_core::vocab::Fraction;
 use serde::Serialize;
@@ -156,7 +157,7 @@ fn outputs() {
 #[test]
 fn chords_and_bindings_store_as_text() {
     let chord = Chord {
-        mods: MacMods::COMMAND,
+        mods: HeldMods::COMMAND,
         key: Keysym(0x20),
     };
     pinned(&chord, r#""cmd+space""#);

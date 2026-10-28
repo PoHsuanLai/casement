@@ -7,7 +7,7 @@ use casement_core::app::{AppKey, AppVisibility};
 use casement_core::focus::{Focus, FocusIn, FocusOut, FocusView, HitPart, step};
 use casement_core::space::SpaceBook;
 use casement_core::window::Window;
-use casement_protocols::vocab::{Attention, MacMods, WindowRole};
+use casement_protocols::vocab::{Attention, HeldMods, WindowRole};
 use std::collections::BTreeMap;
 
 pub fn c() -> AppKey {
@@ -105,5 +105,5 @@ pub fn over_sheet() -> Focus {
 }
 
 pub fn press_on(n: u64, part: HitPart) -> FocusIn {
-    press(n, part, MacMods::NONE)
+    press(n, part, HeldMods::NONE)
 }

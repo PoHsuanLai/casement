@@ -3,7 +3,7 @@
 //! edge). The drawing is `casement-render`'s and the decisions are `casement-core`'s
 //! (`window::frame`, `window::frame_press`); this is the glue between them and the seat.
 
-use super::deliver::{mac_mods, next_serial, run_model};
+use super::deliver::{held_mods, next_serial, run_model};
 use super::feed;
 use super::scene::{Hit, hit_test, stack};
 use crate::exec;
@@ -17,7 +17,7 @@ use casement_core::window::{
 };
 use casement_core::{Effect, Event, ResizeEdges, ToplevelRequest, WindowId};
 use casement_layout::{GroupHover, frame_metrics, frame_style, pressed};
-use casement_protocols::vocab::{Emphasis, MacMods, WindowRole};
+use casement_protocols::vocab::{Emphasis, HeldMods, WindowRole};
 use casement_render::{ClientRound, CursorDraw, CursorShape, margin_of, window_content};
 use casement_wayland::seat::{Candidate, SurfaceAt, surface_under};
 use casement_wayland::serial::{PressKind, PressRecord};
@@ -359,9 +359,9 @@ fn fire(state: &mut State, seat: &Seat<State>, on: LightAt) {
 }
 
 /// The Mac modifiers held now.
-fn mods_of(seat: &Seat<State>) -> MacMods {
-    seat.get_keyboard().map_or(MacMods::NONE, |keyboard| {
-        mac_mods(&keyboard.modifier_state())
+fn mods_of(seat: &Seat<State>) -> HeldMods {
+    seat.get_keyboard().map_or(HeldMods::NONE, |keyboard| {
+        held_mods(&keyboard.modifier_state())
     })
 }
 

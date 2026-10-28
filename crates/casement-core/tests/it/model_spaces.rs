@@ -4,13 +4,14 @@
 use crate::support;
 
 use casement_core::focus::TokenCheck;
-use casement_core::geometry::{LogicalPoint, Transform};
+use casement_core::geometry::LogicalPoint;
 use casement_core::input::{DesktopCommand, SpaceStep};
 use casement_core::output::OutputPower;
 use casement_core::space::SpaceContent;
 use casement_core::window::{SpacePlace, WindowState};
 use casement_core::{Cause, Effect, Event, ToplevelRequest, WindowId};
 use casement_protocols::vocab::Toggle;
+use casement_protocols::vocab::Transform;
 use porter_core::SpaceId;
 use support::driver::{
     Op, Run, assert_same_world, last, map, plug, request, run, run_from, unmap, unplug,

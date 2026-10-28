@@ -3,7 +3,7 @@
 use super::{Focus, FocusView};
 use crate::ids::WindowId;
 use crate::input::Origin;
-use casement_protocols::vocab::MacMods;
+use casement_protocols::vocab::HeldMods;
 
 /// A press on a window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -13,7 +13,7 @@ pub struct Press {
     /// Which part of it.
     pub part: HitPart,
     /// The modifiers held (the Mac view, before remapping).
-    pub mods: MacMods,
+    pub mods: HeldMods,
     /// Where the press came from.
     pub origin: Origin,
 }
@@ -74,7 +74,7 @@ pub fn route_press(press: &Press, focus: &Focus, view: &FocusView) -> PressRoute
     if focus.key == Some(press.window) {
         return PressRoute::Deliver;
     }
-    match (press.mods.holds(MacMods::COMMAND), press.part) {
+    match (press.mods.holds(HeldMods::COMMAND), press.part) {
         (true, HitPart::Titlebar) => PressRoute::MoveWithoutActivation,
         (true, _) => PressRoute::DeliverWithoutActivation,
         (false, HitPart::Content) => PressRoute::ActivateRaiseSwallow,

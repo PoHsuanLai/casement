@@ -7,7 +7,7 @@ use casement_core::input::{
 use casement_core::lock::{LockHolder, LockState, LockSurfaces};
 use casement_core::policy::{ConnectionRole, GlobalKind, advertised};
 use casement_core::{ClientKey, LayerKey, LeaseId, WindowId};
-use casement_protocols::vocab::MacMods;
+use casement_protocols::vocab::HeldMods;
 use porter_core::SandboxFacts;
 
 const KEYBOARD: Origin = Origin::Physical(DeviceClass::Keyboard);
@@ -191,28 +191,28 @@ fn the_reach_table() {
 }
 
 /// A text, the chord it parses to (modifiers, keysym), its printed form.
-type ChordCase = (&'static str, Option<(MacMods, u32)>, &'static str);
+type ChordCase = (&'static str, Option<(HeldMods, u32)>, &'static str);
 
 #[test]
 fn chords_parse_in_any_order_and_print_in_the_macs() {
     let cases: [ChordCase; 7] = [
-        ("cmd+space", Some((MacMods::COMMAND, 0x20)), "cmd+space"),
+        ("cmd+space", Some((HeldMods::COMMAND, 0x20)), "cmd+space"),
         (
             "shift+cmd+4",
-            Some((MacMods::COMMAND.with(MacMods::SHIFT), 0x34)),
+            Some((HeldMods::COMMAND.with(HeldMods::SHIFT), 0x34)),
             "shift+cmd+4",
         ),
         (
             "cmd+shift+4",
-            Some((MacMods::COMMAND.with(MacMods::SHIFT), 0x34)),
+            Some((HeldMods::COMMAND.with(HeldMods::SHIFT), 0x34)),
             "shift+cmd+4",
         ),
         (
             "option+ctrl+t",
-            Some((MacMods::CONTROL.with(MacMods::OPTION), 0x74)),
+            Some((HeldMods::CONTROL.with(HeldMods::OPTION), 0x74)),
             "ctrl+option+t",
         ),
-        ("cmd+Tab", Some((MacMods::COMMAND, 0xff09)), "cmd+Tab"),
+        ("cmd+Tab", Some((HeldMods::COMMAND, 0xff09)), "cmd+Tab"),
         ("cmd+", None, ""),
         ("hyper+a", None, ""),
     ];
@@ -246,11 +246,11 @@ fn chords_parse_in_any_order_and_print_in_the_macs() {
 #[test]
 fn agent_remote_and_feed_never_fire_a_binding() {
     let hide = Chord {
-        mods: MacMods::COMMAND,
+        mods: HeldMods::COMMAND,
         key: Keysym(0x68),
     };
     let quit = Chord {
-        mods: MacMods::COMMAND,
+        mods: HeldMods::COMMAND,
         key: Keysym(0x71),
     };
     let bindings = Bindings(vec![

@@ -17,7 +17,7 @@ const WHOLE: u32 = 1000;
 /// every bound shell object.
 pub fn send_choose(part: &QuireShellPart, choices: &SplitChoices) {
     let first = identifier_of(choices.first);
-    let Ok(side) = quire_shell_v1::SplitSide::try_from(choices.side.code()) else {
+    let Some(side) = choices.side.to_wire::<quire_shell_v1::SplitSide>() else {
         return;
     };
     for shell in &part.bound {

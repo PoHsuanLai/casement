@@ -16,7 +16,7 @@ use casement_core::shell::ShellNote;
 use casement_core::time::{Due, TimerKey};
 use casement_core::window::{WindowOrigin, WindowState};
 use casement_core::{CoreNote, Effect, Event, ToplevelRequest, WindowId};
-use casement_protocols::vocab::{MacMods, Toggle};
+use casement_protocols::vocab::{HeldMods, Toggle};
 use support::driver::{Op, Run, assert_same_world, last, map, plug, press, request, run, run_from};
 use support::{claimed, proven};
 
@@ -33,7 +33,7 @@ fn two_apps() -> Run {
 #[test]
 fn presses_are_routed_before_any_client_sees_them() {
     let physical = Origin::Physical(DeviceClass::Pointer);
-    let on = |n: u64, part: HitPart, mods: MacMods| {
+    let on = |n: u64, part: HitPart, mods: HeldMods| {
         Op::Press(casement_core::focus::Press {
             window: WindowId(n),
             part,
@@ -44,27 +44,27 @@ fn presses_are_routed_before_any_client_sees_them() {
     let cases = [
         (
             "the key window delivers",
-            on(3, HitPart::Content, MacMods::NONE),
+            on(3, HitPart::Content, HeldMods::NONE),
             PressRoute::Deliver,
         ),
         (
             "an inactive window's content activates and swallows",
-            on(1, HitPart::Content, MacMods::NONE),
+            on(1, HitPart::Content, HeldMods::NONE),
             PressRoute::ActivateRaiseSwallow,
         ),
         (
             "its titlebar activates and delivers",
-            on(1, HitPart::Titlebar, MacMods::NONE),
+            on(1, HitPart::Titlebar, HeldMods::NONE),
             PressRoute::ActivateRaiseDeliver,
         ),
         (
             "command-click delivers without activating",
-            on(1, HitPart::Content, MacMods::COMMAND),
+            on(1, HitPart::Content, HeldMods::COMMAND),
             PressRoute::DeliverWithoutActivation,
         ),
         (
             "command-drag on a titlebar moves without activating",
-            on(1, HitPart::Titlebar, MacMods::COMMAND),
+            on(1, HitPart::Titlebar, HeldMods::COMMAND),
             PressRoute::MoveWithoutActivation,
         ),
     ];

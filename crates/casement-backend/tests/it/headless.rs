@@ -5,9 +5,10 @@ use casement_backend::{
     ConnectorEvent, HeadlessBackend, HeadlessConfig, OutputChange, RenderCostModel, SoftRenderer,
     VirtualOutputSpec,
 };
-use casement_core::geometry::{LogicalPoint, Transform};
+use casement_core::geometry::LogicalPoint;
 use casement_core::output::{OutputConfig, OutputPower};
 use casement_core::{OutputKey, OutputName};
+use casement_protocols::vocab::Transform;
 use ds_core::geometry::scale::Scale;
 use std::time::Duration;
 

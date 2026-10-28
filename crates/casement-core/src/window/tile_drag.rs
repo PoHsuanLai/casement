@@ -18,7 +18,7 @@
 use crate::WindowId;
 use crate::geometry::{LogicalPoint, LogicalRect};
 use crate::settings::{Enabled, WindowSettings};
-use casement_protocols::vocab::{MacMods, PlaceTarget, TileZone};
+use casement_protocols::vocab::{HeldMods, PlaceTarget, TileZone};
 
 /// How far from an output's edge the pointer counts as at it, in logical pixels.
 pub const EDGE_BAND: u32 = 3;
@@ -41,16 +41,7 @@ impl TileTarget {
     pub fn place(self) -> PlaceTarget {
         match self {
             TileTarget::Fill => PlaceTarget::Fill,
-            TileTarget::Zone(zone) => match zone {
-                TileZone::Left => PlaceTarget::Left,
-                TileZone::Right => PlaceTarget::Right,
-                TileZone::Top => PlaceTarget::Top,
-                TileZone::Bottom => PlaceTarget::Bottom,
-                TileZone::TopLeft => PlaceTarget::TopLeft,
-                TileZone::TopRight => PlaceTarget::TopRight,
-                TileZone::BottomLeft => PlaceTarget::BottomLeft,
-                TileZone::BottomRight => PlaceTarget::BottomRight,
-            },
+            TileTarget::Zone(zone) => zone.into(),
         }
     }
 }
@@ -133,7 +124,7 @@ impl TileDrag {
     pub fn moved(
         self,
         at: LogicalPoint,
-        mods: MacMods,
+        mods: HeldMods,
         scene: &TileScene<'_>,
         knobs: &TileKnobs,
     ) -> TileDrag {
@@ -176,14 +167,14 @@ impl TileDrag {
 /// The zone the pointer at `at` arms, if any.
 pub fn target_at(
     at: LogicalPoint,
-    mods: MacMods,
+    mods: HeldMods,
     scene: &TileScene<'_>,
     knobs: &TileKnobs,
 ) -> Option<TileTarget> {
     if !scene.home.contains(at) {
         return None;
     }
-    let option = mods.holds(MacMods::OPTION) && knobs.option_drag == Enabled::On;
+    let option = mods.holds(HeldMods::OPTION) && knobs.option_drag == Enabled::On;
     match (option, knobs.edges) {
         (true, _) => under_pointer(at, scene.home, *knobs),
         (false, Enabled::On) => at_edge(at, scene, *knobs),

@@ -1,6 +1,6 @@
 //! The wire's integers and enums as our types, and back.
 
-use casement_core::geometry::Transform;
+use casement_protocols::vocab::Transform;
 use smithay::reexports::wayland_server::protocol::wl_output::Transform as WireTransform;
 
 /// Our transform as `wl_output`'s.

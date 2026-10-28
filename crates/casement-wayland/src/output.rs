@@ -3,9 +3,10 @@
 //! and KMS. (Not in the plan's module list; `GlobalKind::Output` needs a home: FINDINGS.)
 
 use crate::states::{GlobalFilter, WaylandFault};
-use casement_core::geometry::{LogicalPoint, Transform};
+use casement_core::geometry::LogicalPoint;
 use casement_core::output::{EdidFacts, EdidSerial, Mode, ModePreference, PhysicalMm};
 use casement_core::{OutputKey, OutputName};
+use casement_protocols::vocab::Transform;
 use ds_core::geometry::scale::Scale;
 use smithay::output::{Mode as WireMode, Output, PhysicalProperties, Scale as WireScale, Subpixel};
 use smithay::reexports::wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_manager_v1::ZxdgOutputManagerV1;

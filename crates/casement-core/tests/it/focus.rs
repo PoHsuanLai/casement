@@ -15,7 +15,7 @@ use casement_core::focus::{
 };
 use casement_core::input::{DeviceClass, Origin};
 use casement_core::window::Window;
-use casement_protocols::vocab::{ActorKind, Attention, MacMods};
+use casement_protocols::vocab::{ActorKind, Attention, HeldMods};
 use fixture::{Outs, a, apps, b, b_active, focus, ids, press, sheet, spaces, start, windows};
 use std::collections::BTreeMap;
 use support::window;
@@ -31,8 +31,8 @@ type FocusCase = (
 
 #[test]
 fn the_focus_table() {
-    let none = MacMods::NONE;
-    let cmd = MacMods::COMMAND;
+    let none = HeldMods::NONE;
+    let cmd = HeldMods::COMMAND;
     let cases: Vec<FocusCase> = vec![
         (
             "press on an inactive window activates, raises and swallows",
@@ -213,49 +213,49 @@ fn press_routing() {
             "the key window",
             1,
             HitPart::Content,
-            MacMods::NONE,
+            HeldMods::NONE,
             PressRoute::Deliver,
         ),
         (
             "the key window with command",
             1,
             HitPart::Content,
-            MacMods::COMMAND,
+            HeldMods::COMMAND,
             PressRoute::Deliver,
         ),
         (
             "a first-mouse region",
             3,
             HitPart::FirstMouse,
-            MacMods::NONE,
+            HeldMods::NONE,
             PressRoute::ActivateRaiseDeliver,
         ),
         (
             "elsewhere on an inactive window",
             3,
             HitPart::Content,
-            MacMods::NONE,
+            HeldMods::NONE,
             PressRoute::ActivateRaiseSwallow,
         ),
         (
             "command on an inactive window",
             3,
             HitPart::Content,
-            MacMods::COMMAND,
+            HeldMods::COMMAND,
             PressRoute::DeliverWithoutActivation,
         ),
         (
             "command on an inactive titlebar",
             3,
             HitPart::Titlebar,
-            MacMods::COMMAND,
+            HeldMods::COMMAND,
             PressRoute::MoveWithoutActivation,
         ),
         (
             "a window behind its sheet",
             2,
             HitPart::Content,
-            MacMods::NONE,
+            HeldMods::NONE,
             PressRoute::SwallowWithBell,
         ),
     ];

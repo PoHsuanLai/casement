@@ -28,10 +28,11 @@ use crate::consent::{self, Admission, ConsentHandler};
 use crate::limits::{self, Limit};
 use crate::states::GlobalFilter;
 use casement_core::OutputKey;
-use casement_core::geometry::{PhysicalRect, PhysicalSize, Transform};
+use casement_core::geometry::{PhysicalRect, PhysicalSize};
 use casement_core::policy::GlobalKind;
 use casement_core::time::Mono;
 use casement_protocols::vocab::Power;
+use casement_protocols::vocab::Transform;
 use ds_core::geometry::scale::Scale;
 use smithay::backend::allocator::{Buffer as AllocBuffer, Fourcc};
 use smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::{

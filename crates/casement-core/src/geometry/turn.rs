@@ -2,14 +2,16 @@
 //! on the frame the transform produced. One home for the rule, so a cursor's position, its
 //! hotspot and its pixels all turn the same way.
 
-use super::{PhysicalSize, Transform};
+use super::PhysicalSize;
+use casement_protocols::vocab::Transform;
 
 /// The point `(x, y)` of an upright area of `area` (`(width, height)`) as the area turned by
 /// `transform` has it. For a pixel's index in a `w x h` image pass `(w - 1, h - 1)` as the
 /// area.
 ///
 /// ```
-/// use casement_core::geometry::{Transform, turn_point};
+/// use casement_core::geometry::turn_point;
+/// use casement_protocols::vocab::Transform;
 ///
 /// // A quarter turn: the point 5 right and 3 down of a 24 x 24 image.
 /// assert_eq!(turn_point(Transform::R90, (5, 3), (24, 24)), (21, 5));
@@ -31,7 +33,8 @@ pub fn turn_point(transform: Transform, (x, y): (i32, i32), (w, h): (i32, i32)) 
 /// The size of an area after `transform`: width and height swap for the quarter turns.
 ///
 /// ```
-/// use casement_core::geometry::{PhysicalSize, Transform, turn_size};
+/// use casement_core::geometry::{PhysicalSize, turn_size};
+/// use casement_protocols::vocab::Transform;
 ///
 /// let size = PhysicalSize { w: 48, h: 32 };
 /// assert_eq!(turn_size(size, Transform::R270), PhysicalSize { w: 32, h: 48 });

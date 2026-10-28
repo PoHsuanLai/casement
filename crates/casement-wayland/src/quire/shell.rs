@@ -23,7 +23,7 @@ use casement_core::shell::{ShellNote, ShellRequest};
 use casement_core::time::Mono;
 use casement_core::{Event, LayerKey, OutputKey, WindowId};
 use casement_protocols::server::quire_shell_v1::quire_shell_v1::{self, QuireShellV1};
-use casement_protocols::vocab::{MacMods, ShellRole, WindowEntry, WireCode};
+use casement_protocols::vocab::{HeldMods, ShellRole, WindowEntry, WireCode};
 use porter_core::SpaceId;
 use smithay::reexports::wayland_server::backend::{ClientId, GlobalId};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -74,7 +74,7 @@ pub struct QuireShellPart {
     /// says which one holds it: the note carries the layer, the wire knows the surface.
     pub asked: BTreeMap<LayerKey, AskedRole>,
     /// The modifier keys last sent, so a repeat of the same set sends nothing.
-    pub mods: MacMods,
+    pub mods: HeldMods,
     /// The rectangles the shell set for dropping a window on a Space (version 2).
     pub space_targets: SpaceTargets,
     /// The Space pictures: sources, sessions and held frames (version 2).
@@ -102,7 +102,7 @@ impl QuireShellPart {
             bound: Vec::new(),
             roles: BTreeMap::new(),
             asked: BTreeMap::new(),
-            mods: MacMods::NONE,
+            mods: HeldMods::NONE,
             space_targets: SpaceTargets::default(),
             shots: SpaceShotPart::default(),
             asks: Vec::new(),
@@ -456,7 +456,7 @@ pub fn apply_note(part: &mut QuireShellPart, note: &ShellNote) -> Result<(), Way
 
 /// `modifiers(surface, mods)` to the surface of every held role, on every bound object of the
 /// same client, whether or not the surface has keyboard focus.
-fn send_modifiers(part: &QuireShellPart, mods: MacMods) {
+fn send_modifiers(part: &QuireShellPart, mods: HeldMods) {
     let wire = quire_shell_v1::MacMods::from_bits_truncate(mods.0);
     for shell in &part.bound {
         for holder in part.roles.values() {

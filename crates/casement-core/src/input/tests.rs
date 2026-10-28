@@ -8,7 +8,7 @@ use super::{
 use crate::ids::{ClientKey, LayerKey, LeaseId, WindowId};
 use crate::lock::{LockHolder, LockState, LockSurfaces};
 use crate::time::Mono;
-use casement_protocols::vocab::MacMods;
+use casement_protocols::vocab::HeldMods;
 use proptest::prelude::*;
 use std::time::Duration;
 
@@ -152,7 +152,7 @@ proptest! {
     fn only_the_persons_hands_and_virtual_keyboards_fire_bindings(
         origin in origin(), mods in 0u32..64, key in any::<u32>(),
     ) {
-        let chord = Chord { mods: MacMods(mods), key: Keysym(key) };
+        let chord = Chord { mods: HeldMods(mods), key: Keysym(key) };
         let bindings = Bindings(vec![Binding {
             chord,
             action: BindingAction::Desktop(DesktopCommand::QuitActive),
@@ -178,7 +178,7 @@ proptest! {
 
     #[test]
     fn every_chord_reads_back_from_its_text(mods in 0u32..64, key in any::<u32>()) {
-        let held = MacMods(mods & !MacMods::CAPS_LOCK.0);
+        let held = HeldMods(mods & !HeldMods::CAPS_LOCK.0);
         let chord = Chord { mods: held, key: Keysym(key) };
         prop_assert_eq!(Chord::parse(&chord.text()), Ok(chord));
     }
@@ -221,7 +221,7 @@ fn keysym_names_table() {
 #[test]
 fn caps_lock_is_not_part_of_a_chord_text() {
     let chord = Chord {
-        mods: MacMods::COMMAND.with(MacMods::CAPS_LOCK),
+        mods: HeldMods::COMMAND.with(HeldMods::CAPS_LOCK),
         key: Keysym(0x61),
     };
     assert_eq!(chord.text(), "cmd+a");

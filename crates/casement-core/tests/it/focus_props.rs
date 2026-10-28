@@ -11,7 +11,7 @@ use casement_core::app::{AppKey, AppVisibility};
 use casement_core::focus::{Focus, FocusIn, FocusView, HitPart, Press, TokenCheck, step};
 use casement_core::input::{DeviceClass, Origin};
 use casement_core::window::Window;
-use casement_protocols::vocab::{ActorKind, MacMods};
+use casement_protocols::vocab::{ActorKind, HeldMods};
 use fixture::{a, apps, b};
 use proptest::prelude::*;
 use rows::three_spaces;
@@ -92,9 +92,9 @@ fn apply(world: &mut World, op: &Op) -> Option<FocusIn> {
             window: WindowId(n),
             part: HitPart::Content,
             mods: if command {
-                MacMods::COMMAND
+                HeldMods::COMMAND
             } else {
-                MacMods::NONE
+                HeldMods::NONE
             },
             origin: Origin::Physical(DeviceClass::Pointer),
         })),

@@ -76,7 +76,7 @@ impl WindowState {
     pub fn mark(&self) -> PlacementMark {
         match self {
             WindowState::New(_) | WindowState::Floating(_) => PlacementMark::Free,
-            WindowState::Tiled { zone, .. } => zone_mark(*zone),
+            WindowState::Tiled { zone, .. } => PlacementMark::from(*zone),
             WindowState::Filled { .. } => PlacementMark::Fill,
             WindowState::FullScreen { .. } => PlacementMark::FullScreen,
             WindowState::Minimised { restore } => restore.mark(),
@@ -116,23 +116,9 @@ impl Restore {
     fn mark(&self) -> PlacementMark {
         match self {
             Restore::New(_) | Restore::Floating(_) => PlacementMark::Free,
-            Restore::Tiled { zone, .. } => zone_mark(*zone),
+            Restore::Tiled { zone, .. } => PlacementMark::from(*zone),
             Restore::Filled { .. } => PlacementMark::Fill,
         }
-    }
-}
-
-/// The placement mark of a tile zone.
-fn zone_mark(zone: TileZone) -> PlacementMark {
-    match zone {
-        TileZone::Left => PlacementMark::Left,
-        TileZone::Right => PlacementMark::Right,
-        TileZone::Top => PlacementMark::Top,
-        TileZone::Bottom => PlacementMark::Bottom,
-        TileZone::TopLeft => PlacementMark::TopLeft,
-        TileZone::TopRight => PlacementMark::TopRight,
-        TileZone::BottomLeft => PlacementMark::BottomLeft,
-        TileZone::BottomRight => PlacementMark::BottomRight,
     }
 }
 

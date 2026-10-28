@@ -103,14 +103,7 @@ pub fn entry_action(entry: WindowEntry) -> MenuAction {
 /// The tile zone this entry fills, when it is one of the eight.
 fn entry_zone(entry: WindowEntry) -> Option<TileZone> {
     match entry_action(entry) {
-        MenuAction::Place(PlaceTarget::Left) => Some(TileZone::Left),
-        MenuAction::Place(PlaceTarget::Right) => Some(TileZone::Right),
-        MenuAction::Place(PlaceTarget::Top) => Some(TileZone::Top),
-        MenuAction::Place(PlaceTarget::Bottom) => Some(TileZone::Bottom),
-        MenuAction::Place(PlaceTarget::TopLeft) => Some(TileZone::TopLeft),
-        MenuAction::Place(PlaceTarget::TopRight) => Some(TileZone::TopRight),
-        MenuAction::Place(PlaceTarget::BottomLeft) => Some(TileZone::BottomLeft),
-        MenuAction::Place(PlaceTarget::BottomRight) => Some(TileZone::BottomRight),
+        MenuAction::Place(target) => target.zone(),
         _ => None,
     }
 }

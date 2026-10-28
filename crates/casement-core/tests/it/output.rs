@@ -4,11 +4,12 @@
 
 use crate::support;
 
-use casement_core::geometry::{LogicalPoint, PhysicalSize, Transform};
+use casement_core::geometry::{LogicalPoint, PhysicalSize};
 use casement_core::output::{
     ModePreference, ModeWish, OutputConfig, OutputPower, SavedOutputs, ScalePolicy,
     first_sight_scale, pick_mode, place_outputs,
 };
+use casement_protocols::vocab::Transform;
 use ds_core::geometry::scale::Scale;
 use std::collections::BTreeMap;
 use support::{display, headless, mode};

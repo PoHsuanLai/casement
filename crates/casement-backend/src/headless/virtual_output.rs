@@ -8,9 +8,10 @@
 
 use crate::backend::BackendError;
 use casement_core::OutputName;
-use casement_core::geometry::{LogicalPoint, PhysicalSize, Transform};
+use casement_core::geometry::{LogicalPoint, PhysicalSize};
 use casement_core::output::{EdidFacts, EdidSerial, Mode, ModePreference, VrrCapability};
 use casement_core::time::Millihertz;
+use casement_protocols::vocab::Transform;
 use ds_core::geometry::scale::Scale;
 
 /// One virtual output.

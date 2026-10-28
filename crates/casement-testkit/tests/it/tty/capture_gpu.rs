@@ -5,10 +5,11 @@
 use casement_backend::FramePixels;
 use casement_backend::tty::{DevicePath, NoGpus, TtyBackend, TtySeams};
 use casement_core::OutputName;
-use casement_core::geometry::{LogicalPoint, Transform};
+use casement_core::geometry::LogicalPoint;
 use casement_core::gpu::GpuChoice;
 use casement_core::output::{OutputConfig, OutputPower};
 use casement_core::time::Mono;
+use casement_protocols::vocab::Transform;
 use casement_testkit::fakes::{
     EmptyScene, FakeCaptureGpu, FakeKms, FakeKmsOpener, FakeSession, FakeUdev, SceneBehaviour,
     SharedSession, SyntheticTopology,

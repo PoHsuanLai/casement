@@ -2,9 +2,10 @@
 //! what it may change, and the pure check that turns the request into a configuration.
 
 use super::{Mode, OutputConfig, OutputFacts, OutputPower};
-use crate::geometry::{LogicalPoint, Transform};
+use crate::geometry::LogicalPoint;
 use crate::ids::OutputKey;
 use crate::model::OutputBook;
+use casement_protocols::vocab::Transform;
 use ds_core::geometry::scale::Scale;
 
 /// The parts of an output's configuration a request changes; `None` leaves a part as it is.

@@ -4,7 +4,7 @@ use casement_core::WindowId;
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::settings::Enabled;
 use casement_core::window::{TileDrag, TileDrop, TileKnobs, TileScene, TileTarget, target_at};
-use casement_protocols::vocab::{MacMods, TileZone as Z};
+use casement_protocols::vocab::{HeldMods, TileZone as Z};
 
 fn rect(x: i32, y: i32, w: u32, h: u32) -> LogicalRect {
     LogicalRect::new(LogicalPoint { x, y }, LogicalSize { w, h })
@@ -32,7 +32,7 @@ const HOME: fn() -> LogicalRect = || rect(0, 0, 1920, 1080);
 type Case = (
     &'static str,
     LogicalPoint,
-    MacMods,
+    HeldMods,
     Vec<LogicalRect>,
     TileKnobs,
     Option<TileTarget>,
@@ -50,7 +50,7 @@ fn check(cases: Vec<Case>) {
 
 #[test]
 fn edges_and_corners_arm_halves_fill_and_quarters() {
-    let none = MacMods::NONE;
+    let none = HeldMods::NONE;
     let case = |name, point, want| -> Case { (name, point, none, vec![], ALL_ON, want) };
     check(vec![
         case("left edge", at(0, 540), Some(zone(Z::Left))),
@@ -101,8 +101,8 @@ fn edges_and_corners_arm_halves_fill_and_quarters() {
 
 #[test]
 fn the_knobs_change_what_the_edges_do() {
-    let none = MacMods::NONE;
-    let option = MacMods::OPTION;
+    let none = HeldMods::NONE;
+    let option = HeldMods::OPTION;
     let fills_off = TileKnobs {
         top_fills: Enabled::Off,
         ..ALL_ON
@@ -161,7 +161,7 @@ fn the_knobs_change_what_the_edges_do() {
 
 #[test]
 fn option_arms_the_thirds_of_the_output() {
-    let option = MacMods::OPTION;
+    let option = HeldMods::OPTION;
     let case = |name, point, want| -> Case { (name, point, option, vec![], ALL_ON, want) };
     check(vec![
         case("left third", at(100, 540), Some(zone(Z::Left))),
@@ -176,7 +176,7 @@ fn option_arms_the_thirds_of_the_output() {
         (
             "option and shift",
             at(100, 540),
-            MacMods::OPTION.with(MacMods::SHIFT),
+            HeldMods::OPTION.with(HeldMods::SHIFT),
             vec![],
             ALL_ON,
             Some(zone(Z::Left)),
@@ -186,7 +186,7 @@ fn option_arms_the_thirds_of_the_output() {
 
 #[test]
 fn an_edge_shared_with_another_output_is_not_an_edge() {
-    let none = MacMods::NONE;
+    let none = HeldMods::NONE;
     let right_of = vec![rect(1920, 0, 1920, 1080)];
     let above = vec![rect(0, -1080, 1920, 1080)];
     let case = |name, point, others: Vec<LogicalRect>, want| -> Case {
@@ -233,7 +233,7 @@ fn a_drag_previews_while_over_a_zone_and_tiles_on_release() {
         home: HOME(),
         others: &[],
     };
-    let none = MacMods::NONE;
+    let none = HeldMods::NONE;
     let window = WindowId(7);
     let moving = TileDrag::begin(window);
     assert_eq!(moving.target(), None);

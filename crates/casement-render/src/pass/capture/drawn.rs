@@ -10,7 +10,8 @@
 
 use super::ArgbImage;
 use super::bitmap::sides;
-use casement_core::geometry::{PhysicalRect, PhysicalSize, Transform};
+use casement_core::geometry::{PhysicalRect, PhysicalSize};
+use casement_protocols::vocab::Transform;
 
 /// The viewport's source rectangle, in surface-logical units (buffer pixels divided by the
 /// buffer scale, after the buffer transform), as smithay's `SurfaceView::src` has it.
@@ -72,7 +73,8 @@ fn inverse(transform: Transform) -> Transform {
 /// least one pixel on a side while the image has any.
 ///
 /// ```
-/// use casement_core::geometry::{PhysicalSize, Transform};
+/// use casement_core::geometry::PhysicalSize;
+/// use casement_protocols::vocab::Transform;
 /// use casement_render::pass::{DrawnView, SourceRect, crop_pixels};
 ///
 /// let view = DrawnView::new(2, Transform::Normal, SourceRect::new(1.0, 0.0, 2.0, 4.0));
@@ -105,7 +107,8 @@ impl ArgbImage {
     /// buffer's pixel density; [`ArgbImage::fitted`] scales it to the drawn size.
     ///
     /// ```
-    /// use casement_core::geometry::{PhysicalSize, Transform};
+    /// use casement_core::geometry::PhysicalSize;
+    /// use casement_protocols::vocab::Transform;
     /// use casement_render::pass::{ArgbImage, DrawnView, SourceRect};
     ///
     /// let buffer = ArgbImage::new(PhysicalSize { w: 2, h: 1 }, vec![1, 1, 1, 255, 2, 2, 2, 255]);

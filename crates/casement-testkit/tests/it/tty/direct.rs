@@ -11,10 +11,11 @@ use casement_backend::tty::{
     WritebackError,
 };
 use casement_core::OutputName;
-use casement_core::geometry::{LogicalPoint, PhysicalSize, Transform};
+use casement_core::geometry::{LogicalPoint, PhysicalSize};
 use casement_core::gpu::GpuChoice;
 use casement_core::output::{Mode, OutputConfig, OutputPower};
 use casement_core::time::Mono;
+use casement_protocols::vocab::Transform;
 use casement_testkit::fakes::{
     EmptyScene, FakeKms, FakeKmsOpener, FakeWriteback, SyntheticTopology,
 };

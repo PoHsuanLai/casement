@@ -10,7 +10,7 @@ use casement_core::settings::CasementSettings;
 use casement_core::space::SpaceSeed;
 use casement_core::window::{SizeLimits, WindowOrigin};
 use casement_core::{ClientKey, Effect, Event, MappedToplevel, Model, ToplevelRequest, WindowId};
-use casement_protocols::vocab::{ActorKind, MacMods, Modality, WindowRole};
+use casement_protocols::vocab::{ActorKind, HeldMods, Modality, WindowRole};
 
 /// One thing that happens to the model.
 #[derive(Clone)]
@@ -154,7 +154,7 @@ pub fn press(n: u64) -> Op {
     Op::Press(Press {
         window: WindowId(n),
         part: HitPart::Content,
-        mods: MacMods::NONE,
+        mods: HeldMods::NONE,
         origin: Origin::Physical(DeviceClass::Pointer),
     })
 }

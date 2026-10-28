@@ -2,8 +2,9 @@
 
 use super::{ModeWish, OutputConfig, OutputFacts, OutputPower, SavedOutputs, ScalePolicy};
 use super::{first_sight_scale, pick_mode};
-use crate::geometry::{LogicalPoint, LogicalSize, PhysicalSize, Transform};
+use crate::geometry::{LogicalPoint, LogicalSize, PhysicalSize};
 use crate::ids::OutputKey;
+use casement_protocols::vocab::Transform;
 use ds_core::geometry::scale::Scale;
 
 /// The configuration of every present output: a saved display keeps its saved configuration;

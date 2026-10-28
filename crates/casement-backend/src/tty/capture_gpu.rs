@@ -19,8 +19,9 @@
 use crate::backend::BackendError;
 use crate::headless::FrameSource;
 use casement_core::OutputName;
-use casement_core::geometry::{PhysicalRect, PhysicalSize, Transform};
+use casement_core::geometry::{PhysicalRect, PhysicalSize};
 use casement_core::output::OutputConfig;
+use casement_protocols::vocab::Transform;
 use casement_render::RenderError;
 use casement_render::pass::CapturedFrame;
 use ds_core::geometry::scale::Scale;

@@ -7,10 +7,11 @@ use casement_backend::tty::{
     TtySeams,
 };
 use casement_core::OutputName;
-use casement_core::geometry::{LogicalPoint, Transform};
+use casement_core::geometry::LogicalPoint;
 use casement_core::gpu::GpuChoice;
 use casement_core::output::{OutputConfig, OutputPower};
 use casement_core::time::{Mono, VblankSeq};
+use casement_protocols::vocab::Transform;
 use casement_testkit::fakes::{
     EmptyScene, FakeKms, FakeKmsOpener, FakeSession, FakeUdev, SharedSession, SyntheticTopology,
 };

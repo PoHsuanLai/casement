@@ -5461,3 +5461,15 @@ pointer resting at the top edge brings the surface with the role `bar` over the 
 - CONVENTIONS 3 and 17 now follow the shared rule 4: bool is fine for fields, returns, locals and private fns; mirror enums,
   two-arm Option/Result lookalikes and one-variant enums are removed. Done per audit findings C-1..C-20 (not C-17's Maker,
   not C-21, C-22); see the commit message and `~/rs-wt/enum-audit/casement.md`.
+
+## wh-cpro (2026-10-28): casement-protocols rule-4 follow-up
+
+- casement-core's `geometry::Transform` is gone: `casement_protocols::vocab::Transform` (same variants, same snake_case
+  JSON) is the one `wl_output.transform` type for the model, the backend and the testclient.
+- `MacMods` is `HeldMods`; the compositor's fn `mac_mods` is `held_mods`. The generated `quire_shell_v1::MacMods` keeps the
+  XML name.
+- The vocab-to-generated ladders (`wire_emphasis`, `wire_mark`, `wire_outcome`, facts' `wire()`) are `WireCode::to_wire`;
+  the TileZone/PlaceTarget/PlacementMark ladders (`tile_zone`, `entry_zone`'s arms, `TileTarget::place`, `zone_mark`) are
+  `PlaceTarget::zone` and `From<TileZone>`.
+- Left alone: the "who is the caller" privilege types (C-21), and the smithay-to-vocab transform ladders in
+  `output_set.rs` and `image_capture/cursor.rs` (smithay's type is not ours).

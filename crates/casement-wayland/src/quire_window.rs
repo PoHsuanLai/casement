@@ -205,8 +205,8 @@ where
                 }
                 let events = on_get_window(state.quire_window_part(), window, object.clone());
                 if let Some(facts) = state.window_facts(window) {
-                    object.emphasis(wire_emphasis(facts.emphasis));
-                    object.placement(wire_mark(facts.mark));
+                    send_emphasis(&object, facts.emphasis);
+                    send_placement(&object, facts.mark);
                     state.quire_window_part().marks.insert(window, facts.mark);
                     hook_commits(state, window, &facts.surface);
                 }
@@ -361,28 +361,15 @@ fn code_of<T: Into<u32>>(value: WEnum<T>) -> Option<u32> {
     }
 }
 
-fn wire_emphasis(emphasis: Emphasis) -> quire_window_v1::Emphasis {
-    match emphasis {
-        Emphasis::Key => quire_window_v1::Emphasis::Key,
-        Emphasis::Main => quire_window_v1::Emphasis::Main,
-        Emphasis::Inactive => quire_window_v1::Emphasis::Inactive,
+fn send_emphasis(object: &QuireWindowV1, emphasis: Emphasis) {
+    if let Some(wire) = emphasis.to_wire() {
+        object.emphasis(wire);
     }
 }
 
-fn wire_mark(mark: PlacementMark) -> quire_window_v1::PlacementMark {
-    use quire_window_v1::PlacementMark as Wire;
-    match mark {
-        PlacementMark::Free => Wire::Free,
-        PlacementMark::Left => Wire::Left,
-        PlacementMark::Right => Wire::Right,
-        PlacementMark::Top => Wire::Top,
-        PlacementMark::Bottom => Wire::Bottom,
-        PlacementMark::TopLeft => Wire::TopLeft,
-        PlacementMark::TopRight => Wire::TopRight,
-        PlacementMark::BottomLeft => Wire::BottomLeft,
-        PlacementMark::BottomRight => Wire::BottomRight,
-        PlacementMark::Fill => Wire::Fill,
-        PlacementMark::FullScreen => Wire::FullScreen,
+fn send_placement(object: &QuireWindowV1, mark: PlacementMark) {
+    if let Some(wire) = mark.to_wire() {
+        object.placement(wire);
     }
 }
 
@@ -521,7 +508,7 @@ pub fn apply_emphasis(
 ) -> Result<(), WaylandFault> {
     match part.windows.get(&window) {
         Some(object) if object.is_alive() => {
-            object.emphasis(wire_emphasis(emphasis));
+            send_emphasis(object, emphasis);
             Ok(())
         }
         Some(_) => Err(WaylandFault::SurfaceGone),
@@ -551,7 +538,7 @@ pub fn apply_placement(
     match part.windows.get(&window) {
         Some(object) if object.is_alive() => {
             if part.marks.insert(window, mark) != Some(mark) {
-                object.placement(wire_mark(mark));
+                send_placement(object, mark);
             }
             Ok(())
         }

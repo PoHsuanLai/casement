@@ -65,7 +65,7 @@ pub(super) fn note(state: &mut State, note: ShellNote) {
                 &state.wl.output.outputs,
                 output,
                 *window,
-                shell_space::wire_outcome(*outcome),
+                *outcome,
             );
             return;
         }

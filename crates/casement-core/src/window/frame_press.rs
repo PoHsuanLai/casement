@@ -8,7 +8,7 @@ use crate::geometry::LogicalPoint;
 use crate::ids::WindowId;
 use crate::settings::TitleDoubleClick;
 use crate::time::Mono;
-use casement_protocols::vocab::{MacMods, Toggle};
+use casement_protocols::vocab::{HeldMods, Toggle};
 use std::time::Duration;
 
 /// How long after a press a second one still makes a double click.
@@ -93,7 +93,7 @@ pub fn chrome_action(
     hit: FrameHit,
     clicks: Clicks,
     double_click: TitleDoubleClick,
-    mods: MacMods,
+    mods: HeldMods,
     state: &WindowState,
 ) -> Option<ChromeAction> {
     let zoom = || {
@@ -105,7 +105,7 @@ pub fn chrome_action(
     match (hit, clicks) {
         (FrameHit::Light(Light::Close), _) => Some(ChromeAction::Close),
         (FrameHit::Light(Light::Minimise), _) => Some(ChromeAction::Minimise),
-        (FrameHit::Light(Light::Zoom), _) if mods.holds(MacMods::OPTION) => Some(zoom()),
+        (FrameHit::Light(Light::Zoom), _) if mods.holds(HeldMods::OPTION) => Some(zoom()),
         (FrameHit::Light(Light::Zoom), _) => Some(ChromeAction::FullScreen(match state {
             WindowState::FullScreen { .. } => Toggle::Off,
             _ => Toggle::On,
@@ -259,7 +259,7 @@ mod tests {
         ];
         for (name, hit, clicks, double, state, want) in cases {
             assert_eq!(
-                chrome_action(*hit, *clicks, *double, MacMods::NONE, state),
+                chrome_action(*hit, *clicks, *double, HeldMods::NONE, state),
                 *want,
                 "{name}"
             );
@@ -272,41 +272,41 @@ mod tests {
         let floating = WindowState::Floating(rect);
         let filled = WindowState::Filled { restore: rect };
         use ChromeAction as A;
-        type Case<'a> = (&'a str, MacMods, &'a WindowState, Option<A>);
+        type Case<'a> = (&'a str, HeldMods, &'a WindowState, Option<A>);
         let cases: &[Case] = &[
             (
                 "plain click",
-                MacMods::NONE,
+                HeldMods::NONE,
                 &floating,
                 Some(A::FullScreen(Toggle::On)),
             ),
             (
                 "plain click on a filled window",
-                MacMods::NONE,
+                HeldMods::NONE,
                 &filled,
                 Some(A::FullScreen(Toggle::On)),
             ),
             (
                 "option zooms",
-                MacMods::OPTION,
+                HeldMods::OPTION,
                 &floating,
                 Some(A::Maximise(Toggle::On)),
             ),
             (
                 "option restores a filled window",
-                MacMods::OPTION,
+                HeldMods::OPTION,
                 &filled,
                 Some(A::Maximise(Toggle::Off)),
             ),
             (
                 "option with shift still zooms",
-                MacMods::OPTION.with(MacMods::SHIFT),
+                HeldMods::OPTION.with(HeldMods::SHIFT),
                 &floating,
                 Some(A::Maximise(Toggle::On)),
             ),
             (
                 "shift alone is a plain click",
-                MacMods::SHIFT,
+                HeldMods::SHIFT,
                 &floating,
                 Some(A::FullScreen(Toggle::On)),
             ),
@@ -335,7 +335,7 @@ mod tests {
                 FrameHit::Light(light),
                 Clicks::Single,
                 TitleDoubleClick::Zoom,
-                MacMods::OPTION,
+                HeldMods::OPTION,
                 &floating,
             );
             assert_eq!(got, Some(want));

@@ -5,10 +5,11 @@
 
 use crate::consent::{self, Held, Mortal, Pushed};
 use casement_core::geometry::{
-    LogicalPoint, LogicalRect, LogicalSize, PhysicalSize, Transform, buffer_size, to_physical,
-    turn_point, turn_size,
+    LogicalPoint, LogicalRect, LogicalSize, PhysicalSize, buffer_size, to_physical, turn_point,
+    turn_size,
 };
 use casement_core::{ClientKey, OutputKey};
+use casement_protocols::vocab::Transform;
 use ds_core::geometry::scale::Scale;
 use smithay::utils::IsAlive;
 use smithay::wayland::image_copy_capture::{CursorSession, Frame};
@@ -73,7 +74,8 @@ pub fn image_size(size: LogicalSize, scale: Scale) -> PhysicalSize {
 /// with the output's `transform`.
 ///
 /// ```
-/// use casement_core::geometry::{LogicalSize, PhysicalSize, Transform};
+/// use casement_core::geometry::{LogicalSize, PhysicalSize};
+/// use casement_protocols::vocab::Transform;
 /// use casement_wayland::image_capture::sent_image_size;
 /// use ds_core::geometry::scale::Scale;
 ///
@@ -97,7 +99,8 @@ pub fn sent_image_size(size: LogicalSize, scale: Scale, transform: Transform) ->
 /// the turned image's corner.
 ///
 /// ```
-/// use casement_core::geometry::{LogicalPoint, LogicalSize, PhysicalSize, Transform};
+/// use casement_core::geometry::{LogicalPoint, LogicalSize, PhysicalSize};
+/// use casement_protocols::vocab::Transform;
 /// use casement_wayland::image_capture::{CursorView, place};
 /// use ds_core::geometry::scale::Scale;
 ///

@@ -13,7 +13,7 @@ use crate::ids::{OutputKey, WindowId};
 use crate::settings::Enabled;
 use crate::space::SpaceContent;
 use crate::window::{Restore, SpacePlace, Window, WindowState};
-use casement_protocols::vocab::{PlaceTarget, TileZone, Toggle};
+use casement_protocols::vocab::{PlaceTarget, Toggle};
 
 impl Model {
     /// A toplevel asked for something.
@@ -137,7 +137,7 @@ impl Model {
                 PlaceTarget::Restore,
             ) => WindowState::Floating(*restore),
             (_, PlaceTarget::Restore) => return Moved::of(self),
-            (_, zone) => match tile_zone(zone) {
+            (_, target) => match target.zone() {
                 Some(zone) => WindowState::Tiled {
                     zone,
                     restore: floor,
@@ -343,21 +343,6 @@ fn restore_rect(restore: &Restore, usable: LogicalRect) -> LogicalRect {
         Restore::Floating(rect) => *rect,
         Restore::Tiled { restore, .. } | Restore::Filled { restore } => *restore,
         Restore::New(size) => centred(*size, usable),
-    }
-}
-
-/// The tile zone a placement target names.
-fn tile_zone(target: PlaceTarget) -> Option<TileZone> {
-    match target {
-        PlaceTarget::Left => Some(TileZone::Left),
-        PlaceTarget::Right => Some(TileZone::Right),
-        PlaceTarget::Top => Some(TileZone::Top),
-        PlaceTarget::Bottom => Some(TileZone::Bottom),
-        PlaceTarget::TopLeft => Some(TileZone::TopLeft),
-        PlaceTarget::TopRight => Some(TileZone::TopRight),
-        PlaceTarget::BottomLeft => Some(TileZone::BottomLeft),
-        PlaceTarget::BottomRight => Some(TileZone::BottomRight),
-        PlaceTarget::Fill | PlaceTarget::Centre | PlaceTarget::Restore => None,
     }
 }
 

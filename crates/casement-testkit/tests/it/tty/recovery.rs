@@ -11,10 +11,11 @@ use casement_backend::tty::{
     VtNumber,
 };
 use casement_core::OutputName;
-use casement_core::geometry::{LogicalPoint, Transform};
+use casement_core::geometry::LogicalPoint;
 use casement_core::gpu::GpuChoice;
 use casement_core::output::{GammaRamp, Mode, OutputConfig, OutputPower};
 use casement_core::time::{Millihertz, Mono, VblankClock, VblankSeq};
+use casement_protocols::vocab::Transform;
 use casement_testkit::fakes::{EmptyScene, FakeKms, FakeScanout, FakeUdev, SyntheticTopology};
 use ds_core::geometry::scale::Scale;
 use std::cell::{Cell, RefCell};

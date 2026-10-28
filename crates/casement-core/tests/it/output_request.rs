@@ -3,7 +3,7 @@
 
 use crate::support::driver::{Op, plug, run, run_from};
 use crate::support::{display, headless, mode, ms};
-use casement_core::geometry::{LogicalPoint, Transform};
+use casement_core::geometry::LogicalPoint;
 use casement_core::output::{
     GammaRamp, GammaTable, Kelvin, MinuteOfDay, ModePreference, NightLight, OutputChangeSet,
     OutputConfig, OutputPower, OutputRefusal, Requester, Schedule, keeps_one_lit, resolve_change,
@@ -11,6 +11,7 @@ use casement_core::output::{
 use casement_core::settings::{CasementSettings, NightLightSettings};
 use casement_core::space::SpaceSeed;
 use casement_core::{Effect, Event, Model, OutputKey};
+use casement_protocols::vocab::Transform;
 use ds_core::geometry::scale::Scale;
 
 fn current(facts: &casement_core::output::OutputFacts) -> OutputConfig {

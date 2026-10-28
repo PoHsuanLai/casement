@@ -8,7 +8,8 @@
 
 use super::shm::Layout;
 use crate::gl_raw::with_shm_pool;
-use casement_core::geometry::{PhysicalSize, Transform, turn_point, turn_size};
+use casement_core::geometry::{PhysicalSize, turn_point, turn_size};
+use casement_protocols::vocab::Transform;
 use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_shm::Format;
 use smithay::wayland::shm::BufferAccessError;
@@ -102,7 +103,8 @@ impl ArgbImage {
     /// `turn_size(target, transform)` large.
     ///
     /// ```
-    /// use casement_core::geometry::{PhysicalSize, Transform};
+    /// use casement_core::geometry::PhysicalSize;
+    /// use casement_protocols::vocab::Transform;
     /// use casement_render::pass::ArgbImage;
     ///
     /// let one = ArgbImage::new(PhysicalSize { w: 1, h: 1 }, vec![9, 8, 7, 255]);

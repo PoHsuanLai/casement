@@ -4,12 +4,13 @@
 
 use crate::{State, core_loop};
 use casement_backend::{BackendKind, VirtualOutputSpec};
-use casement_core::geometry::{LogicalPoint, Transform};
+use casement_core::geometry::LogicalPoint;
 use casement_core::output::{Mode, OutputConfig, OutputPower};
 use casement_core::time::Millihertz;
 use casement_core::{OutputKey, OutputName, WindowId};
 use casement_ipc::WaitPredicate;
 use casement_ipc::dbus::DebugReply;
+use casement_protocols::vocab::Transform;
 use ds_core::geometry::scale::Scale;
 
 /// A JSON string literal.

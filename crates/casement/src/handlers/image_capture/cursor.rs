@@ -12,10 +12,11 @@
 
 use super::dma::{deliver, offer, read_cursor};
 use crate::state::State;
-use casement_core::geometry::{PhysicalRect, PhysicalSize, Transform as CoreTransform};
+use casement_core::geometry::{PhysicalRect, PhysicalSize};
 use casement_core::privilege::PowerOutcome;
 use casement_core::{ClientKey, OutputKey};
 use casement_protocols::vocab::Power;
+use casement_protocols::vocab::Transform as CoreTransform;
 use casement_render::pass::{ArgbImage, CapturedFrame, DrawnView, SourceRect};
 use casement_render::{ChromeLayer, CursorDraw, CursorShape, cursor_face, cursor_pixels};
 use casement_wayland::consent::{self, Admission};

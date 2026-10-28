@@ -18,10 +18,10 @@ pub struct DmabufFormat {
 use super::output_source::NamedOutput;
 use crate::misc::idle::{pump_queue, side_queue};
 use crate::{ClientError, GlobalList, Pumped};
+use casement_protocols::vocab::{Transform, WireCode};
 use desktop_client::capture::{
     CaptureEvent, CaptureFailure, CaptureSession, CursorMode, ShmFormat,
 };
-use desktop_client::output::Transform;
 use desktop_client::{CaptureId, DesktopEvent, DesktopState, Frame, Rect, Size, reduce};
 use rustix::fs::{MemfdFlags, ftruncate, memfd_create};
 use std::fs::File;
@@ -514,7 +514,7 @@ impl Dispatch<ExtImageCopyCaptureFrameV1, ()> for Capturing {
         use ext_image_copy_capture_frame_v1::Event;
         match event {
             Event::Transform { transform } => {
-                if let Some(transform) = Transform::from_code(raw(transform)) {
+                if let Ok(transform) = Transform::from_code(raw(transform)) {
                     state.fold(CaptureEvent::Transform(transform));
                 }
             }

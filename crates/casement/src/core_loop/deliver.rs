@@ -26,7 +26,7 @@ use casement_core::lock::LockState;
 use casement_core::shell::ShellNote;
 use casement_core::time::{Due, Mono, TimerKey};
 use casement_core::{Effect, InputSerial, KeyboardTarget, Model, SwipeOwner};
-use casement_protocols::vocab::MacMods;
+use casement_protocols::vocab::HeldMods;
 use casement_protocols::vocab::PressEdge;
 use casement_wayland::seat::{
     self, GestureDelivery, KeyDelivery, KeyForward, KeyRoute, PointerDelivery, PressFate, Pressed,
@@ -228,25 +228,25 @@ pub(super) fn next_serial() -> InputSerial {
 }
 
 /// The modifiers as the Mac view of the keyboard.
-pub(super) fn mac_mods(mods: &ModifiersState) -> MacMods {
+pub(super) fn held_mods(mods: &ModifiersState) -> HeldMods {
     [
-        (mods.shift, MacMods::SHIFT),
-        (mods.ctrl, MacMods::CONTROL),
-        (mods.alt, MacMods::OPTION),
-        (mods.logo, MacMods::COMMAND),
-        (mods.caps_lock, MacMods::CAPS_LOCK),
+        (mods.shift, HeldMods::SHIFT),
+        (mods.ctrl, HeldMods::CONTROL),
+        (mods.alt, HeldMods::OPTION),
+        (mods.logo, HeldMods::COMMAND),
+        (mods.caps_lock, HeldMods::CAPS_LOCK),
     ]
     .into_iter()
     .filter(|(held, _)| *held)
-    .fold(MacMods::NONE, |all, (_, one)| all.with(one))
+    .fold(HeldMods::NONE, |all, (_, one)| all.with(one))
 }
 
-/// The modifiers of a binding's chord: `mac_mods` without the locks. Caps Lock is a state, not
-/// a key held for the chord (Num Lock is not in `MacMods` at all), so a binding matches with
+/// The modifiers of a binding's chord: `held_mods` without the locks. Caps Lock is a state, not
+/// a key held for the chord (Num Lock is not in `HeldMods` at all), so a binding matches with
 /// either on.
-fn chord_mods(mods: &ModifiersState) -> MacMods {
-    let held = mac_mods(mods);
-    MacMods(held.0 & !MacMods::CAPS_LOCK.0)
+fn chord_mods(mods: &ModifiersState) -> HeldMods {
+    let held = held_mods(mods);
+    HeldMods(held.0 & !HeldMods::CAPS_LOCK.0)
 }
 
 fn keyboard_target(model: &Model) -> InputTarget {
@@ -377,7 +377,7 @@ fn deliver_key(state: &mut State, seat: &Seat<State>, key: KeyDelivery) {
         let escape = handle
             .raw_latin_sym_or_raw_current_sym()
             .is_some_and(|sym| sym.raw() == ESCAPE)
-            && chord_mods(mods) == MacMods::NONE;
+            && chord_mods(mods) == HeldMods::NONE;
         if live && escape && origin.fires_bindings() && overview::escape_leaves(state) {
             return FilterResult::Intercept(Some(BindingAction::Desktop(
                 DesktopCommand::MissionControl,
@@ -423,8 +423,8 @@ fn remember_key_press(state: &mut State, seat: &Seat<State>, key: &KeyDelivery) 
 
 /// The keyboard's modifier set, as the shell sees it (it ignores a set it was already sent).
 fn tell_shell_modifiers(state: &mut State, seat: &Seat<State>) {
-    let mods = seat.get_keyboard().map_or(MacMods::NONE, |keyboard| {
-        mac_mods(&keyboard.modifier_state())
+    let mods = seat.get_keyboard().map_or(HeldMods::NONE, |keyboard| {
+        held_mods(&keyboard.modifier_state())
     });
     exec::shell_note(state, ShellNote::Modifiers(mods));
 }
@@ -775,8 +775,8 @@ fn deliver_press(
     event: &InputEvent,
     window: casement_core::WindowId,
 ) -> bool {
-    let mods = seat.get_keyboard().map_or(MacMods::NONE, |keyboard| {
-        mac_mods(&keyboard.modifier_state())
+    let mods = seat.get_keyboard().map_or(HeldMods::NONE, |keyboard| {
+        held_mods(&keyboard.modifier_state())
     });
     let press = Press {
         window,
@@ -938,19 +938,19 @@ mod tests {
     use super::*;
 
     /// (case, state, chord modifiers)
-    fn cases() -> Vec<(&'static str, ModifiersState, MacMods)> {
+    fn cases() -> Vec<(&'static str, ModifiersState, HeldMods)> {
         let with = |f: fn(&mut ModifiersState)| {
             let mut state = ModifiersState::default();
             f(&mut state);
             state
         };
         vec![
-            ("nothing held", with(|_| {}), MacMods::NONE),
-            ("command", with(|m| m.logo = true), MacMods::COMMAND),
+            ("nothing held", with(|_| {}), HeldMods::NONE),
+            ("command", with(|m| m.logo = true), HeldMods::COMMAND),
             (
                 "caps lock alone",
                 with(|m| m.caps_lock = true),
-                MacMods::NONE,
+                HeldMods::NONE,
             ),
             (
                 "command with caps lock",
@@ -958,7 +958,7 @@ mod tests {
                     m.logo = true;
                     m.caps_lock = true;
                 }),
-                MacMods::COMMAND,
+                HeldMods::COMMAND,
             ),
             (
                 "command with num lock",
@@ -966,7 +966,7 @@ mod tests {
                     m.logo = true;
                     m.num_lock = true;
                 }),
-                MacMods::COMMAND,
+                HeldMods::COMMAND,
             ),
             (
                 "shift, control and both locks",
@@ -976,7 +976,7 @@ mod tests {
                     m.caps_lock = true;
                     m.num_lock = true;
                 }),
-                MacMods::SHIFT.with(MacMods::CONTROL),
+                HeldMods::SHIFT.with(HeldMods::CONTROL),
             ),
         ]
     }

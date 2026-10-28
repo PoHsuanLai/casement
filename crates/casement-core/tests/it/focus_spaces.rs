@@ -12,7 +12,7 @@ use casement_core::focus::{
 use casement_core::geometry::LogicalSize;
 use casement_core::input::{DeviceClass, Origin};
 use casement_core::window::{Restore, Window, WindowState};
-use casement_protocols::vocab::{ActorKind, Emphasis, MacMods};
+use casement_protocols::vocab::{ActorKind, Emphasis, HeldMods};
 use fixture::{a, apps, b, focus, ids, sheet, start, windows};
 use rows::{Row, attention, c, nothing, on, over_sheet, row, run, three_spaces};
 use std::collections::BTreeMap;
@@ -501,20 +501,20 @@ fn press_routes_beyond_the_table() {
         apps: &apps,
     };
     let pointer = Origin::Physical(DeviceClass::Pointer);
-    let cmd_shift = MacMods::COMMAND.with(MacMods::SHIFT);
+    let cmd_shift = HeldMods::COMMAND.with(HeldMods::SHIFT);
     let cases = [
         (
             "a resize edge of an inactive window is chrome: activate and deliver",
             3,
             HitPart::Edge,
-            MacMods::NONE,
+            HeldMods::NONE,
             PressRoute::ActivateRaiseDeliver,
         ),
         (
             "command on an inactive edge delivers without activating",
             3,
             HitPart::Edge,
-            MacMods::COMMAND,
+            HeldMods::COMMAND,
             PressRoute::DeliverWithoutActivation,
         ),
         (
@@ -528,35 +528,35 @@ fn press_routes_beyond_the_table() {
             "shift alone is nothing",
             3,
             HitPart::Content,
-            MacMods::SHIFT,
+            HeldMods::SHIFT,
             PressRoute::ActivateRaiseSwallow,
         ),
         (
             "command on the key window's titlebar delivers",
             1,
             HitPart::Titlebar,
-            MacMods::COMMAND,
+            HeldMods::COMMAND,
             PressRoute::Deliver,
         ),
         (
             "a window behind its sheet swallows even with command",
             2,
             HitPart::Titlebar,
-            MacMods::COMMAND,
+            HeldMods::COMMAND,
             PressRoute::SwallowWithBell,
         ),
         (
             "the sheet itself is an inactive window like any other",
             7,
             HitPart::Content,
-            MacMods::NONE,
+            HeldMods::NONE,
             PressRoute::ActivateRaiseSwallow,
         ),
         (
             "a window the view does not hold is delivered untouched",
             99,
             HitPart::Content,
-            MacMods::NONE,
+            HeldMods::NONE,
             PressRoute::Deliver,
         ),
     ];

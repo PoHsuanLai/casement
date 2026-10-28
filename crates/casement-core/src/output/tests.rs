@@ -5,9 +5,10 @@ use super::{
     PhysicalMm, SavedOutputs, ScalePolicy, VrrCapability, first_sight_scale, pick_mode,
     place_outputs,
 };
-use crate::geometry::{LogicalPoint, PhysicalSize, Transform};
+use crate::geometry::{LogicalPoint, PhysicalSize};
 use crate::ids::{OutputKey, OutputName};
 use crate::time::Millihertz;
+use casement_protocols::vocab::Transform;
 use ds_core::geometry::scale::Scale;
 use proptest::prelude::*;
 use std::collections::BTreeMap;

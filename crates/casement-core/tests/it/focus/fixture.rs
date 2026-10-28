@@ -8,7 +8,7 @@ use casement_core::focus::{Focus, FocusIn, FocusOut, HitPart, Press};
 use casement_core::input::{DeviceClass, Origin};
 use casement_core::space::SpaceBook;
 use casement_core::window::Window;
-use casement_protocols::vocab::{Attention, MacMods, Modality, WindowRole};
+use casement_protocols::vocab::{Attention, HeldMods, Modality, WindowRole};
 use std::collections::BTreeMap;
 
 pub fn a() -> AppKey {
@@ -93,7 +93,7 @@ pub fn start() -> Focus {
     focus(Some(a()), Some(1), Some(1), vec![a(), b()], &[1, 2, 3])
 }
 
-pub fn press(n: u64, part: HitPart, mods: MacMods) -> FocusIn {
+pub fn press(n: u64, part: HitPart, mods: HeldMods) -> FocusIn {
     FocusIn::Press(Press {
         window: WindowId(n),
         part,

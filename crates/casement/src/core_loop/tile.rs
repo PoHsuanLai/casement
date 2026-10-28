@@ -7,14 +7,14 @@
 //! A window tiles on its own output only: the pointer on another output arms nothing (a window
 //! keeps its Space's output while it is dragged).
 
-use super::deliver::mac_mods;
+use super::deliver::held_mods;
 use super::feed;
 use crate::state::State;
 use casement_core::geometry::{LogicalPoint, LogicalRect};
 use casement_core::window::{TileDrag, TileDrop, TileKnobs, TileScene, TileTarget};
 use casement_core::{Event, GrabSpec, InputSerial, OutputKey, ToplevelRequest};
 use casement_layout::{LayoutKnobs, tile_preview_fill, zone_rect};
-use casement_protocols::vocab::MacMods;
+use casement_protocols::vocab::HeldMods;
 use casement_render::{Rgba8, TilePreview};
 
 /// The plate's corner radius, in logical pixels (a window's corner on the Mac).
@@ -39,8 +39,8 @@ pub(super) fn moved(state: &mut State, at: LogicalPoint) {
         .seat
         .seat
         .get_keyboard()
-        .map_or(MacMods::NONE, |keyboard| {
-            mac_mods(&keyboard.modifier_state())
+        .map_or(HeldMods::NONE, |keyboard| {
+            held_mods(&keyboard.modifier_state())
         });
     let model = &state.core.model;
     let knobs = TileKnobs::of(&model.settings().windows);

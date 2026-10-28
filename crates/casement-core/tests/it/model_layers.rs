@@ -4,11 +4,12 @@
 use crate::support;
 
 use casement_core::focus::TokenCheck;
-use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize, Transform};
+use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::layer::{
     Anchors, ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerOwner, LayerSpec, Margins,
     ShellRoleTag,
 };
+use casement_protocols::vocab::Transform;
 
 use casement_core::lock::LockEvent;
 use casement_core::{

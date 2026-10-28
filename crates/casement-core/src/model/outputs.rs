@@ -221,7 +221,7 @@ fn dark_config(facts: &OutputFacts) -> OutputConfig {
     lit_if_it_has_a_mode(OutputConfig {
         mode: crate::output::pick_mode(facts, &crate::output::ModeWish::Preferred),
         scale: ds_core::geometry::scale::Scale::ONE,
-        transform: crate::geometry::Transform::Normal,
+        transform: casement_protocols::vocab::Transform::Normal,
         position: crate::geometry::LogicalPoint { x: 0, y: 0 },
         power: OutputPower::Off,
     })

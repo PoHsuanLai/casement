@@ -1,7 +1,7 @@
 //! A chordkit chord as a casement chord (pure).
 
 use casement_core::input::{Chord, Keysym};
-use casement_protocols::vocab::MacMods;
+use casement_protocols::vocab::HeldMods;
 use chordkit::{Key, Modifier, Modifiers, NamedKey};
 
 /// `F1`'s keysym; the function keys follow in order.
@@ -24,20 +24,20 @@ pub fn chord_of(chord: chordkit::Chord) -> Option<Chord> {
     let mods = mods_of(chord.modifiers());
     Some(Chord {
         mods: match shifted {
-            true => mods.with(MacMods::SHIFT),
+            true => mods.with(HeldMods::SHIFT),
             false => mods,
         },
         key,
     })
 }
 
-fn mods_of(mods: Modifiers) -> MacMods {
-    mods.iter().fold(MacMods::NONE, |held, one| {
+fn mods_of(mods: Modifiers) -> HeldMods {
+    mods.iter().fold(HeldMods::NONE, |held, one| {
         held.with(match one {
-            Modifier::Ctrl => MacMods::CONTROL,
-            Modifier::Alt => MacMods::OPTION,
-            Modifier::Shift => MacMods::SHIFT,
-            Modifier::Super | Modifier::Meta => MacMods::COMMAND,
+            Modifier::Ctrl => HeldMods::CONTROL,
+            Modifier::Alt => HeldMods::OPTION,
+            Modifier::Shift => HeldMods::SHIFT,
+            Modifier::Super | Modifier::Meta => HeldMods::COMMAND,
         })
     })
 }

@@ -19,7 +19,7 @@ use casement_core::{
     ToplevelRequest, WindowHintChange, WindowId,
 };
 use casement_protocols::vocab::{
-    ActorKind, MacMods, Modality, PlaceTarget, SplitSide, Toggle, WindowRole,
+    ActorKind, HeldMods, Modality, PlaceTarget, SplitSide, Toggle, WindowRole,
 };
 use proptest::prelude::*;
 use support::driver::{Op, run};
@@ -304,7 +304,7 @@ fn op() -> impl Strategy<Value = Op> {
             request
         })),
         8 => event.prop_map(Op::Event),
-        2 => (window(), prop_oneof![Just(HitPart::Content), Just(HitPart::Titlebar)], prop_oneof![Just(MacMods::NONE), Just(MacMods::COMMAND)])
+        2 => (window(), prop_oneof![Just(HitPart::Content), Just(HitPart::Titlebar)], prop_oneof![Just(HeldMods::NONE), Just(HeldMods::COMMAND)])
             .prop_map(|(n, part, mods)| Op::Press(Press {
                 window: WindowId(n),
                 part,

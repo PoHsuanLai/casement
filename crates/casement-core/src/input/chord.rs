@@ -3,7 +3,7 @@
 
 use super::Keysym;
 use crate::error::CoreError;
-use casement_protocols::vocab::MacMods;
+use casement_protocols::vocab::HeldMods;
 use serde::{Deserialize, Serialize};
 
 /// Held modifiers and one key.
@@ -11,18 +11,18 @@ use serde::{Deserialize, Serialize};
 #[serde(try_from = "String", into = "String")]
 pub struct Chord {
     /// The modifiers held.
-    pub mods: MacMods,
+    pub mods: HeldMods,
     /// The key pressed.
     pub key: Keysym,
 }
 
 /// The modifier words, in the Mac's order: how a chord prints them.
-const MODIFIER_WORDS: [(&str, MacMods); 5] = [
-    ("ctrl", MacMods::CONTROL),
-    ("option", MacMods::OPTION),
-    ("shift", MacMods::SHIFT),
-    ("cmd", MacMods::COMMAND),
-    ("fn", MacMods::FUNCTION),
+const MODIFIER_WORDS: [(&str, HeldMods); 5] = [
+    ("ctrl", HeldMods::CONTROL),
+    ("option", HeldMods::OPTION),
+    ("shift", HeldMods::SHIFT),
+    ("cmd", HeldMods::COMMAND),
+    ("fn", HeldMods::FUNCTION),
 ];
 
 impl Chord {
@@ -41,7 +41,7 @@ impl Chord {
         };
         let key = Keysym::named(key).ok_or_else(malformed)?;
         let mods = head.into_iter().flat_map(|head| head.split('+')).try_fold(
-            MacMods::NONE,
+            HeldMods::NONE,
             |held, word| {
                 let one = modifier(word).filter(|one| !held.holds(*one))?;
                 Some(held.with(one))
@@ -67,7 +67,7 @@ impl Chord {
     }
 }
 
-fn modifier(word: &str) -> Option<MacMods> {
+fn modifier(word: &str) -> Option<HeldMods> {
     MODIFIER_WORDS
         .iter()
         .find(|(known, _)| known.eq_ignore_ascii_case(word))

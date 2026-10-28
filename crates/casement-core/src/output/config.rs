@@ -1,8 +1,9 @@
 //! How an output is configured, and the stored configuration of every display seen.
 
 use super::Mode;
-use crate::geometry::{LogicalPoint, LogicalRect, LogicalSize, PhysicalSize, Transform};
+use crate::geometry::{LogicalPoint, LogicalRect, LogicalSize, PhysicalSize};
 use crate::ids::OutputKey;
+use casement_protocols::vocab::Transform;
 use ds_core::geometry::scale::Scale;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

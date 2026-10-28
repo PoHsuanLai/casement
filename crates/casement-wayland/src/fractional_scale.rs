@@ -92,13 +92,14 @@ pub fn apply_scale(
 mod tests {
     use super::*;
     use casement_core::OutputState;
-    use casement_core::geometry::{LogicalPoint, PhysicalSize, Transform as Turn};
+    use casement_core::geometry::{LogicalPoint, PhysicalSize};
     use casement_core::output::{
         EdidFacts, EdidSerial, Mode, ModePreference, OutputConfig, OutputFacts, OutputPower,
         PhysicalMm, VrrCapability,
     };
     use casement_core::time::Millihertz;
     use casement_core::{OutputKey, OutputName};
+    use casement_protocols::vocab::Transform as Turn;
 
     fn output(name: &str, at: (i32, i32), scale: u32) -> (OutputKey, OutputState) {
         let name = OutputName::parse(name).expect("a connector name");

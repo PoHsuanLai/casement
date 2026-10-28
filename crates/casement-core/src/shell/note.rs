@@ -5,7 +5,7 @@ use crate::geometry::{LogicalPoint, LogicalRect};
 use crate::ids::{LayerKey, OutputKey, WindowId};
 use crate::overview::Overview;
 use crate::window::{MenuItem, enabled_mask};
-use casement_protocols::vocab::{DragOutcome, MacMods, ScreenEdge, ShellRole, Shown, SplitSide};
+use casement_protocols::vocab::{DragOutcome, HeldMods, ScreenEdge, ShellRole, Shown, SplitSide};
 
 /// Something the shell's protocol layer records or sends.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,7 +18,7 @@ pub enum ShellNote {
     /// has nothing to send until P3's dock bounce, so it only keeps the table.
     MinimiseTarget(WindowId, LogicalRect),
     /// The modifier keys held changed (`quire_shell_v1.modifiers`, to the role surfaces).
-    Modifiers(MacMods),
+    Modifiers(HeldMods),
     /// An edge reveal (the dock or the bar over a full-screen window) opened or closed on
     /// `output` (`reveal_on_output` to a shell that bound version 7, `reveal` to an older one).
     Reveal(OutputKey, ScreenEdge, Shown),
