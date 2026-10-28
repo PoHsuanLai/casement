@@ -675,6 +675,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "chrono"
+version = "0.4.45"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1aa79e62e7697b8e29b513a68abacf485adcd1fe8284a4316c5ae868e6633327"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "color"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1019,7 +1028,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2276,8 +2285,8 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "peephole"
-version = "0.1.9"
-source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.9#f22e99b447d1ef7f84d81ddce6ceb614088ee0ef"
+version = "0.1.11"
+source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.11#06a97c105d833b07a37feb48a16dde49ef4d8bc0"
 dependencies = [
  "nix",
  "peephole-core",
@@ -2287,8 +2296,8 @@ dependencies = [
 
 [[package]]
 name = "peephole-bus"
-version = "0.1.9"
-source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.9#f22e99b447d1ef7f84d81ddce6ceb614088ee0ef"
+version = "0.1.11"
+source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.11#06a97c105d833b07a37feb48a16dde49ef4d8bc0"
 dependencies = [
  "futures-timer",
  "peephole",
@@ -2300,8 +2309,8 @@ dependencies = [
 
 [[package]]
 name = "peephole-core"
-version = "0.1.9"
-source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.9#f22e99b447d1ef7f84d81ddce6ceb614088ee0ef"
+version = "0.1.11"
+source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.11#06a97c105d833b07a37feb48a16dde49ef4d8bc0"
 dependencies = [
  "serde",
  "thiserror 2.0.21",
@@ -2452,12 +2461,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "porter-capability"
+version = "0.1.0"
+dependencies = [
+ "porter-ids",
+ "serde",
+]
+
+[[package]]
 name = "porter-core"
 version = "0.1.0"
 dependencies = [
  "peephole-core",
+ "porter-capability",
+ "porter-ids",
+ "secrecy",
  "serde",
  "serde_json",
+ "subtle",
  "thiserror 2.0.21",
  "zeroize",
 ]
@@ -2470,11 +2491,56 @@ dependencies = [
  "peephole-bus",
  "peephole-core",
  "porter-core",
+ "porter-ids",
+ "porter-match",
+ "porter-tailscale",
+ "porter-wire",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
  "tokio",
  "zbus",
+]
+
+[[package]]
+name = "porter-ids"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "percent-encoding",
+ "serde",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "porter-match"
+version = "0.1.0"
+dependencies = [
+ "porter-capability",
+ "porter-ids",
+ "serde",
+]
+
+[[package]]
+name = "porter-tailscale"
+version = "0.1.0"
+dependencies = [
+ "porter-ids",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "porter-wire"
+version = "0.1.0"
+dependencies = [
+ "porter-capability",
+ "porter-core",
+ "porter-match",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -2791,7 +2857,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2832,6 +2898,16 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "secrecy"
+version = "0.10.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e891af845473308773346dc847b2c23ee78fe442e0472ac50e22a18a93d3ae5a"
+dependencies = [
+ "serde",
+ "zeroize",
+]
 
 [[package]]
 name = "semver"
@@ -3094,7 +3170,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3111,6 +3187,12 @@ checksum = "6637bab7722d379c8b41ba849228d680cc12d0a45ba1fa2b48f2a30577a06731"
 dependencies = [
  "float-cmp",
 ]
+
+[[package]]
+name = "subtle"
+version = "2.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "svgtypes"
@@ -3175,7 +3257,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.5",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3411,7 +3493,7 @@ checksum = "f2f6fb2847f6742cd76af783a2a2c49e9375d0a111c7bef6f71cd9e738c72d6e"
 dependencies = [
  "memoffset",
  "tempfile",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3792,7 +3874,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

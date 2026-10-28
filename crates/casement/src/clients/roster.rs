@@ -44,8 +44,9 @@ impl Holder {
     pub fn of(peer: &PeerIdentity, process: Option<RawPid>) -> Holder {
         match (peer, process) {
             (PeerIdentity::Proven(app), _) => Holder::App(app.clone()),
-            (PeerIdentity::Unproven, Some(pid)) => Holder::Process(pid),
-            (PeerIdentity::Unproven, None) => Holder::Unknown,
+            // Unproven, or a kind of proof this build does not know: counted per process.
+            (_, Some(pid)) => Holder::Process(pid),
+            (_, None) => Holder::Unknown,
         }
     }
 

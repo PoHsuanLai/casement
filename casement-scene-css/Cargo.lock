@@ -260,6 +260,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "chrono"
+version = "0.4.45"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1aa79e62e7697b8e29b513a68abacf485adcd1fe8284a4316c5ae868e6633327"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "color"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1207,8 +1216,8 @@ dependencies = [
 
 [[package]]
 name = "peephole-core"
-version = "0.1.9"
-source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.9#f22e99b447d1ef7f84d81ddce6ceb614088ee0ef"
+version = "0.1.11"
+source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.11#06a97c105d833b07a37feb48a16dde49ef4d8bc0"
 dependencies = [
  "serde",
  "thiserror",
@@ -1313,14 +1322,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "porter-capability"
+version = "0.1.0"
+dependencies = [
+ "porter-ids",
+ "serde",
+]
+
+[[package]]
 name = "porter-core"
 version = "0.1.0"
 dependencies = [
  "peephole-core",
+ "porter-capability",
+ "porter-ids",
+ "secrecy",
  "serde",
  "serde_json",
+ "subtle",
  "thiserror",
  "zeroize",
+]
+
+[[package]]
+name = "porter-ids"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "percent-encoding",
+ "serde",
+ "thiserror",
 ]
 
 [[package]]
@@ -1469,6 +1500,16 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "secrecy"
+version = "0.10.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e891af845473308773346dc847b2c23ee78fe442e0472ac50e22a18a93d3ae5a"
+dependencies = [
+ "serde",
+ "zeroize",
+]
 
 [[package]]
 name = "selectors"
@@ -1846,6 +1887,12 @@ dependencies = [
  "to_shmem_derive",
  "url",
 ]
+
+[[package]]
+name = "subtle"
+version = "2.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "svgtypes"
