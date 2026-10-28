@@ -10,5 +10,5 @@
 mod gles;
 mod plan;
 
-pub(crate) use gles::{Finished, capture, finish};
+pub(crate) use gles::{capture, finish};
 pub use plan::{BlurLook, KawasePlan, level_size};

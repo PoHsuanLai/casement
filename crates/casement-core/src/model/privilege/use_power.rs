@@ -8,7 +8,7 @@
 use super::ask::{AskKey, Asker, Join, Reask};
 use super::decide::Decision;
 use super::limits::{ASKS_PER_MINUTE, RATE_WINDOW, SHELL_WAIT};
-use super::step::{Ctx, PowerOutcome, Screen};
+use super::step::{Ctx, PowerOutcome};
 use super::{Class, Privilege, ShellPresence};
 use crate::effect::Effect;
 use crate::ids::ClientKey;
@@ -64,10 +64,10 @@ impl Privilege {
             (None, None) => Reask::Anonymous,
         };
         let key = AskKey { asker, power };
-        let refused = match (ctx.screen, self.shell) {
-            (Screen::Covered, _) => true,
-            (Screen::Open, ShellPresence::Absent { since }) => ctx.now.since(since) >= SHELL_WAIT,
-            (Screen::Open, ShellPresence::Present) => false,
+        let refused = match (ctx.covered, self.shell) {
+            (true, _) => true,
+            (false, ShellPresence::Absent { since }) => ctx.now.since(since) >= SHELL_WAIT,
+            (false, ShellPresence::Present) => false,
         };
         if refused {
             self.resolve(out, client, power, PowerOutcome::Denied);

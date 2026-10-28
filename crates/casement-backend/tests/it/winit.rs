@@ -4,7 +4,8 @@
 
 use casement_backend::{HOST_TRANSFORM, HeldInput, VirtualOutputSpec, window_spec};
 use casement_core::geometry::PhysicalSize;
-use casement_core::input::{ButtonCode, Edge, InputKind, KeyCode};
+use casement_core::input::{ButtonCode, InputKind, KeyCode};
+use casement_protocols::vocab::PressEdge;
 use smithay::utils::Transform;
 
 fn spec_at(size: (u32, u32), factor: f64) -> (u32, u32, u32) {
@@ -60,21 +61,21 @@ fn losing_focus_releases_what_is_held() {
         code: KeyCode(code),
         edge,
     };
-    held.note(&key(30, Edge::Press));
-    held.note(&key(31, Edge::Press));
-    held.note(&key(30, Edge::Release));
+    held.note(&key(30, PressEdge::Press));
+    held.note(&key(31, PressEdge::Press));
+    held.note(&key(30, PressEdge::Release));
     held.note(&InputKind::Button {
         button: ButtonCode(0x110),
-        edge: Edge::Press,
+        edge: PressEdge::Press,
     });
     let released = held.release_all();
     assert_eq!(
         released,
         vec![
-            key(31, Edge::Release),
+            key(31, PressEdge::Release),
             InputKind::Button {
                 button: ButtonCode(0x110),
-                edge: Edge::Release,
+                edge: PressEdge::Release,
             },
         ]
     );

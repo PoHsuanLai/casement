@@ -4,7 +4,7 @@
 use super::flip::FlipTracker;
 use super::kms::KmsError;
 use super::surface::{Presented, QueueOutcome, QueuedFrame, ScanoutSurface};
-use super::watch::{Failing, FailureRun, Flip, FlipWatch, Health, Level, Recoveries, Starved};
+use super::watch::{Failing, FailureRun, FlipWatch, Health, Level, Recoveries};
 use crate::backend::BackendError;
 use crate::headless::FrameSource;
 use casement_core::OutputName;
@@ -94,7 +94,7 @@ impl Scanout {
     }
 
     /// Whether this output has shown nothing for too long at `now`.
-    pub fn starved(&self, now: Mono) -> Starved {
+    pub fn starved(&self, now: Mono) -> bool {
         self.watch.starved(now)
     }
 
@@ -124,9 +124,9 @@ impl Scanout {
     ) -> Result<PresentOutcome, BackendError> {
         let _ = self.settle(now);
         if self.flip.wanted.is_some() {
-            return Ok(match self.watch.flip(now) {
-                Flip::OnTime => PresentOutcome::Waiting,
-                Flip::Lost => {
+            return Ok(match self.watch.flip_lost(now) {
+                false => PresentOutcome::Waiting,
+                true => {
                     tracing::warn!("a page flip never landed; the output draws its picture again");
                     self.recover(now)
                 }
@@ -317,7 +317,7 @@ impl ScanoutSet {
         let starved = |name: &OutputName| {
             self.outputs
                 .get(name)
-                .is_none_or(|scanout| scanout.starved(now) == Starved::Yes)
+                .is_none_or(|scanout| scanout.starved(now))
         };
         match !enabled.is_empty() && enabled.iter().all(starved) {
             true => Health::Frozen,

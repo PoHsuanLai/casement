@@ -3,11 +3,10 @@
 //! scans the output out (the D2 to D3 hand-off) is attached to the scanout set.
 
 use super::TtyBackend;
-use super::connector::vrr_state;
+use super::connector::vrr_enabled;
 use super::fallback::mode_ladder;
 use super::kms::{
-    ConnectorFacts, ConnectorId, CrtcId, KmsCommit, KmsError, KmsRefusal, ModesetPolicy,
-    OutputCommit,
+    ConnectorFacts, ConnectorId, CrtcId, KmsCommit, KmsError, KmsRefusal, OutputCommit,
 };
 use super::scanouts::Scanout;
 use super::udev::DevicePath;
@@ -186,10 +185,10 @@ impl TtyBackend {
             .map(|device| device.kms.resources())
             .and_then(|resources| resources.crtcs.into_iter().find(|facts| facts.id == crtc))
             .ok_or(KmsError::Refused(KmsRefusal::NoCrtc))?;
-        let vrr = vrr_state(self.vrr, connector, &facts);
+        let vrr = vrr_enabled(self.vrr, connector, &facts);
         let commit = KmsCommit::new(
             vec![OutputCommit::new(connector.id, crtc, config.mode, vrr)],
-            ModesetPolicy::Allow,
+            true,
         );
         let was = self.lit.get(name).cloned();
         // A surface is made for a mode, a scale and a transform; a new one for any change. The

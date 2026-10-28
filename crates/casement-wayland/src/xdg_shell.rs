@@ -26,8 +26,8 @@ mod requests;
 
 pub use apply::{apply_close, apply_configure, apply_ping, apply_popup_done};
 pub use commit::{
-    Buffer, CommitStep, Configured, Phase, ToplevelRecord, commit_step, on_new_toplevel,
-    on_toplevel_commit, on_toplevel_destroyed,
+    CommitStep, Phase, ToplevelRecord, commit_step, on_new_toplevel, on_toplevel_commit,
+    on_toplevel_destroyed,
 };
 pub use declared::{claimed_of, limits_of, modality_of, role_of};
 pub use holders::heaviest_holder;

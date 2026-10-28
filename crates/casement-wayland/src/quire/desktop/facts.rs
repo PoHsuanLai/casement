@@ -6,7 +6,7 @@
 use super::{DesktopView, SUBJECT_SINCE};
 use casement_core::app::{AppKey, AppVisibility as Held, MenuSource};
 use casement_core::space::SpaceContent;
-use casement_core::window::{Parent, SpacePlace};
+use casement_core::window::SpacePlace;
 use casement_core::{OutputKey, WindowId};
 use casement_protocols::server::quire_agent_v1::quire_agent_lease_v1::GlowState;
 use casement_protocols::server::quire_desktop_v1::quire_desktop_app_v1::{
@@ -285,10 +285,6 @@ impl WindowFacts {
             SpacePlace::On(on) => (window::PlaceKind::OnSpace, Some(on.clone())),
             SpacePlace::AllSpaces => (window::PlaceKind::AllSpaces, None),
         };
-        let parent = match held.parent {
-            Parent::None => None,
-            Parent::Window(parent) => Some(parent),
-        };
         let silent = view
             .model
             .apps()
@@ -308,7 +304,7 @@ impl WindowFacts {
             space,
             output,
             geometry,
-            parent,
+            parent: held.parent,
             emphasis: wire(held.emphasis)?,
             sensitivity: wire(held.sensitivity)?,
             responsiveness,

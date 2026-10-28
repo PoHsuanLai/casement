@@ -7,18 +7,18 @@ fn rect() -> LogicalRect {
     LogicalRect::new(LogicalPoint { x: 1, y: 2 }, LogicalSize { w: 30, h: 40 })
 }
 
-fn offered(items: &[MenuItem]) -> Vec<MenuEntry> {
+fn offered(items: &[MenuItem]) -> Vec<WindowEntry> {
     items
         .iter()
-        .filter(|item| item.offer == Offer::Enabled)
+        .filter(|item| item.enabled)
         .map(|item| item.entry)
         .collect()
 }
 
-fn dimmed(items: &[MenuItem]) -> Vec<MenuEntry> {
+fn dimmed(items: &[MenuItem]) -> Vec<WindowEntry> {
     items
         .iter()
-        .filter(|item| item.offer == Offer::Disabled)
+        .filter(|item| !item.enabled)
         .map(|item| item.entry)
         .collect()
 }
@@ -28,9 +28,9 @@ fn dimmed(items: &[MenuItem]) -> Vec<MenuEntry> {
 type EnabledCase = (
     &'static str,
     WindowState,
-    SplitSupport,
-    Vec<MenuEntry>,
-    Vec<MenuEntry>,
+    bool,
+    Vec<WindowEntry>,
+    Vec<WindowEntry>,
 );
 
 #[test]
@@ -39,80 +39,83 @@ fn each_entry_means_one_action_and_one_label() {
     use PlaceTarget as P;
     let table = [
         (
-            MenuEntry::EnterFullScreen,
+            WindowEntry::EnterFullScreen,
             "Enter Full Screen",
             A::FullScreen(Toggle::On),
         ),
         (
-            MenuEntry::ExitFullScreen,
+            WindowEntry::ExitFullScreen,
             "Exit Full Screen",
             A::FullScreen(Toggle::Off),
         ),
-        (MenuEntry::Left, "Left", A::Place(P::Left)),
-        (MenuEntry::Right, "Right", A::Place(P::Right)),
-        (MenuEntry::Top, "Top", A::Place(P::Top)),
-        (MenuEntry::Bottom, "Bottom", A::Place(P::Bottom)),
-        (MenuEntry::TopLeft, "Top Left", A::Place(P::TopLeft)),
-        (MenuEntry::TopRight, "Top Right", A::Place(P::TopRight)),
+        (WindowEntry::Left, "Left", A::Place(P::Left)),
+        (WindowEntry::Right, "Right", A::Place(P::Right)),
+        (WindowEntry::Top, "Top", A::Place(P::Top)),
+        (WindowEntry::Bottom, "Bottom", A::Place(P::Bottom)),
+        (WindowEntry::TopLeft, "Top Left", A::Place(P::TopLeft)),
+        (WindowEntry::TopRight, "Top Right", A::Place(P::TopRight)),
         (
-            MenuEntry::BottomLeft,
+            WindowEntry::BottomLeft,
             "Bottom Left",
             A::Place(P::BottomLeft),
         ),
         (
-            MenuEntry::BottomRight,
+            WindowEntry::BottomRight,
             "Bottom Right",
             A::Place(P::BottomRight),
         ),
         (
-            MenuEntry::ReturnToPreviousSize,
+            WindowEntry::ReturnToPreviousSize,
             "Return to Previous Size",
             A::Place(P::Restore),
         ),
         (
-            MenuEntry::TileLeftOfScreen,
+            WindowEntry::TileLeftOfScreen,
             "Left of Screen",
             A::SplitTile(SplitSide::Left),
         ),
         (
-            MenuEntry::TileRightOfScreen,
+            WindowEntry::TileRightOfScreen,
             "Right of Screen",
             A::SplitTile(SplitSide::Right),
         ),
-        (MenuEntry::Fill, "Fill", A::Place(P::Fill)),
-        (MenuEntry::Centre, "Center", A::Place(P::Centre)),
+        (WindowEntry::Fill, "Fill", A::Place(P::Fill)),
+        (WindowEntry::Centre, "Center", A::Place(P::Centre)),
     ];
-    assert_eq!(table.len(), MenuEntry::ALL.len());
+    assert_eq!(table.len(), WindowEntry::ALL.len());
     for (entry, label, action) in table {
-        assert_eq!(entry.label(), label, "{entry:?} label");
-        assert_eq!(entry.action(), action, "{entry:?} action");
+        assert_eq!(entry_label(entry), label, "{entry:?} label");
+        assert_eq!(entry_action(entry), action, "{entry:?} action");
     }
 }
 
 #[test]
-fn wire_codes_round_trip_and_stay_below_the_mask_width() {
-    for entry in MenuEntry::ALL {
-        assert_eq!(MenuEntry::from_code(entry.code()), Some(entry), "{entry:?}");
+fn wire_codes_stay_below_the_mask_width() {
+    for entry in WindowEntry::ALL {
         assert!(entry.code() < 32, "{entry:?} fits the mask");
     }
-    assert_eq!(MenuEntry::from_code(15), None);
 }
 
 #[test]
 fn the_submenus_hold_the_entries_the_mac_groups() {
-    let moves: Vec<MenuEntry> = MenuEntry::ALL
-        .into_iter()
-        .filter(|entry| entry.group() == MenuGroup::MoveAndResize)
+    let moves: Vec<WindowEntry> = WindowEntry::ALL
+        .iter()
+        .copied()
+        .filter(|entry| entry_group(*entry) == MenuGroup::MoveAndResize)
         .collect();
     assert_eq!(moves.len(), 9);
-    assert!(moves.contains(&MenuEntry::ReturnToPreviousSize));
-    let tiles: Vec<MenuEntry> = MenuEntry::ALL
-        .into_iter()
-        .filter(|entry| entry.group() == MenuGroup::FullScreenTile)
+    assert!(moves.contains(&WindowEntry::ReturnToPreviousSize));
+    let tiles: Vec<WindowEntry> = WindowEntry::ALL
+        .iter()
+        .copied()
+        .filter(|entry| entry_group(*entry) == MenuGroup::FullScreenTile)
         .collect();
     assert_eq!(
         tiles,
-        vec![MenuEntry::TileLeftOfScreen, MenuEntry::TileRightOfScreen]
+        vec![
+            WindowEntry::TileLeftOfScreen,
+            WindowEntry::TileRightOfScreen
+        ]
     );
 }
 
@@ -120,37 +123,40 @@ fn the_submenus_hold_the_entries_the_mac_groups() {
 fn the_menu_is_enabled_per_window_state() {
     let space = SpaceId::parse("s-1").expect("id");
     let free_moves = [
-        MenuEntry::Left,
-        MenuEntry::Right,
-        MenuEntry::Top,
-        MenuEntry::Bottom,
-        MenuEntry::TopLeft,
-        MenuEntry::TopRight,
-        MenuEntry::BottomLeft,
-        MenuEntry::BottomRight,
-        MenuEntry::Fill,
-        MenuEntry::Centre,
+        WindowEntry::Left,
+        WindowEntry::Right,
+        WindowEntry::Top,
+        WindowEntry::Bottom,
+        WindowEntry::TopLeft,
+        WindowEntry::TopRight,
+        WindowEntry::BottomLeft,
+        WindowEntry::BottomRight,
+        WindowEntry::Fill,
+        WindowEntry::Centre,
     ];
-    let tile_pair = [MenuEntry::TileLeftOfScreen, MenuEntry::TileRightOfScreen];
+    let tile_pair = [
+        WindowEntry::TileLeftOfScreen,
+        WindowEntry::TileRightOfScreen,
+    ];
     let cases: Vec<EnabledCase> = vec![
         (
             "floating, no Split View",
             WindowState::Floating(rect()),
-            SplitSupport::Unavailable,
-            [vec![MenuEntry::EnterFullScreen], free_moves.to_vec()].concat(),
-            [vec![MenuEntry::ReturnToPreviousSize], tile_pair.to_vec()].concat(),
+            false,
+            [vec![WindowEntry::EnterFullScreen], free_moves.to_vec()].concat(),
+            [vec![WindowEntry::ReturnToPreviousSize], tile_pair.to_vec()].concat(),
         ),
         (
             "unplaced, Split View",
             WindowState::New(LogicalSize { w: 3, h: 4 }),
-            SplitSupport::Available,
+            true,
             [
-                vec![MenuEntry::EnterFullScreen],
+                vec![WindowEntry::EnterFullScreen],
                 free_moves.to_vec(),
                 tile_pair.to_vec(),
             ]
             .concat(),
-            vec![MenuEntry::ReturnToPreviousSize],
+            vec![WindowEntry::ReturnToPreviousSize],
         ),
         (
             "tiled left",
@@ -158,34 +164,34 @@ fn the_menu_is_enabled_per_window_state() {
                 zone: TileZone::Left,
                 restore: rect(),
             },
-            SplitSupport::Unavailable,
+            false,
             [
-                vec![MenuEntry::EnterFullScreen],
+                vec![WindowEntry::EnterFullScreen],
                 free_moves
                     .iter()
                     .copied()
-                    .filter(|e| *e != MenuEntry::Left)
+                    .filter(|e| *e != WindowEntry::Left)
                     .collect(),
-                vec![MenuEntry::ReturnToPreviousSize],
+                vec![WindowEntry::ReturnToPreviousSize],
             ]
             .concat(),
-            [vec![MenuEntry::Left], tile_pair.to_vec()].concat(),
+            [vec![WindowEntry::Left], tile_pair.to_vec()].concat(),
         ),
         (
             "zoomed",
             WindowState::Filled { restore: rect() },
-            SplitSupport::Unavailable,
+            false,
             [
-                vec![MenuEntry::EnterFullScreen],
+                vec![WindowEntry::EnterFullScreen],
                 free_moves
                     .iter()
                     .copied()
-                    .filter(|e| *e != MenuEntry::Fill)
+                    .filter(|e| *e != WindowEntry::Fill)
                     .collect(),
-                vec![MenuEntry::ReturnToPreviousSize],
+                vec![WindowEntry::ReturnToPreviousSize],
             ]
             .concat(),
-            [vec![MenuEntry::Fill], tile_pair.to_vec()].concat(),
+            [vec![WindowEntry::Fill], tile_pair.to_vec()].concat(),
         ),
         (
             "full screen",
@@ -193,11 +199,17 @@ fn the_menu_is_enabled_per_window_state() {
                 space,
                 restore: Restore::Floating(rect()),
             },
-            SplitSupport::Available,
-            vec![MenuEntry::ExitFullScreen],
-            MenuEntry::ALL
-                .into_iter()
-                .filter(|e| !matches!(e, MenuEntry::ExitFullScreen | MenuEntry::EnterFullScreen))
+            true,
+            vec![WindowEntry::ExitFullScreen],
+            WindowEntry::ALL
+                .iter()
+                .copied()
+                .filter(|e| {
+                    !matches!(
+                        e,
+                        WindowEntry::ExitFullScreen | WindowEntry::EnterFullScreen
+                    )
+                })
                 .collect(),
         ),
         (
@@ -205,11 +217,12 @@ fn the_menu_is_enabled_per_window_state() {
             WindowState::Minimised {
                 restore: Restore::Floating(rect()),
             },
-            SplitSupport::Available,
+            true,
             vec![],
-            MenuEntry::ALL
-                .into_iter()
-                .filter(|e| *e != MenuEntry::ExitFullScreen)
+            WindowEntry::ALL
+                .iter()
+                .copied()
+                .filter(|e| *e != WindowEntry::ExitFullScreen)
                 .collect(),
         ),
     ];
@@ -228,9 +241,9 @@ fn the_menu_is_enabled_per_window_state() {
 
 #[test]
 fn the_mask_has_a_bit_per_offered_entry() {
-    let items = menu_for(&WindowState::Floating(rect()), SplitSupport::Unavailable);
+    let items = menu_for(&WindowState::Floating(rect()), false);
     let mask = enabled_mask(&items);
-    for entry in MenuEntry::ALL {
+    for entry in WindowEntry::ALL.iter().copied() {
         let want = is_offered(&items, entry);
         assert_eq!(mask & (1 << entry.code()) != 0, want, "{entry:?}");
     }

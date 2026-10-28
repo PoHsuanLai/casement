@@ -45,7 +45,7 @@
 use super::callers::{CallerCheck, require, role_for_connection};
 use super::connect_ask::{ConnectAsk, ConnectRefusal, ConnectReply, Proven};
 use super::intake::{ANSWER_WAIT, Intake};
-use super::portal_watch::{PortalWatch, Watching};
+use super::portal_watch::PortalWatch;
 use crate::IpcError;
 use casement_core::policy::ConnectionRole;
 use peephole_bus::peephole_core::{RoleName, roles};
@@ -173,12 +173,12 @@ impl Compositor1 {
         // It is watched only once a lease was granted, so a refused ask takes no room.
         // A connection that left while the lease was granted is not told it went (the watch
         // came too late), so it is asked once more now that it is watched.
-        let kept = match self.portals.watch(&owner, &caller) {
-            Watching::TableFull => Err(ConnectRefusal::TooMany),
-            Watching::Yes if !still_there(connection, &owner).await => {
-                Err(ConnectRefusal::NotTheCaller)
-            }
-            Watching::Yes => Ok(()),
+        let kept = if !self.portals.watch(&owner, &caller) {
+            Err(ConnectRefusal::TooMany)
+        } else if !still_there(connection, &owner).await {
+            Err(ConnectRefusal::NotTheCaller)
+        } else {
+            Ok(())
         };
         if let Err(why) = kept {
             let _ = self
@@ -244,9 +244,10 @@ impl Compositor1 {
     /// for ends when it leaves the bus.
     fn watched_owner(&self, header: &Header<'_>, caller: &Proven) -> fdo::Result<String> {
         let owner = sender_of(header)?;
-        match self.portals.watch(&owner, caller) {
-            Watching::Yes => Ok(owner),
-            Watching::TableFull => Err(ConnectRefusal::TooMany.to_error()),
+        if self.portals.watch(&owner, caller) {
+            Ok(owner)
+        } else {
+            Err(ConnectRefusal::TooMany.to_error())
         }
     }
 

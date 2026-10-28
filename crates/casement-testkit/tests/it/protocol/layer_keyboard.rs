@@ -5,8 +5,9 @@
 
 use super::xdg_shell::{boot_as, click, click_at, map_toplevel, pointer, settle, windows};
 use casement_core::geometry::{LogicalPoint, PhysicalSize};
-use casement_core::input::{ButtonCode, Edge};
+use casement_core::input::ButtonCode;
 use casement_core::policy::ConnectionRole;
+use casement_protocols::vocab::PressEdge;
 use casement_testclient::seat::keyboard::Keyboard;
 use casement_testclient::surface::layer::{
     Anchor, KeyboardInteractivity, Layer, LayerAsk, LayerSurface,
@@ -111,10 +112,10 @@ fn an_on_demand_layer_takes_the_keyboard_from_a_window_and_a_press_gives_it_back
     );
     fixture
         .input()
-        .button(mouse, ButtonCode(0x110), Edge::Press);
+        .button(mouse, ButtonCode(0x110), PressEdge::Press);
     fixture
         .input()
-        .button(mouse, ButtonCode(0x110), Edge::Release);
+        .button(mouse, ButtonCode(0x110), PressEdge::Release);
     fixture.pump();
     assert_eq!(
         keyboard_focus(fixture.client(id)),

@@ -9,9 +9,10 @@
 //! whose positive zone its anchoring does not make meaningful, is arranged inside what is left
 //! at the end; one that ignores zones (`-1`) inside the whole output.
 
-use super::{Anchor, Anchors, ExclusiveZone, LayerOwner, LayerSpec, Margins};
+use super::{Anchors, ExclusiveZone, LayerOwner, LayerSpec, Margins};
 use crate::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use crate::ids::{LayerKey, OutputKey};
+use casement_protocols::vocab::ScreenEdge;
 use std::cmp::Reverse;
 use std::collections::BTreeMap;
 
@@ -134,9 +135,9 @@ fn slot(spec: &LayerSpec, room: LogicalRect, pin: Option<LogicalPoint>) -> Slot 
 
 /// The length a surface is configured to along one axis: what it asked for when that is not 0,
 /// else all the room less the margins when it is held to both ends, else 0.
-fn configured(asked: u32, ends: (Anchor, Anchor), room: u32, margins: (i32, i32)) -> u32 {
+fn configured(asked: u32, ends: (bool, bool), room: u32, margins: (i32, i32)) -> u32 {
     match (asked, ends) {
-        (0, (Anchor::Held, Anchor::Held)) => {
+        (0, (true, true)) => {
             let taken = i64::from(margins.0) + i64::from(margins.1);
             u32::try_from((i64::from(room) - taken).max(0)).unwrap_or(0)
         }
@@ -147,17 +148,8 @@ fn configured(asked: u32, ends: (Anchor, Anchor), room: u32, margins: (i32, i32)
 /// One reservation: this edge loses this many logical pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Reservation {
-    edge: Edge,
+    edge: ScreenEdge,
     depth: u32,
-}
-
-/// A side of an output.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Edge {
-    Top,
-    Bottom,
-    Left,
-    Right,
 }
 
 /// What `spec` takes from which edge, if anything: its zone plus its margin on the one edge
@@ -171,10 +163,10 @@ fn reservation(spec: &LayerSpec) -> Option<Reservation> {
     };
     let edge = exclusive_edge(spec.anchor)?;
     let margin = match edge {
-        Edge::Top => spec.margin.top,
-        Edge::Bottom => spec.margin.bottom,
-        Edge::Left => spec.margin.left,
-        Edge::Right => spec.margin.right,
+        ScreenEdge::Top => spec.margin.top,
+        ScreenEdge::Bottom => spec.margin.bottom,
+        ScreenEdge::Left => spec.margin.left,
+        ScreenEdge::Right => spec.margin.right,
     };
     let depth = u32::try_from(i64::from(zone) + i64::from(margin).max(0)).unwrap_or(u32::MAX);
     (depth > 0).then_some(Reservation { edge, depth })
@@ -203,8 +195,8 @@ fn allowed(
         LayerOwner::Shell => taken,
         LayerOwner::Client => {
             let (whole, left) = match taken.edge {
-                Edge::Top | Edge::Bottom => (full.size.h, usable.size.h),
-                Edge::Left | Edge::Right => (full.size.w, usable.size.w),
+                ScreenEdge::Top | ScreenEdge::Bottom => (full.size.h, usable.size.h),
+                ScreenEdge::Left | ScreenEdge::Right => (full.size.w, usable.size.w),
             };
             let depth = taken
                 .depth
@@ -216,21 +208,15 @@ fn allowed(
 }
 
 /// The one edge an anchoring reserves beside, if it names one.
-fn exclusive_edge(anchor: Anchors) -> Option<Edge> {
-    let held = |a: Anchor| a == Anchor::Held;
-    let (top, bottom, left, right) = (
-        held(anchor.top),
-        held(anchor.bottom),
-        held(anchor.left),
-        held(anchor.right),
-    );
+fn exclusive_edge(anchor: Anchors) -> Option<ScreenEdge> {
+    let (top, bottom, left, right) = (anchor.top, anchor.bottom, anchor.left, anchor.right);
     let vertical_sides_agree = left == right;
     let horizontal_sides_agree = top == bottom;
     match (top, bottom, left, right) {
-        (true, false, _, _) if vertical_sides_agree => Some(Edge::Top),
-        (false, true, _, _) if vertical_sides_agree => Some(Edge::Bottom),
-        (_, _, true, false) if horizontal_sides_agree => Some(Edge::Left),
-        (_, _, false, true) if horizontal_sides_agree => Some(Edge::Right),
+        (true, false, _, _) if vertical_sides_agree => Some(ScreenEdge::Top),
+        (false, true, _, _) if vertical_sides_agree => Some(ScreenEdge::Bottom),
+        (_, _, true, false) if horizontal_sides_agree => Some(ScreenEdge::Left),
+        (_, _, false, true) if horizontal_sides_agree => Some(ScreenEdge::Right),
         _ => None,
     }
 }
@@ -240,7 +226,7 @@ fn shrink(area: LogicalRect, reservation: Reservation) -> LogicalRect {
     let LogicalRect { origin, size } = area;
     let (along_h, along_w) = (reservation.depth.min(size.h), reservation.depth.min(size.w));
     match reservation.edge {
-        Edge::Top => LogicalRect::new(
+        ScreenEdge::Top => LogicalRect::new(
             LogicalPoint {
                 x: origin.x,
                 y: origin.y.saturating_add_unsigned(along_h),
@@ -250,14 +236,14 @@ fn shrink(area: LogicalRect, reservation: Reservation) -> LogicalRect {
                 h: size.h - along_h,
             },
         ),
-        Edge::Bottom => LogicalRect::new(
+        ScreenEdge::Bottom => LogicalRect::new(
             origin,
             LogicalSize {
                 w: size.w,
                 h: size.h - along_h,
             },
         ),
-        Edge::Left => LogicalRect::new(
+        ScreenEdge::Left => LogicalRect::new(
             LogicalPoint {
                 x: origin.x.saturating_add_unsigned(along_w),
                 y: origin.y,
@@ -267,7 +253,7 @@ fn shrink(area: LogicalRect, reservation: Reservation) -> LogicalRect {
                 h: size.h,
             },
         ),
-        Edge::Right => LogicalRect::new(
+        ScreenEdge::Right => LogicalRect::new(
             origin,
             LogicalSize {
                 w: size.w - along_w,
@@ -280,18 +266,13 @@ fn shrink(area: LogicalRect, reservation: Reservation) -> LogicalRect {
 /// Where one axis of a surface sits: its start and length inside `[origin, origin + room)`.
 /// Held at both ends it fills the room less the margins (a zero committed length means "as
 /// much as there is"); held at one end it sits against it; otherwise it is centred.
-fn along(
-    room: (i32, u32),
-    ends: (Anchor, Anchor),
-    margins: (i32, i32),
-    committed: u32,
-) -> (i32, u32) {
+fn along(room: (i32, u32), ends: (bool, bool), margins: (i32, i32), committed: u32) -> (i32, u32) {
     let (origin, space) = room;
     let (near, far) = margins;
     let end = |value: i64| i32::try_from(value).unwrap_or(i32::MAX);
     let length = |value: i64| u32::try_from(value.max(0)).unwrap_or(u32::MAX);
     match ends {
-        (Anchor::Held, Anchor::Held) => {
+        (true, true) => {
             let span = i64::from(space) - i64::from(near) - i64::from(far);
             let own = if committed == 0 {
                 length(span)
@@ -301,12 +282,12 @@ fn along(
             let slack = (span - i64::from(own)).max(0);
             (end(i64::from(origin) + i64::from(near) + slack / 2), own)
         }
-        (Anchor::Held, Anchor::Free) => (end(i64::from(origin) + i64::from(near)), committed),
-        (Anchor::Free, Anchor::Held) => (
+        (true, false) => (end(i64::from(origin) + i64::from(near)), committed),
+        (false, true) => (
             end(i64::from(origin) + i64::from(space) - i64::from(far) - i64::from(committed)),
             committed,
         ),
-        (Anchor::Free, Anchor::Free) => (
+        (false, false) => (
             end(i64::from(origin) + (i64::from(space) - i64::from(committed)) / 2),
             committed,
         ),

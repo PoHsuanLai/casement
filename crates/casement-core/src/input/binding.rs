@@ -1,8 +1,7 @@
 //! Key bindings: chords and what they do (C30: the settings document carries the defaults).
 
 use super::{Chord, Origin};
-use crate::window::SplitSide;
-use casement_protocols::vocab::PlaceTarget;
+use casement_protocols::vocab::{PlaceTarget, SplitSide};
 use serde::{Deserialize, Serialize};
 
 /// What a binding does.
@@ -93,27 +92,16 @@ pub struct Binding {
 #[serde(transparent)]
 pub struct Bindings(pub Vec<Binding>);
 
-/// What a chord resolves to.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Resolved {
-    /// This binding's action.
-    Action(BindingAction),
-    /// Nothing: the key goes to the focused client.
-    PassThrough,
-}
-
-/// What `chord` from `origin` resolves to. Agent and remote origins never fire a binding, and
+/// The action `chord` from `origin` resolves to. Agent and remote origins never fire a binding, and
 /// neither does a feed (I1, I8: only the person's hands, a virtual keyboard they use, or the
 /// tests, drive the desktop's own shortcuts).
-pub fn resolve(bindings: &Bindings, chord: &Chord, origin: &Origin) -> Resolved {
+pub fn resolve(bindings: &Bindings, chord: &Chord, origin: &Origin) -> Option<BindingAction> {
     if !origin.fires_bindings() {
-        return Resolved::PassThrough;
+        return None;
     }
     bindings
         .0
         .iter()
         .find(|binding| binding.chord == *chord)
-        .map_or(Resolved::PassThrough, |binding| {
-            Resolved::Action(binding.action.clone())
-        })
+        .map(|binding| binding.action.clone())
 }

@@ -2,21 +2,16 @@
 
 use std::path::PathBuf;
 
-/// Whether app icons are looked for, and in which `applications` folders.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub enum IconSearch {
-    /// No icons are looked for or drawn (the jail, the test kit).
-    #[default]
-    Off,
-    /// Looked for through the desktop entries in these folders, most important first, and the
-    /// installed icon themes.
-    Dirs {
-        /// The `applications` folders, most important first.
-        applications: Vec<PathBuf>,
-        /// The config folder the desktop's icon theme is named under (see
-        /// `casement_icons::theme_file`); `hicolor` when none.
-        config: Option<PathBuf>,
-    },
+/// Where app icons are looked for: through the desktop entries in these folders, most important
+/// first, and the installed icon themes. (No icons are looked for or drawn, in the jail and the
+/// test kit, when there is no `IconSearch`.)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IconSearch {
+    /// The `applications` folders, most important first.
+    pub applications: Vec<PathBuf>,
+    /// The config folder the desktop's icon theme is named under (see
+    /// `casement_icons::theme_file`); `hicolor` when none.
+    pub config: Option<PathBuf>,
 }
 
 impl IconSearch {
@@ -32,7 +27,7 @@ impl IconSearch {
     /// let want = ["/home/a/.local/share/applications", "/x/applications", "/y/applications"];
     /// assert_eq!(
     ///     got,
-    ///     IconSearch::Dirs {
+    ///     IconSearch {
     ///         applications: want.map(PathBuf::from).to_vec(),
     ///         config: Some(PathBuf::from("/home/a/.config")),
     ///     }
@@ -62,7 +57,7 @@ impl IconSearch {
             )
             .map(|dir| dir.join("applications"))
             .collect();
-        IconSearch::Dirs {
+        IconSearch {
             applications,
             config,
         }
@@ -75,10 +70,7 @@ mod tests {
 
     #[test]
     fn the_folders_follow_the_xdg_defaults() {
-        let dirs = |search: IconSearch| match search {
-            IconSearch::Dirs { applications, .. } => applications,
-            IconSearch::Off => Vec::new(),
-        };
+        let dirs = |search: IconSearch| search.applications;
         // name, data home, home, data dirs, want
         let cases = [
             (
@@ -132,10 +124,7 @@ mod tests {
 
     #[test]
     fn the_config_folder_follows_the_xdg_defaults() {
-        let config = |search: IconSearch| match search {
-            IconSearch::Dirs { config, .. } => config,
-            IconSearch::Off => None,
-        };
+        let config = |search: IconSearch| search.config;
         // name, config home, home, want
         let cases = [
             ("set", Some("/c"), Some("/h"), Some("/c")),

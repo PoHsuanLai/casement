@@ -18,7 +18,7 @@ use crate::effect::Effect;
 use crate::geometry::{LogicalRect, SubPx};
 use crate::ids::OutputKey;
 use crate::input::gesture_route::{Axis, Drive, Fate, Route, route};
-use crate::input::lift::{Intent, Lift, LiftIn, LiftOut, Verdict};
+use crate::input::lift::{Intent, Lift, LiftEnd, LiftIn, LiftOut};
 use crate::input::{InputEvent, InputKind, Origin};
 use crate::lock::LockState;
 use crate::overview::Overview;
@@ -320,14 +320,14 @@ impl Model {
                 model.swipe.progress = None;
                 let moved = Moved::of(model).with_all(frames);
                 match (verdict, part_way) {
-                    (Verdict::Open, _) => moved.then(|m| match m.overview {
+                    (LiftEnd::Open, _) => moved.then(|m| match m.overview {
                         Overview::Closed | Overview::Leaving => m.toggled_overview(),
                         Overview::Entering | Overview::Open => Moved::of(m),
                     }),
-                    (Verdict::Close, _) => moved.then(|m| m.leave_overview(None)),
+                    (LiftEnd::Close, _) => moved.then(|m| m.leave_overview(None)),
                     // The windows were drawn where the fingers put them: they return from there.
-                    (Verdict::Stay, Some(_)) => moved.then(Model::fingers_stayed),
-                    (Verdict::Stay, None) => moved,
+                    (LiftEnd::Stay, Some(_)) => moved.then(Model::fingers_stayed),
+                    (LiftEnd::Stay, None) => moved,
                 }
             }
         }

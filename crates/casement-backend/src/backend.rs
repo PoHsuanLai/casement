@@ -1,12 +1,18 @@
 //! Which backend runs.
 
 use crate::gpu::GpuError;
-use crate::headless::{HeadlessBackend, SpecError};
+use crate::headless::{ConnectorEvent, FrameSource, HeadlessBackend, RgbaFrame, SpecError};
 use crate::session::SessionFault;
 use crate::tty::{KmsError, TtyBackend};
 use crate::winit::WinitBackend;
+use casement_core::OutputName;
+use casement_core::geometry::{PhysicalRect, PhysicalSize};
 use casement_render::RenderError;
+use casement_render::pass::{ArgbImage, CapturedFrame};
+use ds_core::geometry::scale::Scale;
 use smithay::backend::SwapBuffersError;
+use smithay::backend::allocator::Format;
+use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::renderer::gles::GlesError;
 use smithay::backend::renderer::pixman::PixmanError;
 use std::path::PathBuf;
@@ -22,6 +28,93 @@ pub enum BackendKind {
     /// A real seat: DRM devices, libseat, udev (P1; the seams are injected, so the FakeKms
     /// suite runs it in the jail).
     Tty(Box<TtyBackend>),
+}
+
+impl BackendKind {
+    /// The running backend as the verbs every backend shares.
+    pub fn driver(&self) -> &dyn Backend {
+        match self {
+            BackendKind::Headless(backend) => backend,
+            BackendKind::Winit(window) => &**window,
+            BackendKind::Tty(tty) => &**tty,
+        }
+    }
+
+    /// The running backend as the verbs every backend shares, mutably.
+    pub fn driver_mut(&mut self) -> &mut dyn Backend {
+        match self {
+            BackendKind::Headless(backend) => backend,
+            BackendKind::Winit(window) => &mut **window,
+            BackendKind::Tty(tty) => &mut **tty,
+        }
+    }
+}
+
+/// The verbs the headless, winit and tty backends share. The defaults are the answers of a
+/// backend with no renderer of its own to draw a capture with (winit): nothing to offer and every
+/// draw refused. A call site that needs one backend's own methods matches [`BackendKind`] instead.
+pub trait Backend {
+    /// The connectors plugged at start, once (start-up and hotplug are one code path).
+    fn announce(&mut self) -> Vec<ConnectorEvent>;
+
+    /// The dma-buf formats a capture can be drawn into.
+    fn capture_formats(&self) -> Vec<Format> {
+        Vec::new()
+    }
+
+    /// Draws `frame` into a client's dma-buf `target` (a capture's buffer).
+    fn write_dmabuf(
+        &mut self,
+        _target: &mut Dmabuf,
+        _frame: &CapturedFrame,
+    ) -> Result<(), BackendError> {
+        Err(RenderError::NoTarget.into())
+    }
+
+    /// Reads a client's dma-buf `source` (a cursor surface's buffer) back.
+    fn read_dmabuf(&mut self, _source: &Dmabuf) -> Result<ArgbImage, BackendError> {
+        Err(RenderError::NoTarget.into())
+    }
+
+    /// Draws `source` alone into a fresh image of `size` at `scale` and reads it back (window
+    /// capture).
+    fn render_offscreen(
+        &mut self,
+        _size: PhysicalSize,
+        _scale: Scale,
+        _source: &dyn FrameSource,
+    ) -> Result<RgbaFrame, BackendError> {
+        Err(RenderError::NoTarget.into())
+    }
+
+    /// Renders `source` alone straight into a client's dma-buf `target`: window capture with no
+    /// read-back.
+    fn render_window_dmabuf(
+        &mut self,
+        _target: &mut Dmabuf,
+        _size: PhysicalSize,
+        _scale: Scale,
+        _source: &dyn FrameSource,
+    ) -> Result<(), BackendError> {
+        Err(BackendError::NoFrame)
+    }
+
+    /// Blits `from`, a part of the frame `output` last presented (with its cursor when `cursor`),
+    /// into a client's dma-buf `target`.
+    fn blit_output_dmabuf(
+        &mut self,
+        _output: &OutputName,
+        _cursor: bool,
+        _from: PhysicalRect,
+        _target: &mut Dmabuf,
+    ) -> Result<(), BackendError> {
+        Err(BackendError::NoFrame)
+    }
+
+    /// The steps of `output`'s gamma table; none when the backend has no gamma to drive.
+    fn gamma_steps(&self, _output: &OutputName) -> Option<u32> {
+        None
+    }
 }
 
 /// The backend `--backend` asks for.

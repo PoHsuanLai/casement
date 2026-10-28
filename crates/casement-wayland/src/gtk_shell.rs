@@ -6,7 +6,7 @@
 //! Pure functions only, like [`crate::appmenu`]; the generated server code is the blocked
 //! dependency (FINDINGS, "Global menus").
 
-use crate::appmenu::{AppMenuPart, Mapped, valid_bus_name, valid_object_path};
+use crate::appmenu::{AppMenuPart, valid_bus_name, valid_object_path};
 use casement_core::app::MenuSource;
 use casement_core::{Event, WindowHintChange, WindowId};
 
@@ -35,7 +35,7 @@ pub fn on_properties(
     part: &mut AppMenuPart,
     window: WindowId,
     props: &DbusProperties,
-    mapped: Mapped,
+    mapped: bool,
 ) -> Vec<Event> {
     let source = source_of(props);
     match &source {
@@ -47,11 +47,11 @@ pub fn on_properties(
         }
     }
     match mapped {
-        Mapped::Yes => vec![Event::WindowHint {
+        true => vec![Event::WindowHint {
             window,
             hint: WindowHintChange::Menu(source),
         }],
-        Mapped::No => Vec::new(),
+        false => Vec::new(),
     }
 }
 
@@ -130,11 +130,11 @@ mod tests {
             &mut part,
             window,
             &props(Some(":1.9"), Some("/org/gtk/Menus")),
-            Mapped::Yes,
+            true,
         );
         assert_eq!(set.len(), 1);
         assert!(part.declared.contains_key(&window));
-        let cleared = on_properties(&mut part, window, &props(Some(":1.9"), None), Mapped::Yes);
+        let cleared = on_properties(&mut part, window, &props(Some(":1.9"), None), true);
         assert_eq!(
             cleared,
             vec![Event::WindowHint {

@@ -218,9 +218,8 @@ fn a_power_taken_back_finishes_the_workspace_list_and_commits_change_nothing() {
     assert_eq!(watch.workspaces().len(), 1);
     assert!(!watch.finished());
 
-    fixture.feed_events(vec![Event::PrivilegeRevoked {
-        subject: program(ASKED_PROGRAM),
-        power: Power::Windows,
+    fixture.feed_events(vec![Event::PrivilegeEdited {
+        edit: casement_core::privilege::Edit::Deny(program(ASKED_PROGRAM), Power::Windows),
         at: UnixSeconds(2),
     }]);
     settle(&mut fixture, &mut watch);

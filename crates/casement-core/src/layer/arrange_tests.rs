@@ -2,8 +2,8 @@
 //! sizes all read.
 
 use super::{
-    Anchor, Anchors, ExclusiveZone, KeyboardInteractivity, LayerBook, LayerLevel, LayerOwner,
-    LayerSpec, Margins, ShellRoleTag,
+    Anchors, ExclusiveZone, KeyboardInteractivity, LayerBook, LayerLevel, LayerOwner, LayerSpec,
+    Margins, ShellRoleTag,
 };
 use crate::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use crate::ids::{LayerKey, OutputKey, OutputName};
@@ -58,10 +58,7 @@ impl Ask {
     }
 
     pub(super) fn spec(&self) -> LayerSpec {
-        let held = |c: char| match self.edges.contains(c) {
-            true => Anchor::Held,
-            false => Anchor::Free,
-        };
+        let held = |c: char| self.edges.contains(c);
         LayerSpec {
             output: output("HEADLESS-1"),
             level: self.level,
@@ -249,28 +246,28 @@ fn what_is_left_for_windows_is_what_the_layers_were_arranged_in() {
 fn anchors_and_margins_place_a_surface() {
     let screen = rect(100, 50, 1920, 1080);
     let bar = Anchors {
-        top: Anchor::Held,
-        bottom: Anchor::Free,
-        left: Anchor::Held,
-        right: Anchor::Held,
+        top: true,
+        bottom: false,
+        left: true,
+        right: true,
     };
     let corner = Anchors {
-        top: Anchor::Free,
-        bottom: Anchor::Held,
-        left: Anchor::Free,
-        right: Anchor::Held,
+        top: false,
+        bottom: true,
+        left: false,
+        right: true,
     };
     let none = Anchors {
-        top: Anchor::Free,
-        bottom: Anchor::Free,
-        left: Anchor::Free,
-        right: Anchor::Free,
+        top: false,
+        bottom: false,
+        left: false,
+        right: false,
     };
     let all = Anchors {
-        top: Anchor::Held,
-        bottom: Anchor::Held,
-        left: Anchor::Held,
-        right: Anchor::Held,
+        top: true,
+        bottom: true,
+        left: true,
+        right: true,
     };
     let margin = Margins {
         top: 8,

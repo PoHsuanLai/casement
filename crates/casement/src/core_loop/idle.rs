@@ -6,7 +6,7 @@ use crate::exec;
 use crate::state::State;
 use casement_core::time::{Mono, TimerKey};
 use casement_core::{Effect, Event};
-use casement_wayland::idle_notify::{self, Inhibited};
+use casement_wayland::idle_notify;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::wayland::compositor::get_parent;
 
@@ -29,8 +29,7 @@ pub(super) fn hear(state: &mut State, events: &[Event], now: Mono) {
 /// only a change.
 pub(crate) fn sync_inhibitors(state: &mut State) {
     // Nothing inhibits and nothing was held off: no input event pays for a walk (NEW-CAS-2).
-    let quiet =
-        state.wl.idle_inhibit.is_empty() && state.wl.idle_notify.book.inhibited() == Inhibited::No;
+    let quiet = state.wl.idle_inhibit.is_empty() && !state.wl.idle_notify.book.inhibited();
     if quiet {
         return;
     }
@@ -47,7 +46,7 @@ fn run(state: &mut State, effects: Vec<Effect>) {
     }
 }
 
-fn visible_inhibitors(state: &State) -> Inhibited {
+fn visible_inhibitors(state: &State) -> bool {
     state
         .wl
         .idle_inhibit

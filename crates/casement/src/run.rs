@@ -7,22 +7,24 @@ use crate::cli::StartMode;
 use crate::debug;
 use crate::display::{self, attach_display};
 use crate::endpoint::Endpoint;
-use crate::notify::{Notice, SocketNotify, Watchdog};
+use crate::notify::{Notice, SocketNotify};
 use crate::privacy::SystemDir;
 use crate::space_sync::SpaceSync;
-use crate::spawn::{ProcessSpawner, Scopes};
+use crate::spawn::ProcessSpawner;
 use crate::test_mode::{HookError, TestHooks};
 use crate::{StartError, State, cli, clients, core_loop};
 use casement_backend::tty::SeatState;
+use casement_core::privilege::Edit;
 use casement_ipc::IpcError;
 use casement_ipc::dbus::{CallerSetup, CallerTable};
-use casement_ipc::privacy::{PrivacyEdit, PrivacyLink};
-use casement_ipc::sleep::SleepBus;
+use casement_ipc::privacy::PrivacyLink;
 use casement_ipc::space_registry::ZbusSpaceRegistry;
 use smithay::reexports::calloop::{Error as LoopError, EventLoop};
 use smithay::reexports::wayland_server::backend::InitError;
 use smithay::reexports::wayland_server::{BindError, Display};
 use smithay::wayland::socket::ListeningSocketSource;
+use std::path::PathBuf;
+use std::time::Duration;
 
 /// The exit code of a jail breach (11 §6.1).
 #[cfg(any(feature = "testing", feature = "debug-inject"))]
@@ -36,17 +38,18 @@ pub struct RunConfig {
     pub start: cli::StartConfig,
     /// Where Debug1 is served.
     pub debug_bus: Endpoint,
-    /// Which bus login1 is heard on (a tty seat hears the machine go to sleep there).
-    pub sleep_bus: SleepBus,
+    /// The address of the bus login1 is heard on (a tty seat hears the machine go to sleep there);
+    /// none for the system bus.
+    pub sleep_bus: Option<String>,
     /// Where `org.quire.Compositor1` is served.
     pub compositor_bus: Endpoint,
     /// Where the service manager is told casement is ready (`$NOTIFY_SOCKET`).
     pub notify: Endpoint,
-    /// How often the service manager wants a ping.
-    pub watchdog: Watchdog,
-    /// Whether the programs a binding starts get a scope of their own in the person's service
-    /// manager.
-    pub scopes: Scopes,
+    /// How often the service manager wants a ping, when it does.
+    pub watchdog: Option<Duration>,
+    /// The runtime folder the person's service manager listens under, when the programs a
+    /// binding starts get a scope of their own in it.
+    pub scopes: Option<PathBuf>,
     /// Test overrides of which unit a bus peer runs in (feature `debug-inject` only).
     #[cfg(feature = "debug-inject")]
     pub debug_peer_units: casement_ipc::dbus::PeerUnitTable,
@@ -58,11 +61,11 @@ impl RunConfig {
         RunConfig {
             start,
             debug_bus: Endpoint::Unset,
-            sleep_bus: SleepBus::System,
+            sleep_bus: None,
             compositor_bus: Endpoint::Unset,
             notify: Endpoint::Unset,
-            watchdog: Watchdog::Off,
-            scopes: Scopes::Off,
+            watchdog: None,
+            scopes: None,
             #[cfg(feature = "debug-inject")]
             debug_peer_units: casement_ipc::dbus::PeerUnitTable::default(),
         }
@@ -118,19 +121,19 @@ impl RunConfig {
 
     /// The same run pinging the service manager's watchdog as `watchdog` says.
     #[must_use]
-    pub fn with_watchdog(self, watchdog: Watchdog) -> RunConfig {
+    pub fn with_watchdog(self, watchdog: Option<Duration>) -> RunConfig {
         RunConfig { watchdog, ..self }
     }
 
     /// The same run starting a binding's programs in scopes as `scopes` says.
     #[must_use]
-    pub fn with_scopes(self, scopes: Scopes) -> RunConfig {
+    pub fn with_scopes(self, scopes: Option<PathBuf>) -> RunConfig {
         RunConfig { scopes, ..self }
     }
 
     /// The same run hearing login1 on `sleep_bus`.
     #[must_use]
-    pub fn with_sleep_bus(self, sleep_bus: SleepBus) -> RunConfig {
+    pub fn with_sleep_bus(self, sleep_bus: Option<String>) -> RunConfig {
         RunConfig { sleep_bus, ..self }
     }
 }
@@ -256,7 +259,7 @@ fn attach_compositor(
 /// Settings' changes to the Privacy list reach the model as they are made.
 fn attach_edits(
     handle: &smithay::reexports::calloop::LoopHandle<'static, State>,
-    edits: smithay::reexports::calloop::channel::Channel<PrivacyEdit>,
+    edits: smithay::reexports::calloop::channel::Channel<Edit>,
 ) -> Result<(), LoopError> {
     handle
         .insert_source(edits, |event, (), state: &mut State| {
@@ -314,7 +317,7 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
     let mut state = State::new(start, &mut display, &handle)?;
     state.seams.notify = Box::new(SocketNotify::new(notify));
     // The run's own spawner is the one that may use scopes; a seam a test injected is kept.
-    if matches!(scopes, Scopes::Under(_)) {
+    if scopes.is_some() {
         state.seams.spawner = Box::new(ProcessSpawner::new(scopes));
     }
     if let Endpoint::At(address) = &compositor_bus {
@@ -376,11 +379,11 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
     };
     let mut hooks = TestHooks::attach(&mut state, &tty_mode)?;
     core_loop::announce_outputs(&mut state);
-    crate::keymap::attach(&mut state, &config_home)?;
+    crate::keymap::attach(&mut state, config_home.as_deref())?;
     match start_mode {
         StartMode::Normal => {
-            crate::appearance::attach(&mut state, &config_home)?;
-            crate::settings_live::attach(&mut state, &config_home)?;
+            crate::appearance::attach(&mut state, config_home.as_deref())?;
+            crate::settings_live::attach(&mut state, config_home.as_deref())?;
         }
         StartMode::Safe => tracing::warn!(
             "safe mode: the settings files are ignored, there are no effects, no X11 apps, no icons and one display"
@@ -393,7 +396,7 @@ fn serve(config: RunConfig) -> Result<(), RunError> {
     if let Err(error) = state.seams.notify.send(&Notice::Ready { status }) {
         tracing::warn!(%error, "the service manager could not be told casement is ready");
     }
-    if let Watchdog::Every(every) = watchdog {
+    if let Some(every) = watchdog {
         crate::time::ping_every(&handle, every);
     }
     // Night light follows the local wall clock; a virtual or stepped clock run has no wall time.

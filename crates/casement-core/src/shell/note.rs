@@ -4,8 +4,8 @@ use crate::app::ForceQuitRow;
 use crate::geometry::{LogicalPoint, LogicalRect};
 use crate::ids::{LayerKey, OutputKey, WindowId};
 use crate::overview::Overview;
-use crate::window::{MenuItem, SplitSide, enabled_mask};
-use casement_protocols::vocab::{DragOutcome, MacMods, ScreenEdge, ShellRole, Shown};
+use crate::window::{MenuItem, enabled_mask};
+use casement_protocols::vocab::{DragOutcome, MacMods, ScreenEdge, ShellRole, Shown, SplitSide};
 
 /// Something the shell's protocol layer records or sends.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -94,7 +94,7 @@ impl SplitChoices {
     /// ```
     /// use casement_core::WindowId;
     /// use casement_core::shell::SplitChoices;
-    /// use casement_core::window::SplitSide;
+    /// use casement_protocols::vocab::SplitSide;
     ///
     /// let choices = SplitChoices::new(WindowId(1), SplitSide::Left, vec![WindowId(2)]);
     /// assert_eq!(choices.candidates, [WindowId(2)]);
@@ -126,14 +126,15 @@ impl WindowMenuShow {
     /// use casement_core::WindowId;
     /// use casement_core::geometry::LogicalPoint;
     /// use casement_core::shell::WindowMenuShow;
-    /// use casement_core::window::{MenuEntry, MenuItem, Offer};
+    /// use casement_core::window::MenuItem;
+    /// use casement_protocols::vocab::{WindowEntry, WireCode};
     ///
     /// let show = WindowMenuShow {
     ///     window: WindowId(1),
     ///     at: LogicalPoint { x: 0, y: 0 },
-    ///     items: vec![MenuItem { entry: MenuEntry::Fill, offer: Offer::Enabled }],
+    ///     items: vec![MenuItem { entry: WindowEntry::Fill, enabled: true }],
     /// };
-    /// assert_eq!(show.enabled(), 1 << MenuEntry::Fill.code());
+    /// assert_eq!(show.enabled(), 1 << WindowEntry::Fill.code());
     /// ```
     pub fn enabled(&self) -> u32 {
         enabled_mask(&self.items)

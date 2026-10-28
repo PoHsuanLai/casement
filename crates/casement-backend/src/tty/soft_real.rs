@@ -17,7 +17,7 @@
 //! plane out), so the pointer is drawn into the frame.
 
 use super::kms::{ConnectorId, KmsError};
-use super::pace::{Pace, Turn};
+use super::pace::Pace;
 use super::surface::{Presented, QueueOutcome, QueuedFrame, ScanoutSurface};
 use super::surface_real::{CLEAR, Flips, refused, refused_by};
 use crate::headless::transform_of;
@@ -128,7 +128,7 @@ impl SoftScanout {
 
 impl ScanoutSurface for SoftScanout {
     fn queue(&mut self, frame: QueuedFrame<'_>) -> QueueOutcome {
-        let Turn::Free(seq) = self.pace.turn() else {
+        let Some(seq) = self.pace.turn() else {
             return QueueOutcome::Busy;
         };
         let QueuedFrame::Draw(source) = frame else {

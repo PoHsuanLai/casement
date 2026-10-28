@@ -5,25 +5,15 @@
 use super::ask::{Asker, OpenAsk, Sheet};
 use super::book::{Book, Grant, UnixSeconds, Verdict};
 use super::decide::{Decision, decide};
+use super::edit::Edit;
 use super::limits::{ASK_TTL, SHELL_WAIT};
-use super::step::{Ctx, PowerOutcome, Screen};
+use super::step::{Ctx, PowerOutcome};
 use super::subject::Subject;
 use super::{Class, Privilege, ShellPresence};
 use crate::effect::Effect;
 use crate::ids::ClientKey;
 use crate::time::{Due, Mono, TimerKey};
 use casement_protocols::vocab::{Answer, AskId, Memory, Power};
-
-/// A change the person made to their book in Settings.
-#[derive(Debug, Clone)]
-pub(super) enum Edit {
-    /// Switched on.
-    Allow(Subject, Power, UnixSeconds),
-    /// Switched off.
-    Deny(Subject, Power, UnixSeconds),
-    /// Forgotten: asked again.
-    Forget(Subject, Power),
-}
 
 /// How the clients waiting on a closed question are settled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -117,12 +107,12 @@ impl Privilege {
 
     /// The person changed their book in Settings: the book is saved if it changed, and every
     /// connection and question follows it.
-    pub(super) fn edit(&mut self, out: &mut Vec<Effect>, edit: Edit) {
+    pub(super) fn edit(&mut self, out: &mut Vec<Effect>, edit: Edit, at: UnixSeconds) {
         let before = self.book.clone();
         let book = std::mem::take(&mut self.book);
         self.book = match edit {
-            Edit::Allow(subject, power, at) => self.keep(book, subject, power, Verdict::Allow, at),
-            Edit::Deny(subject, power, at) => {
+            Edit::Allow(subject, power) => self.keep(book, subject, power, Verdict::Allow, at),
+            Edit::Deny(subject, power) => {
                 self.revoke_live(out, &subject, power);
                 self.keep(book, subject, power, Verdict::Deny, at)
             }
@@ -250,10 +240,7 @@ impl Privilege {
     /// Shows the next question if the shell can be asked, nothing is on screen and the lock is
     /// not up.
     fn pump(&mut self, out: &mut Vec<Effect>, ctx: Ctx) {
-        let ready = matches!(
-            (self.shell, ctx.screen),
-            (ShellPresence::Present, Screen::Open)
-        );
+        let ready = !ctx.covered && matches!(self.shell, ShellPresence::Present);
         if !ready || self.asks.is_shown() {
             return;
         }

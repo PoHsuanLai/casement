@@ -3,7 +3,7 @@
 //! sent `stop` keeps the objects it has and gets no new ones.
 
 use super::facts::{ActiveFacts, AppFacts, Objects, SpaceFacts, WindowFacts};
-use super::{AppData, Bound, DesktopView, Makers, SpaceData, Stopped, WindowData};
+use super::{AppData, Bound, DesktopView, Makers, SpaceData, WindowData};
 use casement_core::WindowId;
 use casement_core::app::AppKey;
 use casement_core::desktop::DesktopRef;
@@ -80,14 +80,17 @@ impl Outcome {
 
 impl Bound {
     /// A manager just bound: it has no objects and has been told nothing.
-    pub(super) fn new(manager: super::QuireDesktopManagerV1, standing: super::Standing) -> Bound {
+    pub(super) fn new(
+        manager: super::QuireDesktopManagerV1,
+        standing: super::DesktopAccess,
+    ) -> Bound {
         Bound {
             manager,
             standing,
             apps: BTreeMap::new(),
             windows: BTreeMap::new(),
             spaces: BTreeMap::new(),
-            stopped: Stopped::No,
+            stopped: false,
             asked: Vec::new(),
             told: Told::default(),
         }
@@ -125,8 +128,8 @@ impl Bound {
         };
         let made = match (self.spaces.contains_key(id), self.stopped) {
             (true, _) => Outcome::Same,
-            (false, Stopped::Yes) => return Outcome::Same,
-            (false, Stopped::No) => {
+            (false, true) => return Outcome::Same,
+            (false, false) => {
                 let data = SpaceData {
                     space: id.clone(),
                     standing: self.standing,
@@ -157,8 +160,8 @@ impl Bound {
         };
         let made = match (self.apps.contains_key(key), self.stopped) {
             (true, _) => Outcome::Same,
-            (false, Stopped::Yes) => return Outcome::Same,
-            (false, Stopped::No) => {
+            (false, true) => return Outcome::Same,
+            (false, false) => {
                 let data = AppData {
                     app: key.clone(),
                     standing: self.standing,
@@ -186,7 +189,7 @@ impl Bound {
     /// it; no state is sent (a bind announces every window first, so a window's `parent` can
     /// name any of them).
     pub(super) fn announce_window(&mut self, makers: &Makers, id: WindowId) {
-        if self.windows.contains_key(&id) || self.stopped == Stopped::Yes {
+        if self.windows.contains_key(&id) || self.stopped {
             return;
         }
         let data = WindowData {

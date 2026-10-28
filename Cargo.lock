@@ -391,6 +391,7 @@ name = "casement-agent"
 version = "0.1.0"
 dependencies = [
  "casement-core",
+ "casement-protocols",
  "peephole-core",
  "reis",
  "rustix 1.1.5",
@@ -403,6 +404,7 @@ name = "casement-backend"
 version = "0.1.0"
 dependencies = [
  "casement-core",
+ "casement-protocols",
  "casement-render",
  "ds-core",
  "rustix 1.1.5",
@@ -534,6 +536,7 @@ version = "0.1.0"
 dependencies = [
  "casement-core",
  "casement-motion",
+ "casement-protocols",
  "ds-core",
  "image",
  "proptest",

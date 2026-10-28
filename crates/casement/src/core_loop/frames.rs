@@ -18,9 +18,7 @@ use casement_core::window::{
 use casement_core::{Effect, Event, ResizeEdges, ToplevelRequest, WindowId};
 use casement_layout::{GroupHover, frame_metrics, frame_style, pressed};
 use casement_protocols::vocab::{Emphasis, MacMods, WindowRole};
-use casement_render::{
-    ClientRound, ClientShadow, CursorDraw, CursorShape, margin_of, window_content,
-};
+use casement_render::{ClientRound, CursorDraw, CursorShape, margin_of, window_content};
 use casement_wayland::seat::{Candidate, SurfaceAt, surface_under};
 use casement_wayland::serial::{PressKind, PressRecord};
 use casement_wayland::xdg_decoration::DecorationMode;
@@ -77,18 +75,18 @@ pub(super) fn rounds(state: &State) -> BTreeMap<WindowId, ClientRound> {
                 margin_of(&entry.root),
                 style.look.radius,
             )?;
-            let shadow = match round.shadow {
-                Cast::Casement => ClientShadow::Cast(FrameStyle {
+            let cast = match round.shadow {
+                Cast::Casement => Some(FrameStyle {
                     look: FrameLook {
                         radius: round.radius,
                         ..style.look
                     },
                     ..style
                 }),
-                Cast::Client => ClientShadow::Client,
+                Cast::Client => None,
             };
             let radius = round.radius;
-            Some((*id, ClientRound { radius, shadow }))
+            Some((*id, ClientRound { radius, cast }))
         })
         .collect()
 }

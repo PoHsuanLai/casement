@@ -36,21 +36,21 @@ pub struct PortalWatch {
 }
 
 impl PortalWatch {
-    /// Starts watching the connection `owner`, which proved to be `caller`.
-    pub fn watch(&self, owner: &str, caller: &Proven) -> Watching {
+    /// Starts watching the connection `owner`, which proved to be `caller`: false when there is
+    /// no room to watch another.
+    pub fn watch(&self, owner: &str, caller: &Proven) -> bool {
         let mut watched = self
             .table_of(caller)
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         if watched.contains_key(owner) {
-            return Watching::Yes;
+            return true;
         }
-        match watched.len() < MAX_WATCHED {
-            true => {
-                watched.insert(owner.to_owned(), caller.clone());
-                Watching::Yes
-            }
-            false => Watching::TableFull,
+        if watched.len() < MAX_WATCHED {
+            watched.insert(owner.to_owned(), caller.clone());
+            true
+        } else {
+            false
         }
     }
 
@@ -70,15 +70,6 @@ impl PortalWatch {
             false => &self.portal,
         }
     }
-}
-
-/// Whether a connection is being watched.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Watching {
-    /// It is.
-    Yes,
-    /// There is no room to watch another.
-    TableFull,
 }
 
 /// Listens for `NameOwnerChanged` from the bus itself and, for every watched connection that
@@ -140,10 +131,10 @@ mod tests {
             roles::AGENT_TIER,
         );
         for n in 0..MAX_WATCHED {
-            assert_eq!(watch.watch(&format!(":2.{n}"), &agent), Watching::Yes);
+            assert!(watch.watch(&format!(":2.{n}"), &agent));
         }
-        assert_eq!(watch.watch(":2.99", &agent), Watching::TableFull);
-        assert_eq!(watch.watch(":1.5", &portal()), Watching::Yes);
+        assert!(!watch.watch(":2.99", &agent));
+        assert!(watch.watch(":1.5", &portal()));
         assert_eq!(watch.left(":2.0"), Some(agent));
     }
 
@@ -157,12 +148,8 @@ mod tests {
     #[test]
     fn a_watched_connection_is_given_back_once_when_it_leaves() {
         let watch = PortalWatch::default();
-        assert_eq!(watch.watch(":1.5", &portal()), Watching::Yes);
-        assert_eq!(
-            watch.watch(":1.5", &portal()),
-            Watching::Yes,
-            "asking twice is one"
-        );
+        assert!(watch.watch(":1.5", &portal()));
+        assert!(watch.watch(":1.5", &portal()), "asking twice is one");
         assert_eq!(watch.left(":1.9"), None, "a connection nobody watched");
         assert_eq!(watch.left(":1.5"), Some(portal()));
         assert_eq!(watch.left(":1.5"), None);
@@ -172,12 +159,11 @@ mod tests {
     fn the_table_is_bounded() {
         let watch = PortalWatch::default();
         for n in 0..MAX_WATCHED {
-            assert_eq!(watch.watch(&format!(":1.{n}"), &portal()), Watching::Yes);
+            assert!(watch.watch(&format!(":1.{n}"), &portal()));
         }
-        assert_eq!(watch.watch(":2.0", &portal()), Watching::TableFull);
-        assert_eq!(
+        assert!(!watch.watch(":2.0", &portal()));
+        assert!(
             watch.watch(":1.0", &portal()),
-            Watching::Yes,
             "a watched one is still fine"
         );
     }

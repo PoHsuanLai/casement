@@ -250,7 +250,7 @@ pub(super) fn sheet_closed(focus: Focus, parent: WindowId, view: &FocusView) -> 
     };
     let sheet_key = focus.key.filter(|key| {
         view.window(*key)
-            .is_some_and(|key| key.parent == crate::window::Parent::Window(parent.id))
+            .is_some_and(|key| key.parent == Some(parent.id))
     });
     let key_gone_to_nothing = focus.key.is_none() && focus.active.as_ref() == Some(&parent.app);
     match (view.is_visible(parent), sheet_key) {

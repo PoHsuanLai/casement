@@ -6,7 +6,7 @@ use casement::icons::IconSearch;
 use casement::privacy::PrivacyFiles;
 use casement::relax::AckPolicy;
 use casement::time::WallClock;
-use casement_backend::{DmabufMode, RenderCostModel, SoftRenderer, VirtualOutputSpec};
+use casement_backend::{RenderCostModel, SoftRenderer, VirtualOutputSpec};
 use casement_core::settings::CasementSettings;
 use std::time::Duration;
 
@@ -24,7 +24,7 @@ pub struct FixtureSpec {
     /// What a frame costs.
     pub cost: RenderCostModel,
     /// Whether `zwp_linux_dmabuf_v1` is offered (a fake main device over `/dev/udmabuf`).
-    pub dmabuf: DmabufMode,
+    pub dmabuf: bool,
     /// Whether a buffer attached before the first ack is an error (A37; wlcs needs it lenient).
     pub ack_policy: AckPolicy,
     /// The Spaces file the compositor starts from and stores into (A1). A second fixture started
@@ -40,7 +40,7 @@ pub struct FixtureSpec {
     /// The date kept answers are stamped with. It never moves.
     pub wall: WallClock,
     /// Whether Mission Control looks for app icons (off: none are drawn).
-    pub icons: IconSearch,
+    pub icons: Option<IconSearch>,
 }
 
 impl FixtureSpec {
@@ -56,13 +56,13 @@ impl FixtureSpec {
             gpus: GpuTopology::single(),
             settings: CasementSettings::defaults(),
             cost: RenderCostModel::Fixed(Duration::from_millis(4)),
-            dmabuf: DmabufMode::None,
+            dmabuf: false,
             ack_policy: AckPolicy::Strict,
             space_store: MemorySpaceStore::empty(),
             lock_marker: MemoryLockMarker::absent(),
             privacy: None,
             wall: WallClock::epoch(),
-            icons: IconSearch::Off,
+            icons: None,
         }
     }
 
@@ -81,11 +81,14 @@ impl FixtureSpec {
 
     /// The same, looking for app icons as `icons` says.
     pub fn with_icons(self, icons: IconSearch) -> FixtureSpec {
-        FixtureSpec { icons, ..self }
+        FixtureSpec {
+            icons: Some(icons),
+            ..self
+        }
     }
 
-    /// The same, with this dma-buf mode.
-    pub fn with_dmabuf(self, dmabuf: DmabufMode) -> FixtureSpec {
+    /// The same, with dma-buf offered to clients (or not).
+    pub fn with_dmabuf(self, dmabuf: bool) -> FixtureSpec {
         FixtureSpec { dmabuf, ..self }
     }
 

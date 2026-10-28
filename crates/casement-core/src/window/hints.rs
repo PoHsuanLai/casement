@@ -8,26 +8,18 @@ use casement_protocols::vocab::{Edited, FrameMode};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WindowHints {
     /// Where a first click on the inactive window also reaches the app (03 A5).
-    pub first_mouse: FirstMouse,
+    pub first_mouse: Vec<LogicalRect>,
     /// How its frame is drawn.
     pub frame: FrameHint,
-    /// Whether its client has said how its frame is drawn.
-    pub frame_said: FrameSaid,
+    /// Whether its client has said how its frame is drawn (has sent `set_frame` and not forgotten
+    /// it): [`WindowHints::frame`] then holds what.
+    pub frame_said: bool,
     /// Whether its document has unsaved changes.
     pub edited: Edited,
     /// Its accessibility tree's root.
-    pub a11y: A11yRoot,
+    pub a11y: Option<A11yRoot>,
     /// Where its global menu lives, when the app is not ours (a Qt or GTK 3 client).
     pub menu: MenuSource,
-}
-
-/// Where a first click passes through to the app.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FirstMouse {
-    /// Nowhere: a first click only activates.
-    Nowhere,
-    /// In these window-local rectangles.
-    Regions(Vec<LogicalRect>),
 }
 
 /// How a window's frame is drawn.
@@ -37,15 +29,6 @@ pub struct FrameHint {
     pub mode: FrameMode,
     /// The window's corner radius, in logical pixels, for the shadow and the clip.
     pub corner_radius: u32,
-}
-
-/// Whether a window's client has sent `set_frame`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FrameSaid {
-    /// It has not, or it forgot what it said.
-    Silent,
-    /// It has, and [`WindowHints::frame`] holds what.
-    Said,
 }
 
 /// What a window's client wants of its frame.
@@ -62,18 +45,13 @@ pub enum FrameChoice {
     },
 }
 
-/// Where a window's accessibility tree lives.
+/// Where a window's accessibility tree lives: an AT-SPI object.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum A11yRoot {
-    /// The client has not said.
-    Unknown,
-    /// This AT-SPI object.
-    At {
-        /// The bus name.
-        bus_name: String,
-        /// The object path.
-        object_path: String,
-    },
+pub struct A11yRoot {
+    /// The bus name.
+    pub bus_name: String,
+    /// The object path.
+    pub object_path: String,
 }
 
 impl WindowHints {
@@ -81,14 +59,14 @@ impl WindowHints {
     /// frame with square corners, saved, no accessibility root.
     pub fn unset() -> WindowHints {
         WindowHints {
-            first_mouse: FirstMouse::Nowhere,
+            first_mouse: Vec::new(),
             frame: FrameHint {
                 mode: FrameMode::Client,
                 corner_radius: 0,
             },
-            frame_said: FrameSaid::Silent,
+            frame_said: false,
             edited: Edited::Saved,
-            a11y: A11yRoot::Unknown,
+            a11y: None,
             menu: MenuSource::None,
         }
     }
@@ -96,9 +74,9 @@ impl WindowHints {
     /// What the client wants of its frame.
     pub fn frame_choice(&self) -> FrameChoice {
         match (self.frame_said, self.frame.mode) {
-            (FrameSaid::Silent, _) => FrameChoice::Silent,
-            (FrameSaid::Said, FrameMode::Client) => FrameChoice::Own,
-            (FrameSaid::Said, FrameMode::CompositorShadow) => FrameChoice::Shadowed {
+            (false, _) => FrameChoice::Silent,
+            (true, FrameMode::Client) => FrameChoice::Own,
+            (true, FrameMode::CompositorShadow) => FrameChoice::Shadowed {
                 radius: self.frame.corner_radius,
             },
         }

@@ -13,8 +13,8 @@ pub use arrange::{Arranged, place_in};
 pub use blur_strength::BlurStrength;
 pub use book::LayerBook;
 pub use layer::{
-    Anchor, Anchors, ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerOwner, LayerSpec,
-    Margins, ShellRoleTag,
+    Anchors, ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerOwner, LayerSpec, Margins,
+    ShellRoleTag,
 };
 
 #[cfg(test)]

@@ -3,7 +3,7 @@
 //! they are used, unless the person already refused them; a sandboxed client sees less than a
 //! native one).
 
-use super::power::{PowerSet, power_of};
+use super::power::{Power, PowerSet, power_of};
 use porter_core::SandboxFacts;
 
 /// What kind of connection a client arrived on.
@@ -141,72 +141,183 @@ pub enum GlobalKind {
 
 impl GlobalKind {
     /// Every global, in declaration order. The golden table in the tests lists one row per
-    /// entry, so a global added here is a row to review.
-    pub const ALL: &'static [GlobalKind] = &[
-        GlobalKind::Compositor,
-        GlobalKind::Subcompositor,
-        GlobalKind::Shm,
-        GlobalKind::Output,
-        GlobalKind::Viewporter,
-        GlobalKind::SinglePixel,
-        GlobalKind::AlphaModifier,
-        GlobalKind::Presentation,
-        GlobalKind::FractionalScale,
-        GlobalKind::Fifo,
-        GlobalKind::CommitTiming,
-        GlobalKind::ContentType,
-        GlobalKind::ColorManagement,
-        GlobalKind::XdgShell,
-        GlobalKind::XdgDecoration,
-        GlobalKind::XdgActivation,
-        GlobalKind::XdgDialog,
-        GlobalKind::XdgToplevelIcon,
-        GlobalKind::XdgToplevelTag,
-        GlobalKind::XdgForeign,
-        GlobalKind::SystemBell,
-        GlobalKind::QuireWindow,
-        GlobalKind::LayerShell,
-        GlobalKind::SessionLock,
-        GlobalKind::Seat,
-        GlobalKind::CursorShape,
-        GlobalKind::PointerConstraints,
-        GlobalKind::RelativePointer,
-        GlobalKind::PointerGestures,
-        GlobalKind::ShortcutsInhibit,
-        GlobalKind::Tablet,
-        GlobalKind::DataDevice,
-        GlobalKind::PrimarySelection,
-        GlobalKind::ExtDataControl,
-        GlobalKind::WlrDataControl,
-        GlobalKind::Dmabuf,
-        GlobalKind::TextInput,
-        GlobalKind::InputMethod,
-        GlobalKind::VirtualKeyboard,
-        GlobalKind::IdleNotify,
-        GlobalKind::IdleInhibit,
-        GlobalKind::ForeignToplevelList,
-        GlobalKind::SecurityContext,
-        GlobalKind::BackgroundEffect,
-        GlobalKind::OutputManagement,
-        GlobalKind::OutputPower,
-        GlobalKind::Gamma,
-        GlobalKind::WlrToplevel,
-        GlobalKind::Workspace,
-        GlobalKind::ImageCapture,
-        GlobalKind::ToplevelCapture,
-        GlobalKind::QuireDesktop,
-        GlobalKind::QuireShell,
-    ];
+    /// entry, so a global added to the table is a row to review.
+    pub fn all() -> impl Iterator<Item = GlobalKind> + Clone {
+        GLOBALS.iter().map(|global| global.kind)
+    }
+
+    /// This global's row in the table.
+    pub(super) fn entry(self) -> &'static Global {
+        &GLOBALS[self as usize]
+    }
 }
 
-/// Whether a connection sees a global.
+/// Which connections may see a global at all, before a sandbox narrows it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Advertise {
-    /// It does.
-    Yes,
-    /// It does not.
-    No,
+pub(super) enum Tier {
+    /// Every kind of connection.
+    Everyone,
+    /// The shell and the agent tier (never the public socket).
+    ShellAndAgent,
+    /// The shell only.
+    ShellOnly,
 }
+
+/// One row of the globals table: everything the connection policy knows about a global.
+pub(super) struct Global {
+    kind: GlobalKind,
+    /// Which roles may see it before a sandbox narrows it.
+    tier: Tier,
+    /// Whether a sandboxed client sees it.
+    sandboxed: bool,
+    /// The power it needs consent for; none for a global every client may use. Layer shell and
+    /// the security-context manager stay without one: layer shell's keyboard grab is closed in
+    /// the model, and a security-context client is a sandbox, which sees none of these globals.
+    pub(super) power: Option<Power>,
+}
+
+const fn row(kind: GlobalKind, tier: Tier, sandboxed: bool, power: Option<Power>) -> Global {
+    Global {
+        kind,
+        tier,
+        sandboxed,
+        power,
+    }
+}
+
+/// The globals table, one row per [`GlobalKind`] in declaration order (checked at compile time
+/// below, so a row cannot drift from the enum). Everything is `Everyone` but the two `quire`
+/// management protocols. Whoever adds a global adds its row and decides on purpose whether a
+/// sandbox sees it, who else may, and which power gates it (I7).
+const GLOBALS: &[Global] = &[
+    row(GlobalKind::Compositor, Tier::Everyone, true, None),
+    row(GlobalKind::Subcompositor, Tier::Everyone, true, None),
+    row(GlobalKind::Shm, Tier::Everyone, true, None),
+    row(GlobalKind::Output, Tier::Everyone, true, None),
+    row(GlobalKind::Viewporter, Tier::Everyone, true, None),
+    row(GlobalKind::SinglePixel, Tier::Everyone, true, None),
+    row(GlobalKind::AlphaModifier, Tier::Everyone, true, None),
+    row(GlobalKind::Presentation, Tier::Everyone, true, None),
+    row(GlobalKind::FractionalScale, Tier::Everyone, true, None),
+    row(GlobalKind::Fifo, Tier::Everyone, true, None),
+    row(GlobalKind::CommitTiming, Tier::Everyone, true, None),
+    row(GlobalKind::ContentType, Tier::Everyone, true, None),
+    row(GlobalKind::ColorManagement, Tier::Everyone, true, None),
+    row(GlobalKind::XdgShell, Tier::Everyone, true, None),
+    row(GlobalKind::XdgDecoration, Tier::Everyone, true, None),
+    row(GlobalKind::XdgActivation, Tier::Everyone, true, None),
+    row(GlobalKind::XdgDialog, Tier::Everyone, true, None),
+    row(GlobalKind::XdgToplevelIcon, Tier::Everyone, true, None),
+    row(GlobalKind::XdgToplevelTag, Tier::Everyone, true, None),
+    row(GlobalKind::XdgForeign, Tier::Everyone, true, None),
+    row(GlobalKind::SystemBell, Tier::Everyone, true, None),
+    row(GlobalKind::QuireWindow, Tier::Everyone, true, None),
+    row(GlobalKind::LayerShell, Tier::Everyone, false, None),
+    row(
+        GlobalKind::SessionLock,
+        Tier::Everyone,
+        false,
+        Some(Power::Lock),
+    ),
+    row(GlobalKind::Seat, Tier::Everyone, true, None),
+    row(GlobalKind::CursorShape, Tier::Everyone, true, None),
+    row(GlobalKind::PointerConstraints, Tier::Everyone, true, None),
+    row(GlobalKind::RelativePointer, Tier::Everyone, true, None),
+    row(GlobalKind::PointerGestures, Tier::Everyone, true, None),
+    row(GlobalKind::ShortcutsInhibit, Tier::Everyone, true, None),
+    row(GlobalKind::Tablet, Tier::Everyone, true, None),
+    row(GlobalKind::DataDevice, Tier::Everyone, true, None),
+    row(GlobalKind::PrimarySelection, Tier::Everyone, true, None),
+    row(
+        GlobalKind::ExtDataControl,
+        Tier::Everyone,
+        false,
+        Some(Power::Clipboard),
+    ),
+    row(
+        GlobalKind::WlrDataControl,
+        Tier::Everyone,
+        false,
+        Some(Power::Clipboard),
+    ),
+    row(GlobalKind::Dmabuf, Tier::Everyone, true, None),
+    row(GlobalKind::TextInput, Tier::Everyone, true, None),
+    row(
+        GlobalKind::InputMethod,
+        Tier::Everyone,
+        false,
+        Some(Power::TypingHelp),
+    ),
+    row(
+        GlobalKind::VirtualKeyboard,
+        Tier::Everyone,
+        false,
+        Some(Power::Keys),
+    ),
+    row(GlobalKind::IdleNotify, Tier::Everyone, true, None),
+    row(GlobalKind::IdleInhibit, Tier::Everyone, true, None),
+    row(
+        GlobalKind::ForeignToplevelList,
+        Tier::Everyone,
+        false,
+        Some(Power::Windows),
+    ),
+    row(GlobalKind::SecurityContext, Tier::Everyone, false, None),
+    row(GlobalKind::BackgroundEffect, Tier::Everyone, true, None),
+    row(
+        GlobalKind::OutputManagement,
+        Tier::Everyone,
+        false,
+        Some(Power::Displays),
+    ),
+    row(
+        GlobalKind::OutputPower,
+        Tier::Everyone,
+        false,
+        Some(Power::Displays),
+    ),
+    row(
+        GlobalKind::Gamma,
+        Tier::Everyone,
+        false,
+        Some(Power::Displays),
+    ),
+    row(
+        GlobalKind::WlrToplevel,
+        Tier::Everyone,
+        false,
+        Some(Power::Windows),
+    ),
+    row(
+        GlobalKind::Workspace,
+        Tier::Everyone,
+        false,
+        Some(Power::Windows),
+    ),
+    row(
+        GlobalKind::ImageCapture,
+        Tier::Everyone,
+        false,
+        Some(Power::Screen),
+    ),
+    row(
+        GlobalKind::ToplevelCapture,
+        Tier::Everyone,
+        false,
+        Some(Power::Screen),
+    ),
+    row(GlobalKind::QuireDesktop, Tier::ShellAndAgent, false, None),
+    row(GlobalKind::QuireShell, Tier::ShellOnly, false, None),
+];
+
+const _: () = {
+    let mut at = 0;
+    while at < GLOBALS.len() {
+        assert!(GLOBALS[at].kind as usize == at);
+        at += 1;
+    }
+    assert!(GLOBALS.len() == GlobalKind::QuireShell as usize + 1);
+};
 
 /// Whether a connection of `role` sees `global` when nothing is hidden from it by consent:
 /// [`advertised_to`] with no refused powers. A sandboxed client sees none of the clipboard
@@ -216,11 +327,9 @@ pub enum Advertise {
 /// everything. The agent connection sees everything but `quire_shell_v1`; the public socket
 /// sees neither `quire_desktop_manager_v1` nor `quire_shell_v1` (P2-Z).
 ///
-/// The match on `global` in `sandbox_sees` is exhaustive on purpose: a new global fails to
-/// compile until someone decides whether a sandbox sees it (I7). Whoever adds a privileged
-/// global also gives it a tier in `tier_of` and a power (or none) in
-/// [`power_of`](super::power_of).
-pub fn advertised(global: GlobalKind, role: &ConnectionRole) -> Advertise {
+/// The table `GLOBALS` has one row per global: a new global fails to compile until it has a
+/// row that decides whether a sandbox sees it, its tier and its power (I7).
+pub fn advertised(global: GlobalKind, role: &ConnectionRole) -> bool {
     advertised_to(global, role, &PowerSet::default())
 }
 
@@ -232,105 +341,25 @@ pub fn advertised(global: GlobalKind, role: &ConnectionRole) -> Advertise {
 ///
 /// A global that needs consent but was not refused is advertised and gated where it is used
 /// (I7: there is no ungated privileged global).
-pub fn advertised_to(global: GlobalKind, role: &ConnectionRole, hidden: &PowerSet) -> Advertise {
+pub fn advertised_to(global: GlobalKind, role: &ConnectionRole, hidden: &PowerSet) -> bool {
     match (by_role(global, role), role, power_of(global)) {
-        (Advertise::Yes, ConnectionRole::Public, Some(power)) if hidden.contains(power) => {
-            Advertise::No
-        }
+        (true, ConnectionRole::Public, Some(power)) if hidden.contains(power) => false,
         (seen, _, _) => seen,
     }
 }
 
 /// What the connection's role alone allows.
-fn by_role(global: GlobalKind, role: &ConnectionRole) -> Advertise {
+fn by_role(global: GlobalKind, role: &ConnectionRole) -> bool {
     match role {
-        ConnectionRole::Shell => Advertise::Yes,
-        ConnectionRole::Agent => match tier_of(global) {
-            Tier::ShellOnly => Advertise::No,
-            Tier::ShellAndAgent | Tier::Everyone => Advertise::Yes,
+        ConnectionRole::Shell => true,
+        ConnectionRole::Agent => match global.entry().tier {
+            Tier::ShellOnly => false,
+            Tier::ShellAndAgent | Tier::Everyone => true,
         },
-        ConnectionRole::Public | ConnectionRole::Portal => match tier_of(global) {
-            Tier::ShellOnly | Tier::ShellAndAgent => Advertise::No,
-            Tier::Everyone => Advertise::Yes,
+        ConnectionRole::Public | ConnectionRole::Portal => match global.entry().tier {
+            Tier::ShellOnly | Tier::ShellAndAgent => false,
+            Tier::Everyone => true,
         },
-        ConnectionRole::Sandboxed(_) => sandbox_sees(global),
-    }
-}
-
-/// Which connections may see a global at all, before a sandbox narrows it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum Tier {
-    /// Every kind of connection.
-    Everyone,
-    /// The shell and the agent tier (never the public socket).
-    ShellAndAgent,
-    /// The shell only.
-    ShellOnly,
-}
-
-/// The tier of `global`: everything is `Everyone` but the two `quire` management protocols.
-fn tier_of(global: GlobalKind) -> Tier {
-    match global {
-        GlobalKind::QuireShell => Tier::ShellOnly,
-        GlobalKind::QuireDesktop => Tier::ShellAndAgent,
-        _ => Tier::Everyone,
-    }
-}
-
-fn sandbox_sees(global: GlobalKind) -> Advertise {
-    match global {
-        GlobalKind::Compositor
-        | GlobalKind::Subcompositor
-        | GlobalKind::Shm
-        | GlobalKind::Output
-        | GlobalKind::Viewporter
-        | GlobalKind::SinglePixel
-        | GlobalKind::AlphaModifier
-        | GlobalKind::Presentation
-        | GlobalKind::FractionalScale
-        | GlobalKind::Fifo
-        | GlobalKind::CommitTiming
-        | GlobalKind::ContentType
-        | GlobalKind::ColorManagement
-        | GlobalKind::XdgShell
-        | GlobalKind::XdgDecoration
-        | GlobalKind::XdgActivation
-        | GlobalKind::XdgDialog
-        | GlobalKind::XdgToplevelIcon
-        | GlobalKind::XdgToplevelTag
-        | GlobalKind::XdgForeign
-        | GlobalKind::SystemBell
-        | GlobalKind::QuireWindow
-        | GlobalKind::Seat
-        | GlobalKind::CursorShape
-        | GlobalKind::PointerConstraints
-        | GlobalKind::RelativePointer
-        | GlobalKind::PointerGestures
-        | GlobalKind::ShortcutsInhibit
-        | GlobalKind::Tablet
-        | GlobalKind::DataDevice
-        | GlobalKind::PrimarySelection
-        | GlobalKind::Dmabuf
-        | GlobalKind::TextInput
-        | GlobalKind::IdleNotify
-        | GlobalKind::IdleInhibit
-        | GlobalKind::BackgroundEffect => Advertise::Yes,
-        GlobalKind::LayerShell
-        | GlobalKind::SessionLock
-        | GlobalKind::ExtDataControl
-        | GlobalKind::WlrDataControl
-        | GlobalKind::InputMethod
-        | GlobalKind::VirtualKeyboard
-        | GlobalKind::ForeignToplevelList
-        | GlobalKind::SecurityContext
-        | GlobalKind::OutputManagement
-        | GlobalKind::OutputPower
-        | GlobalKind::Gamma
-        | GlobalKind::WlrToplevel
-        | GlobalKind::Workspace
-        | GlobalKind::ImageCapture
-        | GlobalKind::ToplevelCapture
-        | GlobalKind::QuireDesktop
-        | GlobalKind::QuireShell => Advertise::No,
+        ConnectionRole::Sandboxed(_) => global.entry().sandboxed,
     }
 }

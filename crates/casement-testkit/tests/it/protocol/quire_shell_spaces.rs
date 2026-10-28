@@ -7,12 +7,13 @@
 use crate::protocol::image_capture::{settle as settle_capture, small};
 use crate::protocol::xdg_shell::{map_toplevel, pointer, windows};
 use casement_core::geometry::{LogicalPoint, PhysicalSize};
-use casement_core::input::{ButtonCode, Edge};
+use casement_core::input::ButtonCode;
 use casement_core::overview::Overview;
 use casement_core::policy::ConnectionRole;
 use casement_core::window::SpacePlace;
 use casement_core::{DeviceId, OutputKey, WindowId};
 use casement_layout::{LayoutKnobs, OverviewSlot, RustScene, SceneLayout, spec_of};
+use casement_protocols::vocab::PressEdge;
 use casement_testclient::capture::{BufferAsk, OutputCapture, Size};
 use casement_testclient::quire::desktop::DesktopWatch;
 use casement_testclient::quire::shell::{BoundOutput, OverviewMode, ShellHandle, Shown, Toggle};
@@ -132,14 +133,16 @@ pub(super) fn target(desk: &mut Desk) {
 }
 
 pub(super) fn press(desk: &mut Desk) {
-    desk.fixture.input().button(desk.pointer, LEFT, Edge::Press);
+    desk.fixture
+        .input()
+        .button(desk.pointer, LEFT, PressEdge::Press);
     desk.fixture.pump();
 }
 
 pub(super) fn release(desk: &mut Desk) {
     desk.fixture
         .input()
-        .button(desk.pointer, LEFT, Edge::Release);
+        .button(desk.pointer, LEFT, PressEdge::Release);
     desk.fixture.pump();
 }
 

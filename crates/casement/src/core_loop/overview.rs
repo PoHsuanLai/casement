@@ -96,7 +96,7 @@ fn reach(slot: LogicalRect, bar: u32) -> LogicalRect {
 pub(super) fn hover(state: &mut State, at: LogicalPoint) {
     frames::hover(state, None);
     state.render.chrome.cursor = CursorDraw::Named(CursorShape::Default);
-    if drag::moved(state, at) == drag::Follow::Taken {
+    if drag::moved(state, at) {
         return;
     }
     state.render.overview_hover = match escape_leaves(state) {
@@ -137,12 +137,12 @@ pub(super) fn leave(state: &mut State, pick: Option<OverviewPick>) {
 /// window's title under it. While the fingers hold it part-way it is drawn too (the windows are
 /// scaled to where the fingers put them), dimmed as far as it is open, with no ring, label or
 /// icons.
-pub(super) fn draw(state: &mut State, view: &OutputView) -> OverviewDraw {
+pub(super) fn draw(state: &mut State, view: &OutputView) -> Option<OverviewDraw> {
     let fingers = state.core.model.overview_progress();
     if !takes_input(state) && fingers.is_none() {
         state.render.overview_hover = None;
         state.render.icons.clear();
-        return OverviewDraw::Off;
+        return None;
     }
     let hover = state
         .render
@@ -170,12 +170,12 @@ pub(super) fn draw(state: &mut State, view: &OutputView) -> OverviewDraw {
         true => icons_of(state, view),
         false => BTreeMap::new(),
     };
-    OverviewDraw::On {
+    Some(OverviewDraw {
         hover,
         look,
         lift,
         icons,
-    }
+    })
 }
 
 /// The icon under each window of Mission Control whose icon is on this output: found the first

@@ -8,11 +8,12 @@ use casement_core::focus::TokenCheck;
 use casement_core::input::{DesktopCommand, SpaceStep};
 use casement_core::shell::{ShellNote, ShellRequest, SplitChoices};
 use casement_core::space::{SpaceContent, SplitPair};
-use casement_core::window::{MenuEntry, SplitSide, WindowState};
+use casement_core::window::WindowState;
 use casement_core::{Effect, Event, ToplevelRequest, WindowId};
+use casement_protocols::vocab::{SplitSide, WindowEntry};
 use ds_core::vocab::Fraction;
 
-fn menu(window: u64, entry: MenuEntry) -> Op {
+fn menu(window: u64, entry: WindowEntry) -> Op {
     Op::Event(Event::Shell(ShellRequest::WindowMenuPick {
         window: WindowId(window),
         entry,
@@ -91,8 +92,8 @@ fn choose(first: u64, side: SplitSide, candidates: &[u64]) -> ShellNote {
 
 #[test]
 fn entering_asks_the_shell_for_the_other_half_only_when_there_is_one() {
-    let left = MenuEntry::TileLeftOfScreen;
-    let right = MenuEntry::TileRightOfScreen;
+    let left = WindowEntry::TileLeftOfScreen;
+    let right = WindowEntry::TileRightOfScreen;
     // A name, how many windows, the entry picked, the notes the shell hears.
     let cases = [
         ("alone: just full screen", 1, left, vec![]),
@@ -127,7 +128,7 @@ fn only_ordinary_visible_windows_can_be_picked() {
         desktop(3),
         vec![
             request(3, ToplevelRequest::Minimise),
-            menu(1, MenuEntry::TileLeftOfScreen),
+            menu(1, WindowEntry::TileLeftOfScreen),
         ],
     );
     assert_eq!(notes(&got), vec![choose(1, SplitSide::Left, &[2])]);
@@ -136,8 +137,8 @@ fn only_ordinary_visible_windows_can_be_picked() {
 #[test]
 fn a_pick_completes_the_split_view() {
     let cases = [
-        ("left", MenuEntry::TileLeftOfScreen, pair(1, 2, 500)),
-        ("right", MenuEntry::TileRightOfScreen, pair(2, 1, 500)),
+        ("left", WindowEntry::TileLeftOfScreen, pair(1, 2, 500)),
+        ("right", WindowEntry::TileRightOfScreen, pair(2, 1, 500)),
     ];
     for (name, entry, want) in cases {
         let got = then(desktop(2), vec![menu(1, entry), pick(2)]);
@@ -161,7 +162,7 @@ fn a_cancel_leaves_the_first_window_alone_and_a_later_pick_does_nothing() {
     let cancelled = then(
         desktop(2),
         vec![
-            menu(1, MenuEntry::TileLeftOfScreen),
+            menu(1, WindowEntry::TileLeftOfScreen),
             shell(ShellRequest::SplitCancel),
         ],
     );
@@ -176,7 +177,7 @@ fn a_cancel_leaves_the_first_window_alone_and_a_later_pick_does_nothing() {
     let late = then(
         desktop(2),
         vec![
-            menu(1, MenuEntry::TileLeftOfScreen),
+            menu(1, WindowEntry::TileLeftOfScreen),
             shell(ShellRequest::SplitCancel),
             pick(2),
         ],
@@ -195,7 +196,7 @@ fn a_pick_that_is_not_a_candidate_leaves_the_choosing_open() {
     let got = then(
         desktop(2),
         vec![
-            menu(1, MenuEntry::TileLeftOfScreen),
+            menu(1, WindowEntry::TileLeftOfScreen),
             pick(9),
             pick(1),
             pick(2),
@@ -208,7 +209,7 @@ fn a_pick_that_is_not_a_candidate_leaves_the_choosing_open() {
 fn the_first_window_leaving_ends_the_choosing() {
     let closed = then(
         desktop(2),
-        vec![menu(1, MenuEntry::TileLeftOfScreen), unmap(1)],
+        vec![menu(1, WindowEntry::TileLeftOfScreen), unmap(1)],
     );
     assert_eq!(
         notes(&closed).first(),
@@ -217,8 +218,8 @@ fn the_first_window_leaving_ends_the_choosing() {
     let left = then(
         desktop(2),
         vec![
-            menu(1, MenuEntry::TileLeftOfScreen),
-            menu(1, MenuEntry::ExitFullScreen),
+            menu(1, WindowEntry::TileLeftOfScreen),
+            menu(1, WindowEntry::ExitFullScreen),
             pick(2),
         ],
     );
@@ -232,9 +233,9 @@ fn leaving_full_screen_on_either_window_ends_the_split_view() {
         let got = then(
             desktop(2),
             vec![
-                menu(1, MenuEntry::TileLeftOfScreen),
+                menu(1, WindowEntry::TileLeftOfScreen),
                 pick(2),
-                menu(leaver, MenuEntry::ExitFullScreen),
+                menu(leaver, WindowEntry::ExitFullScreen),
             ],
         );
         assert!(kept(&got).is_empty(), "window {leaver}: the Space is gone");
@@ -260,7 +261,11 @@ fn closing_one_window_leaves_the_other_full_screen() {
     for (closed, kept_window) in cases {
         let got = then(
             desktop(2),
-            vec![menu(1, MenuEntry::TileLeftOfScreen), pick(2), unmap(closed)],
+            vec![
+                menu(1, WindowEntry::TileLeftOfScreen),
+                pick(2),
+                unmap(closed),
+            ],
         );
         assert_eq!(
             kept(&got),
@@ -282,7 +287,7 @@ fn the_divider_moves_within_its_limits() {
         let got = then(
             desktop(2),
             vec![
-                menu(1, MenuEntry::TileLeftOfScreen),
+                menu(1, WindowEntry::TileLeftOfScreen),
                 pick(2),
                 shell(ShellRequest::SplitDivide {
                     window: WindowId(2),
@@ -352,7 +357,7 @@ fn only_windows_of_the_desktop_the_first_came_from_can_be_picked() {
         windows[&WindowId(3)].place,
         "window 3 is on another desktop"
     );
-    let got = then(ops, vec![menu(1, MenuEntry::TileLeftOfScreen)]);
+    let got = then(ops, vec![menu(1, WindowEntry::TileLeftOfScreen)]);
     assert_eq!(notes(&got), vec![choose(1, SplitSide::Left, &[2])]);
 }
 
@@ -386,14 +391,14 @@ fn only_windows_of_the_output_the_first_is_on_can_be_picked() {
         }))],
     )
     .model;
-    let got = run_from(moved, vec![menu(1, MenuEntry::TileLeftOfScreen)]);
+    let got = run_from(moved, vec![menu(1, WindowEntry::TileLeftOfScreen)]);
     assert_eq!(notes(&got), vec![choose(1, SplitSide::Left, &[2])]);
 }
 
 #[test]
 fn showing_another_space_while_choosing_cancels_the_choice() {
     let mut ops = desktop(2);
-    ops.push(menu(1, MenuEntry::TileLeftOfScreen));
+    ops.push(menu(1, WindowEntry::TileLeftOfScreen));
     let choosing = run(ops.clone());
     assert_eq!(notes(&choosing), vec![choose(1, SplitSide::Left, &[2])]);
     let away = then(

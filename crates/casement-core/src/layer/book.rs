@@ -148,7 +148,7 @@ mod tests {
     use crate::geometry::{LogicalPoint, LogicalSize};
     use crate::ids::OutputName;
     use crate::layer::{
-        Anchor, Anchors, ExclusiveZone, KeyboardInteractivity, LayerLevel, Margins, ShellRoleTag,
+        Anchors, ExclusiveZone, KeyboardInteractivity, LayerLevel, Margins, ShellRoleTag,
     };
     use crate::output::{EdidFacts, EdidSerial};
 
@@ -174,13 +174,7 @@ mod tests {
 
     /// A layer on `on` held to the edges named in `edges` ("t", "b", "l", "r").
     fn layer(on: &str, edges: &str, exclusive: ExclusiveZone, margin: Margins) -> LayerSpec {
-        let held = |c: char| {
-            if edges.contains(c) {
-                Anchor::Held
-            } else {
-                Anchor::Free
-            }
-        };
+        let held = |c: char| edges.contains(c);
         LayerSpec {
             output: output(on),
             level: LayerLevel::Top,

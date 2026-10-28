@@ -4,7 +4,8 @@ use crate::protocol::xdg_shell::{
     boot, check_golden, click, golden, map_toplevel, pointer, settle, windows,
 };
 use casement_core::DeviceId;
-use casement_core::input::{DeviceClass, Edge, KeyCode};
+use casement_core::input::{DeviceClass, KeyCode};
+use casement_protocols::vocab::PressEdge;
 use casement_testclient::ime::input_method::InputMethodEvent;
 use casement_testclient::ime::session::ImeSession;
 use casement_testclient::ime::text_input::TextInputEvent;
@@ -145,7 +146,7 @@ fn the_first_key_after_enable_reaches_the_input_method() {
     typing
         .fixture
         .input()
-        .key(keyboard, KeyCode(30), Edge::Press);
+        .key(keyboard, KeyCode(30), PressEdge::Press);
     // The method reads `activate` only now, and answers with its grab.
     let now = typing.fixture.model().now();
     typing.ime.pump(now).expect("pump the session");
@@ -177,7 +178,7 @@ fn the_first_key_after_enable_reaches_the_input_method() {
     typing
         .fixture
         .input()
-        .key(keyboard, KeyCode(30), Edge::Release);
+        .key(keyboard, KeyCode(30), PressEdge::Release);
     typing.pump();
     assert!(
         typing.ime.document_keys().is_empty(),
@@ -202,14 +203,14 @@ fn a_key_the_input_method_sends_back_reaches_the_document() {
     typing
         .fixture
         .input()
-        .key(keyboard, KeyCode(30), Edge::Press);
+        .key(keyboard, KeyCode(30), PressEdge::Press);
     typing.pump();
     board.key(0, 30, 1).expect("the key back");
     typing.pump();
     typing
         .fixture
         .input()
-        .key(keyboard, KeyCode(30), Edge::Release);
+        .key(keyboard, KeyCode(30), PressEdge::Release);
     typing.pump();
     board.key(0, 30, 0).expect("the release back");
     typing.pump();
@@ -255,7 +256,7 @@ fn a_copy_released_after_the_grab_ends_leaves_no_key_held() {
     typing
         .fixture
         .input()
-        .key(keyboard, KeyCode(30), Edge::Press);
+        .key(keyboard, KeyCode(30), PressEdge::Press);
     typing.pump();
     board.key(0, 30, 1).expect("the key back");
     typing.pump();
@@ -266,10 +267,10 @@ fn a_copy_released_after_the_grab_ends_leaves_no_key_held() {
     typing
         .fixture
         .input()
-        .key(keyboard, KeyCode(30), Edge::Release);
+        .key(keyboard, KeyCode(30), PressEdge::Release);
     typing.pump();
     // The field is still enabled, so the key waits for a method first (the hold limit).
-    for edge in [Edge::Press, Edge::Release] {
+    for edge in [PressEdge::Press, PressEdge::Release] {
         typing.fixture.input().key(keyboard, KeyCode(30), edge);
         typing.pump();
         typing
@@ -340,7 +341,7 @@ fn a_method_that_never_grabs_lets_the_key_through_after_the_hold_limit() {
     typing
         .fixture
         .input()
-        .key(keyboard, KeyCode(30), Edge::Press);
+        .key(keyboard, KeyCode(30), PressEdge::Press);
     typing.pump();
     assert!(typing.ime.document_keys().is_empty(), "the key waits");
     typing

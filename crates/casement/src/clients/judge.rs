@@ -2,7 +2,7 @@
 //! descriptor, its facts are read from `/proc`, and they are judged against the desktop's
 //! caller table (`/etc/quire/desktop-callers.toml`, root-owned or not believed).
 
-use super::Standing;
+use super::Vetting;
 use super::image::PinnedImage;
 use super::standing::{client_standing, maker_of, peer_of};
 use crate::privacy::{SystemDir, writable_image};
@@ -21,7 +21,7 @@ pub struct Arrival {
     /// The app its windows belong to.
     pub peer: PeerIdentity,
     /// How well its program is known.
-    pub standing: Standing,
+    pub standing: Vetting,
 }
 
 impl Arrival {
@@ -29,7 +29,7 @@ impl Arrival {
     pub fn unknown() -> Arrival {
         Arrival {
             peer: PeerIdentity::Unproven,
-            standing: Standing::Judged {
+            standing: Vetting::Judged {
                 standing: ClientStanding::unproven(),
                 watch: Arc::new(Unwatched),
                 maker: Maker::Other,
@@ -120,7 +120,7 @@ impl Judge {
         );
         Arrival {
             peer: peer_of(&found),
-            standing: Standing::Judged {
+            standing: Vetting::Judged {
                 standing,
                 watch: Arc::new(PinnedImage::new(pinned, self.prober.clone(), facts.exe)),
                 maker: maker_of(&found),
@@ -140,7 +140,7 @@ mod tests {
     fn a_program_is_held_looked_at_and_judged_when_it_connects() {
         let (ours, _theirs) = UnixStream::pair().expect("a socket pair");
         let arrival = Judge::new(Table::empty(), SystemDir::Etc).arrival(&ours, &Floor::empty());
-        let Standing::Judged {
+        let Vetting::Judged {
             standing, watch, ..
         } = arrival.standing
         else {
@@ -173,7 +173,7 @@ mod tests {
         });
         let (ours, _theirs) = UnixStream::pair().expect("a socket pair");
         let arrival = Judge::new(Table::empty(), system).arrival(&ours, &floor);
-        let Standing::Judged { standing, .. } = arrival.standing else {
+        let Vetting::Judged { standing, .. } = arrival.standing else {
             panic!("a public client is always judged");
         };
         (standing, me)
@@ -186,7 +186,7 @@ mod tests {
         assert_eq!(named, ClientStanding::Program { exe: me });
         let (etc, _) = standing_under(SystemDir::Etc);
         let (ours, _theirs) = UnixStream::pair().expect("a socket pair");
-        let Standing::Judged {
+        let Vetting::Judged {
             standing: plain, ..
         } = Judge::new(Table::empty(), SystemDir::Etc)
             .arrival(&ours, &Floor::empty())

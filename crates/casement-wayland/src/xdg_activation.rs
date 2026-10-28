@@ -56,8 +56,9 @@ pub struct IssuedToken {
     pub at: Mono,
     /// The client that asked for it, when known.
     pub by: Option<ClientKey>,
-    /// Whether that client held a recent press.
-    pub proof: PressProof,
+    /// Whether that client held a recent press: the token's serial answers a recent press
+    /// delivered to it (not: no serial, an unknown one, an old one, or another client's).
+    pub pressed: bool,
     /// What the token is for, which sets how long it stays good.
     pub reach: TokenReach,
 }
@@ -89,22 +90,13 @@ impl TokenReach {
     }
 }
 
-/// Whether a token was earned by a recent press.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum PressProof {
-    /// The token's serial answers a recent press delivered to the asking client.
-    Pressed,
-    /// It does not (no serial, an unknown one, an old one, or another client's).
-    Unproven,
-}
-
 /// What a token request knew of its asker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TokenAsk {
     /// The client that asked, when known.
     pub requester: Option<ClientKey>,
     /// Whether it held a recent press.
-    pub proof: PressProof,
+    pub pressed: bool,
 }
 
 impl XdgActivationPart {
@@ -124,23 +116,14 @@ impl XdgActivationPart {
     }
 }
 
-/// Whether a token is issued.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum TokenVerdict {
-    /// Issue it (it is judged when used).
-    Issue,
-    /// Refuse it.
-    Refuse,
-}
-
 /// Whether the press `record` (what the seat remembers of the serial the token carried, for the
 /// asking client) earns a token requested at `now`. An agent lease's press earns none: the
 /// agent drives one window, and a token would let that app bring another to the front.
-pub fn proof_of(record: Option<&PressRecord>, now: Mono) -> PressProof {
+pub fn earned_by_press(record: Option<&PressRecord>, now: Mono) -> bool {
     match record {
-        Some(press) if matches!(press.origin, Origin::Agent(_)) => PressProof::Unproven,
-        Some(press) if now.since(press.at) <= TOKEN_LIFETIME => PressProof::Pressed,
-        Some(_) | None => PressProof::Unproven,
+        Some(press) if matches!(press.origin, Origin::Agent(_)) => false,
+        Some(press) if now.since(press.at) <= TOKEN_LIFETIME => true,
+        Some(_) | None => false,
     }
 }
 
@@ -149,10 +132,7 @@ pub fn proof_of(record: Option<&PressRecord>, now: Mono) -> PressProof {
 /// `Stale` (an unknown token is a bad one, not a missing one).
 pub fn judge(issued: Option<&IssuedToken>, now: Mono) -> TokenCheck {
     match issued {
-        Some(token)
-            if token.proof == PressProof::Pressed
-                && now.since(token.at) <= token.reach.lifetime() =>
-        {
+        Some(token) if token.pressed && now.since(token.at) <= token.reach.lifetime() => {
             TokenCheck::Valid
         }
         Some(_) | None => TokenCheck::Stale,
@@ -175,7 +155,7 @@ fn forget_old(part: &mut XdgActivationPart, now: Mono) {
         .retain_tokens(|token, _| !expired.iter().any(|key| key == token.as_str()));
 }
 
-/// A client asked for a token at `now`. It is issued unless its asker already holds
+/// A client asked for a token at `now`: true when it is issued (it is judged when used), unless its asker already holds
 /// [`TOKENS_PER_CLIENT`] live ones. Of `data` only the app it names is read (its reach); smithay's
 /// stamp is ignored (A36).
 pub fn on_token_request(
@@ -184,7 +164,7 @@ pub fn on_token_request(
     data: &XdgActivationTokenData,
     now: Mono,
     ask: TokenAsk,
-) -> TokenVerdict {
+) -> bool {
     forget_old(part, now);
     let held = part
         .issued
@@ -192,18 +172,18 @@ pub fn on_token_request(
         .filter(|held| ask.requester.is_some() && held.by == ask.requester)
         .count();
     if held >= TOKENS_PER_CLIENT {
-        return TokenVerdict::Refuse;
+        return false;
     }
     part.issued.insert(
         token.as_str().to_owned(),
         IssuedToken {
             at: now,
             by: ask.requester,
-            proof: ask.proof,
+            pressed: ask.pressed,
             reach: TokenReach::of(data.app_id.as_deref()),
         },
     );
-    TokenVerdict::Issue
+    true
 }
 
 /// A token is being used at `now`: it is judged on the session clock and spent (tokens are
@@ -248,19 +228,19 @@ mod tests {
         }
     }
 
-    fn issued(ms: u64, proof: PressProof) -> IssuedToken {
+    fn issued(ms: u64, pressed: bool) -> IssuedToken {
         IssuedToken {
             at: at(ms),
             by: Some(ClientKey(1)),
-            proof,
+            pressed,
             reach: TokenReach::Press,
         }
     }
 
-    fn launch(ms: u64, proof: PressProof) -> IssuedToken {
+    fn launch(ms: u64, pressed: bool) -> IssuedToken {
         IssuedToken {
             reach: TokenReach::Launch,
-            ..issued(ms, proof)
+            ..issued(ms, pressed)
         }
     }
 
@@ -271,11 +251,8 @@ mod tests {
             origin: Origin::Agent(casement_core::LeaseId(3)),
             ..press(1_000)
         };
-        assert_eq!(proof_of(Some(&agent), at(1_001)), PressProof::Unproven);
-        assert_eq!(
-            proof_of(Some(&press(1_000)), at(1_001)),
-            PressProof::Pressed
-        );
+        assert!(!earned_by_press(Some(&agent), at(1_001)));
+        assert!(earned_by_press(Some(&press(1_000)), at(1_001)));
     }
 
     /// The A7 rule on session time: a recent press earns the token, and the token is good for
@@ -286,56 +263,56 @@ mod tests {
         let rows = [
             (
                 "fresh, pressed",
-                Some(issued(1_000, PressProof::Pressed)),
+                Some(issued(1_000, true)),
                 1_500,
                 TokenCheck::Valid,
             ),
             (
                 "at the limit",
-                Some(issued(1_000, PressProof::Pressed)),
+                Some(issued(1_000, true)),
                 6_000,
                 TokenCheck::Valid,
             ),
             (
                 "a millisecond over",
-                Some(issued(1_000, PressProof::Pressed)),
+                Some(issued(1_000, true)),
                 6_001,
                 TokenCheck::Stale,
             ),
             (
                 "fresh, no press",
-                Some(issued(1_000, PressProof::Unproven)),
+                Some(issued(1_000, false)),
                 1_100,
                 TokenCheck::Stale,
             ),
             ("unknown token", None, 1_100, TokenCheck::Stale),
             (
                 "a launch, used late",
-                Some(launch(1_000, PressProof::Pressed)),
+                Some(launch(1_000, true)),
                 30_000,
                 TokenCheck::Valid,
             ),
             (
                 "a launch, at its limit",
-                Some(launch(1_000, PressProof::Pressed)),
+                Some(launch(1_000, true)),
                 61_000,
                 TokenCheck::Valid,
             ),
             (
                 "a launch, a millisecond over",
-                Some(launch(1_000, PressProof::Pressed)),
+                Some(launch(1_000, true)),
                 61_001,
                 TokenCheck::Stale,
             ),
             (
                 "a launch with no press",
-                Some(launch(1_000, PressProof::Unproven)),
+                Some(launch(1_000, false)),
                 1_100,
                 TokenCheck::Stale,
             ),
             (
                 "used before issue (clock never goes back)",
-                Some(issued(2_000, PressProof::Pressed)),
+                Some(issued(2_000, true)),
                 1_000,
                 TokenCheck::Valid,
             ),
@@ -348,13 +325,13 @@ mod tests {
     #[test]
     fn a_press_earns_a_token_only_while_recent() {
         let rows = [
-            ("no serial answered", None, 100, PressProof::Unproven),
-            ("just now", Some(press(100)), 120, PressProof::Pressed),
-            ("five seconds", Some(press(100)), 5_100, PressProof::Pressed),
-            ("too old", Some(press(100)), 5_101, PressProof::Unproven),
+            ("no serial answered", None, 100, false),
+            ("just now", Some(press(100)), 120, true),
+            ("five seconds", Some(press(100)), 5_100, true),
+            ("too old", Some(press(100)), 5_101, false),
         ];
         for (case, record, now, want) in rows {
-            assert_eq!(proof_of(record.as_ref(), at(now)), want, "{case}");
+            assert_eq!(earned_by_press(record.as_ref(), at(now)), want, "{case}");
         }
     }
 

@@ -3,10 +3,11 @@
 
 use casement_core::DeviceId;
 use casement_core::input::{
-    Binding, BindingAction, Bindings, Chord, DbusCall, Edge, InputEvent, InputKind, KeyCode,
-    Origin, PortalSessionId,
+    Binding, BindingAction, Bindings, Chord, DbusCall, InputEvent, InputKind, KeyCode, Origin,
+    PortalSessionId,
 };
 use casement_ipc::dbus::ConnectRefusal;
+use casement_protocols::vocab::PressEdge;
 use casement_testkit::fakes::callers;
 use casement_testkit::{Fixture, FixtureSpec};
 use std::io::Read;
@@ -63,10 +64,10 @@ fn remote_keys_never_fire_a_binding() {
     let session = PortalSessionId(5);
     let device = DeviceId(0x8000_0014);
     for (code, edge) in [
-        (KEY_LEFTMETA, Edge::Press),
-        (KEY_SPACE, Edge::Press),
-        (KEY_SPACE, Edge::Release),
-        (KEY_LEFTMETA, Edge::Release),
+        (KEY_LEFTMETA, PressEdge::Press),
+        (KEY_SPACE, PressEdge::Press),
+        (KEY_SPACE, PressEdge::Release),
+        (KEY_LEFTMETA, PressEdge::Release),
     ] {
         let at = fixture.now();
         fixture.deliver_remote(InputEvent {

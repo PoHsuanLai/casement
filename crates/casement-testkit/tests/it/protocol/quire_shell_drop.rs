@@ -387,9 +387,11 @@ fn drag_across(pair: &mut Pair, to: LogicalPoint) -> WindowId {
     pair.fixture.input().pointer_to(pair.pointer, at);
     pair.fixture.pump();
     let left = casement_core::input::ButtonCode(0x110);
-    pair.fixture
-        .input()
-        .button(pair.pointer, left, casement_core::input::Edge::Press);
+    pair.fixture.input().button(
+        pair.pointer,
+        left,
+        casement_protocols::vocab::PressEdge::Press,
+    );
     pair.fixture.pump();
     pair.fixture.input().pointer_to(pair.pointer, to);
     pair.fixture.pump();
@@ -398,9 +400,11 @@ fn drag_across(pair: &mut Pair, to: LogicalPoint) -> WindowId {
 
 fn let_go(pair: &mut Pair) {
     let left = casement_core::input::ButtonCode(0x110);
-    pair.fixture
-        .input()
-        .button(pair.pointer, left, casement_core::input::Edge::Release);
+    pair.fixture.input().button(
+        pair.pointer,
+        left,
+        casement_protocols::vocab::PressEdge::Release,
+    );
     pair.fixture.pump();
 }
 

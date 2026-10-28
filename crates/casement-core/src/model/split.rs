@@ -17,8 +17,8 @@ use crate::focus::FocusIn;
 use crate::ids::{OutputKey, WindowId};
 use crate::shell::{ShellNote, SplitChoices};
 use crate::space::{Space, SpaceContent, SplitPair};
-use crate::window::{Parent, Restore, SpacePlace, SplitSide, Window, WindowState};
-use casement_protocols::vocab::WindowRole;
+use crate::window::{Restore, SpacePlace, Window, WindowState};
+use casement_protocols::vocab::{SplitSide, WindowRole};
 use ds_core::vocab::Fraction;
 use porter_core::SpaceId;
 
@@ -269,7 +269,7 @@ fn can_share(
         .get(&window.app)
         .is_some_and(|app| matches!(app.visibility, AppVisibility::Hidden { .. }));
     let ordinary = !matches!(window.role, WindowRole::Shell)
-        && window.parent == Parent::None
+        && window.parent.is_none()
         && !matches!(
             window.state,
             WindowState::Minimised { .. } | WindowState::FullScreen { .. }

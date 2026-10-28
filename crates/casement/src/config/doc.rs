@@ -7,9 +7,9 @@ use super::sections::{
     XwaylandSection,
 };
 use super::version::Version;
-use crate::cli::ConfigHome;
 use ds_settings::{AppName, ConfigRoot, FileName, Format, SettingsDoc, Store, Watch};
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 /// `casement/settings.toml`: one section per `CasementSettings` part. A key it does not read
 /// is reported on load and dropped on save (ds-settings).
@@ -56,9 +56,9 @@ const APP: AppName = AppName("casement");
 /// document does not read, or whose value it refuses, is reported in the log and costs only
 /// itself.
 ///
-/// `ConfigHome::At(dir)` stands in for `$XDG_CONFIG_HOME`, so the file is `dir/casement/settings.toml`
-/// (ds-settings' scratch root); `ConfigHome::Xdg` reads the environment.
-pub fn load(home: &ConfigHome) -> Result<CasementDoc, ConfigError> {
+/// `Some(dir)` stands in for `$XDG_CONFIG_HOME`, so the file is `dir/casement/settings.toml`
+/// (ds-settings' scratch root); `None` reads the environment.
+pub fn load(home: Option<&Path>) -> Result<CasementDoc, ConfigError> {
     let loaded = store(home).load::<CasementDoc>();
     for key in &loaded.unknown {
         tracing::warn!("settings.toml: {key}");
@@ -71,23 +71,22 @@ pub fn load(home: &ConfigHome) -> Result<CasementDoc, ConfigError> {
 
 /// The `xwayland.*` keys of `home`'s document, read without the log lines `load` writes (the
 /// settings are loaded, and reported, once more when the compositor starts).
-pub fn xwayland_of(home: &ConfigHome) -> XwaylandSection {
+pub fn xwayland_of(home: Option<&Path>) -> XwaylandSection {
     store(home).load::<CasementDoc>().value.xwayland
 }
 
 /// `home` as the ds-settings store it names.
-pub(crate) fn store(home: &ConfigHome) -> Store {
-    let root = match home {
-        ConfigHome::Xdg => ConfigRoot::Xdg,
-        ConfigHome::At(dir) => ConfigRoot::Scratch(dir.clone()),
-    };
+pub(crate) fn store(home: Option<&Path>) -> Store {
+    let root = home.map_or(ConfigRoot::Xdg, |dir| {
+        ConfigRoot::Scratch(dir.to_path_buf())
+    });
     Store::new(root, APP)
 }
 
 /// A watch on `home`'s document: every settled change of the file arrives whole (ds-settings,
 /// debounced). It runs as a task on `spawn`.
 pub(crate) fn watch(
-    home: &ConfigHome,
+    home: Option<&Path>,
     spawn: &dyn ds_core::spawner::Spawner,
 ) -> Watch<CasementDoc> {
     store(home).watch::<CasementDoc>(spawn)

@@ -5,9 +5,10 @@
 use super::desk::{Desk, Dpi, OUTPUT, only_window};
 use super::golden_matches;
 use casement_core::geometry::LogicalPoint;
-use casement_core::input::{ButtonCode, DeviceClass, Edge};
+use casement_core::input::{ButtonCode, DeviceClass};
 use casement_core::settings::MinimiseEffect;
 use casement_core::{DeviceId, OutputName, WindowId};
+use casement_protocols::vocab::PressEdge;
 use casement_testclient::Pattern;
 use casement_testkit::{Fixture, FixtureSpec, FrameCount, ShotTarget, TestOrigin};
 use smithay::reexports::wayland_server::Resource;
@@ -161,10 +162,10 @@ fn a_flying_window_takes_no_clicks() {
     );
     desk.fixture
         .input()
-        .button(device, ButtonCode(0x110), Edge::Press);
+        .button(device, ButtonCode(0x110), PressEdge::Press);
     desk.fixture
         .input()
-        .button(device, ButtonCode(0x110), Edge::Release);
+        .button(device, ButtonCode(0x110), PressEdge::Release);
     assert_eq!(
         focus_id(desk.fixture),
         Some(below.surface.id().protocol_id()),

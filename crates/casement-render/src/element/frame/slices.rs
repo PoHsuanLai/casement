@@ -3,6 +3,7 @@
 //! not drawn: the window's opaque body covers it.
 
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
+use casement_protocols::vocab::Corner;
 
 /// How far the shadow reaches past the outline on each side, in logical pixels.
 pub(crate) const MARGIN: u32 = 80;
@@ -10,41 +11,6 @@ pub(crate) const MARGIN: u32 = 80;
 /// How far an edge strip reaches under the window's edge, in logical pixels: enough to meet the
 /// anti-aliased edge of the window and its rounded corners without a gap.
 pub(crate) const EDGE_DEPTH: u32 = 2;
-
-/// A corner of the outline.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Corner {
-    TopLeft,
-    TopRight,
-    BottomLeft,
-    BottomRight,
-}
-
-impl Corner {
-    /// Every corner, in the order the tiles are kept.
-    pub(crate) const ALL: [Corner; 4] = [
-        Corner::TopLeft,
-        Corner::TopRight,
-        Corner::BottomLeft,
-        Corner::BottomRight,
-    ];
-
-    /// Which way the corner's own axes point against the screen's: -1 where the tile is the
-    /// mirror image of the top-left one in that axis.
-    pub(crate) fn sign(self) -> (i32, i32) {
-        match self {
-            Corner::TopLeft => (1, 1),
-            Corner::TopRight => (-1, 1),
-            Corner::BottomLeft => (1, -1),
-            Corner::BottomRight => (-1, -1),
-        }
-    }
-
-    /// The index in a tile array.
-    pub(crate) fn index(self) -> usize {
-        Corner::ALL.iter().position(|c| *c == self).unwrap_or(0)
-    }
-}
 
 /// A side of the outline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

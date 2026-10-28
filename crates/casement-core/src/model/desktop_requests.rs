@@ -7,7 +7,7 @@ use super::Model;
 use super::moved::Moved;
 use crate::app::AppKey;
 use crate::desktop::{AppAsk, DesktopRequest, SpaceAsk, WindowAsk};
-use crate::effect::{CoreNote, Deferred, Effect};
+use crate::effect::{CoreNote, Effect};
 use crate::ids::WindowId;
 use crate::space::WorkspaceRequest;
 use crate::window::WlrToplevelRequest;
@@ -42,9 +42,7 @@ impl Model {
             AppAsk::HideOthers => self.hide_others(Some(app)),
             AppAsk::Quit => self.quit_app(Some(app)),
             AppAsk::ForceQuit => self.force_quit_app(&app),
-            AppAsk::Reopen => {
-                Moved::of(self).with(Effect::Note(CoreNote::Deferred(Deferred::Reopen)))
-            }
+            AppAsk::Reopen => Moved::of(self).with(Effect::Note(CoreNote::ReopenDeferred)),
         }
     }
 

@@ -11,18 +11,17 @@ mod renderer;
 mod vblank;
 mod virtual_output;
 
-use crate::capture_path::RendererClass;
 pub use cost::RenderCostModel;
 pub use gamma::GAMMA_SIZE;
 pub use input::HeadlessInput;
 #[cfg(feature = "tty")]
 pub(crate) use output_set::transform_of;
 pub use output_set::{OutputSet, VirtualOutput};
-pub use renderer::{HeadlessRenderer, SoftRenderer, linear_capture_formats};
+pub use renderer::{SoftRenderer, linear_capture_formats};
 pub use vblank::VblankSource;
 pub use virtual_output::{EdidSource, FixtureName, GpuId, SpecError, VirtualOutputSpec};
 
-use crate::backend::BackendError;
+use crate::backend::{Backend, BackendError};
 use crate::input::VirtualInput;
 use bare::BareLayer;
 #[cfg(feature = "tty")]
@@ -33,23 +32,13 @@ use casement_core::output::{
 };
 use casement_core::time::{Mono, VblankSeq};
 use casement_core::{OutputKey, OutputName};
-use casement_render::pass::CursorInclusion;
 use casement_render::{CasementElement, Compositor};
 use ds_core::geometry::scale::Scale;
-use renderer::{Canvas, Drawn};
+use renderer::{Canvas, Drawn, HeadlessRenderer};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::pixman::PixmanRenderer;
 #[cfg(feature = "testing")]
 use smithay::backend::renderer::test::DummyRenderer;
-
-/// Whether clients are offered dma-buf (`--dmabuf none|soft`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum DmabufMode {
-    /// No `zwp_linux_dmabuf_v1` global: clients fall back to shm (shell-host F80).
-    None,
-    /// A fake main device over `/dev/udmabuf`.
-    Soft,
-}
 
 /// How the headless backend starts.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,8 +47,10 @@ pub struct HeadlessConfig {
     pub outputs: Vec<VirtualOutputSpec>,
     /// The renderer.
     pub renderer: SoftRenderer,
-    /// Whether dma-buf is offered.
-    pub dmabuf: DmabufMode,
+    /// Whether clients are offered dma-buf (`--dmabuf none|soft`): a fake main device over
+    /// `/dev/udmabuf`; without it there is no `zwp_linux_dmabuf_v1` global and clients fall back
+    /// to shm (shell-host F80).
+    pub dmabuf: bool,
     /// What a frame costs.
     pub cost: RenderCostModel,
 }
@@ -113,7 +104,7 @@ pub enum Shown {
 #[derive(Debug)]
 pub struct HeadlessBackend {
     outputs: OutputSet,
-    renderer: HeadlessRenderer,
+    renderer: Box<dyn HeadlessRenderer>,
     input: VirtualInput,
     cost: RenderCostModel,
     /// Connector events of the outputs plugged at start, not yet reported.
@@ -126,7 +117,7 @@ impl HeadlessBackend {
     /// Starts the renderer and plugs `config`'s outputs (reported through [`HeadlessBackend::
     /// announce`] by the caller, so start-up and hotplug are one code path).
     pub fn start(config: HeadlessConfig) -> Result<HeadlessBackend, BackendError> {
-        let renderer = HeadlessRenderer::start(config.renderer)?;
+        let renderer = config.renderer.start()?;
         let mut backend = HeadlessBackend {
             outputs: OutputSet::empty(),
             renderer,
@@ -250,9 +241,9 @@ impl HeadlessBackend {
         self.renderer.write_dmabuf(target, frame)
     }
 
-    /// What this backend's renderer is to a capture into a dma-buf of format `wanted`.
-    pub fn capture_class(&self, wanted: smithay::backend::allocator::Format) -> RendererClass {
-        self.renderer.capture_class(wanted)
+    /// Whether this backend's renderer can draw a capture into a dma-buf of format `wanted`.
+    pub fn binds_format(&self, wanted: smithay::backend::allocator::Format) -> bool {
+        self.renderer.binds_format(wanted)
     }
 
     /// Renders `source` alone straight into a client's dma-buf `target` of exactly `size`: window
@@ -274,7 +265,7 @@ impl HeadlessBackend {
     pub fn blit_output_dmabuf(
         &mut self,
         name: &OutputName,
-        cursor: CursorInclusion,
+        cursor: bool,
         from: PhysicalRect,
         target: &mut smithay::backend::allocator::dmabuf::Dmabuf,
     ) -> Result<(), BackendError> {
@@ -283,8 +274,8 @@ impl HeadlessBackend {
         // As the read-back does: without a cursor-less frame, the one shown is the best there is.
         let bare = last.bare.as_ref().and(output.bare.as_ref());
         let canvas = match cursor {
-            CursorInclusion::Exclude => bare.map(BareLayer::canvas),
-            _ => None,
+            false => bare.map(BareLayer::canvas),
+            true => None,
         }
         .or(output.canvas.as_ref())
         .ok_or(BackendError::NoFrame)?;
@@ -342,7 +333,7 @@ impl HeadlessBackend {
         at: Mono,
         source: &dyn FrameSource,
     ) -> Result<Shown, BackendError> {
-        let renderer = &mut self.renderer;
+        let renderer = self.renderer.as_mut();
         let Some(output) = self.outputs.get_mut(name) else {
             return Ok(Shown::Dark);
         };
@@ -432,6 +423,64 @@ impl HeadlessBackend {
                 output.respecified(spec, canvas)
             }
         }
+    }
+}
+
+impl Backend for HeadlessBackend {
+    fn announce(&mut self) -> Vec<ConnectorEvent> {
+        HeadlessBackend::announce(self)
+    }
+
+    fn capture_formats(&self) -> Vec<smithay::backend::allocator::Format> {
+        HeadlessBackend::capture_formats(self)
+    }
+
+    fn write_dmabuf(
+        &mut self,
+        target: &mut smithay::backend::allocator::dmabuf::Dmabuf,
+        frame: &casement_render::pass::CapturedFrame,
+    ) -> Result<(), BackendError> {
+        HeadlessBackend::write_dmabuf(self, target, frame)
+    }
+
+    fn read_dmabuf(
+        &mut self,
+        source: &smithay::backend::allocator::dmabuf::Dmabuf,
+    ) -> Result<casement_render::pass::ArgbImage, BackendError> {
+        HeadlessBackend::read_dmabuf(self, source)
+    }
+
+    fn render_offscreen(
+        &mut self,
+        size: PhysicalSize,
+        scale: Scale,
+        source: &dyn FrameSource,
+    ) -> Result<RgbaFrame, BackendError> {
+        HeadlessBackend::render_offscreen(self, size, scale, source)
+    }
+
+    fn render_window_dmabuf(
+        &mut self,
+        target: &mut smithay::backend::allocator::dmabuf::Dmabuf,
+        size: PhysicalSize,
+        scale: Scale,
+        source: &dyn FrameSource,
+    ) -> Result<(), BackendError> {
+        HeadlessBackend::render_window_dmabuf(self, target, size, scale, source)
+    }
+
+    fn blit_output_dmabuf(
+        &mut self,
+        output: &OutputName,
+        cursor: bool,
+        from: PhysicalRect,
+        target: &mut smithay::backend::allocator::dmabuf::Dmabuf,
+    ) -> Result<(), BackendError> {
+        HeadlessBackend::blit_output_dmabuf(self, output, cursor, from, target)
+    }
+
+    fn gamma_steps(&self, _output: &OutputName) -> Option<u32> {
+        u32::try_from(GAMMA_SIZE).ok()
     }
 }
 

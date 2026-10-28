@@ -3,8 +3,7 @@
 
 use super::{
     Binding, BindingAction, Bindings, Chord, DesktopCommand, DeviceClass, FeedSource, InputTarget,
-    InputUse, Keysym, Leases, Origin, PortalSessionId, Reach, ReachFacts, Refusal, Resolved, reach,
-    resolve,
+    InputUse, Keysym, Leases, Origin, PortalSessionId, ReachFacts, Refusal, reach, resolve,
 };
 use crate::ids::{ClientKey, LayerKey, LeaseId, WindowId};
 use crate::lock::{LockHolder, LockState, LockSurfaces};
@@ -88,7 +87,7 @@ proptest! {
         lease in any::<u64>(), target in target(), use_ in use_(), lock in lock(),
     ) {
         let got = reach(&Origin::Agent(LeaseId(lease)), &target, use_, &ReachFacts { lock: &lock, leases: &Leases::none() });
-        prop_assert_ne!(got, Reach::Allowed);
+        prop_assert!(got.is_err());
     }
 
     #[test]
@@ -102,10 +101,10 @@ proptest! {
             target,
             InputTarget::Window(WindowId(w)) | InputTarget::Popup(WindowId(w)) if w == held
         );
-        prop_assert_eq!(got == Reach::Allowed, its_own && !is_locked(&lock));
+        prop_assert_eq!(got.is_ok(), its_own && !is_locked(&lock));
         // Another lease's events reach nothing of this one's window.
         let other = Origin::Agent(LeaseId(lease.wrapping_add(1)));
-        prop_assert_ne!(reach(&other, &target, use_, &facts), Reach::Allowed);
+        prop_assert!(reach(&other, &target, use_, &facts).is_err());
     }
 
     #[test]
@@ -113,7 +112,7 @@ proptest! {
         origin in origin(), use_ in use_(), lock in lock(),
     ) {
         let got = reach(&origin, &InputTarget::Trusted, use_, &ReachFacts { lock: &lock, leases: &Leases::none() });
-        prop_assert!(got != Reach::Allowed || (origin.is_physical() && !is_locked(&lock)));
+        prop_assert!(got.is_err() || (origin.is_physical() && !is_locked(&lock)));
     }
 
     #[test]
@@ -121,12 +120,12 @@ proptest! {
         origin in origin(), target in target(), use_ in use_(), lock in lock(),
     ) {
         let got = reach(&origin, &target, use_, &ReachFacts { lock: &lock, leases: &Leases::none() });
-        if is_locked(&lock) && got == Reach::Allowed {
+        if is_locked(&lock) && got.is_ok() {
             prop_assert!(origin.is_physical());
             prop_assert_eq!(target, InputTarget::LockSurface);
         }
         if is_locked(&lock) && !(origin.is_physical() && target == InputTarget::LockSurface) {
-            prop_assert_eq!(got, Reach::Refused(Refusal::Locked));
+            prop_assert_eq!(got, Err(Refusal::Locked));
         }
     }
 
@@ -136,7 +135,7 @@ proptest! {
     ) {
         let feed = Origin::Feed(FeedSource::Palmrest);
         let got = reach(&feed, &target, use_, &ReachFacts { lock: &lock, leases: &Leases::none() });
-        if got == Reach::Allowed {
+        if got.is_ok() {
             prop_assert!(matches!(use_, InputUse::Scroll | InputUse::SystemGesture));
         }
     }
@@ -146,7 +145,7 @@ proptest! {
         class in device_class(), target in target(), use_ in use_(),
     ) {
         let got = reach(&Origin::Physical(class), &target, use_, &ReachFacts { lock: &LockState::Unlocked, leases: &Leases::none() });
-        prop_assert_eq!(got, Reach::Allowed);
+        prop_assert_eq!(got, Ok(()));
     }
 
     #[test]
@@ -159,9 +158,9 @@ proptest! {
             action: BindingAction::Desktop(DesktopCommand::QuitActive),
         }]);
         let want = if origin.fires_bindings() {
-            Resolved::Action(BindingAction::Desktop(DesktopCommand::QuitActive))
+            Some(BindingAction::Desktop(DesktopCommand::QuitActive))
         } else {
-            Resolved::PassThrough
+            None
         };
         prop_assert_eq!(resolve(&bindings, &chord, &origin), want);
     }

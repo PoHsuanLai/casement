@@ -4,7 +4,7 @@
 use crate::support;
 
 use casement_core::geometry::PhysicalRect;
-use casement_render::pass::{CaptureFormat, CaptureRequest, CapturedFrame, CursorInclusion};
+use casement_render::pass::{CaptureFormat, CaptureRequest, CapturedFrame};
 use casement_render::{CasementElement, Rgba8, solid_rect};
 use smithay::backend::renderer::Bind;
 use smithay::backend::renderer::element::Id;
@@ -49,7 +49,7 @@ fn captured(area: PhysicalRect) -> (Vec<u8>, CapturedFrame) {
     ];
     let (_, scanout) = renderer.draw(&mut target, &mut tracker, SIZE, &elements, 0);
     let framebuffer = renderer.bind(&mut target).expect("bind");
-    let request = CaptureRequest::new(area, CursorInclusion::Exclude);
+    let request = CaptureRequest::new(area, false);
     let frame = casement_render::pass::capture_output(&mut renderer, &framebuffer, &request)
         .expect("capture");
     (scanout, frame)

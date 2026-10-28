@@ -50,46 +50,37 @@ pub enum GoldenOutcome {
     },
 }
 
-/// Whether a differing frame replaces its golden.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Bless {
-    /// It does not: report the difference.
-    No,
-    /// It does (`CASEMENT_BLESS=1`, with a reason in the commit).
-    Yes,
-}
-
 /// Compares `actual` with `golden`'s PNG. A difference writes `<name>.actual.png` and
 /// `<name>.diff.png` into `out_dir` (`<name>` is the scene's last path component), or with
-/// [`Bless::Yes`] replaces the golden. A write that fails still reports
+/// `bless` replaces the golden (`CASEMENT_BLESS=1`, with a reason in the commit). A write that fails still reports
 /// [`GoldenOutcome::Differs`], naming the paths it tried.
-pub fn compare(golden: &Golden, actual: &RgbaImage, out_dir: &Path, bless: Bless) -> GoldenOutcome {
+pub fn compare(golden: &Golden, actual: &RgbaImage, out_dir: &Path, bless: bool) -> GoldenOutcome {
     let golden_path = PathBuf::from(format!("{}.png", golden.scene));
     let expected = image::open(&golden_path).ok().map(|image| image.to_rgba8());
     match (verdict(expected.as_ref(), actual, golden.tier), bless) {
-        (Verdict::Same, _) => GoldenOutcome::Match,
-        (Verdict::Differs(_), Bless::Yes) => bless_into(&golden_path, actual),
-        (Verdict::Differs(diff), Bless::No) => report(golden, actual, &diff, out_dir),
+        (Comparison::Same, _) => GoldenOutcome::Match,
+        (Comparison::Differs(_), true) => bless_into(&golden_path, actual),
+        (Comparison::Differs(diff), false) => report(golden, actual, &diff, out_dir),
     }
 }
 
 /// Whether two frames are equal under a tier, and if not, the diff image.
-enum Verdict {
+enum Comparison {
     Same,
     Differs(RgbaImage),
 }
 
-fn verdict(expected: Option<&RgbaImage>, actual: &RgbaImage, tier: GoldenTier) -> Verdict {
+fn verdict(expected: Option<&RgbaImage>, actual: &RgbaImage, tier: GoldenTier) -> Comparison {
     match expected {
         Some(expected) if expected.dimensions() == actual.dimensions() => {
             let differing = differing_pixels(expected, actual, tier);
             if within(tier, differing.len(), pixel_count(actual)) {
-                Verdict::Same
+                Comparison::Same
             } else {
-                Verdict::Differs(diff_image(actual, &differing))
+                Comparison::Differs(diff_image(actual, &differing))
             }
         }
-        _ => Verdict::Differs(actual.clone()),
+        _ => Comparison::Differs(actual.clone()),
     }
 }
 
@@ -195,17 +186,11 @@ mod tests {
         let frame = flat(4, 4, 10);
         let out = dir.path().join("out");
         assert!(matches!(
-            compare(&golden, &frame, &out, Bless::No),
+            compare(&golden, &frame, &out, false),
             GoldenOutcome::Differs { .. }
         ));
-        assert_eq!(
-            compare(&golden, &frame, &out, Bless::Yes),
-            GoldenOutcome::Blessed
-        );
-        assert_eq!(
-            compare(&golden, &frame, &out, Bless::No),
-            GoldenOutcome::Match
-        );
+        assert_eq!(compare(&golden, &frame, &out, true), GoldenOutcome::Blessed);
+        assert_eq!(compare(&golden, &frame, &out, false), GoldenOutcome::Match);
     }
 
     #[test]
@@ -214,12 +199,12 @@ mod tests {
         let exact = golden_in(dir.path(), GoldenTier::Exact);
         let out = dir.path().join("out");
         assert_eq!(
-            compare(&exact, &flat(10, 10, 10), &out, Bless::Yes),
+            compare(&exact, &flat(10, 10, 10), &out, true),
             GoldenOutcome::Blessed
         );
         let mut one_off = flat(10, 10, 10);
         one_off.put_pixel(3, 3, Rgba([12, 10, 10, 255]));
-        let outcome = compare(&exact, &one_off, &out, Bless::No);
+        let outcome = compare(&exact, &one_off, &out, false);
         let GoldenOutcome::Differs { actual, diff } = outcome else {
             panic!("one pixel two steps off must differ in the exact tier");
         };
@@ -231,10 +216,7 @@ mod tests {
             },
             ..exact
         };
-        assert_eq!(
-            compare(&soft, &one_off, &out, Bless::No),
-            GoldenOutcome::Match
-        );
+        assert_eq!(compare(&soft, &one_off, &out, false), GoldenOutcome::Match);
     }
 
     #[test]
@@ -249,7 +231,7 @@ mod tests {
         );
         let out = dir.path().join("out");
         assert_eq!(
-            compare(&soft, &flat(100, 100, 50), &out, Bless::Yes),
+            compare(&soft, &flat(100, 100, 50), &out, true),
             GoldenOutcome::Blessed
         );
         // 10 of 10,000 pixels (1000 ppm) three steps off: within; 11 is not.
@@ -259,12 +241,9 @@ mod tests {
                 image
             })
         };
-        assert_eq!(
-            compare(&soft, &off(10), &out, Bless::No),
-            GoldenOutcome::Match
-        );
+        assert_eq!(compare(&soft, &off(10), &out, false), GoldenOutcome::Match);
         assert!(matches!(
-            compare(&soft, &off(11), &out, Bless::No),
+            compare(&soft, &off(11), &out, false),
             GoldenOutcome::Differs { .. }
         ));
     }
@@ -275,11 +254,11 @@ mod tests {
         let golden = golden_in(dir.path(), GoldenTier::Exact);
         let out = dir.path().join("out");
         assert_eq!(
-            compare(&golden, &flat(4, 4, 1), &out, Bless::Yes),
+            compare(&golden, &flat(4, 4, 1), &out, true),
             GoldenOutcome::Blessed
         );
         assert!(matches!(
-            compare(&golden, &flat(4, 5, 1), &out, Bless::No),
+            compare(&golden, &flat(4, 5, 1), &out, false),
             GoldenOutcome::Differs { .. }
         ));
     }

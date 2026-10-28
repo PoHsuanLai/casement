@@ -1,10 +1,11 @@
 //! The real spawner: child processes, each reaped by the one that started it.
 
-use super::scope::{Reach, Scopes, scope_argv, unit_for};
+use super::scope::{manager_answers, scope_argv, unit_for};
 use super::{EnvVar, Home, SERVICE_VARS, SpawnError, SpawnSpec, Spawned, Spawner};
 use casement_core::Pid;
 use casement_core::time::Mono;
 use std::os::unix::process::CommandExt;
+use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
@@ -16,7 +17,7 @@ const SWEEP_EVERY: Duration = Duration::from_millis(250);
 /// zombie) and its exit can be told ([`Spawner::exited`]).
 #[derive(Debug)]
 pub struct ProcessSpawner {
-    scopes: Scopes,
+    runtime: Option<PathBuf>,
     children: Vec<(Pid, Child)>,
     /// When the children were last looked at.
     swept: Option<Mono>,
@@ -25,10 +26,11 @@ pub struct ProcessSpawner {
 }
 
 impl ProcessSpawner {
-    /// A spawner that puts the programs `scopes` allows in scopes of their own.
-    pub fn new(scopes: Scopes) -> ProcessSpawner {
+    /// A spawner that puts the programs a binding starts in scopes of their own in the service
+    /// manager that listens under `runtime`, when there is one.
+    pub fn new(runtime: Option<PathBuf>) -> ProcessSpawner {
         ProcessSpawner {
-            scopes,
+            runtime,
             children: Vec::new(),
             swept: None,
             started: 0,
@@ -38,8 +40,8 @@ impl ProcessSpawner {
     /// The command for `argv`: in a scope of its own when `home` asks for one and a manager
     /// answers, else the program itself.
     fn argv_for(&mut self, argv: &[String], home: Home) -> Vec<String> {
-        match (home, self.scopes.reachable()) {
-            (Home::OwnScope, Reach::Yes) => {
+        match (home, manager_answers(self.runtime.as_deref())) {
+            (Home::OwnScope, true) => {
                 self.started = self.started.saturating_add(1);
                 let program = argv.first().map_or("", String::as_str);
                 let unit = unit_for(program, std::process::id(), self.started);
@@ -69,7 +71,7 @@ fn command(words: &[String], env: &[EnvVar]) -> Option<Command> {
 
 impl Default for ProcessSpawner {
     fn default() -> ProcessSpawner {
-        ProcessSpawner::new(Scopes::Off)
+        ProcessSpawner::new(None)
     }
 }
 
@@ -232,7 +234,7 @@ mod tests {
         std::fs::create_dir(dir.path().join("systemd")).expect("folder");
         std::fs::write(dir.path().join("systemd/private"), b"").expect("socket stand-in");
         let words = ["foot".to_owned(), "-e".to_owned(), "top".to_owned()];
-        let mut with_manager = ProcessSpawner::new(Scopes::under(Some(dir.path().to_owned())));
+        let mut with_manager = ProcessSpawner::new(Some(dir.path().to_owned()));
         let scoped = with_manager.argv_for(&words, Home::OwnScope);
         assert_eq!(
             scoped[..5],
@@ -240,7 +242,7 @@ mod tests {
         );
         assert_eq!(scoped[scoped.len() - 4..], ["--", "foot", "-e", "top"]);
         assert_eq!(with_manager.argv_for(&words, Home::WithCompositor), words);
-        let mut without = ProcessSpawner::new(Scopes::Off);
+        let mut without = ProcessSpawner::new(None);
         assert_eq!(without.argv_for(&words, Home::OwnScope), words);
     }
 }

@@ -22,13 +22,10 @@ use crate::fakes::{
 };
 use crate::input::FixtureInput;
 use crate::spec::FixtureSpec;
-use casement::cli::{
-    ClockChoice, ConfigHome, Entropy, StartConfig, StartMode, TtyMode, XwaylandSource,
-};
+use casement::cli::{ClockChoice, Entropy, StartConfig, StartMode, TtyMode, XwaylandSource};
 use casement::display::{self, SharedDisplay, attach_display};
 use casement::privacy::{FilePrivacyStore, SystemDir};
 use casement::seams::Seams;
-use casement::space_store::StateHome;
 use casement::time::{ClockSource, SharedClock};
 use casement::xwayland::XwaylandConfig;
 use casement::{State, core_loop};
@@ -183,9 +180,9 @@ impl Fixture {
             dmabuf: spec.dmabuf,
             cost: spec.cost,
             mode: StartMode::Normal,
-            config_home: ConfigHome::At(scratch_config_home()),
+            config_home: Some(scratch_config_home()),
             entropy: Entropy::Fixed(FIXTURE_ENTROPY),
-            state_home: StateHome::Ephemeral,
+            state_home: None,
             system_dir: SystemDir::Etc,
             xwayland: XwaylandConfig::off(),
             xwayland_source: XwaylandSource::Flag,
@@ -282,7 +279,11 @@ impl Fixture {
     }
 
     /// The bus said what `root` came to for the claim of `window`'s client.
-    pub fn a11y_verdict(&mut self, window: WindowId, root: casement_core::window::A11yRoot) {
+    pub fn a11y_verdict(
+        &mut self,
+        window: WindowId,
+        root: Option<casement_core::window::A11yRoot>,
+    ) {
         casement::a11y::adopt(
             &mut self.state,
             casement_ipc::a11y::A11yVerdict { window, root },

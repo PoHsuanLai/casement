@@ -26,7 +26,6 @@ use super::judge::{Lit, judge};
 use super::kms::{
     CommitVerdict, ConnectorFacts, ConnectorId, ConnectorStatus, CrtcFacts, CrtcId, Kms, KmsCommit,
     KmsError, KmsOpener, KmsRefusal, KmsResources, OutputCommit, PlaneFacts, PlaneId, PlaneKind,
-    VrrState,
 };
 use super::render_hub_real::RenderHub;
 use super::render_mode::{RenderMode, Routes};
@@ -291,17 +290,13 @@ impl RealKms {
         if let Some(surface) = self.surfaces.get(&output.connector) {
             surface.use_mode(raw).map_err(io_error)?;
             surface.set_connectors(&[connector]).map_err(io_error)?;
-            surface
-                .use_vrr(output.vrr == VrrState::On)
-                .map_err(io_error)?;
+            surface.use_vrr(output.vrr).map_err(io_error)?;
         } else {
             let surface = self
                 .device
                 .create_surface(crtc, raw, &[connector])
                 .map_err(io_error)?;
-            surface
-                .use_vrr(output.vrr == VrrState::On)
-                .map_err(io_error)?;
+            surface.use_vrr(output.vrr).map_err(io_error)?;
             self.surfaces.insert(output.connector, surface);
         }
         Ok(())
@@ -571,19 +566,11 @@ fn planes(device: &DrmDevice, crtcs: &[crtc::Handle]) -> Result<Vec<PlaneFacts>,
 pub struct RealKmsOpener<D: 'static> {
     fds: Box<dyn FdSource>,
     handle: LoopHandle<'static, D>,
-    virtual_displays: VirtualDisplays,
+    /// Whether a virtual test display (a device whose DRM driver is vkms) is refused: a session
+    /// drives real displays only; `--drm-node` mode allows it and checks the driver itself.
+    refuse_virtual: bool,
     hub: Option<Rc<RenderHub>>,
     mode: RenderMode,
-}
-
-/// Whether a virtual test display (a device whose DRM driver is vkms) may be opened.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum VirtualDisplays {
-    /// It may: `--drm-node` mode, which checks the driver itself.
-    Allow,
-    /// It may not: a session drives real displays only.
-    Refuse,
 }
 
 impl<D: 'static> RealKmsOpener<D> {
@@ -592,7 +579,7 @@ impl<D: 'static> RealKmsOpener<D> {
         RealKmsOpener {
             fds,
             handle,
-            virtual_displays: VirtualDisplays::Allow,
+            refuse_virtual: false,
             hub: None,
             mode: RenderMode::Gpu,
         }
@@ -618,7 +605,7 @@ impl<D: 'static> RealKmsOpener<D> {
     #[must_use]
     pub fn refusing_virtual(self) -> RealKmsOpener<D> {
         RealKmsOpener {
-            virtual_displays: VirtualDisplays::Refuse,
+            refuse_virtual: true,
             ..self
         }
     }
@@ -635,7 +622,7 @@ impl<D: 'static> std::fmt::Debug for RealKmsOpener<D> {
 impl<D: 'static> KmsOpener for RealKmsOpener<D> {
     fn open(&mut self, path: &DevicePath) -> Result<Box<dyn Kms>, KmsError> {
         let fd = self.fds.fd(path)?;
-        if self.virtual_displays == VirtualDisplays::Refuse && is_vkms(&fd)? {
+        if self.refuse_virtual && is_vkms(&fd)? {
             return Err(KmsError::VirtualDisplay(path.0.clone()));
         }
         Ok(Box::new(RealKms::open_routed(

@@ -7,11 +7,12 @@
 
 use casement_core::app::AppLife;
 use casement_core::geometry::{LogicalPoint, LogicalRect, PhysicalSize};
-use casement_core::input::{ButtonCode, DeviceClass, Edge, KeyCode};
+use casement_core::input::{ButtonCode, DeviceClass, KeyCode};
 use casement_core::policy::ConnectionRole;
 use casement_core::window::WindowState;
 use casement_core::{DeviceId, WindowId};
 use casement_layout::{LayoutKnobs, RustScene, SceneLayout, spec_of};
+use casement_protocols::vocab::PressEdge;
 use casement_testclient::surface::popup::{Popup, PopupSpec};
 use casement_testclient::surface::toplevel::shell::{xdg_surface, xdg_wm_base};
 use casement_testclient::surface::toplevel::{Pings, State, Toplevel, WmBase, bind_pointer};
@@ -22,7 +23,7 @@ use std::time::Duration;
 
 /// Whether the golden files are replaced (`CASEMENT_BLESS=1`, deliberate).
 pub(crate) fn blessing() -> bool {
-    Env::of_process().bless == casement_render::golden::Bless::Yes
+    Env::of_process().bless
 }
 
 /// The path of a transcript golden.
@@ -116,10 +117,10 @@ pub(crate) fn click(fixture: &mut Fixture, device: DeviceId, window: WindowId) {
     fixture.input().pointer_to(device, at);
     fixture
         .input()
-        .button(device, ButtonCode(0x110), Edge::Press);
+        .button(device, ButtonCode(0x110), PressEdge::Press);
     fixture
         .input()
-        .button(device, ButtonCode(0x110), Edge::Release);
+        .button(device, ButtonCode(0x110), PressEdge::Release);
 }
 
 /// Lets the open animations run out (windows are drawn, and hit, where they are at the clock's
@@ -133,10 +134,10 @@ pub(crate) fn click_at(fixture: &mut Fixture, device: DeviceId, at: LogicalPoint
     fixture.input().pointer_to(device, at);
     fixture
         .input()
-        .button(device, ButtonCode(0x110), Edge::Press);
+        .button(device, ButtonCode(0x110), PressEdge::Press);
     fixture
         .input()
-        .button(device, ButtonCode(0x110), Edge::Release);
+        .button(device, ButtonCode(0x110), PressEdge::Release);
 }
 
 /// Makes `window` the key window the way a person does: a click on it (a window mapped without a
@@ -314,7 +315,7 @@ fn move_and_resize_need_a_press_serial() {
     fixture.pump();
     fixture
         .input()
-        .button(device, ButtonCode(0x110), Edge::Press);
+        .button(device, ButtonCode(0x110), PressEdge::Press);
     fixture.input().pointer_to(
         device,
         LogicalPoint {
@@ -691,7 +692,7 @@ fn a_client_that_stops_answering_pings_is_not_responding() {
         DeviceClass::Keyboard,
         TestOrigin::Physical(DeviceClass::Keyboard),
     );
-    fixture.input().key(keyboard, KeyCode(30), Edge::Press);
+    fixture.input().key(keyboard, KeyCode(30), PressEdge::Press);
     fixture.advance(Duration::from_secs(1));
     assert_eq!(fixture.model().apps()[&app].life, AppLife::Running);
     fixture.advance(Duration::from_secs(5));
@@ -719,7 +720,7 @@ fn a_client_that_answers_pings_stays_responding() {
         DeviceClass::Keyboard,
         TestOrigin::Physical(DeviceClass::Keyboard),
     );
-    fixture.input().key(keyboard, KeyCode(30), Edge::Press);
+    fixture.input().key(keyboard, KeyCode(30), PressEdge::Press);
     fixture.advance(Duration::from_secs(6));
     assert_eq!(fixture.model().apps()[&app].life, AppLife::Running);
     assert!(!base.pings.with(|seen| seen.is_empty()), "it was pinged");

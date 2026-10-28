@@ -2,7 +2,8 @@
 //! release them: the host keeps the key-up that would have come, and a key stuck down in a
 //! client repeats forever.
 
-use casement_core::input::{ButtonCode, Edge, InputKind, KeyCode};
+use casement_core::input::{ButtonCode, InputKind, KeyCode};
+use casement_protocols::vocab::PressEdge;
 use std::collections::BTreeSet;
 
 /// What is held.
@@ -28,10 +29,10 @@ impl HeldInput {
         }
     }
 
-    fn track<T: Ord>(held: &mut BTreeSet<T>, code: T, edge: Edge) {
+    fn track<T: Ord>(held: &mut BTreeSet<T>, code: T, edge: PressEdge) {
         match edge {
-            Edge::Press => held.insert(code),
-            Edge::Release => held.remove(&code),
+            PressEdge::Press => held.insert(code),
+            PressEdge::Release => held.remove(&code),
         };
     }
 
@@ -41,14 +42,14 @@ impl HeldInput {
             .into_iter()
             .map(|code| InputKind::Key {
                 code,
-                edge: Edge::Release,
+                edge: PressEdge::Release,
             });
         let buttons =
             std::mem::take(&mut self.buttons)
                 .into_iter()
                 .map(|button| InputKind::Button {
                     button,
-                    edge: Edge::Release,
+                    edge: PressEdge::Release,
                 });
         keys.chain(buttons).collect()
     }

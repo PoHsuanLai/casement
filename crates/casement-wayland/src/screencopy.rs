@@ -10,7 +10,7 @@
 //! on the output since the frame the same client last got of it, and reports what changed
 //! ([`crate::image_capture::DamageLogs`]; the whole area for a client's first frame). The
 //! cursor is in the frame when the request's `overlay_cursor` is not 0 and left out when it is
-//! ([`CursorPaint`]); dma-buf buffers are offered through `linux_dmabuf` when the root names formats
+//! 0; dma-buf buffers are offered through `linux_dmabuf` when the root names formats
 //! ([`ScreencopyOutput::dmabuf`]). Visible to the same connections as `ext_image_copy_capture` (the I7 table's
 //! `ImageCapture`): the public socket and the shell, not a sandbox.
 //!
@@ -25,8 +25,7 @@ pub use gate::{WaitingCopies, on_resolved};
 pub use region::physical_region;
 
 use crate::consent::{self, Admission, ConsentHandler};
-use crate::image_capture::CursorPaint;
-use crate::limits::{self, Limit, Standing};
+use crate::limits::{self, Limit};
 use crate::states::GlobalFilter;
 use casement_core::OutputKey;
 use casement_core::geometry::{PhysicalRect, PhysicalSize, Transform};
@@ -141,7 +140,7 @@ pub struct PendingCopy {
     /// Whether it reports damage.
     pub damage: Damage,
     /// Whether the frame has the cursor in it.
-    pub cursor: CursorPaint,
+    pub cursor: bool,
 }
 
 /// The last frame a client was given of an output.
@@ -289,58 +288,42 @@ pub struct ScreencopyGlobal {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ManagerData;
 
-/// Whether a frame object has had its one copy.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Used {
-    No,
-    Yes,
-}
-
-/// Whether a client's buffer suits a frame.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Fit {
-    Yes,
-    No,
-}
-
 /// One frame object's data: what it copies (none when the request named nothing capturable,
 /// the frame was `failed` at once) and whether it is used up.
 #[derive(Debug)]
 pub struct FrameData {
     target: Option<Target>,
     dmabuf: Vec<Fourcc>,
-    cursor: CursorPaint,
-    used: Mutex<Used>,
+    cursor: bool,
+    /// Whether the frame has had its one copy.
+    used: Mutex<bool>,
 }
 
 impl FrameData {
-    fn new(target: Option<Target>, dmabuf: Vec<Fourcc>, cursor: CursorPaint) -> FrameData {
+    fn new(target: Option<Target>, dmabuf: Vec<Fourcc>, cursor: bool) -> FrameData {
         FrameData {
             target,
             dmabuf,
             cursor,
-            used: Mutex::new(Used::No),
+            used: Mutex::new(false),
         }
     }
 
     /// Marks the frame used; what it was.
-    fn take_use(&self) -> Used {
+    fn take_use(&self) -> bool {
         let mut used = self.used.lock().unwrap_or_else(PoisonError::into_inner);
-        std::mem::replace(&mut *used, Used::Yes)
+        std::mem::replace(&mut *used, true)
     }
 }
 
 /// Whether `buffer` is a shared-memory buffer of an offered format that holds `area`, or a
 /// dma-buf of exactly `area`'s size in one of the `dmabuf` formats.
-fn fits(buffer: &WlBuffer, area: PhysicalRect, dmabuf: &[Fourcc]) -> Fit {
+fn fits(buffer: &WlBuffer, area: PhysicalRect, dmabuf: &[Fourcc]) -> bool {
     if let Ok(held) = get_dmabuf(buffer) {
         let size = held.size();
         let exact =
             i64::from(size.w) == i64::from(area.w) && i64::from(size.h) == i64::from(area.h);
-        return match exact && dmabuf.contains(&held.format().code) {
-            true => Fit::Yes,
-            false => Fit::No,
-        };
+        return exact && dmabuf.contains(&held.format().code);
     }
     let checked = with_buffer_contents(buffer, |_, _, data| {
         let format = matches!(data.format, Format::Argb8888 | Format::Xrgb8888);
@@ -349,10 +332,7 @@ fn fits(buffer: &WlBuffer, area: PhysicalRect, dmabuf: &[Fourcc]) -> Fit {
         let stride = i64::from(data.stride) >= i64::from(area.w).saturating_mul(4);
         (format, size, stride)
     });
-    match checked {
-        Ok((true, true, true)) => Fit::Yes,
-        _ => Fit::No,
-    }
+    matches!(checked, Ok((true, true, true)))
 }
 
 impl<D> GlobalDispatch2<ZwlrScreencopyManagerV1, D> for ScreencopyGlobal
@@ -416,11 +396,7 @@ where
         let announced = target.as_ref().map(|target| target.area);
         let frame = data_init.init(
             frame,
-            FrameData::new(
-                target,
-                dmabuf.clone(),
-                CursorPaint::from_overlay(overlay_cursor),
-            ),
+            FrameData::new(target, dmabuf.clone(), overlay_cursor != 0),
         );
         match announced {
             Some(area) => wire::announce(&frame, area, &dmabuf),
@@ -439,7 +415,7 @@ impl FrameData {
         buffer: WlBuffer,
         damage: Damage,
     ) {
-        if self.take_use() == Used::Yes {
+        if self.take_use() {
             frame.post_error(
                 zwlr_screencopy_frame_v1::Error::AlreadyUsed,
                 "the frame was already copied",
@@ -450,7 +426,7 @@ impl FrameData {
         let Some(target) = self.target.clone() else {
             return;
         };
-        if fits(&buffer, target.area, &self.dmabuf) == Fit::No {
+        if !fits(&buffer, target.area, &self.dmabuf) {
             frame.post_error(
                 zwlr_screencopy_frame_v1::Error::InvalidBuffer,
                 "the buffer is not of a size and format offered",
@@ -462,7 +438,7 @@ impl FrameData {
         let part = state.screencopy_part();
         let held = consent::key_of(client).map_or(0, |key| part.held_of(key));
         let waiting = part.pending_of(&client.id()).saturating_add(held);
-        if limits::admit(display, client, Limit::PendingCopies, waiting) == Standing::Over {
+        if !limits::admit(display, client, Limit::PendingCopies, waiting) {
             return;
         }
         let copy = PendingCopy {

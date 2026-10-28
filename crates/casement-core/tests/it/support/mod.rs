@@ -10,8 +10,7 @@ use casement_core::output::{
 use casement_core::space::{Space, SpaceContent, SpaceIndex};
 use casement_core::time::{Millihertz, Mono};
 use casement_core::window::{
-    MaxSize, Parent, SizeLimits, SpacePlace, StackRank, Window, WindowHints, WindowOrigin,
-    WindowState, WindowTitle,
+    SizeLimits, SpacePlace, StackRank, Window, WindowHints, WindowOrigin, WindowState, WindowTitle,
 };
 use casement_core::{ClientKey, OutputKey, OutputName, WindowId};
 use casement_protocols::vocab::{Emphasis, Modality, SensitivityLevel, WindowRole};
@@ -98,12 +97,12 @@ pub fn window(n: u64, app: &AppKey, space: &str) -> Window {
         home: None,
         stack: StackRank(n),
         state: WindowState::Floating(rect(100, 100, 800, 600)),
-        parent: Parent::None,
+        parent: None,
         emphasis: Emphasis::Inactive,
         sensitivity: SensitivityLevel::Normal,
         limits: SizeLimits {
             min: LogicalSize { w: 0, h: 0 },
-            max: MaxSize::Unbounded,
+            max: None,
         },
         title: WindowTitle::default(),
         claimed_id: claimed("test"),

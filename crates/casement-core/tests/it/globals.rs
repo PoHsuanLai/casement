@@ -2,8 +2,7 @@
 //! `tests/golden/globals.txt` has one row per global; a new one is a row to review.
 
 use casement_core::policy::{
-    Advertise, ConnectionRole, GlobalKind, PowerSet, advertised, advertised_to, power_of,
-    trusted_powers,
+    ConnectionRole, GlobalKind, PowerSet, advertised, advertised_to, power_of, trusted_powers,
 };
 use casement_core::privilege::ServiceRole;
 use casement_protocols::vocab::{Power, WireCode};
@@ -18,18 +17,14 @@ fn sandbox() -> ConnectionRole {
     })
 }
 
-fn word(seen: Advertise) -> &'static str {
-    match seen {
-        Advertise::Yes => "yes",
-        Advertise::No => "no",
-    }
+fn word(seen: bool) -> &'static str {
+    if seen { "yes" } else { "no" }
 }
 
 /// The table as the golden writes it.
 fn table() -> Vec<String> {
-    GlobalKind::ALL
-        .iter()
-        .map(|&kind| {
+    GlobalKind::all()
+        .map(|kind| {
             let power = power_of(kind).map_or_else(|| "-".to_owned(), |power| format!("{power:?}"));
             format!(
                 "{kind:?} {power} {} {} {}",
@@ -52,21 +47,9 @@ fn the_table_is_the_golden() {
 
 #[test]
 fn the_shell_is_shown_every_global() {
-    for &kind in GlobalKind::ALL {
-        assert_eq!(
-            advertised(kind, &ConnectionRole::Shell),
-            Advertise::Yes,
-            "{kind:?}"
-        );
+    for kind in GlobalKind::all() {
+        assert!(advertised(kind, &ConnectionRole::Shell), "{kind:?}");
     }
-}
-
-#[test]
-fn every_global_is_listed_once() {
-    let mut kinds: Vec<GlobalKind> = GlobalKind::ALL.to_vec();
-    kinds.sort();
-    kinds.dedup();
-    assert_eq!(kinds.len(), GlobalKind::ALL.len());
 }
 
 /// I7: a global a sandbox is kept from, and the public socket is shown, either needs consent
@@ -75,9 +58,8 @@ fn every_global_is_listed_once() {
 #[test]
 fn no_privileged_global_on_the_public_socket_is_ungated() {
     let ungated_on_purpose = [GlobalKind::LayerShell, GlobalKind::SecurityContext];
-    for &kind in GlobalKind::ALL {
-        let privileged = advertised(kind, &sandbox()) == Advertise::No
-            && advertised(kind, &ConnectionRole::Public) == Advertise::Yes;
+    for kind in GlobalKind::all() {
+        let privileged = !advertised(kind, &sandbox()) && advertised(kind, &ConnectionRole::Public);
         if privileged && !ungated_on_purpose.contains(&kind) {
             assert!(
                 power_of(kind).is_some(),
@@ -91,12 +73,12 @@ fn no_privileged_global_on_the_public_socket_is_ungated() {
 /// then; nobody else is affected.
 #[test]
 fn a_refused_power_hides_its_globals_from_a_public_client_only() {
-    for &kind in GlobalKind::ALL {
+    for kind in GlobalKind::all() {
         for &power in <Power as WireCode>::ALL {
             let hidden = PowerSet::default().with(power);
             let public = advertised_to(kind, &ConnectionRole::Public, &hidden);
             let want = match (power_of(kind), advertised(kind, &ConnectionRole::Public)) {
-                (Some(own), Advertise::Yes) if own == power => Advertise::No,
+                (Some(own), true) if own == power => false,
                 (_, seen) => seen,
             };
             assert_eq!(public, want, "{kind:?} without {power:?}");
@@ -120,7 +102,7 @@ fn a_refused_power_hides_its_globals_from_a_public_client_only() {
 /// shell or the agent tier alone are: not `quire_shell_v1`, not `quire_desktop_manager_v1`.
 #[test]
 fn the_portal_is_shown_what_every_client_is_and_not_the_shell_or_agent_globals() {
-    for &kind in GlobalKind::ALL {
+    for kind in GlobalKind::all() {
         assert_eq!(
             advertised(kind, &ConnectionRole::Portal),
             advertised(kind, &ConnectionRole::Public),
@@ -128,11 +110,7 @@ fn the_portal_is_shown_what_every_client_is_and_not_the_shell_or_agent_globals()
         );
     }
     for kind in [GlobalKind::QuireShell, GlobalKind::QuireDesktop] {
-        assert_eq!(
-            advertised(kind, &ConnectionRole::Portal),
-            Advertise::No,
-            "{kind:?}"
-        );
+        assert!(!advertised(kind, &ConnectionRole::Portal), "{kind:?}");
     }
 }
 
@@ -140,9 +118,7 @@ fn the_portal_is_shown_what_every_client_is_and_not_the_shell_or_agent_globals()
 fn each_power_gates_at_least_one_global() {
     for &power in <Power as WireCode>::ALL {
         assert!(
-            GlobalKind::ALL
-                .iter()
-                .any(|&kind| power_of(kind) == Some(power)),
+            GlobalKind::all().any(|kind| power_of(kind) == Some(power)),
             "{power:?} gates nothing"
         );
     }

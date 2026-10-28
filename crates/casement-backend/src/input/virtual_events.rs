@@ -4,10 +4,11 @@
 use super::virtual_input::{VirtualDevice, VirtualInput};
 use casement_core::geometry::{LogicalPoint, SubPoint, SubPx};
 use casement_core::input::{
-    AxisFrame, AxisSource as CoreSource, AxisStop, ButtonCode, Edge, GestureEnd, KeyCode, LidState,
-    PinchDelta, SwitchStep, TabletState, TouchStep,
+    AxisFrame, AxisSource as CoreSource, ButtonCode, GestureEnd, KeyCode, PinchDelta, SwitchStep,
+    TouchStep,
 };
 use casement_core::time::Mono;
+use casement_protocols::vocab::PressEdge;
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisRelativeDirection, AxisSource, ButtonState, Event,
     GestureBeginEvent, GestureEndEvent, GestureHoldBeginEvent, GestureHoldEndEvent,
@@ -67,7 +68,7 @@ pub struct VirtualKey {
     /// The key.
     pub code: KeyCode,
     /// Down or up.
-    pub edge: Edge,
+    pub edge: PressEdge,
     /// How many keys are down on every device after this event (smithay's `count`).
     pub count: u32,
 }
@@ -80,8 +81,8 @@ impl KeyboardKeyEvent<VirtualInput> for VirtualKey {
 
     fn state(&self) -> KeyState {
         match self.edge {
-            Edge::Press => KeyState::Pressed,
-            Edge::Release => KeyState::Released,
+            PressEdge::Press => KeyState::Pressed,
+            PressEdge::Release => KeyState::Released,
         }
     }
 
@@ -158,7 +159,7 @@ pub struct VirtualButton {
     /// The button.
     pub button: ButtonCode,
     /// Down or up.
-    pub edge: Edge,
+    pub edge: PressEdge,
 }
 event_impl!(VirtualButton);
 
@@ -169,8 +170,8 @@ impl PointerButtonEvent<VirtualInput> for VirtualButton {
 
     fn state(&self) -> ButtonState {
         match self.edge {
-            Edge::Press => ButtonState::Pressed,
-            Edge::Release => ButtonState::Released,
+            PressEdge::Press => ButtonState::Pressed,
+            PressEdge::Release => ButtonState::Released,
         }
     }
 }
@@ -195,9 +196,9 @@ impl PointerAxisEvent<VirtualInput> for VirtualAxis {
             self.frame.source,
             CoreSource::Finger | CoreSource::Continuous
         );
-        match (continuous, self.frame.stop) {
-            (true, AxisStop::Stopped) => Some(0.0),
-            (true, AxisStop::Running) => Some(px(sub)),
+        match (continuous, self.frame.stopped) {
+            (true, true) => Some(0.0),
+            (true, false) => Some(px(sub)),
             (false, _) => (sub.0 != 0).then(|| px(sub)),
         }
     }
@@ -384,19 +385,16 @@ event_impl!(VirtualSwitch);
 impl SwitchToggleEvent<VirtualInput> for VirtualSwitch {
     fn switch(&self) -> Option<Switch> {
         Some(match self.step {
-            SwitchStep::Lid(_) => Switch::Lid,
-            SwitchStep::TabletMode(_) => Switch::TabletMode,
+            SwitchStep::Lid { .. } => Switch::Lid,
+            SwitchStep::TabletMode { .. } => Switch::TabletMode,
         })
     }
 
     fn state(&self) -> SwitchState {
-        match self.step {
-            SwitchStep::Lid(LidState::Closed) | SwitchStep::TabletMode(TabletState::On) => {
-                SwitchState::On
-            }
-            SwitchStep::Lid(LidState::Open) | SwitchStep::TabletMode(TabletState::Off) => {
-                SwitchState::Off
-            }
+        let (SwitchStep::Lid { closed: on } | SwitchStep::TabletMode { tablet: on }) = self.step;
+        match on {
+            true => SwitchState::On,
+            false => SwitchState::Off,
         }
     }
 }

@@ -1,9 +1,10 @@
 //! `seat` (P0-H4).
 
 use casement_core::geometry::{LogicalPoint, PhysicalSize, SubPoint, SubPx};
-use casement_core::input::{AxisFrame, AxisSource, AxisStop, DeviceClass, Edge, KeyCode};
+use casement_core::input::{AxisFrame, AxisSource, DeviceClass, KeyCode};
 use casement_core::policy::ConnectionRole;
 use casement_core::settings::RepeatRate;
+use casement_protocols::vocab::PressEdge;
 use casement_testclient::seat::keyboard::Keyboard;
 use casement_testclient::seat::pointer::Pointer;
 use casement_testclient::surface::layer::{
@@ -97,7 +98,7 @@ fn axis_source_and_value120_are_sent() {
                 x: SubPx(0),
                 y: SubPx(15 * 120),
             },
-            stop: AxisStop::Running,
+            stopped: false,
         },
     );
     let names = names_of(fixture.client(id), "wl_pointer#");
@@ -218,10 +219,10 @@ fn modifiers_ordering_transcript() {
     )
     .expect("layer");
     fixture.pump();
-    fixture.input().key(keys, KEY_LEFTSHIFT, Edge::Press);
-    fixture.input().key(keys, KEY_A, Edge::Press);
-    fixture.input().key(keys, KEY_A, Edge::Release);
-    fixture.input().key(keys, KEY_LEFTSHIFT, Edge::Release);
+    fixture.input().key(keys, KEY_LEFTSHIFT, PressEdge::Press);
+    fixture.input().key(keys, KEY_A, PressEdge::Press);
+    fixture.input().key(keys, KEY_A, PressEdge::Release);
+    fixture.input().key(keys, KEY_LEFTSHIFT, PressEdge::Release);
     let names: Vec<String> = names_of(fixture.client(id), "wl_keyboard#")
         .into_iter()
         .filter(|name| name != "keymap" && name != "repeat_info")

@@ -23,8 +23,8 @@ mod timing;
 pub use book::RevealBook;
 pub use casement_protocols::vocab::FullScreenBar;
 pub use ds_behaviour::space_swipe::Reduced;
-pub use edge::{Over, Place, RevealEdge, STRIP};
-pub use machine::{Cover, Popup, Reveal, RevealIn, RevealOut, Stacking};
+pub use edge::{Place, RevealEdge, STRIP};
+pub use machine::{Reveal, RevealIn, RevealOut};
 pub use slide::{Slid, slid};
 pub use timing::{BAR_DWELL, BAR_SLIDE, DOCK_DWELL, DOCK_SLIDE, Look, REDUCED_FADE, RevealTiming};
 

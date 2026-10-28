@@ -39,15 +39,6 @@ pub enum ArmInput {
     Lost,
 }
 
-/// Whether the pointer is still on the light it pressed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ArmReach {
-    /// On the light: it shows pressed and would fire.
-    On,
-    /// Off the light: nothing would fire.
-    Off,
-}
-
 /// Where the light press stands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]
@@ -61,8 +52,8 @@ pub enum LightArm {
         light: LightAt,
         /// The button holding it.
         button: ButtonCode,
-        /// Whether the pointer is still on it.
-        reach: ArmReach,
+        /// Whether the pointer is still on it: it shows pressed and would fire.
+        on_light: bool,
     },
 }
 
@@ -92,7 +83,7 @@ impl LightArm {
         match self {
             LightArm::Held {
                 light,
-                reach: ArmReach::On,
+                on_light: true,
                 ..
             } => Some(light),
             _ => None,
@@ -106,7 +97,7 @@ impl LightArm {
                 LightArm::Held {
                     light: on,
                     button,
-                    reach: ArmReach::On,
+                    on_light: true,
                 },
                 ArmOutcome::Nothing,
             ),
@@ -114,7 +105,7 @@ impl LightArm {
                 LightArm::Held {
                     light,
                     button,
-                    reach: reach_of(light, over),
+                    on_light: over == Some(light),
                 },
                 ArmOutcome::Nothing,
             ),
@@ -124,21 +115,13 @@ impl LightArm {
                     button: released,
                     over,
                 },
-            ) if released == button => match reach_of(light, over) {
-                ArmReach::On => (LightArm::Idle, ArmOutcome::Fire(light)),
-                ArmReach::Off => (LightArm::Idle, ArmOutcome::Nothing),
+            ) if released == button => match over == Some(light) {
+                true => (LightArm::Idle, ArmOutcome::Fire(light)),
+                false => (LightArm::Idle, ArmOutcome::Nothing),
             },
             (_, ArmInput::Lost) => (LightArm::Idle, ArmOutcome::Nothing),
             (held, _) => (held, ArmOutcome::Nothing),
         }
-    }
-}
-
-/// Whether `over` is `light`.
-fn reach_of(light: LightAt, over: Option<LightAt>) -> ArmReach {
-    match over == Some(light) {
-        true => ArmReach::On,
-        false => ArmReach::Off,
     }
 }
 

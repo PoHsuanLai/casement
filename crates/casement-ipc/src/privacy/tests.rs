@@ -3,12 +3,14 @@
 //! nobody else touches it, and the administrator's rows cannot be switched. The model's side is
 //! the channel the test reads. No test reads the real `/proc` for a caller.
 
-use super::{PRIVACY_PATH, PrivacyEdit, PrivacyLink};
+use super::{PRIVACY_PATH, PrivacyLink};
 use crate::dbus::COMPOSITOR_BUS_NAME;
 use crate::test_served::{Loop, Served, WHOLE_TEST, outcome, service};
 use calloop::channel::Channel;
 use casement_core::policy::Power;
-use casement_core::privilege::{PrivacyRow, ProgramPath, Source, Subject, UnixSeconds, Verdict};
+use casement_core::privilege::{
+    Edit, PrivacyRow, ProgramPath, Source, Subject, UnixSeconds, Verdict,
+};
 use ds_settings::live::LiveSchema;
 use ds_settings::schema::{KeyKind, KeySpec};
 use peephole_bus::peephole::fake::introduced_program;
@@ -37,7 +39,7 @@ fn row(path: &str, power: Power, verdict: Verdict, source: Source) -> PrivacyRow
 
 /// A served Compositor1 with the Privacy list on it: the person allowed `grim` the screen, an
 /// administrator refused `evil` the screen. The channel is the model's end of Settings' changes.
-fn served() -> (Served, Channel<PrivacyEdit>) {
+fn served() -> (Served, Channel<Edit>) {
     let (link, channel) = PrivacyLink::new();
     link.board().publish(vec![
         row(
@@ -150,10 +152,7 @@ async fn a_power_nobody_answered_can_be_switched_on() {
     assert_eq!(set(&module, &grim_keys, Value::from("on")).await, "granted");
     assert_eq!(
         channel.try_recv().ok(),
-        Some(PrivacyEdit::Allow {
-            subject: program("/usr/bin/grim"),
-            power: Power::Keys
-        })
+        Some(Edit::Allow(program("/usr/bin/grim"), Power::Keys))
     );
     assert_eq!(get(&module, &grim_keys).await, "on");
     // The administrator's program has the other powers to switch too.
@@ -204,10 +203,7 @@ async fn only_the_settings_app_may_write() {
     assert_eq!(set(&module, &grim, Value::from("off")).await, "granted");
     assert_eq!(
         channel.try_recv().ok(),
-        Some(PrivacyEdit::Deny {
-            subject: program("/usr/bin/grim"),
-            power: Power::Screen
-        })
+        Some(Edit::Deny(program("/usr/bin/grim"), Power::Screen))
     );
     assert_eq!(
         get(&module, &grim).await,
@@ -221,9 +217,6 @@ async fn only_the_settings_app_may_write() {
     assert_eq!(set(&module, &forget, Value::from(true)).await, "granted");
     assert_eq!(
         channel.try_recv().ok(),
-        Some(PrivacyEdit::Forget {
-            subject: program("/usr/bin/grim"),
-            power: Power::Screen
-        })
+        Some(Edit::Forget(program("/usr/bin/grim"), Power::Screen))
     );
 }

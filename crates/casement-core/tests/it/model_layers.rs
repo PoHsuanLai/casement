@@ -6,8 +6,8 @@ use crate::support;
 use casement_core::focus::TokenCheck;
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize, Transform};
 use casement_core::layer::{
-    Anchor, Anchors, ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerOwner, LayerSpec,
-    Margins, ShellRoleTag,
+    Anchors, ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerOwner, LayerSpec, Margins,
+    ShellRoleTag,
 };
 
 use casement_core::lock::LockEvent;
@@ -28,10 +28,10 @@ fn bar(output: &str, zone: ExclusiveZone) -> LayerSpec {
         output: key(output),
         level: LayerLevel::Top,
         anchor: Anchors {
-            top: Anchor::Held,
-            bottom: Anchor::Free,
-            left: Anchor::Held,
-            right: Anchor::Held,
+            top: true,
+            bottom: false,
+            left: true,
+            right: true,
         },
         exclusive: zone,
         margin: Margins {
@@ -119,7 +119,6 @@ fn a_layer_that_reserves_nothing_does_not_lay_windows_out_again() {
 
 #[test]
 fn layer_sizes_follow_their_anchors_and_margins() {
-    let held = |a: bool| if a { Anchor::Held } else { Anchor::Free };
     let cases = [
         (
             "both ends of both axes",
@@ -149,10 +148,10 @@ fn layer_sizes_follow_their_anchors_and_margins() {
     for (name, [top, bottom, left, right], (mt, mr, mb, ml), (w, h)) in cases {
         let spec = LayerSpec {
             anchor: Anchors {
-                top: held(top),
-                bottom: held(bottom),
-                left: held(left),
-                right: held(right),
+                top,
+                bottom,
+                left,
+                right,
             },
             margin: Margins {
                 top: mt,
@@ -305,10 +304,10 @@ fn among_exclusive_layers_the_highest_level_then_the_newest_holds_the_keyboard()
 fn centre(output: &str) -> LayerSpec {
     LayerSpec {
         anchor: Anchors {
-            top: Anchor::Held,
-            bottom: Anchor::Held,
-            left: Anchor::Held,
-            right: Anchor::Held,
+            top: true,
+            bottom: true,
+            left: true,
+            right: true,
         },
         level: LayerLevel::Overlay,
         namespace: "centre".to_owned(),
@@ -390,10 +389,10 @@ fn zones_that_do_not_move_a_layer_do_not_reconfigure_it() {
 fn dock(output: &str, zone: ExclusiveZone) -> LayerSpec {
     LayerSpec {
         anchor: Anchors {
-            top: Anchor::Held,
-            bottom: Anchor::Held,
-            left: Anchor::Held,
-            right: Anchor::Free,
+            top: true,
+            bottom: true,
+            left: true,
+            right: false,
         },
         namespace: "dock".to_owned(),
         size: casement_core::geometry::LogicalSize::ZERO,

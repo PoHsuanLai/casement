@@ -9,9 +9,7 @@ use crate::backend::BackendError;
 use crate::headless::{Cursorless, FrameSource, transform_of};
 use casement_core::OutputName;
 use casement_core::geometry::{PhysicalRect, PhysicalSize};
-use casement_render::pass::{
-    CaptureRequest, CapturedFrame, CursorInclusion, blit_texture, capture_output,
-};
+use casement_render::pass::{CaptureRequest, CapturedFrame, blit_texture, capture_output};
 use casement_render::render_output;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::allocator::dmabuf::Dmabuf;
@@ -70,7 +68,7 @@ impl SceneStore {
         &self,
         renderer: &mut GlesRenderer,
         output: &OutputName,
-        cursor: CursorInclusion,
+        cursor: bool,
         from: PhysicalRect,
         target: &mut Dmabuf,
     ) -> Result<(), BackendError> {
@@ -84,7 +82,7 @@ impl SceneStore {
         &self,
         renderer: &mut GlesRenderer,
         output: &OutputName,
-        cursor: CursorInclusion,
+        cursor: bool,
         area: PhysicalRect,
     ) -> Result<CapturedFrame, BackendError> {
         let scenes = self.scenes.get(output).ok_or(BackendError::NoFrame)?;
@@ -107,12 +105,12 @@ impl SceneStore {
     fn layer(
         &self,
         output: &OutputName,
-        cursor: CursorInclusion,
+        cursor: bool,
     ) -> Result<(PhysicalSize, &Layer), BackendError> {
         let scenes = self.scenes.get(output).ok_or(BackendError::NoFrame)?;
         let layer = match cursor {
-            CursorInclusion::Exclude => &scenes.bare,
-            _ => &scenes.shown,
+            false => &scenes.bare,
+            true => &scenes.shown,
         };
         Ok((scenes.picture.size, layer))
     }

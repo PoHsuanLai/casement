@@ -14,18 +14,18 @@ mod origin;
 mod reach;
 
 pub use binding::{
-    Argv, Binding, BindingAction, Bindings, DbusCall, DesktopCommand, Resolved, SpaceStep, resolve,
+    Argv, Binding, BindingAction, Bindings, DbusCall, DesktopCommand, SpaceStep, resolve,
 };
 pub use chord::Chord;
 pub use event::{
-    AxisFrame, AxisSource, AxisStop, Edge, GestureEnd, GestureStep, InputEvent, InputKind,
-    LidState, PinchDelta, SwitchStep, TabletState, TouchStep,
+    AxisFrame, AxisSource, GestureEnd, GestureStep, InputEvent, InputKind, PinchDelta, SwitchStep,
+    TouchStep,
 };
 pub use key::{ButtonCode, KeyCode, Keysym};
 pub use lease::Leases;
 pub use maker::Maker;
 pub use origin::{BUS_VIRTUAL, DeviceClass, FeedSource, KernelIds, Origin, PortalSessionId};
-pub use reach::{InputTarget, InputUse, Reach, ReachFacts, Refusal, reach};
+pub use reach::{InputTarget, InputUse, ReachFacts, Refusal, reach};
 
 #[cfg(test)]
 mod tests;

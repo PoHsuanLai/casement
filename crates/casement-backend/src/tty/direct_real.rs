@@ -10,7 +10,6 @@ use super::kms::KmsError;
 use super::kms_real::{FdSource, RealKmsOpener};
 use super::render_mode::RenderMode;
 use super::udev::DevicePath;
-use super::writeback::WritebackMode;
 use super::writeback_real::RealWriteback;
 use crate::backend::BackendError;
 use crate::session::SessionFault;
@@ -58,7 +57,7 @@ fn device_on(fd: &OwnedFd) -> io::Result<DrmDeviceFd> {
 /// the edge sends a note.
 pub fn direct_seams<D: 'static>(
     node: &Path,
-    writeback: WritebackMode,
+    writeback: bool,
     mode: RenderMode,
     handle: &LoopHandle<'static, D>,
 ) -> Result<TtySeams, BackendError> {
@@ -78,13 +77,13 @@ pub fn direct_seams<D: 'static>(
         .map_err(named)?;
     require_vkms(driver.name()).map_err(|refusal| unavailable(refusal.to_string()))?;
     let writeback = match writeback {
-        WritebackMode::Enabled => {
+        true => {
             let device = device_on(&fd).map_err(named)?;
             let seam = RealWriteback::open(device)
                 .map_err(|error| unavailable(format!("{}: {error}", node.display())))?;
             Some(seam)
         }
-        _ => None,
+        false => None,
     };
     let (ping, wake) = make_ping().map_err(|error| unavailable(error.to_string()))?;
     handle

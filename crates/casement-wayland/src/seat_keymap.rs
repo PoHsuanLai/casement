@@ -53,16 +53,6 @@ pub enum KeymapStep {
     Compile,
 }
 
-/// How a refusal is to be reported.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum Report {
-    /// The first time these names failed: say so.
-    Say,
-    /// The same names failed before: stay quiet.
-    Quiet,
-}
-
 /// The names the seat's keymap came from and the names it refused last.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeymapBook {
@@ -109,15 +99,12 @@ impl KeymapBook {
         self.refused = None;
     }
 
-    /// `names` did not compile; the old keymap stays. Says whether to report it.
-    pub fn refuse(&mut self, names: XkbNames) -> Report {
-        let report = if self.refused.as_ref() == Some(&names) {
-            Report::Quiet
-        } else {
-            Report::Say
-        };
+    /// `names` did not compile; the old keymap stays. Says whether to report it: the first
+    /// time these names failed, yes; the same names again, no.
+    pub fn refuse(&mut self, names: XkbNames) -> bool {
+        let first = self.refused.as_ref() != Some(&names);
         self.refused = Some(names);
-        report
+        first
     }
 }
 
@@ -163,7 +150,7 @@ mod tests {
         let mut book = KeymapBook::new(names("us"));
         assert_eq!(book.plan(&names("us")), KeymapStep::Unchanged);
         assert_eq!(book.plan(&names("de")), KeymapStep::Compile);
-        assert_eq!(book.refuse(names("zz")), Report::Say);
+        assert!(book.refuse(names("zz")));
         assert_eq!(book.plan(&names("zz")), KeymapStep::Refused);
         assert_eq!(book.plan(&names("us")), KeymapStep::Unchanged);
         assert_eq!(book.plan(&names("de")), KeymapStep::Compile);
@@ -177,10 +164,10 @@ mod tests {
     #[test]
     fn a_refusal_is_reported_once_per_pair_of_names() {
         let mut book = KeymapBook::new(names("us"));
-        assert_eq!(book.refuse(names("zz")), Report::Say);
-        assert_eq!(book.refuse(names("zz")), Report::Quiet);
-        assert_eq!(book.refuse(names("yy")), Report::Say);
-        assert_eq!(book.refuse(names("zz")), Report::Say);
+        assert!(book.refuse(names("zz")));
+        assert!(!book.refuse(names("zz")));
+        assert!(book.refuse(names("yy")));
+        assert!(book.refuse(names("zz")));
     }
 
     #[test]

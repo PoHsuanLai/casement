@@ -3,7 +3,7 @@
 use crate::app::{App, AppKey, AppVisibility};
 use crate::ids::WindowId;
 use crate::space::SpaceBook;
-use crate::window::{Parent, SpacePlace, Window, WindowState};
+use crate::window::{SpacePlace, Window, WindowState};
 use casement_protocols::vocab::Modality;
 use std::collections::BTreeMap;
 
@@ -80,7 +80,7 @@ impl FocusView<'_> {
     /// sheet cannot take the key, so its window is keyed as if it had none.
     pub(super) fn sheet_of(&self, window: WindowId) -> Option<&Window> {
         self.windows.values().find(|candidate| {
-            candidate.parent == Parent::Window(window)
+            candidate.parent == Some(window)
                 && candidate.modality == Modality::WindowModal
                 && self.is_shown(candidate)
         })

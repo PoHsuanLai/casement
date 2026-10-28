@@ -8,11 +8,12 @@ use crate::effect::Effect;
 use crate::geometry::LogicalPoint;
 use crate::ids::WindowId;
 use crate::shell::{ShellNote, WindowMenuShow};
-use crate::window::{MenuAction, MenuEntry, SplitSupport, Window, is_offered, menu_for};
+use crate::window::{MenuAction, Window, entry_action, is_offered, menu_for};
+use casement_protocols::vocab::WindowEntry;
 
 /// The model can put a window in a Split View (`model/split.rs`), so the Full Screen Tile
 /// entries are offered.
-const SPLIT: SplitSupport = SplitSupport::Available;
+const SPLIT: bool = true;
 
 impl Model {
     /// `window` asked for its menu at `at`: the shell is told which entries it has and which
@@ -28,14 +29,14 @@ impl Model {
 
     /// The shell says `entry` was picked in `window`'s menu. An entry that is dimmed now (the
     /// window changed while the menu was open) or a window that is gone changes nothing.
-    pub(super) fn window_menu_pick(self, id: WindowId, entry: MenuEntry) -> Moved {
+    pub(super) fn window_menu_pick(self, id: WindowId, entry: WindowEntry) -> Moved {
         let Some(window) = self.windows.get(&id).cloned() else {
             return Moved::of(self);
         };
         if !is_offered(&menu_for(&window.state, SPLIT), entry) {
             return Moved::of(self);
         }
-        match entry.action() {
+        match entry_action(entry) {
             MenuAction::FullScreen(toggle) => self.full_screen_by_hand(id, toggle),
             MenuAction::Place(target) => self.place(&window, target),
             MenuAction::SplitTile(side) => self.split_view(&window, side),

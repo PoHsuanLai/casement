@@ -5,10 +5,11 @@
 use super::quire_shell::shell_client;
 use crate::protocol::xdg_shell::{map_toplevel, pointer, settle, windows};
 use casement_core::geometry::LogicalPoint;
-use casement_core::input::{ButtonCode, Edge};
+use casement_core::input::ButtonCode;
 use casement_core::policy::ConnectionRole;
 use casement_core::space::SpaceContent;
 use casement_layout::{DividerTarget, LayoutKnobs, RustScene, SceneLayout, spec_of};
+use casement_protocols::vocab::PressEdge;
 use casement_testclient::quire::shell::WindowEntry;
 use casement_testclient::surface::toplevel::WmBase;
 use casement_testkit::{Fixture, FixtureSpec};
@@ -64,7 +65,9 @@ fn dragging_the_strip_sets_the_share_and_the_release_ends_the_drag() {
     let divider = strip(&fixture);
     let grip = divider.strip.centre();
     fixture.input().pointer_to(device, grip);
-    fixture.input().button(device, LEFT_BUTTON, Edge::Press);
+    fixture
+        .input()
+        .button(device, LEFT_BUTTON, PressEdge::Press);
     assert_eq!(
         share(&fixture),
         Fraction(500),
@@ -85,7 +88,9 @@ fn dragging_the_strip_sets_the_share_and_the_release_ends_the_drag() {
     let held = share(&fixture);
     assert_ne!(held, Fraction(500));
 
-    fixture.input().button(device, LEFT_BUTTON, Edge::Release);
+    fixture
+        .input()
+        .button(device, LEFT_BUTTON, PressEdge::Release);
     fixture.input().pointer_to(
         device,
         LogicalPoint {
@@ -126,8 +131,12 @@ fn a_press_beside_the_strip_does_not_move_the_divider() {
         y: divider.strip.centre().y,
     };
     fixture.input().pointer_to(device, beside);
-    fixture.input().button(device, LEFT_BUTTON, Edge::Press);
+    fixture
+        .input()
+        .button(device, LEFT_BUTTON, PressEdge::Press);
     fixture.input().pointer_to(device, divider.strip.centre());
-    fixture.input().button(device, LEFT_BUTTON, Edge::Release);
+    fixture
+        .input()
+        .button(device, LEFT_BUTTON, PressEdge::Release);
     assert_eq!(share(&fixture), Fraction(500));
 }

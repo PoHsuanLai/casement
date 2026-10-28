@@ -5,7 +5,7 @@ use crate::support::scene::{ANY_SIZE, knobs, one_desktop, rect, size, window};
 use casement_core::WindowId;
 use casement_core::geometry::LogicalRect;
 use casement_core::space::SplitPair;
-use casement_core::window::{MaxSize, SizeLimits};
+use casement_core::window::SizeLimits;
 use casement_layout::{
     Arrangement, ConfigureNeed, LayoutReport, RustScene, SceneLayout, SceneSpec, SpaceArrangement,
     WindowPlacement,
@@ -15,7 +15,7 @@ use ds_core::vocab::Fraction;
 fn min_width(w: u32) -> SizeLimits {
     SizeLimits {
         min: size(w, 0),
-        max: MaxSize::Unbounded,
+        max: None,
     }
 }
 
@@ -147,7 +147,7 @@ fn a_pair_with_a_window_the_space_lacks_gets_no_target() {
 fn max_size(w: u32, h: u32) -> SizeLimits {
     SizeLimits {
         min: size(0, 0),
-        max: MaxSize::Bounded(size(w, h)),
+        max: Some(size(w, h)),
     }
 }
 

@@ -14,7 +14,7 @@ use crate::{
     xdg_dialog, xdg_foreign, xdg_shell, xdg_toplevel_icon, xdg_toplevel_tag,
 };
 use casement_core::WindowId;
-use casement_core::policy::{Advertise, ConnectionRole, GlobalKind, PowerSet, advertised_to};
+use casement_core::policy::{ConnectionRole, GlobalKind, PowerSet, advertised_to};
 use smithay::input::SeatHandler;
 use smithay::reexports::wayland_server::Client;
 
@@ -158,11 +158,10 @@ impl GlobalFilter {
     /// is treated as arriving through the public socket, refused nothing: it cannot use a
     /// power anyway ([`crate::consent::admit`] refuses it).
     pub fn sees(self, global: GlobalKind, client: &Client) -> bool {
-        let seen = match ClientState::of(client) {
+        match ClientState::of(client) {
             Some(state) => advertised_to(global, &state.role, &state.hidden),
             None => advertised_to(global, &ConnectionRole::Public, &PowerSet::default()),
-        };
-        seen == Advertise::Yes
+        }
     }
 
     /// `can_view` for one global, as smithay's filtered constructors take it.

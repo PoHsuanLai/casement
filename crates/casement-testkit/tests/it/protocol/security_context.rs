@@ -70,13 +70,10 @@ fn a_listener_tags_its_clients_sandboxed() {
         app: facts().app,
         instance: facts().instance,
     });
-    assert_eq!(
-        casement_core::policy::advertised(
-            casement_core::policy::GlobalKind::SecurityContext,
-            &role
-        ),
-        casement_core::policy::Advertise::No
-    );
+    assert!(!casement_core::policy::advertised(
+        casement_core::policy::GlobalKind::SecurityContext,
+        &role
+    ));
 }
 
 /// Closing the engine's pipe ends the listener: a later connection is never served.

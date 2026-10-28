@@ -4,10 +4,10 @@
 //!
 //! ```no_run
 //! use casement_core::geometry::PhysicalRect;
-//! use casement_render::pass::{CaptureRequest, CursorInclusion};
+//! use casement_render::pass::CaptureRequest;
 //!
 //! let whole = PhysicalRect { x: 0, y: 0, w: 1920, h: 1080 };
-//! let request = CaptureRequest::new(whole, CursorInclusion::Exclude);
+//! let request = CaptureRequest::new(whole, false);
 //! assert_eq!(request.area, whole);
 //! ```
 
@@ -29,16 +29,6 @@ pub use dmabuf::{blit_texture, read_dmabuf, write_dmabuf};
 pub use drawn::{DrawnView, SourceRect, crop_pixels};
 pub use shm::{ShmWriteError, write_frame};
 
-/// Whether the cursor is in the captured image.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum CursorInclusion {
-    /// The cursor is drawn into the image.
-    Include,
-    /// It is not.
-    Exclude,
-}
-
 /// What to read back.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
@@ -46,12 +36,12 @@ pub struct CaptureRequest {
     /// The area of the output, in its physical pixels.
     pub area: PhysicalRect,
     /// Whether the cursor is in it.
-    pub cursor: CursorInclusion,
+    pub cursor: bool,
 }
 
 impl CaptureRequest {
     /// A request.
-    pub fn new(area: PhysicalRect, cursor: CursorInclusion) -> CaptureRequest {
+    pub fn new(area: PhysicalRect, cursor: bool) -> CaptureRequest {
         CaptureRequest { area, cursor }
     }
 }

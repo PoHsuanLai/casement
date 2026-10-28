@@ -19,7 +19,7 @@ use crate::cli::{DirectTty, TtyMode};
 use crate::state::State;
 use casement_backend::BackendKind;
 use casement_backend::tty::{
-    Due, RawCapture, ReportPacer, SleepLink, SleepSettled, TtyBackend, WritebackError,
+    RawCapture, ReportPacer, SleepLink, SleepSettled, TtyBackend, WritebackError,
 };
 use casement_core::time::Mono;
 use casement_ipc::signals::{SignalError, SignalHandler, SignalWatch};
@@ -96,7 +96,7 @@ impl Hooks {
     /// the run goes on.
     pub fn turn(&mut self, tty: &mut TtyBackend, now: Mono) {
         if let Some(path) = &self.report
-            && self.pacer.check(now) == Due::Now
+            && self.pacer.check(now)
             && let Err(error) = append_line(path, &tty.report().json_line())
         {
             tracing::warn!(path = %path.display(), %error, "the KMS report was not written");

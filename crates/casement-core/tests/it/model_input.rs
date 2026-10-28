@@ -6,7 +6,7 @@ use crate::support;
 use casement_core::ClientKey;
 use casement_core::app::AppKey;
 use casement_core::app::{
-    Answer, AppLife, ForceQuitRow, PING_DEADLINE, QuitPhase, StopSignal, Termination,
+    AppLife, ForceQuitRow, PING_DEADLINE, QuitPhase, StopSignal, Termination,
 };
 use casement_core::desktop::{AppAsk, DesktopRequest};
 use casement_core::focus::{HitPart, PressRoute, TokenCheck};
@@ -217,7 +217,7 @@ fn commands_with_nothing_to_act_on_do_nothing() {
         DesktopCommand::HideOthers,
         DesktopCommand::QuitActive,
         DesktopCommand::Place(casement_protocols::vocab::PlaceTarget::Fill),
-        DesktopCommand::SplitTile(casement_core::window::SplitSide::Left),
+        DesktopCommand::SplitTile(casement_protocols::vocab::SplitSide::Left),
     ] {
         let after = run_from(empty.model.clone(), vec![Op::Command(command)]);
         assert_same_world(&after.model, &empty.model, &format!("{command:?}"));
@@ -294,7 +294,6 @@ fn settings_replace_and_lay_out_again_only_when_they_differ() {
 
 #[test]
 fn states_follow_the_record_and_focus() {
-    use casement_core::Held;
     let run = run_from(
         two_apps().model,
         vec![request(
@@ -306,12 +305,12 @@ fn states_follow_the_record_and_focus() {
         )],
     );
     let key = run.model.states_of(WindowId(3)).expect("window");
-    assert_eq!(key.activated, Held::Yes);
-    assert_eq!((key.tiled.top, key.tiled.left), (Held::Yes, Held::Yes));
-    assert_eq!((key.tiled.bottom, key.tiled.right), (Held::No, Held::No));
-    assert_eq!(key.maximised, Held::No);
+    assert!(key.activated);
+    assert_eq!((key.tiled.top, key.tiled.left), (true, true));
+    assert_eq!((key.tiled.bottom, key.tiled.right), (false, false));
+    assert!(!key.maximised);
     let other = run.model.states_of(WindowId(1)).expect("window");
-    assert_eq!(other.activated, Held::No);
+    assert!(!other.activated);
     assert_eq!(run.model.states_of(WindowId(9)), None);
 }
 
@@ -322,7 +321,7 @@ fn typing() -> Op {
         at: support::ms(5),
         kind: casement_core::input::InputKind::Key {
             code: casement_core::input::KeyCode(30),
-            edge: casement_core::input::Edge::Press,
+            edge: casement_protocols::vocab::PressEdge::Press,
         },
     }))
 }
@@ -726,11 +725,11 @@ fn the_force_quit_panel_lists_the_apps_and_who_answers() {
         [Effect::Shell(ShellNote::ForceQuitPanel(vec![
             ForceQuitRow {
                 app: web,
-                answer: Answer::Responding
+                responding: true
             },
             ForceQuitRow {
                 app: mail,
-                answer: Answer::NotResponding
+                responding: false
             },
         ]))]
     );

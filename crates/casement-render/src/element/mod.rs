@@ -8,6 +8,7 @@ mod client_round;
 mod clip_strip;
 mod closing;
 mod closing_body;
+mod corner;
 mod cursor;
 mod flight;
 mod frame;
@@ -28,7 +29,7 @@ mod tile_preview;
 mod window;
 
 pub use blur_v0::BlurV0Element;
-pub use client_round::{ClientRound, ClientShadow, ClipAsk};
+pub use client_round::{ClientRound, ClipAsk};
 pub use clip_strip::ClipStripElement;
 pub use closing::{ClosingFrame, closing_content, closing_elements};
 pub use closing_body::{ClosingBody, Pixels};

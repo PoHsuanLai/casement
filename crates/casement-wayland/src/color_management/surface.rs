@@ -2,7 +2,7 @@
 //! (double buffered with the surface) and its preferred description (always sRGB).
 
 use super::ColorHandler;
-use super::creator::{DescriptionData, InfoAllowed, describe};
+use super::creator::{DescriptionData, describe};
 use casement_core::output::ColorTag;
 use smithay::reexports::wayland_protocols::wp::color_management::v1::server::{
     wp_color_management_surface_feedback_v1::{self, WpColorManagementSurfaceFeedbackV1},
@@ -174,13 +174,7 @@ where
         match request {
             Request::GetPreferred { image_description }
             | Request::GetPreferredParametric { image_description } => {
-                describe(
-                    state,
-                    data_init,
-                    image_description,
-                    ColorTag::SRGB,
-                    InfoAllowed::Yes,
-                );
+                describe(state, data_init, image_description, ColorTag::SRGB, true);
                 if !self.surface.is_alive() {
                     resource.post_error(Error::Inert, "the surface is gone");
                 }

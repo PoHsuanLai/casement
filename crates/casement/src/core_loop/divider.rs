@@ -5,7 +5,6 @@
 //! turns into the halves. No client hears the pointer while it is on the strip or dragging.
 
 use super::feed;
-use super::grab::Follow;
 use super::scene::{Hit, hit_test};
 use crate::state::State;
 use casement_core::geometry::LogicalPoint;
@@ -36,29 +35,29 @@ pub(crate) enum DividerPointer {
 }
 
 /// The pointer moved to `at`. While dragging, the share follows it; otherwise the cursor is the
-/// resize cursor over a strip and the arrow again after leaving it. `Taken` when no client
+/// resize cursor over a strip and the arrow again after leaving it. `true` when no client
 /// should hear this motion.
-pub(super) fn moved(state: &mut State, stacked: &[(Hit, Candidate)], at: LogicalPoint) -> Follow {
+pub(super) fn moved(state: &mut State, stacked: &[(Hit, Candidate)], at: LogicalPoint) -> bool {
     if let DividerPointer::Dragging { divider, .. } = &state.render.divider {
         let request = ShellRequest::SplitDivide {
             window: divider.leading,
             share: divider.share_at(at.x),
         };
         feed(state, vec![Event::Shell(request)]);
-        return Follow::Taken;
+        return true;
     }
     let was = std::mem::take(&mut state.render.divider);
     match (under_pointer(state, stacked, at), was) {
         (Some(_), _) => {
             state.render.divider = DividerPointer::Over;
             state.render.chrome.cursor = CursorDraw::Named(CursorShape::ResizeEw);
-            Follow::Taken
+            true
         }
         (None, DividerPointer::Over) => {
             state.render.chrome.cursor = CursorDraw::Named(CursorShape::Default);
-            Follow::Free
+            false
         }
-        (None, _) => Follow::Free,
+        (None, _) => false,
     }
 }
 

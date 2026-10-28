@@ -5,7 +5,7 @@
 use crate::state::State;
 use casement_backend::BackendKind;
 use casement_backend::tty::{SleepLink, SleepSettled};
-use casement_ipc::sleep::{SleepBus, SleepError, SleepHandler, SleepWatch};
+use casement_ipc::sleep::{SleepError, SleepHandler, SleepWatch};
 use std::time::Duration;
 
 /// How long logind is held back for the compositor to let go of its devices. Well under
@@ -28,18 +28,17 @@ impl SleepHandler for Linked {
     }
 }
 
-/// Hears logind on `bus` and passes a sleep and a wake to `link`. The watcher lives as long as
+/// Hears logind on the bus at `bus` (the system bus when none) and passes a sleep and a wake to `link`. The watcher lives as long as
 /// the returned handle.
 ///
 /// ```no_run
 /// use casement::suspend::watch;
 /// use casement_backend::tty::sleep_channel;
-/// use casement_ipc::sleep::SleepBus;
 ///
 /// let (link, _inbox) = sleep_channel(|| {});
-/// let _watch = watch(link, SleepBus::System).expect("login1 is on the bus");
+/// let _watch = watch(link, None).expect("login1 is on the bus");
 /// ```
-pub fn watch(link: SleepLink, bus: SleepBus) -> Result<SleepWatch, SleepError> {
+pub fn watch(link: SleepLink, bus: Option<String>) -> Result<SleepWatch, SleepError> {
     SleepWatch::start(bus, Linked(link))
 }
 
@@ -47,7 +46,7 @@ pub fn watch(link: SleepLink, bus: SleepBus) -> Result<SleepWatch, SleepError> {
 /// watcher lives as long as the returned handle; a seat that cannot hear a suspend, or a bus
 /// that cannot be reached, is logged and the run goes on without (displays then come back from
 /// a sleep as the kernel left them).
-pub fn attach(state: &mut State, bus: SleepBus) -> Option<SleepWatch> {
+pub fn attach(state: &mut State, bus: Option<String>) -> Option<SleepWatch> {
     let BackendKind::Tty(tty) = &mut state.backend else {
         return None;
     };

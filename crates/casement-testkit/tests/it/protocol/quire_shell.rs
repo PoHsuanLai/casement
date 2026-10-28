@@ -4,13 +4,14 @@
 use crate::protocol::xdg_shell::{map_toplevel, pointer, rect_of, settle, windows};
 use casement_core::WindowId;
 use casement_core::geometry::PhysicalSize;
-use casement_core::input::{DeviceClass, Edge, KeyCode};
+use casement_core::input::{DeviceClass, KeyCode};
 use casement_core::policy::ConnectionRole;
 use casement_core::space::SpaceContent;
-use casement_core::window::{Light, MenuEntry, WindowState, menu_point};
+use casement_core::window::{Light, WindowState, menu_point};
 use casement_ipc::dbus::ConnectRefusal;
 use casement_layout::{GroupHover, Scheme, frame_style};
-use casement_protocols::vocab::ShellRole as ModelRole;
+use casement_protocols::vocab::PressEdge;
+use casement_protocols::vocab::{ShellRole as ModelRole, WindowEntry as ModelEntry, WireCode};
 use casement_testclient::misc::decoration::DecorationManager;
 use casement_testclient::quire::shell::{
     ShellError, ShellHandle, ShellRole, SplitChoiceSeen, SplitSide, WindowEntry,
@@ -275,15 +276,17 @@ fn modifiers_reach_the_shell_without_focus() {
     );
     fixture.pump();
     let command = 8;
-    fixture.input().key(device, KEY_LEFTMETA, Edge::Press);
+    fixture.input().key(device, KEY_LEFTMETA, PressEdge::Press);
     fixture.pump();
     assert_eq!(shell.modifiers_of(bar.surface()), [command]);
     // A key that changes no modifier sends nothing.
-    fixture.input().key(device, KEY_A, Edge::Press);
-    fixture.input().key(device, KEY_A, Edge::Release);
+    fixture.input().key(device, KEY_A, PressEdge::Press);
+    fixture.input().key(device, KEY_A, PressEdge::Release);
     fixture.pump();
     assert_eq!(shell.modifiers_of(bar.surface()), [command]);
-    fixture.input().key(device, KEY_LEFTMETA, Edge::Release);
+    fixture
+        .input()
+        .key(device, KEY_LEFTMETA, PressEdge::Release);
     fixture.pump();
     assert_eq!(shell.modifiers_of(bar.surface()), [command, 0]);
 }
@@ -342,16 +345,19 @@ fn resting_on_the_green_light_shows_the_menu_and_a_pick_tiles_the_window() {
     let at = menu_point(light);
     assert_eq!(menus[0].toplevel, identifier_of(window));
     assert_eq!(menus[0].at, (at.x, at.y));
-    let on = |entry: MenuEntry| menus[0].enabled & (1 << entry.code()) != 0;
+    let on = |entry: ModelEntry| menus[0].enabled & (1 << entry.code()) != 0;
     assert!(
-        on(MenuEntry::EnterFullScreen),
+        on(ModelEntry::EnterFullScreen),
         "a window can enter full screen"
     );
-    assert!(!on(MenuEntry::ExitFullScreen), "it is not in full screen");
-    assert!(on(MenuEntry::Left), "Left is offered");
-    assert!(!on(MenuEntry::ReturnToPreviousSize), "nothing to return to");
+    assert!(!on(ModelEntry::ExitFullScreen), "it is not in full screen");
+    assert!(on(ModelEntry::Left), "Left is offered");
     assert!(
-        on(MenuEntry::TileLeftOfScreen) && on(MenuEntry::TileRightOfScreen),
+        !on(ModelEntry::ReturnToPreviousSize),
+        "nothing to return to"
+    );
+    assert!(
+        on(ModelEntry::TileLeftOfScreen) && on(ModelEntry::TileRightOfScreen),
         "Full Screen Tile is offered now that Split View is built"
     );
 

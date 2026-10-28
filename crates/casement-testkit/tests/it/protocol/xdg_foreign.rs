@@ -3,7 +3,6 @@
 
 use crate::protocol::xdg_shell::{boot, map_named, windows};
 use casement_core::policy::ConnectionRole;
-use casement_core::window::Parent;
 use casement_testclient::surface::toplevel::WmBase;
 use casement_testclient::surface::toplevel::extras::Foreign;
 
@@ -45,10 +44,7 @@ fn an_imported_parent_becomes_the_parent() {
 
     let ids = windows(&fixture);
     assert_eq!(ids.len(), 2);
-    assert_eq!(
-        fixture.model().windows()[&ids[1]].parent,
-        Parent::Window(ids[0])
-    );
+    assert_eq!(fixture.model().windows()[&ids[1]].parent, Some(ids[0]));
 
     exported.destroy();
     fixture.pump();
@@ -57,7 +53,7 @@ fn an_imported_parent_becomes_the_parent() {
         1,
         "the import is told its export is gone"
     );
-    assert_eq!(fixture.model().windows()[&ids[1]].parent, Parent::None);
+    assert_eq!(fixture.model().windows()[&ids[1]].parent, None);
     assert!(fixture.client(owner).protocol_error().is_none());
     assert!(fixture.client(guest).protocol_error().is_none());
 }

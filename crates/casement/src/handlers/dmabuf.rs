@@ -2,7 +2,7 @@
 //! buffer with the node it came from (A5).
 
 use crate::state::State;
-use casement_wayland::dmabuf::{self, Import, MainDevice};
+use casement_wayland::dmabuf::{self, MainDevice};
 use smithay::backend::allocator::Buffer;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::reexports::drm::node::DrmNode;
@@ -16,15 +16,15 @@ impl DmabufHandler for State {
     fn dmabuf_imported(&mut self, global: &DmabufGlobal, dmabuf: Dmabuf, notifier: ImportNotifier) {
         let mut dmabuf = dmabuf;
         let ours = self.wl.dmabuf.global == Some(*global);
-        match (ours, dmabuf::on_import(&mut self.wl.dmabuf, &mut dmabuf)) {
-            (true, Import::Accepted) => {
-                let source = self.wl.dmabuf.source_device(dmabuf.format());
-                tag_with_node(&dmabuf, source);
-                if notifier.successful::<State>().is_err() {
-                    tracing::debug!("a client left before its dma-buf import was answered");
-                }
+        let accepted = dmabuf::on_import(&mut self.wl.dmabuf, &mut dmabuf);
+        if ours && accepted {
+            let source = self.wl.dmabuf.source_device(dmabuf.format());
+            tag_with_node(&dmabuf, source);
+            if notifier.successful::<State>().is_err() {
+                tracing::debug!("a client left before its dma-buf import was answered");
             }
-            (true, Import::Refused) | (false, _) => notifier.failed(),
+        } else {
+            notifier.failed();
         }
     }
 }

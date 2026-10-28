@@ -10,7 +10,8 @@ use super::virtual_events::{
 use casement_core::DeviceId;
 use casement_core::input::DeviceClass;
 #[cfg(any(feature = "testing", feature = "debug-inject"))]
-use casement_core::input::{Edge, GestureStep, InputKind, KeyCode, TouchStep};
+use casement_core::input::{GestureStep, InputKind, KeyCode, TouchStep};
+use casement_protocols::vocab::PressEdge;
 use smithay::backend::input::{Device, DeviceCapability, InputBackend, InputEvent, UnusedEvent};
 #[cfg(any(feature = "testing", feature = "debug-inject"))]
 use std::collections::BTreeSet;
@@ -93,8 +94,8 @@ impl VirtualInput {
             InputKind::Key { code, edge } => {
                 let key = (stamp.device.id, code);
                 match edge {
-                    Edge::Press => self.held.insert(key),
-                    Edge::Release => self.held.remove(&key),
+                    PressEdge::Press => self.held.insert(key),
+                    PressEdge::Release => self.held.remove(&key),
                 };
                 let count = u32::try_from(self.held.len()).unwrap_or(u32::MAX);
                 InputEvent::Keyboard {

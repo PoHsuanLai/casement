@@ -5,7 +5,7 @@
 
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::input::ButtonCode;
-use casement_core::window::{MaxSize, SizeLimits};
+use casement_core::window::SizeLimits;
 use casement_core::{GrabSpec, ResizeEdges, WindowId};
 
 /// The smallest a resize makes a window.
@@ -125,10 +125,7 @@ fn resized(
     limits: SizeLimits,
 ) -> LogicalRect {
     let (pull_across, pull_down) = pulls(edges);
-    let max = |pick: fn(LogicalSize) -> u32| match limits.max {
-        MaxSize::Unbounded => None,
-        MaxSize::Bounded(size) => Some(pick(size)),
-    };
+    let max = |pick: fn(LogicalSize) -> u32| limits.max.map(pick);
     let across = Span {
         pull: pull_across,
         least: limits.min.w,
@@ -185,7 +182,7 @@ mod tests {
 
     const NONE: SizeLimits = SizeLimits {
         min: LogicalSize { w: 0, h: 0 },
-        max: MaxSize::Unbounded,
+        max: None,
     };
 
     fn rect(x: i32, y: i32, w: u32, h: u32) -> LogicalRect {
@@ -256,7 +253,7 @@ mod tests {
         let origin = rect(10, 20, 300, 200);
         let limits = SizeLimits {
             min: LogicalSize { w: 250, h: 150 },
-            max: MaxSize::Bounded(LogicalSize { w: 400, h: 260 }),
+            max: Some(LogicalSize { w: 400, h: 260 }),
         };
         let rows = [
             // (edges, pointer, wanted)

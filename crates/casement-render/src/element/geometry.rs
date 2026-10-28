@@ -2,7 +2,6 @@
 //! and hit when the window's own origin is the geometry's.
 
 use casement_core::geometry::{LogicalPoint, SubPoint, SubPx};
-use casement_core::window::Margin;
 use smithay::backend::renderer::utils::with_renderer_surface_state;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Size};
@@ -56,12 +55,10 @@ pub fn surface_origin_logical(root: &WlSurface, at: LogicalPoint) -> LogicalPoin
 
 /// Whether `root`'s buffer reaches past its window geometry: a client that drew a shadow, or
 /// anything else, round the window. A window with no geometry, or none committed yet, has none.
-pub fn margin_of(root: &WlSurface) -> Margin {
+pub fn margin_of(root: &WlSurface) -> bool {
     let buffer = with_renderer_surface_state(root, |state| state.surface_size()).flatten();
-    match (buffer, geometry_size(root)) {
-        (Some(buffer), Some(geometry)) if geometry.w < buffer.w || geometry.h < buffer.h => {
-            Margin::Drawn
-        }
-        _ => Margin::None,
-    }
+    matches!(
+        (buffer, geometry_size(root)),
+        (Some(buffer), Some(geometry)) if geometry.w < buffer.w || geometry.h < buffer.h
+    )
 }

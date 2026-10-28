@@ -5,15 +5,6 @@
 use crate::ids::{OutputKey, OutputName};
 use crate::output::{GammaRamp, Kelvin, MinuteOfDay, NightLight, Schedule};
 
-/// Whether night light warms an output.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OutputWarming {
-    /// Casement drives the output's colour curve.
-    Warmed,
-    /// The output is listed in `night_light.skip_outputs`: casement leaves its curve alone.
-    Skipped,
-}
-
 /// `night_light.*`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -60,12 +51,12 @@ impl NightLightSettings {
         })
     }
 
-    /// Whether night light warms the output on connector `name` with key `key`: not when
+    /// Whether night light leaves the output on connector `name` with key `key` alone: when
     /// `night_light.skip_outputs` lists either (sill lists the monitors it warms itself).
     ///
     /// ```
     /// use casement_core::output::{EdidFacts, EdidSerial};
-    /// use casement_core::settings::{NightLightSettings, OutputWarming};
+    /// use casement_core::settings::NightLightSettings;
     /// use casement_core::{OutputKey, OutputName};
     ///
     /// let name = OutputName::parse("DP-1").expect("a connector name");
@@ -76,20 +67,15 @@ impl NightLightSettings {
     /// };
     /// let key = OutputKey::of(&edid, &name);
     /// let skipping = NightLightSettings::defaults().skipping(vec!["DP-1".to_owned()]);
-    /// assert_eq!(skipping.warming_of(&name, &key), OutputWarming::Skipped);
+    /// assert!(skipping.skips(&name, &key));
     /// let warming = NightLightSettings::defaults();
-    /// assert_eq!(warming.warming_of(&name, &key), OutputWarming::Warmed);
+    /// assert!(!warming.skips(&name, &key));
     /// ```
-    pub fn warming_of(&self, name: &OutputName, key: &OutputKey) -> OutputWarming {
-        let listed = self
-            .skip_outputs
+    pub fn skips(&self, name: &OutputName, key: &OutputKey) -> bool {
+        self.skip_outputs
             .iter()
             .map(|entry| entry.trim())
-            .any(|entry| entry == name.as_str() || entry == key.as_str());
-        match listed {
-            true => OutputWarming::Skipped,
-            false => OutputWarming::Warmed,
-        }
+            .any(|entry| entry == name.as_str() || entry == key.as_str())
     }
 
     /// The ramp to drive the output on `name` (key `key`) with at `now`, `size` steps long: the
@@ -102,9 +88,9 @@ impl NightLightSettings {
         now: MinuteOfDay,
         size: u32,
     ) -> GammaRamp {
-        match self.warming_of(name, key) {
-            OutputWarming::Skipped => GammaRamp::Identity,
-            OutputWarming::Warmed => self.light.ramp_at(now, size),
+        match self.skips(name, key) {
+            true => GammaRamp::Identity,
+            false => self.light.ramp_at(now, size),
         }
     }
 }

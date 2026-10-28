@@ -8,12 +8,12 @@ use casement_backend::gpu::SysRenderNodes;
 use casement_backend::tty::TtySession;
 use casement_backend::tty::{ConnectorId, SeatState};
 use casement_core::input::{
-    Argv, Binding, BindingAction, Bindings, Chord, DeviceClass, Edge, InputKind, KeyCode,
+    Argv, Binding, BindingAction, Bindings, Chord, DeviceClass, InputKind, KeyCode,
 };
 use casement_core::output::OutputPower;
 use casement_core::policy::ConnectionRole;
 use casement_core::{DeviceId, OutputName};
-use casement_ipc::sleep::SleepBus;
+use casement_protocols::vocab::PressEdge;
 use casement_testclient::Pumped;
 use casement_testclient::capture::{BufferAsk, CursorMode, OutputCapture};
 use casement_testclient::manage::gamma::{ControlState as GammaState, GammaControls};
@@ -192,7 +192,7 @@ fn clients_are_offered_the_render_plans_dmabuf_feedback() {
     );
 }
 
-fn type_chord(seat: &mut Seat, codes: &[KeyCode], edge: Edge) {
+fn type_chord(seat: &mut Seat, codes: &[KeyCode], edge: PressEdge) {
     for code in codes {
         seat.world
             .input
@@ -214,7 +214,11 @@ fn a_vt_chord_pauses_the_seat_and_the_return_lights_it_again() {
     let commits = seat.world.kms.commits().len();
 
     // Ctrl+Alt+F3 is `XF86Switch_VT_3` after xkb: the seat's, not a client's, not a binding's.
-    type_chord(&mut seat, &[KEY_LEFTCTRL, KEY_LEFTALT, KEY_F3], Edge::Press);
+    type_chord(
+        &mut seat,
+        &[KEY_LEFTCTRL, KEY_LEFTALT, KEY_F3],
+        PressEdge::Press,
+    );
     assert_eq!(seat.world.session.switched_to(), Some(3));
     assert_eq!(seat.fixture.tty().seat, SeatState::Lent);
     assert_eq!(seat.world.kms.seat_changes(), (1, 0));
@@ -222,7 +226,7 @@ fn a_vt_chord_pauses_the_seat_and_the_return_lights_it_again() {
     type_chord(
         &mut seat,
         &[KEY_F3, KEY_LEFTALT, KEY_LEFTCTRL],
-        Edge::Release,
+        PressEdge::Release,
     );
 
     seat.fixture.advance(ms(100));
@@ -254,7 +258,7 @@ fn a_key_that_is_not_a_vt_chord_switches_nothing() {
         .input
         .plug(KEYBOARD, DeviceClass::Keyboard, "keyboard");
     seat.fixture.pump();
-    type_chord(&mut seat, &[KEY_LEFTCTRL, KEY_F3], Edge::Press);
+    type_chord(&mut seat, &[KEY_LEFTCTRL, KEY_F3], PressEdge::Press);
     assert_eq!(seat.world.session.switched_to(), None);
     assert_eq!(seat.fixture.tty().seat, SeatState::Held);
 }
@@ -513,7 +517,7 @@ fn input_devices_are_configured_and_their_keys_reach_the_bindings() {
         "the touchpad profile's default"
     );
 
-    for edge in [Edge::Press, Edge::Release] {
+    for edge in [PressEdge::Press, PressEdge::Release] {
         let codes = [KEY_LEFTMETA, KEY_SPACE];
         type_chord(&mut seat, &codes, edge);
     }
@@ -551,7 +555,11 @@ fn a_whole_session_from_start_to_suspend_and_back() {
     let panel = glass(&seat.world, 1);
 
     // A VT switch away and back.
-    type_chord(&mut seat, &[KEY_LEFTCTRL, KEY_LEFTALT, KEY_F3], Edge::Press);
+    type_chord(
+        &mut seat,
+        &[KEY_LEFTCTRL, KEY_LEFTALT, KEY_F3],
+        PressEdge::Press,
+    );
     assert_eq!(seat.fixture.tty().seat, SeatState::Lent);
     seat.world.session.resume();
     seat.fixture.pump();
@@ -570,8 +578,8 @@ fn a_whole_session_from_start_to_suspend_and_back() {
     let logind = FakeLogind::serve(bus.address()).expect("the fake logind");
     let mut session = seat.world.session.clone();
     let link = session.sleep_link().expect("the session hears a suspend");
-    let _watch = suspend::watch(link, SleepBus::At(bus.address().to_owned()))
-        .expect("the watcher subscribes");
+    let _watch =
+        suspend::watch(link, Some(bus.address().to_owned())).expect("the watcher subscribes");
     assert_eq!(logind.held_inhibitors(), ["sleep"]);
     let (pauses, resumes) = seat.world.kms.seat_changes();
 

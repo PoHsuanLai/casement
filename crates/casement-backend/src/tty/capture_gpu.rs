@@ -22,7 +22,7 @@ use casement_core::OutputName;
 use casement_core::geometry::{PhysicalRect, PhysicalSize, Transform};
 use casement_core::output::OutputConfig;
 use casement_render::RenderError;
-use casement_render::pass::{CapturedFrame, CursorInclusion};
+use casement_render::pass::CapturedFrame;
 use ds_core::geometry::scale::Scale;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::{Format, Fourcc};
@@ -70,7 +70,7 @@ pub trait CaptureGpu: std::fmt::Debug {
     fn blit_scene(
         &mut self,
         output: &OutputName,
-        cursor: CursorInclusion,
+        cursor: bool,
         from: PhysicalRect,
         target: &mut Dmabuf,
     ) -> Result<(), BackendError> {
@@ -84,7 +84,7 @@ pub trait CaptureGpu: std::fmt::Debug {
     fn read_scene(
         &mut self,
         output: &OutputName,
-        cursor: CursorInclusion,
+        cursor: bool,
         area: PhysicalRect,
     ) -> Result<CapturedFrame, BackendError> {
         let _ = (output, cursor, area);

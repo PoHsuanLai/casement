@@ -7,7 +7,7 @@ use crate::protocol::xdg_shell::{
     pointer, settle, windows,
 };
 use casement_core::policy::ConnectionRole;
-use casement_core::window::{A11yRoot, FrameHint, FrameSaid};
+use casement_core::window::{A11yRoot, FrameHint};
 use casement_protocols::vocab::{Edited as ModelEdited, FrameMode as ModelFrame};
 use casement_testclient::quire::window::{
     Edited, Emphasis, FrameMode, ManagerError, PlaceTarget, PlacementMark, WindowError,
@@ -130,7 +130,7 @@ fn hints_apply_on_commit_and_are_forgotten_on_destroy() {
     assert_eq!(hints.edited, ModelEdited::Unsaved, "edited applies at once");
     // A claimed accessibility root is not adopted as it comes (PORTAL-15): it is queued for the
     // bus to say the name is the client's own process's, and only then does the window get it.
-    assert_eq!(hints.a11y, A11yRoot::Unknown, "a claim is checked first");
+    assert_eq!(hints.a11y, None, "a claim is checked first");
     let asked = fixture.a11y().asked();
     assert_eq!(asked.len(), 1);
     assert_eq!(
@@ -142,14 +142,14 @@ fn hints_apply_on_commit_and_are_forgotten_on_destroy() {
         (window, ":1.5", std::process::id()),
         "queued with the pid casement holds the client by"
     );
-    let verified = A11yRoot::At {
+    let verified = Some(A11yRoot {
         bus_name: ":1.5".to_owned(),
         object_path: "/org/a11y/root".to_owned(),
-    };
-    fixture.a11y_verdict(window, A11yRoot::Unknown);
+    });
+    fixture.a11y_verdict(window, None);
     assert_eq!(
         fixture.model().windows()[&window].hints.a11y,
-        A11yRoot::Unknown,
+        None,
         "a root the bus did not vouch for stays unknown"
     );
     fixture.a11y_verdict(window, verified.clone());
@@ -172,7 +172,7 @@ fn hints_apply_on_commit_and_are_forgotten_on_destroy() {
     fixture.pump();
     let forgotten = fixture.model().windows()[&window].hints.clone();
     assert_eq!(forgotten.edited, ModelEdited::Saved);
-    assert_eq!(forgotten.a11y, A11yRoot::Unknown);
+    assert_eq!(forgotten.a11y, None);
     assert_eq!(forgotten.frame.mode, ModelFrame::Client);
     let _ = ConnectionRole::Public;
 }
@@ -207,7 +207,7 @@ fn hints_said_before_the_window_maps_reach_it_when_it_does() {
         },
         "the last frame said, at the commit that maps"
     );
-    assert_eq!(hints.frame_said, FrameSaid::Said);
+    assert!(hints.frame_said);
 }
 
 /// A new extension object is told its emphasis and placement once, at creation: the transcript

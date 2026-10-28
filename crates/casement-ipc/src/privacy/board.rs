@@ -4,9 +4,8 @@
 //!
 //! [`Privilege::rows`]: casement_core::privilege::Privilege::rows
 
-use super::edit::PrivacyEdit;
 use calloop::channel::{Channel, SyncSender, sync_channel};
-use casement_core::privilege::PrivacyRow;
+use casement_core::privilege::{Edit, PrivacyRow};
 use std::sync::Arc;
 use tokio::sync::watch;
 
@@ -64,13 +63,13 @@ impl PrivacyBoard {
 #[derive(Debug, Clone)]
 pub struct PrivacyLink {
     pub(crate) board: PrivacyBoard,
-    pub(crate) edits: SyncSender<PrivacyEdit>,
+    pub(crate) edits: SyncSender<Edit>,
 }
 
 impl PrivacyLink {
-    /// A new link, and the channel the event loop reads the changes from (turn each into an
-    /// event with [`PrivacyEdit::into_event`], stamped with the wall-clock second).
-    pub fn new() -> (PrivacyLink, Channel<PrivacyEdit>) {
+    /// A new link, and the channel the event loop reads the changes from (the root turns each into
+    /// an event, stamped with the wall-clock second).
+    pub fn new() -> (PrivacyLink, Channel<Edit>) {
         let (edits, channel) = sync_channel(EDIT_QUEUE);
         let link = PrivacyLink {
             board: PrivacyBoard::new(),

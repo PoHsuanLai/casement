@@ -4,12 +4,12 @@
 //!
 //! A window is a sheet when it is modal for its parent (`xdg_dialog_v1.set_modal` on a
 //! toplevel with a parent of the same app, or a `quire_window` hint that says the same): the
-//! model has made that `Modality::WindowModal` and `Parent::Window`. What is here is the
+//! model has made that `Modality::WindowModal` and a parent window. What is here is the
 //! geometry; layout puts the sheet where [`attach_rect`] says each time it arranges, so the
 //! sheet follows its window with no bookkeeping, and the focus machine's sheet hook (A39)
 //! already swallows presses on the window behind it.
 
-use super::{Parent, Window};
+use super::Window;
 use crate::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use crate::ids::WindowId;
 use casement_protocols::vocab::Modality;
@@ -17,7 +17,7 @@ use casement_protocols::vocab::Modality;
 /// The window `window` is a sheet of, when it is one.
 pub fn sheet_parent(window: &Window) -> Option<WindowId> {
     match (window.parent, window.modality) {
-        (Parent::Window(parent), Modality::WindowModal) => Some(parent),
+        (Some(parent), Modality::WindowModal) => Some(parent),
         _ => None,
     }
 }

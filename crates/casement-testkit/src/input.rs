@@ -8,9 +8,10 @@ use casement_core::DeviceId;
 use casement_core::geometry::LogicalPoint;
 use casement_core::geometry::SubPoint;
 use casement_core::input::{
-    AxisFrame, ButtonCode, DeviceClass, Edge, GestureStep, InputKind, KeyCode, PinchDelta,
-    SwitchStep, TouchStep,
+    AxisFrame, ButtonCode, DeviceClass, GestureStep, InputKind, KeyCode, PinchDelta, SwitchStep,
+    TouchStep,
 };
+use casement_protocols::vocab::PressEdge;
 
 /// The fixture's input, borrowed.
 #[derive(Debug)]
@@ -46,7 +47,7 @@ impl<'a> FixtureInput<'a> {
     }
 
     /// A key on `device`, then a pump.
-    pub fn key(&mut self, device: DeviceId, code: KeyCode, edge: Edge) {
+    pub fn key(&mut self, device: DeviceId, code: KeyCode, edge: PressEdge) {
         self.push(device, InputKind::Key { code, edge });
     }
 
@@ -62,7 +63,7 @@ impl<'a> FixtureInput<'a> {
     }
 
     /// A button on `device`, then a pump.
-    pub fn button(&mut self, device: DeviceId, button: ButtonCode, edge: Edge) {
+    pub fn button(&mut self, device: DeviceId, button: ButtonCode, edge: PressEdge) {
         self.push(device, InputKind::Button { button, edge });
     }
 

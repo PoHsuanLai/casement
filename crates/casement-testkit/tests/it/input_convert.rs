@@ -11,11 +11,12 @@ use casement_backend::input::{
 use casement_core::DeviceId;
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize, SubPoint, SubPx};
 use casement_core::input::{
-    AxisFrame, AxisSource, AxisStop, ButtonCode, DeviceClass, Edge, GestureEnd, GestureStep,
-    InputKind, KeyCode, LidState, Origin, PinchDelta, SwitchStep, TouchStep,
+    AxisFrame, AxisSource, ButtonCode, DeviceClass, GestureEnd, GestureStep, InputKind, KeyCode,
+    Origin, PinchDelta, SwitchStep, TouchStep,
 };
 use casement_core::settings::CasementSettings;
 use casement_core::time::Mono;
+use casement_protocols::vocab::PressEdge;
 use ds_core::vocab::Fraction;
 use smithay::backend::input::InputEvent;
 use std::time::Duration;
@@ -63,19 +64,19 @@ fn rows() -> Vec<(VirtualInputEvent, InputKind)> {
         source: AxisSource::Wheel,
         v120: (0, -120),
         px: sub(0, -1800),
-        stop: AxisStop::Running,
+        stopped: false,
     };
     let fingers_up = AxisFrame {
         source: AxisSource::Finger,
         v120: (0, 0),
         px: sub(0, 0),
-        stop: AxisStop::Stopped,
+        stopped: true,
     };
     let fingers = AxisFrame {
         source: AxisSource::Finger,
         v120: (0, 0),
         px: sub(240, -600),
-        stop: AxisStop::Running,
+        stopped: false,
     };
     let pinch = PinchDelta {
         scale: Fraction(1500),
@@ -85,17 +86,17 @@ fn rows() -> Vec<(VirtualInputEvent, InputKind)> {
     let at = LogicalPoint { x: 300, y: 200 };
     vec![
         (
-            key(Edge::Press),
+            key(PressEdge::Press),
             InputKind::Key {
                 code: KeyCode(30),
-                edge: Edge::Press,
+                edge: PressEdge::Press,
             },
         ),
         (
-            key(Edge::Release),
+            key(PressEdge::Release),
             InputKind::Key {
                 code: KeyCode(30),
-                edge: Edge::Release,
+                edge: PressEdge::Release,
             },
         ),
         (
@@ -120,12 +121,12 @@ fn rows() -> Vec<(VirtualInputEvent, InputKind)> {
                 event: VirtualButton {
                     stamp: stamp(),
                     button: ButtonCode(0x110),
-                    edge: Edge::Press,
+                    edge: PressEdge::Press,
                 },
             },
             InputKind::Button {
                 button: ButtonCode(0x110),
-                edge: Edge::Press,
+                edge: PressEdge::Press,
             },
         ),
         (
@@ -258,10 +259,10 @@ fn rows() -> Vec<(VirtualInputEvent, InputKind)> {
             InputEvent::SwitchToggle {
                 event: VirtualSwitch {
                     stamp: stamp(),
-                    step: SwitchStep::Lid(LidState::Closed),
+                    step: SwitchStep::Lid { closed: true },
                 },
             },
-            InputKind::Switch(SwitchStep::Lid(LidState::Closed)),
+            InputKind::Switch(SwitchStep::Lid { closed: true }),
         ),
     ]
 }

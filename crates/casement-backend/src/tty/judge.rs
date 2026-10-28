@@ -3,8 +3,7 @@
 //! (the kernel's own test runs when a frame is queued).
 
 use super::kms::{
-    CommitVerdict, ConnectorId, ConnectorStatus, KmsCommit, KmsRefusal, KmsResources,
-    ModesetPolicy, OutputCommit, VrrState,
+    CommitVerdict, ConnectorId, ConnectorStatus, KmsCommit, KmsRefusal, KmsResources, OutputCommit,
 };
 use casement_core::output::VrrCapability;
 use std::collections::BTreeMap;
@@ -19,9 +18,9 @@ pub type Lit = BTreeMap<ConnectorId, OutputCommit>;
 /// A changed CRTC or mode on a lit connector, or a newly lit one, is a modeset.
 ///
 /// ```
-/// use casement_backend::tty::{CommitVerdict, KmsCommit, KmsResources, Lit, ModesetPolicy, judge};
+/// use casement_backend::tty::{CommitVerdict, KmsCommit, KmsResources, Lit, judge};
 ///
-/// let nothing = KmsCommit::new(Vec::new(), ModesetPolicy::Forbid);
+/// let nothing = KmsCommit::new(Vec::new(), false);
 /// assert_eq!(judge(&KmsResources::default(), &Lit::new(), &nothing), CommitVerdict::Accepted);
 /// ```
 pub fn judge(resources: &KmsResources, lit: &Lit, commit: &KmsCommit) -> CommitVerdict {
@@ -37,9 +36,9 @@ pub fn judge(resources: &KmsResources, lit: &Lit, commit: &KmsCommit) -> CommitV
         lit.get(&output.connector)
             .is_none_or(|was| was.crtc != output.crtc || was.mode != output.mode)
     });
-    match (modeset, commit.modeset) {
-        (true, ModesetPolicy::Forbid) => CommitVerdict::NeedsModeset,
-        _ => CommitVerdict::Accepted,
+    match modeset && !commit.modeset_allowed {
+        true => CommitVerdict::NeedsModeset,
+        false => CommitVerdict::Accepted,
     }
 }
 
@@ -74,7 +73,7 @@ fn refusal(
     };
     match crtc {
         Some(crtc) if connector.possible_crtcs.contains(&crtc.id) && crtc_free => {
-            let vrr_ok = output.vrr == VrrState::Off
+            let vrr_ok = !output.vrr
                 || (connector.vrr == VrrCapability::Capable && crtc.vrr == VrrCapability::Capable);
             if !connector.modes.contains(&output.mode) {
                 Some(KmsRefusal::Mode)

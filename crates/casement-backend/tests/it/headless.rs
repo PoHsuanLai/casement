@@ -2,8 +2,8 @@
 //! `ConnectorEvent`s a KMS connector would, and nothing is left behind (P0-B-headless).
 
 use casement_backend::{
-    ConnectorEvent, DmabufMode, HeadlessBackend, HeadlessConfig, OutputChange, RenderCostModel,
-    SoftRenderer, VirtualOutputSpec,
+    ConnectorEvent, HeadlessBackend, HeadlessConfig, OutputChange, RenderCostModel, SoftRenderer,
+    VirtualOutputSpec,
 };
 use casement_core::geometry::{LogicalPoint, Transform};
 use casement_core::output::{OutputConfig, OutputPower};
@@ -23,7 +23,7 @@ fn config(outputs: &[&str]) -> HeadlessConfig {
     HeadlessConfig {
         outputs: outputs.iter().map(|text| spec(text)).collect(),
         renderer: SoftRenderer::Pixman,
-        dmabuf: DmabufMode::None,
+        dmabuf: false,
         cost: RenderCostModel::Fixed(Duration::from_millis(4)),
     }
 }

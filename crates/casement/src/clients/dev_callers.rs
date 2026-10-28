@@ -56,7 +56,7 @@ fn rows_in(fs: &RealProc, path: &Path) -> Table {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::clients::{Judge, Standing};
+    use crate::clients::{Judge, Vetting};
     use casement_core::privilege::{ClientStanding, Floor, ServiceRole};
     use porter_core::PeerIdentity;
     use std::os::unix::fs::PermissionsExt;
@@ -89,7 +89,7 @@ mod tests {
     fn arrival_under(table: Table, system: SystemDir) -> (ClientStanding, PeerIdentity) {
         let (ours, _theirs) = UnixStream::pair().expect("a socket pair");
         let arrival = Judge::new(table, system).arrival(&ours, &Floor::empty());
-        let Standing::Judged { standing, .. } = arrival.standing else {
+        let Vetting::Judged { standing, .. } = arrival.standing else {
             panic!("a public client is always judged");
         };
         (standing, arrival.peer)

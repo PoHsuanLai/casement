@@ -2,11 +2,10 @@
 
 use casement_core::input::{
     Binding, BindingAction, Bindings, Chord, DesktopCommand, DeviceClass, FeedSource, InputTarget,
-    InputUse, Keysym, Leases, Origin, PortalSessionId, Reach, ReachFacts, Refusal, Resolved, reach,
-    resolve,
+    InputUse, Keysym, Leases, Origin, PortalSessionId, ReachFacts, Refusal, reach, resolve,
 };
 use casement_core::lock::{LockHolder, LockState, LockSurfaces};
-use casement_core::policy::{Advertise, ConnectionRole, GlobalKind, advertised};
+use casement_core::policy::{ConnectionRole, GlobalKind, advertised};
 use casement_core::{ClientKey, LayerKey, LeaseId, WindowId};
 use casement_protocols::vocab::MacMods;
 use porter_core::SandboxFacts;
@@ -17,6 +16,16 @@ const VIRTUAL: Origin = Origin::Virtual(DeviceClass::Keyboard);
 const FEED: Origin = Origin::Feed(FeedSource::Palmrest);
 const WINDOW: InputTarget = InputTarget::Window(WindowId(1));
 
+/// A case's name, who sends, where it goes, what for, the lock, and the answer.
+type ReachCase<'a> = (
+    &'a str,
+    Origin,
+    InputTarget,
+    InputUse,
+    &'a LockState,
+    Result<(), Refusal>,
+);
+
 #[test]
 fn the_reach_table() {
     let unlocked = LockState::Unlocked;
@@ -26,14 +35,14 @@ fn the_reach_table() {
         holder,
         surfaces: LockSurfaces::Pending,
     };
-    let cases: Vec<(&str, Origin, InputTarget, InputUse, &LockState, Reach)> = vec![
+    let cases: Vec<ReachCase> = vec![
         (
             "physical key to a window",
             KEYBOARD,
             WINDOW,
             InputUse::Key,
             &unlocked,
-            Reach::Allowed,
+            Ok(()),
         ),
         (
             "physical press on a layer",
@@ -41,7 +50,7 @@ fn the_reach_table() {
             InputTarget::Layer(LayerKey(1)),
             InputUse::Press,
             &unlocked,
-            Reach::Allowed,
+            Ok(()),
         ),
         (
             "feed scrolls",
@@ -49,7 +58,7 @@ fn the_reach_table() {
             WINDOW,
             InputUse::Scroll,
             &unlocked,
-            Reach::Allowed,
+            Ok(()),
         ),
         (
             "feed gestures",
@@ -57,7 +66,7 @@ fn the_reach_table() {
             WINDOW,
             InputUse::SystemGesture,
             &unlocked,
-            Reach::Allowed,
+            Ok(()),
         ),
         (
             "feed may not press",
@@ -65,7 +74,7 @@ fn the_reach_table() {
             WINDOW,
             InputUse::Press,
             &unlocked,
-            Reach::Refused(Refusal::FeedKind),
+            Err(Refusal::FeedKind),
         ),
         (
             "feed may not type",
@@ -73,7 +82,7 @@ fn the_reach_table() {
             WINDOW,
             InputUse::Key,
             &unlocked,
-            Reach::Refused(Refusal::FeedKind),
+            Err(Refusal::FeedKind),
         ),
         (
             "remote key",
@@ -81,7 +90,7 @@ fn the_reach_table() {
             WINDOW,
             InputUse::Key,
             &unlocked,
-            Reach::Allowed,
+            Ok(()),
         ),
         (
             "virtual key",
@@ -89,7 +98,7 @@ fn the_reach_table() {
             WINDOW,
             InputUse::Key,
             &unlocked,
-            Reach::Allowed,
+            Ok(()),
         ),
         (
             "virtual press on a trusted surface",
@@ -97,7 +106,7 @@ fn the_reach_table() {
             InputTarget::Trusted,
             InputUse::Press,
             &unlocked,
-            Reach::Refused(Refusal::NotPhysical),
+            Err(Refusal::NotPhysical),
         ),
         (
             "remote press on a trusted surface",
@@ -105,7 +114,7 @@ fn the_reach_table() {
             InputTarget::Trusted,
             InputUse::Press,
             &unlocked,
-            Reach::Refused(Refusal::NotPhysical),
+            Err(Refusal::NotPhysical),
         ),
         (
             "physical press on a trusted surface",
@@ -113,7 +122,7 @@ fn the_reach_table() {
             InputTarget::Trusted,
             InputUse::Press,
             &unlocked,
-            Reach::Allowed,
+            Ok(()),
         ),
         (
             "agent before leases exist",
@@ -121,7 +130,7 @@ fn the_reach_table() {
             WINDOW,
             InputUse::Press,
             &unlocked,
-            Reach::Refused(Refusal::OutsideLease),
+            Err(Refusal::OutsideLease),
         ),
         (
             "physical key to the lock surface",
@@ -129,7 +138,7 @@ fn the_reach_table() {
             InputTarget::LockSurface,
             InputUse::Key,
             &locked,
-            Reach::Allowed,
+            Ok(()),
         ),
         (
             "test key to the lock surface",
@@ -137,7 +146,7 @@ fn the_reach_table() {
             InputTarget::LockSurface,
             InputUse::Key,
             &locked,
-            Reach::Allowed,
+            Ok(()),
         ),
         (
             "physical press on a window while locked",
@@ -145,7 +154,7 @@ fn the_reach_table() {
             WINDOW,
             InputUse::Press,
             &locked,
-            Reach::Refused(Refusal::Locked),
+            Err(Refusal::Locked),
         ),
         (
             "virtual key to the lock surface",
@@ -153,7 +162,7 @@ fn the_reach_table() {
             InputTarget::LockSurface,
             InputUse::Key,
             &locked,
-            Reach::Refused(Refusal::Locked),
+            Err(Refusal::Locked),
         ),
         (
             "feed scroll while locked",
@@ -161,7 +170,7 @@ fn the_reach_table() {
             WINDOW,
             InputUse::Scroll,
             &without_surface,
-            Reach::Refused(Refusal::Locked),
+            Err(Refusal::Locked),
         ),
     ];
     for (name, origin, target, use_, lock, want) in cases {
@@ -254,25 +263,15 @@ fn agent_remote_and_feed_never_fire_a_binding() {
             action: BindingAction::Desktop(DesktopCommand::HideOthers),
         },
     ]);
-    let fires = Resolved::Action(BindingAction::Desktop(DesktopCommand::HideActive));
+    let fires = Some(BindingAction::Desktop(DesktopCommand::HideActive));
     let cases = [
         ("physical, first match wins", KEYBOARD, hide, fires.clone()),
         ("virtual keyboard", VIRTUAL, hide, fires.clone()),
         ("test", Origin::Test, hide, fires),
-        ("unbound chord", KEYBOARD, quit, Resolved::PassThrough),
-        (
-            "agent",
-            Origin::Agent(LeaseId(1)),
-            hide,
-            Resolved::PassThrough,
-        ),
-        (
-            "remote",
-            Origin::Remote(PortalSessionId(2)),
-            hide,
-            Resolved::PassThrough,
-        ),
-        ("feed", FEED, hide, Resolved::PassThrough),
+        ("unbound chord", KEYBOARD, quit, None),
+        ("agent", Origin::Agent(LeaseId(1)), hide, None),
+        ("remote", Origin::Remote(PortalSessionId(2)), hide, None),
+        ("feed", FEED, hide, None),
     ];
     for (name, origin, chord, want) in cases {
         assert_eq!(resolve(&bindings, &chord, &origin), want, "{name}");
@@ -321,17 +320,9 @@ fn the_i7_table() {
             ConnectionRole::Shell,
             ConnectionRole::Agent,
         ] {
-            assert_eq!(
-                advertised(global, &role),
-                Advertise::Yes,
-                "{global:?} on {role:?}"
-            );
+            assert!(advertised(global, &role), "{global:?} on {role:?}");
         }
-        let want = if HIDDEN_FROM_SANDBOXES.contains(&global) {
-            Advertise::No
-        } else {
-            Advertise::Yes
-        };
+        let want = !HIDDEN_FROM_SANDBOXES.contains(&global);
         assert_eq!(
             advertised(global, &sandbox),
             want,

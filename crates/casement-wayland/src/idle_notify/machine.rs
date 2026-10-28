@@ -14,26 +14,6 @@ use casement_core::{ClientKey, Effect};
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
-/// Whether a visible surface holds idleness off (`zwp_idle_inhibitor_v1`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum Inhibited {
-    /// Nothing holds idleness off.
-    #[default]
-    No,
-    /// Something does.
-    Yes,
-}
-
-/// Whether a watch obeys inhibitors: `get_idle_notification` does, `get_input_idle_notification`
-/// (version 2) counts input only.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Honours {
-    /// Inhibitors keep it from going idle.
-    Inhibitors,
-    /// It goes idle after quiet input whatever inhibits.
-    InputOnly,
-}
-
 /// Where one watch is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Phase {
@@ -50,7 +30,9 @@ enum Phase {
 struct Watch {
     client: ClientKey,
     timeout: Duration,
-    honours: Honours,
+    /// Whether inhibitors keep it from going idle: `get_idle_notification` does,
+    /// `get_input_idle_notification` (version 2) counts input only.
+    honours_inhibitors: bool,
     phase: Phase,
 }
 
@@ -112,7 +94,8 @@ pub struct IdleBook {
     held: BTreeMap<ClientKey, usize>,
     /// The latest input of any origin.
     active_at: Option<Mono>,
-    inhibited: Inhibited,
+    /// Whether a visible surface holds idleness off (`zwp_idle_inhibitor_v1`).
+    inhibited: bool,
     next: u64,
 }
 
@@ -122,15 +105,15 @@ impl IdleBook {
         self,
         client: ClientKey,
         timeout: Duration,
-        honours: Honours,
+        honours_inhibitors: bool,
         now: Mono,
     ) -> (IdleBook, IdleNotifierId, Moved) {
         let id = IdleNotifierId(self.next);
-        let held = honours == Honours::Inhibitors && self.inhibited == Inhibited::Yes;
+        let held = honours_inhibitors && self.inhibited;
         let watch = Watch {
             client,
             timeout,
-            honours,
+            honours_inhibitors,
             phase: if held {
                 Phase::Held
             } else {
@@ -233,7 +216,7 @@ impl IdleBook {
 
     /// An inhibitor appeared or the last one went at `now`. Raised: watches that obey it are
     /// told `resumed` if idle, and stop counting. Lowered: they count again from `now`.
-    pub fn inhibit(self, inhibited: Inhibited, now: Mono) -> (IdleBook, Moved) {
+    pub fn inhibit(self, inhibited: bool, now: Mono) -> (IdleBook, Moved) {
         if inhibited == self.inhibited {
             return (self, Moved::default());
         }
@@ -248,21 +231,21 @@ impl IdleBook {
         let (watches, moved) = watches.into_iter().fold(
             (BTreeMap::new(), Moved::default()),
             |(mut kept, moved), (id, watch)| {
-                let (phase, moved) = match (watch.honours, inhibited, watch.phase) {
-                    (Honours::InputOnly, _, phase) => (phase, moved),
-                    (Honours::Inhibitors, Inhibited::Yes, Phase::Idle) => {
+                let (phase, moved) = match (watch.honours_inhibitors, inhibited, watch.phase) {
+                    (false, _, phase) => (phase, moved),
+                    (true, true, Phase::Idle) => {
                         idle.remove(&id);
                         (Phase::Held, moved.signal(Signal::Resumed(id)))
                     }
-                    (Honours::Inhibitors, Inhibited::Yes, Phase::Quiet { .. }) => (
+                    (true, true, Phase::Quiet { .. }) => (
                         Phase::Held,
                         moved.effect(Effect::CancelTimer(watch.key(id))),
                     ),
-                    (Honours::Inhibitors, Inhibited::No, Phase::Held) => (
+                    (true, false, Phase::Held) => (
                         Phase::Quiet { since: now },
                         moved.effect(watch.arm(id, now)),
                     ),
-                    (Honours::Inhibitors, _, phase) => (phase, moved),
+                    (true, _, phase) => (phase, moved),
                 };
                 kept.insert(id, Watch { phase, ..watch });
                 (kept, moved)
@@ -309,7 +292,7 @@ impl IdleBook {
     }
 
     /// Whether an inhibitor holds idleness off.
-    pub fn inhibited(&self) -> Inhibited {
+    pub fn inhibited(&self) -> bool {
         self.inhibited
     }
 
@@ -350,16 +333,20 @@ mod tests {
         Effect::CancelTimer(TimerKey::IdleNotify(CLIENT, id))
     }
 
-    fn watching(timeout_ms: u64, honours: Honours, now: u64) -> (IdleBook, IdleNotifierId) {
-        let (book, id, _) =
-            IdleBook::default().watch(CLIENT, Duration::from_millis(timeout_ms), honours, at(now));
+    fn watching(timeout_ms: u64, honours_inhibitors: bool, now: u64) -> (IdleBook, IdleNotifierId) {
+        let (book, id, _) = IdleBook::default().watch(
+            CLIENT,
+            Duration::from_millis(timeout_ms),
+            honours_inhibitors,
+            at(now),
+        );
         (book, id)
     }
 
     #[test]
     fn a_watch_arms_its_timeout_and_goes_idle_exactly_then() {
         let (book, id, moved) =
-            IdleBook::default().watch(CLIENT, Duration::from_secs(30), Honours::Inhibitors, at(5));
+            IdleBook::default().watch(CLIENT, Duration::from_secs(30), true, at(5));
         assert_eq!(moved.effects, vec![arm(id, 30_005)]);
         assert!(moved.signals.is_empty());
         let (_, early) = book.clone().fire(CLIENT, id, at(30_004));
@@ -370,7 +357,7 @@ mod tests {
 
     #[test]
     fn activity_moves_the_mark_and_an_early_timer_re_arms_for_the_rest() {
-        let (book, id) = watching(30_000, Honours::Inhibitors, 0);
+        let (book, id) = watching(30_000, true, 0);
         let (book, moved) = book.activity(at(10_000));
         assert_eq!(moved, Moved::default(), "motion arms nothing");
         let (book, moved) = book.fire(CLIENT, id, at(30_000));
@@ -382,7 +369,7 @@ mod tests {
 
     #[test]
     fn activity_after_idled_resumes_and_re_arms() {
-        let (book, id) = watching(1_000, Honours::Inhibitors, 0);
+        let (book, id) = watching(1_000, true, 0);
         let (book, _) = book.fire(CLIENT, id, at(1_000));
         let (book, moved) = book.activity(at(2_500));
         assert_eq!(moved.signals, vec![Signal::Resumed(id)]);
@@ -393,7 +380,7 @@ mod tests {
 
     #[test]
     fn a_second_timer_after_idled_says_nothing() {
-        let (book, id) = watching(1_000, Honours::Inhibitors, 0);
+        let (book, id) = watching(1_000, true, 0);
         let (book, _) = book.fire(CLIENT, id, at(1_000));
         let (_, moved) = book.fire(CLIENT, id, at(1_000));
         assert_eq!(moved, Moved::default());
@@ -401,8 +388,8 @@ mod tests {
 
     #[test]
     fn an_inhibitor_holds_idled_off_and_its_release_restarts_the_count() {
-        let (book, id) = watching(1_000, Honours::Inhibitors, 0);
-        let (book, moved) = book.inhibit(Inhibited::Yes, at(500));
+        let (book, id) = watching(1_000, true, 0);
+        let (book, moved) = book.inhibit(true, at(500));
         assert_eq!(moved.effects, vec![cancel(id)]);
         let (book, moved) = book.fire(CLIENT, id, at(1_000));
         assert_eq!(
@@ -410,7 +397,7 @@ mod tests {
             Moved::default(),
             "a held watch ignores a stale timer"
         );
-        let (book, moved) = book.inhibit(Inhibited::No, at(4_000));
+        let (book, moved) = book.inhibit(false, at(4_000));
         assert_eq!(moved.effects, vec![arm(id, 5_000)]);
         let (_, moved) = book.fire(CLIENT, id, at(5_000));
         assert_eq!(moved.signals, vec![Signal::Idled(id)]);
@@ -418,9 +405,9 @@ mod tests {
 
     #[test]
     fn an_inhibitor_raised_after_idled_resumes_the_client() {
-        let (book, id) = watching(1_000, Honours::Inhibitors, 0);
+        let (book, id) = watching(1_000, true, 0);
         let (book, _) = book.fire(CLIENT, id, at(1_000));
-        let (book, moved) = book.inhibit(Inhibited::Yes, at(1_500));
+        let (book, moved) = book.inhibit(true, at(1_500));
         assert_eq!(moved.signals, vec![Signal::Resumed(id)]);
         let (_, moved) = book.activity(at(2_000));
         assert_eq!(
@@ -432,16 +419,16 @@ mod tests {
 
     #[test]
     fn a_watch_made_while_inhibited_starts_held() {
-        let (book, _) = watching(1_000, Honours::Inhibitors, 0);
-        let (book, _) = book.inhibit(Inhibited::Yes, at(10));
-        let (_, _, moved) = book.watch(CLIENT, Duration::from_secs(1), Honours::Inhibitors, at(20));
+        let (book, _) = watching(1_000, true, 0);
+        let (book, _) = book.inhibit(true, at(10));
+        let (_, _, moved) = book.watch(CLIENT, Duration::from_secs(1), true, at(20));
         assert_eq!(moved, Moved::default());
     }
 
     #[test]
     fn an_input_idle_watch_ignores_inhibitors() {
-        let (book, id) = watching(1_000, Honours::InputOnly, 0);
-        let (book, moved) = book.inhibit(Inhibited::Yes, at(100));
+        let (book, id) = watching(1_000, false, 0);
+        let (book, moved) = book.inhibit(true, at(100));
         assert_eq!(moved, Moved::default());
         let (_, moved) = book.fire(CLIENT, id, at(1_000));
         assert_eq!(moved.signals, vec![Signal::Idled(id)]);
@@ -449,7 +436,7 @@ mod tests {
 
     #[test]
     fn a_destroyed_watch_cancels_its_timer_and_forgets_stale_fires() {
-        let (book, id) = watching(1_000, Honours::Inhibitors, 0);
+        let (book, id) = watching(1_000, true, 0);
         let (book, moved) = book.forget(id);
         assert_eq!(moved.effects, vec![cancel(id)]);
         assert!(book.is_empty());
@@ -459,7 +446,7 @@ mod tests {
 
     #[test]
     fn a_timer_of_another_client_does_nothing() {
-        let (book, id) = watching(1_000, Honours::Inhibitors, 0);
+        let (book, id) = watching(1_000, true, 0);
         let (_, moved) = book.fire(ClientKey(2), id, at(1_000));
         assert_eq!(moved, Moved::default());
     }
@@ -471,12 +458,7 @@ mod tests {
         let mut book = IdleBook::default();
         let mut ids = Vec::new();
         for _ in 0..2_000 {
-            let (next, id, _) = book.watch(
-                CLIENT,
-                Duration::from_millis(1_000),
-                Honours::Inhibitors,
-                at(0),
-            );
+            let (next, id, _) = book.watch(CLIENT, Duration::from_millis(1_000), true, at(0));
             book = next;
             ids.push(id);
         }
@@ -500,15 +482,9 @@ mod tests {
 
     #[test]
     fn the_per_client_count_follows_watches_made_and_destroyed() {
-        let (book, first) = watching(1_000, Honours::Inhibitors, 0);
-        let (book, second, _) =
-            book.watch(CLIENT, Duration::from_secs(1), Honours::Inhibitors, at(0));
-        let (book, _, _) = book.watch(
-            ClientKey(2),
-            Duration::from_secs(1),
-            Honours::Inhibitors,
-            at(0),
-        );
+        let (book, first) = watching(1_000, true, 0);
+        let (book, second, _) = book.watch(CLIENT, Duration::from_secs(1), true, at(0));
+        let (book, _, _) = book.watch(ClientKey(2), Duration::from_secs(1), true, at(0));
         assert_eq!((book.held_by(CLIENT), book.held_by(ClientKey(2))), (2, 1));
         let (book, _) = book.forget(first);
         let (book, _) = book.forget(second);
@@ -518,8 +494,8 @@ mod tests {
 
     #[test]
     fn ids_are_minted_in_order() {
-        let (book, first) = watching(1_000, Honours::Inhibitors, 0);
-        let (_, second, _) = book.watch(CLIENT, Duration::from_secs(1), Honours::Inhibitors, at(0));
+        let (book, first) = watching(1_000, true, 0);
+        let (_, second, _) = book.watch(CLIENT, Duration::from_secs(1), true, at(0));
         assert_eq!((first, second), (IdleNotifierId(0), IdleNotifierId(1)));
     }
 }

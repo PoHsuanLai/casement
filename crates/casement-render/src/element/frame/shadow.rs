@@ -14,11 +14,12 @@
 //! A window too small for the tiles to meet has one raster of its own size (`whole.rs`).
 
 use super::raster::{Px, Raster, bytes, cover, over};
-use super::slices::{Corner, EDGE_DEPTH, MARGIN, Side};
+use super::slices::{EDGE_DEPTH, MARGIN, Side};
+use crate::element::corner::{CORNERS, corner_sign};
 use casement_core::window::ShadowLayer;
 use ds_core::geometry::scale::Scale;
 
-/// What a shadow is drawn from: its corner tiles (in `Corner::ALL` order) and edge strips (in
+/// What a shadow is drawn from: its corner tiles (in `CORNERS` order) and edge strips (in
 /// `Side::ALL` order), and how far the corners reach into the window.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Tiles {
@@ -58,8 +59,8 @@ pub(crate) fn tiles(layers: &[ShadowLayer], radius: u32, scale: Scale) -> Tiles 
     let per = scale.numerator() as f32 / Scale::DENOMINATOR as f32;
     let inner = inner_reach(layers, radius);
     let mut made: Vec<(Vec<(i32, i32)>, Raster)> = Vec::new();
-    let corners = Corner::ALL.map(|corner| {
-        let (sx, sy) = corner.sign();
+    let corners = CORNERS.map(|corner| {
+        let (sx, sy) = corner_sign(corner);
         let offsets: Vec<(i32, i32)> = layers.iter().map(|l| (sx * l.dx, sy * l.dy)).collect();
         let found = made.iter().position(|(key, _)| *key == offsets);
         let at = found.unwrap_or_else(|| {

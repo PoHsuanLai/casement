@@ -574,9 +574,8 @@ fn a_power_taken_back_stops_a_session_in_use() {
     capture.take().expect("answered").expect("the first frame");
     assert!(!capture.is_stopped());
 
-    fixture.feed_events(vec![Event::PrivilegeRevoked {
-        subject: program(ASKED_PROGRAM),
-        power: Power::Screen,
+    fixture.feed_events(vec![Event::PrivilegeEdited {
+        edit: casement_core::privilege::Edit::Deny(program(ASKED_PROGRAM), Power::Screen),
         at: UnixSeconds(2),
     }]);
     settle(&mut fixture, &mut capture);

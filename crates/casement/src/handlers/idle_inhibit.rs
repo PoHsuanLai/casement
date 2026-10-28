@@ -5,7 +5,7 @@
 use crate::core_loop::sync_inhibitors;
 use crate::state::State;
 use casement_wayland::idle_inhibit::{on_inhibit, on_uninhibit};
-use casement_wayland::limits::{self, Limit, Standing};
+use casement_wayland::limits::{self, Limit};
 use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::wayland::idle_inhibit::IdleInhibitHandler;
@@ -15,8 +15,7 @@ impl IdleInhibitHandler for State {
         // A client past its cap is cut after this request (NEW-CAS-2) and its inhibitor not counted.
         if let Some(client) = surface.client() {
             let held = self.wl.idle_inhibit.held_by(&client);
-            if limits::admit(&self.display, &client, Limit::IdleInhibitors, held) == Standing::Over
-            {
+            if !limits::admit(&self.display, &client, Limit::IdleInhibitors, held) {
                 return;
             }
         }

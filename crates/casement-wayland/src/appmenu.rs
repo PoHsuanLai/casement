@@ -40,7 +40,7 @@ pub fn on_address(
     window: WindowId,
     service: &str,
     path: &str,
-    mapped: Mapped,
+    mapped: bool,
 ) -> Vec<Event> {
     if !valid_bus_name(service) || !valid_object_path(path) {
         return Vec::new();
@@ -54,7 +54,7 @@ pub fn on_address(
 }
 
 /// `release` (or the surface's death): the window has no global menu any more.
-pub fn on_released(part: &mut AppMenuPart, window: WindowId, mapped: Mapped) -> Vec<Event> {
+pub fn on_released(part: &mut AppMenuPart, window: WindowId, mapped: bool) -> Vec<Event> {
     match part.declared.remove(&window) {
         Some(_) => announce(window, MenuSource::None, mapped),
         None => Vec::new(),
@@ -65,7 +65,7 @@ pub fn on_released(part: &mut AppMenuPart, window: WindowId, mapped: Mapped) -> 
 pub fn on_mapped(part: &AppMenuPart, window: WindowId) -> Vec<Event> {
     part.declared
         .get(&window)
-        .map(|source| announce(window, source.clone(), Mapped::Yes))
+        .map(|source| announce(window, source.clone(), true))
         .unwrap_or_default()
 }
 
@@ -74,22 +74,15 @@ pub fn on_forgotten(part: &mut AppMenuPart, window: WindowId) {
     part.declared.remove(&window);
 }
 
-/// Whether the model holds the window yet.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Mapped {
-    /// It does: the hint can go now.
-    Yes,
-    /// Not yet: the table keeps the address until [`on_mapped`].
-    No,
-}
-
-fn announce(window: WindowId, source: MenuSource, mapped: Mapped) -> Vec<Event> {
+/// The hint for `window` when the model holds it (`mapped`); otherwise nothing yet: the table
+/// keeps the address until [`on_mapped`].
+fn announce(window: WindowId, source: MenuSource, mapped: bool) -> Vec<Event> {
     match mapped {
-        Mapped::Yes => vec![Event::WindowHint {
+        true => vec![Event::WindowHint {
             window,
             hint: WindowHintChange::Menu(source),
         }],
-        Mapped::No => Vec::new(),
+        false => Vec::new(),
     }
 }
 
@@ -159,8 +152,8 @@ mod tests {
     fn an_address_waits_for_the_map_and_a_bad_one_is_ignored() {
         let mut part = AppMenuPart::new();
         let window = WindowId(3);
-        assert!(on_address(&mut part, window, "org.kde.Foo", "/Menu", Mapped::No).is_empty());
-        assert!(on_address(&mut part, window, "bad", "/Menu", Mapped::No).is_empty());
+        assert!(on_address(&mut part, window, "org.kde.Foo", "/Menu", false).is_empty());
+        assert!(on_address(&mut part, window, "bad", "/Menu", false).is_empty());
         let want = Event::WindowHint {
             window,
             hint: WindowHintChange::Menu(MenuSource::DbusMenu {
@@ -170,7 +163,7 @@ mod tests {
         };
         assert_eq!(on_mapped(&part, window), vec![want]);
         assert_eq!(
-            on_released(&mut part, window, Mapped::Yes),
+            on_released(&mut part, window, true),
             vec![Event::WindowHint {
                 window,
                 hint: WindowHintChange::Menu(MenuSource::None)

@@ -5,9 +5,10 @@ use super::{DeviceVerb, InjectLine, InjectOrigin};
 use crate::error::IpcError;
 use casement_core::geometry::{LogicalPoint, SubPoint, SubPx};
 use casement_core::input::{
-    AxisFrame, AxisSource, AxisStop, ButtonCode, DeviceClass, Edge, GestureEnd, GestureStep,
-    Keysym, PinchDelta, TouchStep,
+    AxisFrame, AxisSource, ButtonCode, DeviceClass, GestureEnd, GestureStep, Keysym, PinchDelta,
+    TouchStep,
 };
+use casement_protocols::vocab::PressEdge;
 use ds_core::vocab::Fraction;
 use std::time::Duration;
 
@@ -124,10 +125,10 @@ fn button(words: &[&str]) -> Option<ButtonCode> {
         .map(ButtonCode)
 }
 
-fn edge(word: &str) -> Option<Edge> {
+fn edge(word: &str) -> Option<PressEdge> {
     match word {
-        "down" => Some(Edge::Press),
-        "up" => Some(Edge::Release),
+        "down" => Some(PressEdge::Press),
+        "up" => Some(PressEdge::Release),
         _ => None,
     }
 }
@@ -182,7 +183,7 @@ fn wheel(horizontal: f64, vertical: f64) -> AxisFrame {
             x: SubPx(scaled(horizontal, SUB_PER_PIXEL)),
             y: SubPx(scaled(vertical, SUB_PER_PIXEL)),
         },
-        stop: AxisStop::Running,
+        stopped: false,
     }
 }
 
@@ -198,7 +199,7 @@ fn axis_frame(source: &str, x: i32, y: i32, px: SubPoint) -> Option<AxisFrame> {
         source,
         v120: (x, y),
         px,
-        stop: AxisStop::Running,
+        stopped: false,
     })
 }
 

@@ -9,10 +9,10 @@
 //! by P2-Q2.
 
 use crate::State;
-use crate::clients::{Standing, insert_client};
+use crate::clients::{Vetting, insert_client};
 use crate::core_loop::{feed, tty::desktop_extent};
 use casement_agent::{
-    HandOut, KeymapText, RefuseWhy, RemoteEvent, RemoteFor, RemoteHandle, RemoteKinds, RoleName,
+    KeymapText, RefuseWhy, RemoteEvent, RemoteFor, RemoteHandle, RemoteKinds, RoleName,
     agent_may_lease, hand_out, open_remote_eis, portal_may_connect,
 };
 use casement_core::input::{InputEvent, PortalSessionId};
@@ -68,8 +68,8 @@ pub fn answer(state: &mut State, ask: ConnectAsk) -> ConnectReply {
         return answer_end_lease(state, end, ask.owner.as_deref(), &ask.caller.role);
     }
     let handed = match hand_out(&ask.role, &ask.caller.role) {
-        HandOut::Granted(handed) => handed,
-        HandOut::Refused(why) => return ConnectReply::Refused(refusal_of(why)),
+        Ok(handed) => handed,
+        Err(why) => return ConnectReply::Refused(refusal_of(why)),
     };
     // A handed-out connection is the shell's, the agent tier's or the portal's, trusted by how it
     // was obtained (the portal's only for the screen and the windows: `Class::of`); its peer stays
@@ -79,7 +79,7 @@ pub fn answer(state: &mut State, ask: ConnectAsk) -> ConnectReply {
         handed.server,
         handed.role,
         PeerIdentity::Unproven,
-        Standing::Unjudged,
+        Vetting::Unjudged,
     ) {
         Ok(client) => client,
         Err(error) => {

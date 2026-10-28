@@ -4,8 +4,8 @@
 use casement_core::OutputKey;
 use casement_core::geometry::LogicalSize;
 use casement_core::layer::{
-    Anchor, Anchors, ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerOwner, LayerSpec,
-    Margins, ShellRoleTag,
+    Anchors, ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerOwner, LayerSpec, Margins,
+    ShellRoleTag,
 };
 use smithay::wayland::shell::wlr_layer::{
     Anchor as WireAnchor, ExclusiveZone as WireZone, KeyboardInteractivity as WireKeyboard,
@@ -22,12 +22,8 @@ pub fn level_of(layer: WireLayer) -> LayerLevel {
     }
 }
 
-fn held(anchor: WireAnchor, edge: WireAnchor) -> Anchor {
-    if anchor.contains(edge) {
-        Anchor::Held
-    } else {
-        Anchor::Free
-    }
+fn held(anchor: WireAnchor, edge: WireAnchor) -> bool {
+    anchor.contains(edge)
 }
 
 /// The edges a surface is held to.
@@ -141,7 +137,7 @@ mod tests {
         let anchors = anchors_of(WireAnchor::TOP | WireAnchor::LEFT | WireAnchor::RIGHT);
         assert_eq!(
             (anchors.top, anchors.bottom, anchors.left, anchors.right),
-            (Anchor::Held, Anchor::Free, Anchor::Held, Anchor::Held)
+            (true, false, true, true)
         );
         let s = spec(WireAnchor::TOP, NO_MARGIN);
         assert_eq!(s.namespace, "bar");

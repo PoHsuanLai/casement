@@ -20,9 +20,9 @@ mod gate;
 pub use gate::on_resolved;
 
 use crate::consent::{self, Admission, ConsentHandler};
-use crate::foreign_toplevel_list::Disclosure;
+use crate::foreign_toplevel_list::told;
 use crate::handler::OutputLookup;
-use crate::limits::{self, Limit, Standing};
+use crate::limits::{self, Limit};
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::policy::GlobalKind;
@@ -189,7 +189,7 @@ where
         let held = part
             .managers_of(&client.id())
             .saturating_add(gate::waiting_of(part, client));
-        if limits::admit(handle, client, Limit::WindowListManagers, held) == Standing::Over {
+        if !limits::admit(handle, client, Limit::WindowListManagers, held) {
             return;
         }
         match consent::admit(state, client, Power::Windows) {
@@ -464,11 +464,11 @@ pub fn apply_toplevel(
     part: &mut WlrToplevelPart,
     window: &Window,
     outputs: &[Output],
-    disclosure: Disclosure,
+    disclosed: bool,
 ) -> Result<(), WaylandFault> {
     let facts = Facts {
-        title: disclosure.text(&window.title.0).to_owned(),
-        app_id: disclosure.text(window.claimed_id.as_str()).to_owned(),
+        title: told(disclosed, &window.title.0).to_owned(),
+        app_id: told(disclosed, window.claimed_id.as_str()).to_owned(),
         states: states_of(window),
         outputs: outputs.to_vec(),
     };

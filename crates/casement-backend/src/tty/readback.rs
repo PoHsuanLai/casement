@@ -13,7 +13,7 @@
 
 use crate::backend::BackendError;
 use crate::headless::{
-    DmabufMode, EdidSource, FrameSource, GpuId, HeadlessBackend, HeadlessConfig, PresentedFrame,
+    EdidSource, FrameSource, GpuId, HeadlessBackend, HeadlessConfig, PresentedFrame,
     RenderCostModel, RgbaFrame, SoftRenderer, VirtualOutputSpec,
 };
 use casement_core::OutputName;
@@ -22,26 +22,6 @@ use casement_core::output::{EdidFacts, EdidSerial, OutputConfig, VrrCapability};
 use casement_core::time::{Mono, VblankSeq};
 use ds_core::geometry::scale::Scale;
 use std::collections::BTreeMap;
-
-/// Whether a capture is open on an output.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum Watch {
-    /// No capture: nothing is drawn for it.
-    Off,
-    /// A capture session is open: every frame shown is drawn again into the shadow.
-    On,
-}
-
-/// Where the frame last drawn for an output is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum Residence {
-    /// On the display GPU: a capture draws it into a dma-buf there.
-    Gpu,
-    /// Read back by the software shadow (or not drawn at all).
-    Shadow,
-}
 
 /// The shadow outputs, drawn only while watched.
 #[derive(Debug, Default)]
@@ -61,16 +41,17 @@ impl Readback {
         Readback::default()
     }
 
-    /// Starts or stops watching `output`, shown with `config`. A watched output whose mode,
-    /// scale or transform changed gets a new shadow.
+    /// Starts (`watch`: a capture session is open, so every frame shown is drawn again into the
+    /// shadow) or stops (nothing is drawn for it) watching `output`, shown with `config`. A
+    /// watched output whose mode, scale or transform changed gets a new shadow.
     pub fn watch(
         &mut self,
         output: &OutputName,
         config: &OutputConfig,
-        watch: Watch,
+        watch: bool,
     ) -> Result<(), BackendError> {
         match watch {
-            Watch::Off => {
+            false => {
                 self.resident.remove(output);
                 if self.watched.remove(output).is_some()
                     && let Some(shadow) = &mut self.shadow
@@ -79,7 +60,7 @@ impl Readback {
                 }
                 Ok(())
             }
-            Watch::On => self.follow(output, config),
+            true => self.follow(output, config),
         }
     }
 
@@ -101,7 +82,7 @@ impl Readback {
             self.shadow = Some(HeadlessBackend::start(HeadlessConfig {
                 outputs: Vec::new(),
                 renderer: SoftRenderer::Pixman,
-                dmabuf: DmabufMode::None,
+                dmabuf: false,
                 cost: RenderCostModel::Fixed(std::time::Duration::ZERO),
             })?);
         }
@@ -201,20 +182,15 @@ impl Readback {
         self.resident.remove(output);
     }
 
-    /// Where the frame last drawn for `output` is.
-    pub fn residence(&self, output: &OutputName) -> Residence {
-        match self.resident.contains_key(output) {
-            true => Residence::Gpu,
-            false => Residence::Shadow,
-        }
+    /// Whether the frame last drawn for `output` is on the display GPU, where a capture draws it
+    /// into a dma-buf (`false`: read back by the software shadow, or not drawn at all).
+    pub fn on_gpu(&self, output: &OutputName) -> bool {
+        self.resident.contains_key(output)
     }
 
     /// Whether `output` is watched.
-    pub fn watching(&self, output: &OutputName) -> Watch {
-        match self.watched.contains_key(output) {
-            true => Watch::On,
-            false => Watch::Off,
-        }
+    pub fn watching(&self, output: &OutputName) -> bool {
+        self.watched.contains_key(output)
     }
 
     /// `output` is gone: its shadow with it.

@@ -7,7 +7,7 @@ use casement_core::app::{App, AppKey, AppLife, AppVisibility, PidSet};
 use casement_core::focus::{Focus, FocusIn, FocusOut, HitPart, Press};
 use casement_core::input::{DeviceClass, Origin};
 use casement_core::space::SpaceBook;
-use casement_core::window::{Parent, Window};
+use casement_core::window::Window;
 use casement_protocols::vocab::{Attention, MacMods, Modality, WindowRole};
 use std::collections::BTreeMap;
 
@@ -23,7 +23,7 @@ pub fn sheet(n: u64, parent: u64) -> Window {
     Window {
         role: WindowRole::Dialog,
         modality: Modality::WindowModal,
-        parent: Parent::Window(WindowId(parent)),
+        parent: Some(WindowId(parent)),
         ..window(n, &a(), "s-1")
     }
 }

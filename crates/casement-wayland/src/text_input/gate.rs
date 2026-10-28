@@ -17,60 +17,23 @@ use std::time::Duration;
 /// the activation.
 pub const HOLD_LIMIT: Duration = Duration::from_millis(50);
 
-/// Whether an input method is bound to the seat.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MethodFacts {
-    /// None (no fcitx5).
-    Absent,
-    /// One is.
-    Bound,
-}
-
-/// Whether a text field is enabled on the focused client.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FieldFacts {
-    /// No field is.
-    Inactive,
-    /// One is.
-    Active,
-}
-
-/// Whether the input method holds the keyboard grab.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GrabFacts {
-    /// It does not.
-    Free,
-    /// It does: keys reach it through smithay's grab.
-    Grabbed,
-}
-
 /// What the seat's text-input and input-method handles say right now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ImeFacts {
-    /// The input method.
-    pub method: MethodFacts,
-    /// The field.
-    pub field: FieldFacts,
-    /// The grab.
-    pub grab: GrabFacts,
+    /// Whether an input method is bound to the seat (none: no fcitx5).
+    pub method_bound: bool,
+    /// Whether a text field is enabled on the focused client.
+    pub field_active: bool,
+    /// Whether the input method holds the keyboard grab (keys reach it through smithay's grab).
+    pub grabbed: bool,
 }
 
 impl ImeFacts {
     /// Whether the input method is expected to grab the keyboard soon: bound, a field active,
     /// no grab yet.
-    fn expects_grab(self) -> Expect {
-        match (self.method, self.field, self.grab) {
-            (MethodFacts::Bound, FieldFacts::Active, GrabFacts::Free) => Expect::Grab,
-            _ => Expect::Nothing,
-        }
+    fn expects_grab(self) -> bool {
+        self.method_bound && self.field_active && !self.grabbed
     }
-}
-
-/// Whether the gate is waiting for a grab.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Expect {
-    Grab,
-    Nothing,
 }
 
 /// Where the gate is in one activation.
@@ -140,18 +103,19 @@ impl KeyGate {
 /// The phase after seeing `facts` at `now`.
 fn next_phase(phase: Phase, facts: ImeFacts, now: Mono) -> Phase {
     match (facts.expects_grab(), phase) {
-        (Expect::Nothing, _) => Phase::Idle,
-        (Expect::Grab, Phase::Idle) => Phase::Waiting { since: now },
-        (Expect::Grab, Phase::Waiting { since }) if now >= since.after(HOLD_LIMIT) => Phase::GaveUp,
-        (Expect::Grab, kept) => kept,
+        (false, _) => Phase::Idle,
+        (true, Phase::Idle) => Phase::Waiting { since: now },
+        (true, Phase::Waiting { since }) if now >= since.after(HOLD_LIMIT) => Phase::GaveUp,
+        (true, kept) => kept,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use casement_core::input::{Edge, KeyCode, Origin};
+    use casement_core::input::{KeyCode, Origin};
     use casement_core::{DeviceId, InputSerial};
+    use casement_protocols::vocab::PressEdge;
 
     fn at(ms: u64) -> Mono {
         Mono(Duration::from_millis(ms))
@@ -160,7 +124,7 @@ mod tests {
     fn key(code: u32, ms: u64) -> KeyDelivery {
         KeyDelivery {
             code: KeyCode(code),
-            edge: Edge::Press,
+            edge: PressEdge::Press,
             serial: InputSerial(code),
             time: at(ms),
             origin: Origin::Test,
@@ -169,20 +133,20 @@ mod tests {
     }
 
     const ENABLED: ImeFacts = ImeFacts {
-        method: MethodFacts::Bound,
-        field: FieldFacts::Active,
-        grab: GrabFacts::Free,
+        method_bound: true,
+        field_active: true,
+        grabbed: false,
     };
     const GRABBED: ImeFacts = ImeFacts {
-        grab: GrabFacts::Grabbed,
+        grabbed: true,
         ..ENABLED
     };
     const NO_METHOD: ImeFacts = ImeFacts {
-        method: MethodFacts::Absent,
+        method_bound: false,
         ..ENABLED
     };
     const NO_FIELD: ImeFacts = ImeFacts {
-        field: FieldFacts::Inactive,
+        field_active: false,
         ..ENABLED
     };
 

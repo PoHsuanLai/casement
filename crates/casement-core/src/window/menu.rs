@@ -6,43 +6,7 @@
 
 use super::state::WindowState;
 use crate::geometry::{LogicalPoint, LogicalRect};
-use casement_protocols::vocab::{PlaceTarget, TileZone, Toggle};
-
-/// One entry of the window menu, in the order the menu lists them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-#[non_exhaustive]
-pub enum MenuEntry {
-    /// Enter Full Screen.
-    EnterFullScreen,
-    /// Exit Full Screen (the first entry in place of Enter Full Screen, in full screen).
-    ExitFullScreen,
-    /// Move & Resize: the left half.
-    Left,
-    /// Move & Resize: the right half.
-    Right,
-    /// Move & Resize: the top half.
-    Top,
-    /// Move & Resize: the bottom half.
-    Bottom,
-    /// Move & Resize: the top left quarter.
-    TopLeft,
-    /// Move & Resize: the top right quarter.
-    TopRight,
-    /// Move & Resize: the bottom left quarter.
-    BottomLeft,
-    /// Move & Resize: the bottom right quarter.
-    BottomRight,
-    /// Move & Resize: Return to Previous Size.
-    ReturnToPreviousSize,
-    /// Full Screen Tile: Left of Screen.
-    TileLeftOfScreen,
-    /// Full Screen Tile: Right of Screen.
-    TileRightOfScreen,
-    /// Fill.
-    Fill,
-    /// Center.
-    Centre,
-}
+use casement_protocols::vocab::{PlaceTarget, SplitSide, TileZone, Toggle, WindowEntry, WireCode};
 
 /// Where the menu shows an entry: at the top level or inside one of its two submenus.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,157 +32,86 @@ pub enum MenuAction {
     SplitTile(SplitSide),
 }
 
-/// A side of a Split View. Spelled `left` / `right` in the bindings document.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SplitSide {
-    /// The left of the screen.
-    Left,
-    /// The right of the screen.
-    Right,
-}
-
-/// Whether an entry can be picked now.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Offer {
-    /// It can.
-    Enabled,
-    /// It is shown dimmed.
-    Disabled,
-}
-
-/// Whether the model can put a window in a Split View.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SplitSupport {
-    /// It can: the Full Screen Tile entries are offered.
-    Available,
-    /// It cannot yet: they are shown dimmed.
-    Unavailable,
-}
-
 /// One entry and whether it is offered.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MenuItem {
     /// The entry.
-    pub entry: MenuEntry,
-    /// Whether it can be picked.
-    pub offer: Offer,
+    pub entry: WindowEntry,
+    /// Whether it can be picked (otherwise it is shown dimmed).
+    pub enabled: bool,
 }
 
-impl MenuEntry {
-    /// Every entry in menu order.
-    pub const ALL: [MenuEntry; 15] = [
-        MenuEntry::EnterFullScreen,
-        MenuEntry::ExitFullScreen,
-        MenuEntry::Left,
-        MenuEntry::Right,
-        MenuEntry::Top,
-        MenuEntry::Bottom,
-        MenuEntry::TopLeft,
-        MenuEntry::TopRight,
-        MenuEntry::BottomLeft,
-        MenuEntry::BottomRight,
-        MenuEntry::ReturnToPreviousSize,
-        MenuEntry::TileLeftOfScreen,
-        MenuEntry::TileRightOfScreen,
-        MenuEntry::Fill,
-        MenuEntry::Centre,
-    ];
-
-    /// The words the menu shows, as the Mac words them.
-    pub fn label(self) -> &'static str {
-        match self {
-            MenuEntry::EnterFullScreen => "Enter Full Screen",
-            MenuEntry::ExitFullScreen => "Exit Full Screen",
-            MenuEntry::Left => "Left",
-            MenuEntry::Right => "Right",
-            MenuEntry::Top => "Top",
-            MenuEntry::Bottom => "Bottom",
-            MenuEntry::TopLeft => "Top Left",
-            MenuEntry::TopRight => "Top Right",
-            MenuEntry::BottomLeft => "Bottom Left",
-            MenuEntry::BottomRight => "Bottom Right",
-            MenuEntry::ReturnToPreviousSize => "Return to Previous Size",
-            MenuEntry::TileLeftOfScreen => "Left of Screen",
-            MenuEntry::TileRightOfScreen => "Right of Screen",
-            MenuEntry::Fill => "Fill",
-            MenuEntry::Centre => "Center",
-        }
+/// The words the menu shows, as the Mac words them.
+pub fn entry_label(entry: WindowEntry) -> &'static str {
+    match entry {
+        WindowEntry::EnterFullScreen => "Enter Full Screen",
+        WindowEntry::ExitFullScreen => "Exit Full Screen",
+        WindowEntry::Left => "Left",
+        WindowEntry::Right => "Right",
+        WindowEntry::Top => "Top",
+        WindowEntry::Bottom => "Bottom",
+        WindowEntry::TopLeft => "Top Left",
+        WindowEntry::TopRight => "Top Right",
+        WindowEntry::BottomLeft => "Bottom Left",
+        WindowEntry::BottomRight => "Bottom Right",
+        WindowEntry::ReturnToPreviousSize => "Return to Previous Size",
+        WindowEntry::TileLeftOfScreen => "Left of Screen",
+        WindowEntry::TileRightOfScreen => "Right of Screen",
+        WindowEntry::Fill => "Fill",
+        WindowEntry::Centre => "Center",
     }
+}
 
-    /// Where the menu shows it.
-    pub fn group(self) -> MenuGroup {
-        match self {
-            MenuEntry::Left
-            | MenuEntry::Right
-            | MenuEntry::Top
-            | MenuEntry::Bottom
-            | MenuEntry::TopLeft
-            | MenuEntry::TopRight
-            | MenuEntry::BottomLeft
-            | MenuEntry::BottomRight
-            | MenuEntry::ReturnToPreviousSize => MenuGroup::MoveAndResize,
-            MenuEntry::TileLeftOfScreen | MenuEntry::TileRightOfScreen => MenuGroup::FullScreenTile,
-            _ => MenuGroup::Top,
-        }
+/// Where the menu shows it.
+pub fn entry_group(entry: WindowEntry) -> MenuGroup {
+    match entry {
+        WindowEntry::Left
+        | WindowEntry::Right
+        | WindowEntry::Top
+        | WindowEntry::Bottom
+        | WindowEntry::TopLeft
+        | WindowEntry::TopRight
+        | WindowEntry::BottomLeft
+        | WindowEntry::BottomRight
+        | WindowEntry::ReturnToPreviousSize => MenuGroup::MoveAndResize,
+        WindowEntry::TileLeftOfScreen | WindowEntry::TileRightOfScreen => MenuGroup::FullScreenTile,
+        _ => MenuGroup::Top,
     }
+}
 
-    /// What picking it asks of the model.
-    pub fn action(self) -> MenuAction {
-        match self {
-            MenuEntry::EnterFullScreen => MenuAction::FullScreen(Toggle::On),
-            MenuEntry::ExitFullScreen => MenuAction::FullScreen(Toggle::Off),
-            MenuEntry::Left => MenuAction::Place(PlaceTarget::Left),
-            MenuEntry::Right => MenuAction::Place(PlaceTarget::Right),
-            MenuEntry::Top => MenuAction::Place(PlaceTarget::Top),
-            MenuEntry::Bottom => MenuAction::Place(PlaceTarget::Bottom),
-            MenuEntry::TopLeft => MenuAction::Place(PlaceTarget::TopLeft),
-            MenuEntry::TopRight => MenuAction::Place(PlaceTarget::TopRight),
-            MenuEntry::BottomLeft => MenuAction::Place(PlaceTarget::BottomLeft),
-            MenuEntry::BottomRight => MenuAction::Place(PlaceTarget::BottomRight),
-            MenuEntry::ReturnToPreviousSize => MenuAction::Place(PlaceTarget::Restore),
-            MenuEntry::TileLeftOfScreen => MenuAction::SplitTile(SplitSide::Left),
-            MenuEntry::TileRightOfScreen => MenuAction::SplitTile(SplitSide::Right),
-            MenuEntry::Fill => MenuAction::Place(PlaceTarget::Fill),
-            MenuEntry::Centre => MenuAction::Place(PlaceTarget::Centre),
-        }
+/// What picking it asks of the model.
+pub fn entry_action(entry: WindowEntry) -> MenuAction {
+    match entry {
+        WindowEntry::EnterFullScreen => MenuAction::FullScreen(Toggle::On),
+        WindowEntry::ExitFullScreen => MenuAction::FullScreen(Toggle::Off),
+        WindowEntry::Left => MenuAction::Place(PlaceTarget::Left),
+        WindowEntry::Right => MenuAction::Place(PlaceTarget::Right),
+        WindowEntry::Top => MenuAction::Place(PlaceTarget::Top),
+        WindowEntry::Bottom => MenuAction::Place(PlaceTarget::Bottom),
+        WindowEntry::TopLeft => MenuAction::Place(PlaceTarget::TopLeft),
+        WindowEntry::TopRight => MenuAction::Place(PlaceTarget::TopRight),
+        WindowEntry::BottomLeft => MenuAction::Place(PlaceTarget::BottomLeft),
+        WindowEntry::BottomRight => MenuAction::Place(PlaceTarget::BottomRight),
+        WindowEntry::ReturnToPreviousSize => MenuAction::Place(PlaceTarget::Restore),
+        WindowEntry::TileLeftOfScreen => MenuAction::SplitTile(SplitSide::Left),
+        WindowEntry::TileRightOfScreen => MenuAction::SplitTile(SplitSide::Right),
+        WindowEntry::Fill => MenuAction::Place(PlaceTarget::Fill),
+        WindowEntry::Centre => MenuAction::Place(PlaceTarget::Centre),
     }
+}
 
-    /// The number the wire gives it (the position in [`MenuEntry::ALL`]).
-    pub fn code(self) -> u32 {
-        MenuEntry::ALL
-            .iter()
-            .position(|entry| *entry == self)
-            .and_then(|at| u32::try_from(at).ok())
-            .unwrap_or(0)
-    }
-
-    /// The entry a wire number names.
-    ///
-    /// ```
-    /// use casement_core::window::MenuEntry;
-    /// assert_eq!(MenuEntry::from_code(MenuEntry::Fill.code()), Some(MenuEntry::Fill));
-    /// assert_eq!(MenuEntry::from_code(99), None);
-    /// ```
-    pub fn from_code(code: u32) -> Option<MenuEntry> {
-        usize::try_from(code)
-            .ok()
-            .and_then(|at| MenuEntry::ALL.get(at).copied())
-    }
-
-    /// The tile zone this entry fills, when it is one of the eight.
-    fn zone(self) -> Option<TileZone> {
-        match self.action() {
-            MenuAction::Place(PlaceTarget::Left) => Some(TileZone::Left),
-            MenuAction::Place(PlaceTarget::Right) => Some(TileZone::Right),
-            MenuAction::Place(PlaceTarget::Top) => Some(TileZone::Top),
-            MenuAction::Place(PlaceTarget::Bottom) => Some(TileZone::Bottom),
-            MenuAction::Place(PlaceTarget::TopLeft) => Some(TileZone::TopLeft),
-            MenuAction::Place(PlaceTarget::TopRight) => Some(TileZone::TopRight),
-            MenuAction::Place(PlaceTarget::BottomLeft) => Some(TileZone::BottomLeft),
-            MenuAction::Place(PlaceTarget::BottomRight) => Some(TileZone::BottomRight),
-            _ => None,
-        }
+/// The tile zone this entry fills, when it is one of the eight.
+fn entry_zone(entry: WindowEntry) -> Option<TileZone> {
+    match entry_action(entry) {
+        MenuAction::Place(PlaceTarget::Left) => Some(TileZone::Left),
+        MenuAction::Place(PlaceTarget::Right) => Some(TileZone::Right),
+        MenuAction::Place(PlaceTarget::Top) => Some(TileZone::Top),
+        MenuAction::Place(PlaceTarget::Bottom) => Some(TileZone::Bottom),
+        MenuAction::Place(PlaceTarget::TopLeft) => Some(TileZone::TopLeft),
+        MenuAction::Place(PlaceTarget::TopRight) => Some(TileZone::TopRight),
+        MenuAction::Place(PlaceTarget::BottomLeft) => Some(TileZone::BottomLeft),
+        MenuAction::Place(PlaceTarget::BottomRight) => Some(TileZone::BottomRight),
+        _ => None,
     }
 }
 
@@ -229,74 +122,69 @@ impl MenuEntry {
 ///
 /// ```
 /// use casement_core::geometry::LogicalSize;
-/// use casement_core::window::{MenuEntry, Offer, SplitSupport, WindowState, menu_for};
+/// use casement_core::window::{WindowState, menu_for};
+/// use casement_protocols::vocab::WindowEntry;
 ///
-/// let items = menu_for(&WindowState::New(LogicalSize { w: 10, h: 10 }), SplitSupport::Unavailable);
-/// assert_eq!(items[0].entry, MenuEntry::EnterFullScreen);
-/// assert!(items.iter().any(|i| i.entry == MenuEntry::Left && i.offer == Offer::Enabled));
+/// let items = menu_for(&WindowState::New(LogicalSize { w: 10, h: 10 }), false);
+/// assert_eq!(items[0].entry, WindowEntry::EnterFullScreen);
+/// assert!(items.iter().any(|i| i.entry == WindowEntry::Left && i.enabled));
 /// ```
-pub fn menu_for(state: &WindowState, split: SplitSupport) -> Vec<MenuItem> {
+pub fn menu_for(state: &WindowState, split: bool) -> Vec<MenuItem> {
     let full = matches!(state, WindowState::FullScreen { .. });
-    MenuEntry::ALL
-        .into_iter()
+    WindowEntry::ALL
+        .iter()
+        .copied()
         .filter(|entry| match entry {
-            MenuEntry::EnterFullScreen => !full,
-            MenuEntry::ExitFullScreen => full,
+            WindowEntry::EnterFullScreen => !full,
+            WindowEntry::ExitFullScreen => full,
             _ => true,
         })
         .map(|entry| MenuItem {
             entry,
-            offer: offer(entry, state, split),
+            enabled: offered(entry, state, split),
         })
         .collect()
 }
 
 /// Whether `entry` can be picked by a window in `state`.
-fn offer(entry: MenuEntry, state: &WindowState, split: SplitSupport) -> Offer {
-    let yes = match (state, entry) {
-        (WindowState::FullScreen { .. }, MenuEntry::ExitFullScreen) => true,
+fn offered(entry: WindowEntry, state: &WindowState, split: bool) -> bool {
+    match (state, entry) {
+        (WindowState::FullScreen { .. }, WindowEntry::ExitFullScreen) => true,
         (WindowState::FullScreen { .. } | WindowState::Minimised { .. }, _) => false,
-        (_, MenuEntry::ReturnToPreviousSize) => {
+        (_, WindowEntry::ReturnToPreviousSize) => {
             matches!(
                 state,
                 WindowState::Tiled { .. } | WindowState::Filled { .. }
             )
         }
-        (_, MenuEntry::Fill) => !matches!(state, WindowState::Filled { .. }),
-        (_, MenuEntry::TileLeftOfScreen | MenuEntry::TileRightOfScreen) => {
-            split == SplitSupport::Available
-        }
-        (WindowState::Tiled { zone, .. }, entry) => entry.zone() != Some(*zone),
+        (_, WindowEntry::Fill) => !matches!(state, WindowState::Filled { .. }),
+        (_, WindowEntry::TileLeftOfScreen | WindowEntry::TileRightOfScreen) => split,
+        (WindowState::Tiled { zone, .. }, entry) => entry_zone(entry) != Some(*zone),
         _ => true,
-    };
-    match yes {
-        true => Offer::Enabled,
-        false => Offer::Disabled,
     }
 }
 
 /// Whether `entry` can be picked in `items`.
-pub fn is_offered(items: &[MenuItem], entry: MenuEntry) -> bool {
-    items
-        .iter()
-        .any(|item| item.entry == entry && item.offer == Offer::Enabled)
+pub fn is_offered(items: &[MenuItem], entry: WindowEntry) -> bool {
+    items.iter().any(|item| item.entry == entry && item.enabled)
 }
 
 /// The set of enabled entries as the wire sends it: bit `entry.code()` is set when it is.
 ///
 /// ```
-/// use casement_core::window::{MenuEntry, Offer, MenuItem, enabled_mask};
+/// use casement_core::window::{MenuItem, enabled_mask};
+/// use casement_protocols::vocab::WindowEntry;
 ///
 /// let items = [
-///     MenuItem { entry: MenuEntry::EnterFullScreen, offer: Offer::Enabled },
-///     MenuItem { entry: MenuEntry::Left, offer: Offer::Disabled },
+///     MenuItem { entry: WindowEntry::EnterFullScreen, enabled: true },
+///     MenuItem { entry: WindowEntry::Left, enabled: false },
 /// ];
 /// assert_eq!(enabled_mask(&items), 1);
 /// ```
 pub fn enabled_mask(items: &[MenuItem]) -> u32 {
     items
         .iter()
-        .filter(|item| item.offer == Offer::Enabled)
+        .filter(|item| item.enabled)
         .fold(0, |mask, item| mask | (1u32 << item.entry.code()))
 }
 

@@ -5,28 +5,23 @@
 use super::shell::QuireShellPart;
 use crate::foreign_toplevel_list::identifier_of;
 use casement_core::shell::{ShellRequest, SplitChoices};
-use casement_core::window::SplitSide;
 use casement_core::{Event, WindowId};
 use casement_protocols::server::quire_shell_v1::quire_shell_v1;
+use casement_protocols::vocab::WireCode;
 use ds_core::vocab::Fraction;
 
 /// The most a share can be: the whole width, in thousandths.
 const WHOLE: u32 = 1000;
 
-/// The wire's name for a side.
-fn wire_side(side: SplitSide) -> quire_shell_v1::SplitSide {
-    match side {
-        SplitSide::Left => quire_shell_v1::SplitSide::Left,
-        SplitSide::Right => quire_shell_v1::SplitSide::Right,
-    }
-}
-
 /// `split_choose` for the first window, then one `split_candidate` per candidate in order, to
 /// every bound shell object.
 pub fn send_choose(part: &QuireShellPart, choices: &SplitChoices) {
     let first = identifier_of(choices.first);
+    let Ok(side) = quire_shell_v1::SplitSide::try_from(choices.side.code()) else {
+        return;
+    };
     for shell in &part.bound {
-        shell.split_choose(first.clone(), wire_side(choices.side));
+        shell.split_choose(first.clone(), side);
         for candidate in &choices.candidates {
             shell.split_candidate(identifier_of(*candidate));
         }

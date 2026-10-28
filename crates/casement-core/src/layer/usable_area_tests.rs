@@ -1,8 +1,8 @@
 //! Properties of the usable area (the table is in `book.rs`).
 
 use super::{
-    Anchor, Anchors, ExclusiveZone, KeyboardInteractivity, LayerBook, LayerLevel, LayerSpec,
-    Margins, ShellRoleTag,
+    Anchors, ExclusiveZone, KeyboardInteractivity, LayerBook, LayerLevel, LayerSpec, Margins,
+    ShellRoleTag,
 };
 use crate::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use crate::ids::{LayerKey, OutputKey, OutputName};
@@ -18,19 +18,15 @@ fn output(name: &str) -> OutputKey {
     OutputKey::of(&edid, &OutputName::parse(name).expect("name"))
 }
 
-fn anchor(held: bool) -> Anchor {
-    if held { Anchor::Held } else { Anchor::Free }
-}
-
 fn spec(on: &str, edges: [bool; 4], zone: u32, margin: i32) -> LayerSpec {
     LayerSpec {
         output: output(on),
         level: LayerLevel::Top,
         anchor: Anchors {
-            top: anchor(edges[0]),
-            bottom: anchor(edges[1]),
-            left: anchor(edges[2]),
-            right: anchor(edges[3]),
+            top: edges[0],
+            bottom: edges[1],
+            left: edges[2],
+            right: edges[3],
         },
         exclusive: ExclusiveZone::Reserve(zone),
         margin: Margins {

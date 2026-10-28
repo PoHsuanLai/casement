@@ -8,16 +8,13 @@ use crate::focus::TokenCheck;
 use crate::geometry::{LogicalSize, PhysicalSize};
 use crate::ids::OutputName;
 use crate::layer::{
-    Anchor, Anchors, ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerSpec, Margins,
-    ShellRoleTag,
+    Anchors, ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerSpec, Margins, ShellRoleTag,
 };
 use crate::lock::LockEvent;
 use crate::output::{EdidFacts, EdidSerial, Mode, ModePreference, PhysicalMm, VrrCapability};
 use crate::space::{Space, SpaceContent, SpaceIndex, SplitPair};
 use crate::time::Millihertz;
-use crate::window::{
-    MaxSize, Parent, SizeLimits, SpacePlace, StackRank, WindowOrigin, WindowState,
-};
+use crate::window::{SizeLimits, SpacePlace, StackRank, WindowOrigin, WindowState};
 use crate::{LayerKey, MappedToplevel};
 use casement_protocols::vocab::{Emphasis, Modality, WindowRole};
 use ds_core::vocab::Fraction;
@@ -69,10 +66,10 @@ fn toplevel(n: u64, app: &AppKey) -> Event {
         claimed_id: ClaimedId::parse("test").expect("claimed"),
         role: WindowRole::Document,
         modality: Modality::None,
-        parent: Parent::None,
+        parent: None,
         limits: SizeLimits {
             min: LogicalSize { w: 0, h: 0 },
-            max: MaxSize::Unbounded,
+            max: None,
         },
         first_size: LogicalSize { w: 800, h: 600 },
         activation: TokenCheck::Valid,
@@ -86,10 +83,10 @@ fn healthy() -> Model {
         output: key("HEADLESS-1"),
         level: LayerLevel::Top,
         anchor: Anchors {
-            top: Anchor::Held,
-            bottom: Anchor::Free,
-            left: Anchor::Held,
-            right: Anchor::Held,
+            top: true,
+            bottom: false,
+            left: true,
+            right: true,
         },
         exclusive: ExclusiveZone::Reserve(28),
         margin: Margins {
@@ -275,7 +272,7 @@ fn every_invariant_can_fail() {
             "a window whose parent is not mapped",
             |m| {
                 if let Some(w) = m.windows.get_mut(&WindowId(1)) {
-                    w.parent = Parent::Window(WindowId(88));
+                    w.parent = Some(WindowId(88));
                 }
             },
             InvariantBreak::ParentMissing(WindowId(1)),

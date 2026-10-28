@@ -126,16 +126,6 @@ fn json_string(text: &str) -> String {
     out
 }
 
-/// Whether a report is due.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum Due {
-    /// Write one now.
-    Now,
-    /// Not yet.
-    Later,
-}
-
 /// Decides when the next report is due, from the session clock (time is an argument).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ReportPacer {
@@ -151,22 +141,22 @@ impl ReportPacer {
     /// Whether a report is due at `now`; when it is, the next one is [`REPORT_EVERY`] later.
     ///
     /// ```
-    /// use casement_backend::tty::{Due, ReportPacer};
+    /// use casement_backend::tty::ReportPacer;
     /// use casement_core::time::Mono;
     /// use std::time::Duration;
     ///
     /// let at = |ms| Mono(Duration::from_millis(ms));
     /// let mut pacer = ReportPacer::new();
-    /// assert_eq!(pacer.check(at(0)), Due::Now);
-    /// assert_eq!(pacer.check(at(999)), Due::Later);
-    /// assert_eq!(pacer.check(at(1000)), Due::Now);
+    /// assert!(pacer.check(at(0)));
+    /// assert!(!pacer.check(at(999)));
+    /// assert!(pacer.check(at(1000)));
     /// ```
-    pub fn check(&mut self, now: Mono) -> Due {
+    pub fn check(&mut self, now: Mono) -> bool {
         match self.next {
-            Some(next) if now < next => Due::Later,
+            Some(next) if now < next => false,
             _ => {
                 self.next = Some(now.after(REPORT_EVERY));
-                Due::Now
+                true
             }
         }
     }
@@ -243,9 +233,9 @@ mod tests {
     fn the_pacer_is_due_at_once_then_every_second() {
         let at = |ms| Mono(Duration::from_millis(ms));
         let mut pacer = ReportPacer::new();
-        assert_eq!(pacer.check(at(5_000)), Due::Now);
-        assert_eq!(pacer.check(at(5_500)), Due::Later);
-        assert_eq!(pacer.check(at(6_000)), Due::Now);
-        assert_eq!(pacer.check(at(6_001)), Due::Later);
+        assert!(pacer.check(at(5_000)));
+        assert!(!pacer.check(at(5_500)));
+        assert!(pacer.check(at(6_000)));
+        assert!(!pacer.check(at(6_001)));
     }
 }

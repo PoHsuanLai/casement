@@ -6,12 +6,12 @@ use crate::protocol::{map_layer, map_toplevel, rect_of, settle, windows};
 use casement_core::DeviceId;
 use casement_core::geometry::{LogicalPoint, LogicalRect, PhysicalSize};
 use casement_core::input::{
-    ButtonCode, DeviceClass, Edge, InputEvent, InputKind, InputTarget, InputUse, KeyCode, Origin,
-    Reach, Refusal,
+    ButtonCode, DeviceClass, InputEvent, InputKind, InputTarget, InputUse, KeyCode, Origin, Refusal,
 };
 use casement_core::policy::ConnectionRole;
 use casement_core::{LeaseId, WindowId};
 use casement_ipc::dbus::ConnectRefusal;
+use casement_protocols::vocab::PressEdge;
 use casement_testclient::seat::keyboard::Keyboard;
 use casement_testclient::seat::pointer::Pointer;
 use casement_testclient::surface::layer::{
@@ -99,11 +99,11 @@ fn click(fixture: &mut Fixture, lease: u64, at: LogicalPoint) {
         InputKind::MotionTo { at },
         InputKind::Button {
             button: BTN_LEFT,
-            edge: Edge::Press,
+            edge: PressEdge::Press,
         },
         InputKind::Button {
             button: BTN_LEFT,
-            edge: Edge::Release,
+            edge: PressEdge::Release,
         },
     ] {
         send(fixture, lease, kind);
@@ -211,7 +211,7 @@ fn a_release_still_reaches_the_client_after_its_lease_ended() {
         lease,
         InputKind::Button {
             button: BTN_LEFT,
-            edge: Edge::Press,
+            edge: PressEdge::Press,
         },
     );
     assert_eq!(fixture.end_lease(&agent, lease), Ok(()));
@@ -220,7 +220,7 @@ fn a_release_still_reaches_the_client_after_its_lease_ended() {
         lease,
         InputKind::Button {
             button: BTN_LEFT,
-            edge: Edge::Release,
+            edge: PressEdge::Release,
         },
     );
     assert_eq!(
@@ -253,7 +253,7 @@ fn a_lease_cannot_drag_its_window_by_the_title_bar() {
         lease,
         InputKind::Button {
             button: BTN_LEFT,
-            edge: Edge::Press,
+            edge: PressEdge::Press,
         },
     );
     send(
@@ -271,7 +271,7 @@ fn a_lease_cannot_drag_its_window_by_the_title_bar() {
         lease,
         InputKind::Button {
             button: BTN_LEFT,
-            edge: Edge::Release,
+            edge: PressEdge::Release,
         },
     );
     settle(&mut fixture);
@@ -346,7 +346,7 @@ fn a_lease_drags_inside_its_window() {
         lease,
         InputKind::Button {
             button: BTN_LEFT,
-            edge: Edge::Press,
+            edge: PressEdge::Press,
         },
     );
     let step = if from.x > under_rect.centre().x {
@@ -366,7 +366,7 @@ fn a_lease_drags_inside_its_window() {
         lease,
         InputKind::Button {
             button: BTN_LEFT,
-            edge: Edge::Release,
+            edge: PressEdge::Release,
         },
     );
     fixture.pump();
@@ -404,7 +404,7 @@ fn a_held_back_lease_press_leaves_the_persons_click_whole() {
         lease,
         InputKind::Button {
             button: BTN_LEFT,
-            edge: Edge::Press,
+            edge: PressEdge::Press,
         },
     );
     let mouse = fixture.input().plug(
@@ -413,8 +413,8 @@ fn a_held_back_lease_press_leaves_the_persons_click_whole() {
     );
     fixture.input().pointer_to(mouse, first);
     let before = count(fixture.client(under_id), "wl_pointer#", "button");
-    fixture.input().button(mouse, BTN_LEFT, Edge::Press);
-    fixture.input().button(mouse, BTN_LEFT, Edge::Release);
+    fixture.input().button(mouse, BTN_LEFT, PressEdge::Press);
+    fixture.input().button(mouse, BTN_LEFT, PressEdge::Release);
     fixture.pump();
     assert_eq!(
         count(fixture.client(under_id), "wl_pointer#", "button"),
@@ -451,8 +451,8 @@ fn key_while_a_layer_holds_the_keyboard() -> (Fixture, ClientId, ClientId, Layer
         y: rect.origin.y + rect.size.h as i32 / 2,
     };
     fixture.input().pointer_to(mouse, middle);
-    fixture.input().button(mouse, BTN_LEFT, Edge::Press);
-    fixture.input().button(mouse, BTN_LEFT, Edge::Release);
+    fixture.input().button(mouse, BTN_LEFT, PressEdge::Press);
+    fixture.input().button(mouse, BTN_LEFT, PressEdge::Release);
     fixture.pump();
     let shell = fixture.connect(ConnectionRole::Shell);
     fixture.pump();
@@ -470,7 +470,7 @@ fn key_while_a_layer_holds_the_keyboard() -> (Fixture, ClientId, ClientId, Layer
     )
     .expect("layer");
     fixture.pump();
-    for edge in [Edge::Press, Edge::Release] {
+    for edge in [PressEdge::Press, PressEdge::Release] {
         send(&mut fixture, lease, InputKind::Key { code: KEY_A, edge });
     }
     (fixture, over_id, shell, sheet, kept)
@@ -639,11 +639,11 @@ fn a_lease_reaches_the_dialog_its_window_opened_and_no_other_window_of_the_app()
             .model()
             .reach(&Origin::Agent(LeaseId(lease)), &target, InputUse::Press)
     };
-    assert_eq!(as_lease(InputTarget::Window(chooser)), Reach::Allowed);
-    assert_eq!(as_lease(InputTarget::Popup(chooser)), Reach::Allowed);
+    assert_eq!(as_lease(InputTarget::Window(chooser)), Ok(()));
+    assert_eq!(as_lease(InputTarget::Popup(chooser)), Ok(()));
     assert_eq!(
         as_lease(InputTarget::Window(unrelated)),
-        Reach::Refused(Refusal::OutsideLease),
+        Err(Refusal::OutsideLease),
         "another window of the same app"
     );
     // A click of the lease on the dialog reaches it (the first may only activate it).

@@ -11,7 +11,7 @@ use crate::geometry::LogicalSize;
 use crate::ids::WindowId;
 use crate::settings::Enabled;
 use crate::space::SpaceContent;
-use crate::window::{FrameSaid, Parent, SpacePlace, Window, WindowHints, WindowState, WindowTitle};
+use crate::window::{SpacePlace, Window, WindowHints, WindowState, WindowTitle};
 use casement_protocols::vocab::{Emphasis, Modality, SensitivityLevel, WindowRole};
 
 impl Model {
@@ -25,7 +25,7 @@ impl Model {
         let (place, home) = self.placement_of_new(&mapped);
         let parent = self.parent_of(&mapped.app, id, mapped.parent);
         let sheet_of = match (parent, mapped.modality) {
-            (Parent::Window(held), Modality::WindowModal) => Some(held),
+            (Some(held), Modality::WindowModal) => Some(held),
             _ => None,
         };
         let window = Window {
@@ -107,15 +107,8 @@ impl Model {
 
     /// `asked` as the parent of window `id` of `app`: a mapped window of the same app, not the
     /// window itself, else none (a sheet or a dialog belongs to its own app's window).
-    fn parent_of(&self, app: &AppKey, id: WindowId, asked: Parent) -> Parent {
-        match asked {
-            Parent::Window(held)
-                if held != id && self.windows.get(&held).is_some_and(|w| w.app == *app) =>
-            {
-                asked
-            }
-            Parent::Window(_) | Parent::None => Parent::None,
-        }
+    fn parent_of(&self, app: &AppKey, id: WindowId, asked: Option<WindowId>) -> Option<WindowId> {
+        asked.filter(|held| *held != id && self.windows.get(held).is_some_and(|w| w.app == *app))
     }
 
     /// Where a window that just mapped goes: with its parent; on every Space of the primary
@@ -125,10 +118,7 @@ impl Model {
         &self,
         mapped: &MappedToplevel,
     ) -> (SpacePlace, Option<crate::ids::OutputKey>) {
-        let parent = match mapped.parent {
-            Parent::Window(held) => self.windows.get(&held),
-            Parent::None => None,
-        };
+        let parent = mapped.parent.and_then(|held| self.windows.get(&held));
         if let Some(parent) = parent {
             return (parent.place.clone(), parent.home.clone());
         }
@@ -153,12 +143,12 @@ impl Model {
         let mut model = self.without_app_window(&window.app, id).drop_leases_of(id);
         model.windows.remove(&id);
         for child in model.windows.values_mut() {
-            if child.parent == Parent::Window(id) {
-                child.parent = Parent::None;
+            if child.parent == Some(id) {
+                child.parent = None;
             }
         }
         let closed_sheet = match (window.parent, window.modality) {
-            (Parent::Window(parent), Modality::WindowModal) => Some(parent),
+            (Some(parent), Modality::WindowModal) => Some(parent),
             _ => None,
         };
         let moved = held.into_iter().fold(Moved::of(model), |moved, space| {
@@ -213,7 +203,7 @@ impl Model {
             return Moved::of(self);
         }
         let sheet_of = |modality: Modality| match (window.parent, modality) {
-            (Parent::Window(parent), Modality::WindowModal) => Some(parent),
+            (Some(parent), Modality::WindowModal) => Some(parent),
             _ => None,
         };
         let (before, after) = (sheet_of(window.modality), sheet_of(modality));
@@ -277,7 +267,7 @@ impl Model {
             WindowHintChange::FirstMouse(regions) => window.hints.first_mouse = regions,
             WindowHintChange::Frame(frame) => {
                 window.hints.frame = frame;
-                window.hints.frame_said = FrameSaid::Said;
+                window.hints.frame_said = true;
             }
             WindowHintChange::FrameForgotten => {
                 let unset = WindowHints::unset();

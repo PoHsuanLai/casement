@@ -4,8 +4,9 @@
 
 use super::xdg_shell::{click, map_toplevel, pointer, settle, windows};
 use casement_core::DeviceId;
-use casement_core::input::{ButtonCode, Edge};
+use casement_core::input::ButtonCode;
 use casement_core::policy::ConnectionRole;
+use casement_protocols::vocab::PressEdge;
 use casement_testclient::seat::keyboard::Keyboard;
 use casement_testclient::surface::popup::{Popup, PopupSpec};
 use casement_testclient::surface::toplevel::{BoundPointer, Toplevel, WmBase, bind_pointer};
@@ -83,8 +84,12 @@ impl Desk {
     }
 
     fn click_again(&mut self) {
-        self.fixture.input().button(self.mouse, LEFT, Edge::Press);
-        self.fixture.input().button(self.mouse, LEFT, Edge::Release);
+        self.fixture
+            .input()
+            .button(self.mouse, LEFT, PressEdge::Press);
+        self.fixture
+            .input()
+            .button(self.mouse, LEFT, PressEdge::Release);
         self.fixture.pump();
     }
 }
@@ -398,7 +403,9 @@ fn a_window_in_an_interactive_move_loses_the_pointer_and_gets_it_back() {
             y: origin.y + 50,
         },
     );
-    desk.fixture.input().button(desk.mouse, LEFT, Edge::Press);
+    desk.fixture
+        .input()
+        .button(desk.mouse, LEFT, PressEdge::Press);
     desk.fixture.pump();
     let serial = desk.seat.last_press().expect("a press");
     assert!(
@@ -423,7 +430,9 @@ fn a_window_in_an_interactive_move_loses_the_pointer_and_gets_it_back() {
         desk.fixture.pointer_focus().is_none(),
         "and stays out while it moves"
     );
-    desk.fixture.input().button(desk.mouse, LEFT, Edge::Release);
+    desk.fixture
+        .input()
+        .button(desk.mouse, LEFT, PressEdge::Release);
     desk.fixture.advance(std::time::Duration::from_secs(1));
     desk.fixture.pump();
     assert!(

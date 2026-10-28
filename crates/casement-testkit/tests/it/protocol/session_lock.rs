@@ -1,11 +1,11 @@
 //! `session_lock` (P0-H3).
 
-use casement::lock_marker::Marked;
 use casement_core::OutputName;
 use casement_core::geometry::PhysicalSize;
-use casement_core::input::{DeviceClass, Edge, KeyCode};
+use casement_core::input::{DeviceClass, KeyCode};
 use casement_core::lock::{LockHolder, LockState};
 use casement_core::policy::ConnectionRole;
+use casement_protocols::vocab::PressEdge;
 use casement_testclient::seat::keyboard::Keyboard;
 use casement_testclient::surface::layer::{
     Anchor, KeyboardInteractivity, Layer, LayerAsk, LayerSurface,
@@ -85,8 +85,12 @@ fn lock_blocks_input_to_windows() {
     .expect("layer");
     fixture.pump();
     let _ = launcher;
-    fixture.input().key(keyboard_device, KEY_A, Edge::Press);
-    fixture.input().key(keyboard_device, KEY_A, Edge::Release);
+    fixture
+        .input()
+        .key(keyboard_device, KEY_A, PressEdge::Press);
+    fixture
+        .input()
+        .key(keyboard_device, KEY_A, PressEdge::Release);
     assert!(
         keys_received(fixture.client(shell)) >= 2,
         "before the lock the launcher has the keys"
@@ -118,8 +122,12 @@ fn lock_blocks_input_to_windows() {
         keys_received(fixture.client(shell)),
         keys_received(fixture.client(locker_client)),
     );
-    fixture.input().key(keyboard_device, KEY_A, Edge::Press);
-    fixture.input().key(keyboard_device, KEY_A, Edge::Release);
+    fixture
+        .input()
+        .key(keyboard_device, KEY_A, PressEdge::Press);
+    fixture
+        .input()
+        .key(keyboard_device, KEY_A, PressEdge::Release);
     let after = (
         keys_received(fixture.client(shell)),
         keys_received(fixture.client(locker_client)),
@@ -368,13 +376,9 @@ fn a_restart_while_locked_comes_back_covered_until_the_shell_locks_again() {
     let mut first = Fixture::start(spec()).expect("fixture");
     let shell = first.connect(ConnectionRole::Shell);
     first.pump();
-    assert_eq!(marker.is_marked(), Marked::No, "nothing is locked yet");
+    assert!(!marker.is_marked(), "nothing is locked yet");
     let _locker = lock_with_content(&mut first, shell);
-    assert_eq!(
-        marker.is_marked(),
-        Marked::Yes,
-        "the shell's lock is remembered"
-    );
+    assert!(marker.is_marked(), "the shell's lock is remembered");
     drop(first);
 
     let restored = LockState::LockedWithoutSurface {
@@ -397,11 +401,7 @@ fn a_restart_while_locked_comes_back_covered_until_the_shell_locks_again() {
     own.unlock(second.client(shell));
     second.pump();
     assert_eq!(second.model().lock(), &LockState::Unlocked);
-    assert_eq!(
-        marker.is_marked(),
-        Marked::No,
-        "the unlock removes the marker"
-    );
+    assert!(!marker.is_marked(), "the unlock removes the marker");
 }
 
 /// Locked arrives only after each output shows a lock surface or a cover.
@@ -496,9 +496,8 @@ fn taking_the_power_back_does_not_end_a_lock_in_force() {
     cover_with_content(&mut fixture, client, &locker);
     assert!(locker.is_locked());
 
-    fixture.feed_events(vec![Event::PrivilegeRevoked {
-        subject: program(ASKED_PROGRAM),
-        power: Power::Lock,
+    fixture.feed_events(vec![Event::PrivilegeEdited {
+        edit: casement_core::privilege::Edit::Deny(program(ASKED_PROGRAM), Power::Lock),
         at: UnixSeconds(2),
     }]);
     fixture.advance(Duration::from_secs(1));
@@ -549,8 +548,14 @@ fn a_key_on_the_lock_screen_reaches_it_past_a_running_input_method() {
     );
     let heard = typing.ime.document_keys().len();
     let keyboard = typing.keyboard;
-    typing.fixture.input().key(keyboard, KEY_A, Edge::Press);
-    typing.fixture.input().key(keyboard, KEY_A, Edge::Release);
+    typing
+        .fixture
+        .input()
+        .key(keyboard, KEY_A, PressEdge::Press);
+    typing
+        .fixture
+        .input()
+        .key(keyboard, KEY_A, PressEdge::Release);
     typing.pump();
     typing.pump();
     assert!(
@@ -600,8 +605,14 @@ fn a_key_on_the_lock_screen_reaches_the_locker_not_the_app_under_an_input_method
             keys_received(typing.fixture.client(locker_client)),
         );
         let keyboard = typing.keyboard;
-        typing.fixture.input().key(keyboard, KEY_A, Edge::Press);
-        typing.fixture.input().key(keyboard, KEY_A, Edge::Release);
+        typing
+            .fixture
+            .input()
+            .key(keyboard, KEY_A, PressEdge::Press);
+        typing
+            .fixture
+            .input()
+            .key(keyboard, KEY_A, PressEdge::Release);
         typing.pump();
         typing.pump();
         let after = (

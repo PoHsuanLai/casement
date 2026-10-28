@@ -24,8 +24,9 @@
 
 use casement_core::geometry::{LogicalPoint, SubPoint};
 use casement_core::input::{
-    AxisFrame, ButtonCode, DeviceClass, Edge, GestureStep, Keysym, PinchDelta, TouchStep,
+    AxisFrame, ButtonCode, DeviceClass, GestureStep, Keysym, PinchDelta, TouchStep,
 };
+use casement_protocols::vocab::PressEdge;
 use std::time::Duration;
 
 /// One inject line.
@@ -38,7 +39,7 @@ pub enum InjectLine {
     /// `release BUTTON`.
     Release(ButtonCode),
     /// `key KEYSYM down|up`.
-    Key(Keysym, Edge),
+    Key(Keysym, PressEdge),
     /// `type "text"`.
     Type(String),
     /// `axis ...`: one scroll frame.
@@ -93,7 +94,7 @@ mod tests {
     use super::*;
     use crate::error::IpcError;
     use casement_core::geometry::SubPx;
-    use casement_core::input::{AxisSource, AxisStop, GestureEnd};
+    use casement_core::input::{AxisSource, GestureEnd};
 
     #[test]
     fn every_fake_input_line_parses() {
@@ -107,9 +108,12 @@ mod tests {
             ("release right", InjectLine::Release(ButtonCode(0x111))),
             (
                 "key Return down",
-                InjectLine::Key(Keysym(0xff0d), Edge::Press),
+                InjectLine::Key(Keysym(0xff0d), PressEdge::Press),
             ),
-            ("key a up", InjectLine::Key(Keysym(0x61), Edge::Release)),
+            (
+                "key a up",
+                InjectLine::Key(Keysym(0x61), PressEdge::Release),
+            ),
             ("type \"héllo\"", InjectLine::Type("héllo".to_owned())),
             ("sleep 40", InjectLine::Sleep(Duration::from_millis(40))),
         ];
@@ -128,7 +132,7 @@ mod tests {
                 x: SubPx(0),
                 y: SubPx(15 * 120),
             },
-            stop: AxisStop::Running,
+            stopped: false,
         };
         assert_eq!(
             parse_inject("axis vertical 15").expect("axis"),
@@ -288,7 +292,7 @@ mod tests {
         ] {
             assert_eq!(
                 parse_inject(&format!("key {name} down")).expect(name),
-                InjectLine::Key(Keysym(keysym), Edge::Press),
+                InjectLine::Key(Keysym(keysym), PressEdge::Press),
                 "{name}"
             );
         }
@@ -348,7 +352,7 @@ mod tests {
                 source,
                 v120,
                 px,
-                stop: AxisStop::Running,
+                stopped: false,
             })
         };
         assert_eq!(

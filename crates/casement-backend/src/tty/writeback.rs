@@ -114,16 +114,6 @@ pub trait Writeback: std::fmt::Debug {
     fn finish(&mut self) -> Result<RawCapture, WritebackError>;
 }
 
-/// Whether the real adapter is asked to build a writeback seam.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum WritebackMode {
-    /// No writeback connector is touched.
-    Disabled,
-    /// The device's writeback connector is used.
-    Enabled,
-}
-
 /// Where a backend's writeback job stands.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(super) enum WritebackJob {

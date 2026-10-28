@@ -7,9 +7,9 @@ use crate::support::headless;
 use casement_core::lock::LockEvent;
 use casement_core::policy::{ConnectionRole, GlobalKind, advertised_to};
 use casement_core::privilege::{
-    ASK_TTL, ASKS_PER_MINUTE, AskSubject, Book, ClientStanding, Engine, Fallback, Floor, FloorRule,
-    OPEN_ASKS, PowerOutcome, ProgramPath, REASK_AFTER, SHELL_WAIT, SandboxAppId, ServiceRole,
-    Sheet, Subject, UnixSeconds, Verdict,
+    ASK_TTL, ASKS_PER_MINUTE, AskSubject, Book, ClientStanding, Edit, Engine, Fallback, Floor,
+    FloorRule, OPEN_ASKS, PowerOutcome, ProgramPath, REASK_AFTER, SHELL_WAIT, SandboxAppId,
+    ServiceRole, Sheet, Subject, UnixSeconds, Verdict,
 };
 use casement_core::time::{Mono, TimerKey};
 use casement_core::{ClientKey, Effect, Event, Model};
@@ -757,9 +757,8 @@ fn switching_a_program_off_ends_its_use_at_once() {
     desk.uses(3, Power::Screen);
     desk.answers(desk.shown(), Answer::Allow);
 
-    let effects = desk.send(Event::PrivilegeRevoked {
-        subject: program("/usr/bin/grim"),
-        power: Power::Screen,
+    let effects = desk.send(Event::PrivilegeEdited {
+        edit: Edit::Deny(program("/usr/bin/grim"), Power::Screen),
         at: STAMP,
     });
     assert_eq!(
@@ -798,9 +797,8 @@ fn switching_a_program_on_lets_it_in_and_forgetting_asks_again() {
     desk.public(1, grim());
     desk.uses(1, Power::Keys);
     // Settings switches it on while the question is open: the question is taken back.
-    let effects = desk.send(Event::PrivilegeGranted {
-        subject: program("/usr/bin/grim"),
-        power: Power::Keys,
+    let effects = desk.send(Event::PrivilegeEdited {
+        edit: Edit::Allow(program("/usr/bin/grim"), Power::Keys),
         at: STAMP,
     });
     assert_eq!(
@@ -810,9 +808,9 @@ fn switching_a_program_on_lets_it_in_and_forgetting_asks_again() {
     assert_eq!(withdrawn(&effects).len(), 1);
     assert!(desk.model.privilege().asks().is_empty());
 
-    let effects = desk.send(Event::PrivilegeForgotten {
-        subject: program("/usr/bin/grim"),
-        power: Power::Keys,
+    let effects = desk.send(Event::PrivilegeEdited {
+        edit: Edit::Forget(program("/usr/bin/grim"), Power::Keys),
+        at: STAMP,
     });
     assert_eq!(
         outcome(&effects, 1, Power::Keys),
@@ -828,9 +826,8 @@ fn switching_off_an_allow_once_ends_it_too() {
     desk.public(1, on_disk("/usr/bin/python3"));
     desk.uses(1, Power::Keys);
     desk.answers(desk.shown(), Answer::Allow);
-    let effects = desk.send(Event::PrivilegeRevoked {
-        subject: program("/usr/bin/python3"),
-        power: Power::Keys,
+    let effects = desk.send(Event::PrivilegeEdited {
+        edit: Edit::Deny(program("/usr/bin/python3"), Power::Keys),
         at: STAMP,
     });
     assert_eq!(
@@ -897,18 +894,16 @@ fn the_administrators_refusal_wins_and_hides_the_global() {
         .hidden_for(&ConnectionRole::Public, &grim());
     assert!(hidden.contains(Power::Screen));
     assert_eq!(hidden.iter().count(), 1);
-    assert_eq!(
-        advertised_to(GlobalKind::ImageCapture, &ConnectionRole::Public, &hidden),
-        casement_core::policy::Advertise::No
-    );
-    assert_eq!(
-        advertised_to(
-            GlobalKind::VirtualKeyboard,
-            &ConnectionRole::Public,
-            &hidden
-        ),
-        casement_core::policy::Advertise::Yes
-    );
+    assert!(!advertised_to(
+        GlobalKind::ImageCapture,
+        &ConnectionRole::Public,
+        &hidden
+    ));
+    assert!(advertised_to(
+        GlobalKind::VirtualKeyboard,
+        &ConnectionRole::Public,
+        &hidden
+    ));
     let stranger = desk
         .model
         .privilege()
@@ -951,9 +946,8 @@ fn a_floor_default_of_deny_refuses_without_asking_and_a_pre_approval_lets_in() {
         Some(PowerOutcome::Allowed)
     );
     // A person can still say no to a pre-approval.
-    let effects = desk.send(Event::PrivilegeRevoked {
-        subject: program("/usr/bin/cliphist"),
-        power: Power::Clipboard,
+    let effects = desk.send(Event::PrivilegeEdited {
+        edit: Edit::Deny(program("/usr/bin/cliphist"), Power::Clipboard),
         at: STAMP,
     });
     assert_eq!(
@@ -1047,18 +1041,16 @@ mod storms {
             Act::Gone(n) => Event::ClientGone {
                 client: ClientKey(*n),
             },
-            Act::Revoke(p, power) => Event::PrivilegeRevoked {
-                subject: subject(p),
-                power: *power,
+            Act::Revoke(p, power) => Event::PrivilegeEdited {
+                edit: Edit::Deny(subject(p), *power),
                 at: STAMP,
             },
-            Act::Forget(p, power) => Event::PrivilegeForgotten {
-                subject: subject(p),
-                power: *power,
+            Act::Forget(p, power) => Event::PrivilegeEdited {
+                edit: Edit::Forget(subject(p), *power),
+                at: STAMP,
             },
-            Act::Grant(p, power) => Event::PrivilegeGranted {
-                subject: subject(p),
-                power: *power,
+            Act::Grant(p, power) => Event::PrivilegeEdited {
+                edit: Edit::Allow(subject(p), *power),
                 at: STAMP,
             },
             Act::Wait(_) => return None,
@@ -1140,8 +1132,8 @@ mod storms {
             for n in 1..=6 {
                 desk.public(n, standing_of(n));
             }
-            desk.send(Event::PrivilegeGranted { subject: program(PROGRAMS[1]), power, at: STAMP });
-            desk.send(Event::PrivilegeRevoked { subject: program(PROGRAMS[1]), power, at: STAMP });
+            desk.send(Event::PrivilegeEdited { edit: Edit::Allow(program(PROGRAMS[1]), power), at: STAMP });
+            desk.send(Event::PrivilegeEdited { edit: Edit::Deny(program(PROGRAMS[1]), power), at: STAMP });
             for n in uses.into_iter().filter(|n| n % 4 == 2) {
                 let effects = desk.uses(n, power);
                 prop_assert_eq!(outcome(&effects, n, power), Some(PowerOutcome::Denied));

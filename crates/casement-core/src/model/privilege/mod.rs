@@ -22,6 +22,7 @@ mod ask;
 mod book;
 mod book_codec;
 mod decide;
+mod edit;
 mod floor;
 mod floor_codec;
 mod limits;
@@ -38,6 +39,7 @@ pub use ask::{AskView, Sheet};
 pub use book::{Book, Grant, UnixSeconds, Verdict};
 pub use book_codec::{BookError, Loaded};
 pub use decide::{Decision, decide, decide_trusted};
+pub use edit::Edit;
 pub use floor::{Fallback, Floor, FloorRule};
 pub use floor_codec::FloorError;
 pub use limits::{

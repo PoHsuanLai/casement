@@ -10,6 +10,7 @@ publish.workspace = true
 
 [dependencies]
 casement-core = { workspace = true }
+casement-protocols = { workspace = true }
 casement-render = { workspace = true }
 ds-core = { workspace = true }
 smithay = { workspace = true, features = ["renderer_gl", "renderer_pixman", "renderer_multi", "backend_egl", "backend_session", "backend_winit"] }

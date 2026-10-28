@@ -3,7 +3,7 @@
 use casement_core::app::AppKey;
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::output::{EdidFacts, EdidSerial};
-use casement_core::window::{MaxSize, SizeLimits};
+use casement_core::window::SizeLimits;
 use casement_core::{OutputKey, OutputName, WindowId};
 use casement_layout::{
     OutputSpec, SceneMode, SceneSpec, SpaceArrangement, SpaceSpec, StackIndex, WindowPlacement,
@@ -36,7 +36,7 @@ pub fn space_id(text: &str) -> SpaceId {
 
 pub const ANY_SIZE: SizeLimits = SizeLimits {
     min: LogicalSize { w: 0, h: 0 },
-    max: MaxSize::Unbounded,
+    max: None,
 };
 
 /// An app known by the claimed id `name`.

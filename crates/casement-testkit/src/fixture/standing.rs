@@ -7,7 +7,7 @@
 //! as any standing it names ([`Fixture::connect_standing`]).
 
 use super::{ClientId, Fixture};
-use casement::clients::{self, Standing};
+use casement::clients::{self, Vetting};
 use casement_core::policy::ConnectionRole;
 use casement_core::privilege::{ClientStanding, ProgramPath, ServiceRole};
 use casement_wayland::consent::{ImageWatch, Unwatched};
@@ -84,12 +84,12 @@ impl Fixture {
         watch: Option<Arc<dyn ImageWatch>>,
     ) -> Client {
         let arrival = match standing {
-            Some(standing) => Standing::Judged {
+            Some(standing) => Vetting::Judged {
                 standing,
                 watch: watch.unwrap_or_else(|| Arc::new(Unwatched)),
                 maker: Maker::Other,
             },
-            None => Standing::Unjudged,
+            None => Vetting::Unjudged,
         };
         clients::insert_client(
             &mut self.state,

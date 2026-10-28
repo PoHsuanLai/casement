@@ -249,7 +249,7 @@ fn assembled(made: &Tiles, width: u32, height: u32) -> Vec<((u32, u32), [u8; 4])
         made.inner,
     ) {
         let tile = match s.piece {
-            Piece::Corner(c) => &made.corners[c.index()],
+            Piece::Corner(c) => &made.corners[crate::element::corner::corner_index(c)],
             Piece::Edge(e) => &made.edges[e.index()],
         };
         for dy in 0..s.dest.size.h {

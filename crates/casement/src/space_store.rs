@@ -76,16 +76,6 @@ impl StateDirs {
     }
 }
 
-/// Where casement keeps state: nowhere (tests, the headless jail), or in a directory.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum StateHome {
-    /// Nothing is read or kept between runs.
-    Ephemeral,
-    /// State lives here.
-    At(StateDirs),
-}
-
 /// Why the Spaces file could not be read or written.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]

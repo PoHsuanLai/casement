@@ -40,14 +40,14 @@ pub fn device_settings(pointer: &PointerSettings, class: DeviceClass) -> DeviceS
 /// ```
 /// use casement_backend::input::scaled_scroll;
 /// use casement_core::geometry::{SubPoint, SubPx};
-/// use casement_core::input::{AxisFrame, AxisSource, AxisStop, InputKind};
+/// use casement_core::input::{AxisFrame, AxisSource, InputKind};
 /// use ds_core::vocab::Fraction;
 ///
 /// let frame = AxisFrame {
 ///     source: AxisSource::Wheel,
 ///     v120: (0, 120),
 ///     px: SubPoint { x: SubPx(0), y: SubPx(1800) },
-///     stop: AxisStop::Running,
+///     stopped: false,
 /// };
 /// let InputKind::Axis(twice) = scaled_scroll(InputKind::Axis(frame), Fraction(2000)) else {
 ///     panic!("still a scroll");

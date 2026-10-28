@@ -5,9 +5,10 @@
 
 use casement_core::geometry::{LogicalPoint, LogicalRect, SubPoint, SubPx};
 use casement_core::input::{
-    AxisFrame, AxisSource as CoreSource, AxisStop, ButtonCode, Edge, GestureEnd, GestureStep,
-    InputKind, KeyCode, LidState, PinchDelta, SwitchStep, TabletState, TouchStep,
+    AxisFrame, AxisSource as CoreSource, ButtonCode, GestureEnd, GestureStep, InputKind, KeyCode,
+    PinchDelta, SwitchStep, TouchStep,
 };
+use casement_protocols::vocab::PressEdge;
 use ds_core::vocab::Fraction;
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, GestureBeginEvent, GestureEndEvent,
@@ -44,8 +45,8 @@ pub fn input_kind_of<B: InputBackend>(
         InputEvent::Keyboard { event } => InputKind::Key {
             code: KeyCode(event.key_code().raw().saturating_sub(XKB_OFFSET)),
             edge: match event.state() {
-                KeyState::Pressed => Edge::Press,
-                KeyState::Released => Edge::Release,
+                KeyState::Pressed => PressEdge::Press,
+                KeyState::Released => PressEdge::Release,
             },
         },
         InputEvent::PointerMotion { event } => InputKind::Motion {
@@ -57,8 +58,8 @@ pub fn input_kind_of<B: InputBackend>(
         InputEvent::PointerButton { event } => InputKind::Button {
             button: ButtonCode(event.button_code()),
             edge: match event.state() {
-                ButtonState::Pressed => Edge::Press,
-                ButtonState::Released => Edge::Release,
+                ButtonState::Pressed => PressEdge::Press,
+                ButtonState::Released => PressEdge::Release,
             },
         },
         InputEvent::PointerAxis { event } => InputKind::Axis(axis_frame::<B, _>(event)),
@@ -183,10 +184,7 @@ fn axis_frame<B: InputBackend, E: PointerAxisEvent<B>>(event: &E) -> AxisFrame {
         source,
         v120: (detents(Axis::Horizontal), detents(Axis::Vertical)),
         px: sub_point(px_x.unwrap_or(0.0), px_y.unwrap_or(0.0)),
-        stop: match stopped {
-            true => AxisStop::Stopped,
-            false => AxisStop::Running,
-        },
+        stopped,
     }
 }
 
@@ -194,14 +192,8 @@ fn axis_frame<B: InputBackend, E: PointerAxisEvent<B>>(event: &E) -> AxisFrame {
 fn switch_step<B: InputBackend, E: SwitchToggleEvent<B>>(event: &E) -> Option<SwitchStep> {
     let on = event.state() == SwitchState::On;
     match event.switch()? {
-        Switch::Lid => Some(SwitchStep::Lid(match on {
-            true => LidState::Closed,
-            false => LidState::Open,
-        })),
-        Switch::TabletMode => Some(SwitchStep::TabletMode(match on {
-            true => TabletState::On,
-            false => TabletState::Off,
-        })),
+        Switch::Lid => Some(SwitchStep::Lid { closed: on }),
+        Switch::TabletMode => Some(SwitchStep::TabletMode { tablet: on }),
         _ => None,
     }
 }

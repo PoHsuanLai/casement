@@ -1,7 +1,7 @@
 //! What a `debug` command line asks Debug1 for: the verb's arguments checked and shaped into
 //! one [`Call`], before any bus is touched.
 
-use super::{CommandError, DebugVerb};
+use super::CommandError;
 use std::time::Duration;
 
 /// How long `debug wait` waits (session time) when `--timeout` is not given.
@@ -20,7 +20,7 @@ pub enum Call {
         timeout: Duration,
     },
     /// `Clock(verb, amount)`.
-    Clock(ClockVerb, u32),
+    Clock(String, u32),
     /// `Output(verb, args)`.
     Output(String, Vec<String>),
     /// `Windows()`.
@@ -28,7 +28,7 @@ pub enum Call {
     /// `Scene()`.
     Scene,
     /// `Fault(verb, amount)`.
-    Fault(FaultVerb, u32),
+    Fault(String, u32),
     /// `Shot(area, path)`: casement's PNG of its last frame.
     Shot {
         /// Debug1's area text (`output`, `output:NAME`, `region:X,Y,W,H`).
@@ -36,47 +36,6 @@ pub enum Call {
         /// The absolute path casement writes to.
         path: String,
     },
-}
-
-/// How the stepped clock moves.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ClockVerb {
-    /// `step N`: N vblanks.
-    Step,
-    /// `advance MS`.
-    Advance,
-}
-
-impl ClockVerb {
-    /// The word Debug1 takes.
-    pub fn word(self) -> &'static str {
-        match self {
-            ClockVerb::Step => "step",
-            ClockVerb::Advance => "advance",
-        }
-    }
-}
-
-/// What `fault` breaks.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum FaultVerb {
-    /// `panic-after-frames N`.
-    PanicAfterFrames,
-    /// `stall-client-ms MS`.
-    StallClientMs,
-    /// `drop-output INDEX`.
-    DropOutput,
-}
-
-impl FaultVerb {
-    /// The word Debug1 takes.
-    pub fn word(self) -> &'static str {
-        match self {
-            FaultVerb::PanicAfterFrames => "panic-after-frames",
-            FaultVerb::StallClientMs => "stall-client-ms",
-            FaultVerb::DropOutput => "drop-output",
-        }
-    }
 }
 
 fn bad(message: impl Into<String>) -> CommandError {
@@ -88,25 +47,28 @@ fn number(what: &str, text: &str) -> Result<u32, CommandError> {
         .map_err(|_| bad(format!("{what}: not a number: {text}")))
 }
 
-/// The call `verb args` asks for.
-pub fn plan(verb: DebugVerb, args: &[String]) -> Result<Call, CommandError> {
-    match verb {
-        DebugVerb::Inject => Ok(Call::Inject(args.to_vec())),
-        DebugVerb::Wait => wait(args),
-        DebugVerb::Clock => match args {
-            [word, n] if word == "step" => {
-                Ok(Call::Clock(ClockVerb::Step, number("clock step", n)?))
-            }
-            [word, ms] if word == "advance" => Ok(Call::Clock(
-                ClockVerb::Advance,
-                number("clock advance", ms)?,
-            )),
-            _ => Err(bad("clock wants `step N` or `advance MS`")),
-        },
-        DebugVerb::Output => output(args),
-        DebugVerb::Windows => no_arguments(args, Call::Windows),
-        DebugVerb::Scene => no_arguments(args, Call::Scene),
-        DebugVerb::Fault => fault(args),
+impl Call {
+    /// The call the debug verb `verb` (`inject`, `wait`, `clock`, `output`, `windows`, `scene`,
+    /// `fault`) with `args` asks for.
+    pub fn parse(verb: &str, args: &[String]) -> Result<Call, CommandError> {
+        match verb {
+            "inject" => Ok(Call::Inject(args.to_vec())),
+            "wait" => wait(args),
+            "clock" => match args {
+                [word, n] if word == "step" => {
+                    Ok(Call::Clock(word.clone(), number("clock step", n)?))
+                }
+                [word, ms] if word == "advance" => {
+                    Ok(Call::Clock(word.clone(), number("clock advance", ms)?))
+                }
+                _ => Err(bad("clock wants `step N` or `advance MS`")),
+            },
+            "output" => output(args),
+            "windows" => no_arguments(args, Call::Windows),
+            "scene" => no_arguments(args, Call::Scene),
+            "fault" => fault(args),
+            other => Err(CommandError::Unknown(format!("debug {other}"))),
+        }
     }
 }
 
@@ -148,13 +110,13 @@ fn fault(args: &[String]) -> Result<Call, CommandError> {
         [word, n] => (word.as_str(), n),
         _ => return Err(bad("fault wants a verb and one number")),
     };
-    let verb = match verb {
-        "panic-after-frames" => FaultVerb::PanicAfterFrames,
-        "stall-client-ms" => FaultVerb::StallClientMs,
-        "drop-output" => FaultVerb::DropOutput,
-        other => return Err(bad(format!("fault: unknown verb {other}"))),
-    };
-    Ok(Call::Fault(verb, number(verb.word(), what)?))
+    if !matches!(
+        verb,
+        "panic-after-frames" | "stall-client-ms" | "drop-output"
+    ) {
+        return Err(bad(format!("fault: unknown verb {verb}")));
+    }
+    Ok(Call::Fault(verb.to_owned(), number(verb, what)?))
 }
 
 /// `list [--json] | add SPEC | remove NAME | set NAME (KEY=VALUE | --scale S | --mode M |
@@ -237,60 +199,60 @@ mod tests {
         text.split_whitespace().map(str::to_owned).collect()
     }
 
-    fn planned(verb: DebugVerb, text: &str) -> Result<Call, CommandError> {
-        plan(verb, &words(text))
+    fn planned(verb: &str, text: &str) -> Result<Call, CommandError> {
+        Call::parse(verb, &words(text))
     }
 
     #[test]
     fn wait_joins_the_predicate_and_reads_its_bound() {
         assert_eq!(
-            planned(DebugVerb::Wait, "mapped foot --timeout 2500").expect("wait"),
+            planned("wait", "mapped foot --timeout 2500").expect("wait"),
             Call::Wait {
                 predicate: "mapped foot".to_owned(),
                 timeout: Duration::from_millis(2500)
             }
         );
         assert_eq!(
-            planned(DebugVerb::Wait, "--timeout 5 frames 3 HEADLESS-1").expect("wait"),
+            planned("wait", "--timeout 5 frames 3 HEADLESS-1").expect("wait"),
             Call::Wait {
                 predicate: "frames 3 HEADLESS-1".to_owned(),
                 timeout: Duration::from_millis(5)
             }
         );
         assert_eq!(
-            planned(DebugVerb::Wait, "settled").expect("wait"),
+            planned("wait", "settled").expect("wait"),
             Call::Wait {
                 predicate: "settled".to_owned(),
                 timeout: DEFAULT_WAIT
             }
         );
-        assert!(planned(DebugVerb::Wait, "").is_err());
-        assert!(planned(DebugVerb::Wait, "settled --timeout").is_err());
-        assert!(planned(DebugVerb::Wait, "settled --timeout soon").is_err());
+        assert!(planned("wait", "").is_err());
+        assert!(planned("wait", "settled --timeout").is_err());
+        assert!(planned("wait", "settled --timeout soon").is_err());
     }
 
     #[test]
     fn clock_and_fault_take_a_verb_and_a_number() {
         assert_eq!(
-            planned(DebugVerb::Clock, "step 3").expect("step"),
-            Call::Clock(ClockVerb::Step, 3)
+            planned("clock", "step 3").expect("step"),
+            Call::Clock("step".to_owned(), 3)
         );
         assert_eq!(
-            planned(DebugVerb::Clock, "advance 250").expect("advance"),
-            Call::Clock(ClockVerb::Advance, 250)
+            planned("clock", "advance 250").expect("advance"),
+            Call::Clock("advance".to_owned(), 250)
         );
         assert_eq!(
-            planned(DebugVerb::Fault, "drop-output 1").expect("fault"),
-            Call::Fault(FaultVerb::DropOutput, 1)
+            planned("fault", "drop-output 1").expect("fault"),
+            Call::Fault("drop-output".to_owned(), 1)
         );
         for (verb, text) in [
-            (DebugVerb::Clock, "step"),
-            (DebugVerb::Clock, "step -1"),
-            (DebugVerb::Clock, "rewind 2"),
-            (DebugVerb::Fault, "explode 1"),
-            (DebugVerb::Fault, "drop-output"),
+            ("clock", "step"),
+            ("clock", "step -1"),
+            ("clock", "rewind 2"),
+            ("fault", "explode 1"),
+            ("fault", "drop-output"),
         ] {
-            assert!(plan(verb, &words(text)).is_err(), "{text}");
+            assert!(planned(verb, text).is_err(), "{text}");
         }
     }
 
@@ -298,7 +260,7 @@ mod tests {
     fn output_set_takes_pairs_or_the_plans_flags() {
         assert_eq!(
             planned(
-                DebugVerb::Output,
+                "output",
                 "set DP-1 --scale 1.5 --mode 1920x1080@60000 --power off position=0,0"
             )
             .expect("set"),
@@ -308,11 +270,11 @@ mod tests {
             )
         );
         assert_eq!(
-            planned(DebugVerb::Output, "list --json").expect("list"),
+            planned("output", "list --json").expect("list"),
             Call::Output("list".to_owned(), Vec::new())
         );
         assert_eq!(
-            planned(DebugVerb::Output, "add DP-2:1280x720@60000:120:0,0").expect("add"),
+            planned("output", "add DP-2:1280x720@60000:120:0,0").expect("add"),
             Call::Output("add".to_owned(), words("DP-2:1280x720@60000:120:0,0"))
         );
         for text in [
@@ -324,7 +286,7 @@ mod tests {
             "remove a b",
             "rotate",
         ] {
-            assert!(planned(DebugVerb::Output, text).is_err(), "{text}");
+            assert!(planned("output", text).is_err(), "{text}");
         }
     }
 
@@ -348,17 +310,11 @@ mod tests {
     #[test]
     fn inject_keeps_its_lines_and_the_json_verbs_take_nothing() {
         assert_eq!(
-            plan(DebugVerb::Inject, &["move 1 2".to_owned()]).expect("inject"),
+            Call::parse("inject", &["move 1 2".to_owned()]).expect("inject"),
             Call::Inject(vec!["move 1 2".to_owned()])
         );
-        assert_eq!(
-            planned(DebugVerb::Windows, "").expect("windows"),
-            Call::Windows
-        );
-        assert_eq!(
-            planned(DebugVerb::Scene, "--json").expect("scene"),
-            Call::Scene
-        );
-        assert!(planned(DebugVerb::Scene, "extra").is_err());
+        assert_eq!(planned("windows", "").expect("windows"), Call::Windows);
+        assert_eq!(planned("scene", "--json").expect("scene"), Call::Scene);
+        assert!(planned("scene", "extra").is_err());
     }
 }

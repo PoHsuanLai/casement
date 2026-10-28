@@ -17,15 +17,7 @@ struct Waiting {
     /// The latest text not written yet.
     text: Option<String>,
     /// The writer is gone: write what waits and end.
-    closed: Closed,
-}
-
-/// Whether the writer was dropped.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-enum Closed {
-    #[default]
-    No,
-    Yes,
+    closed: bool,
 }
 
 /// The slot the writer and its thread share.
@@ -107,7 +99,7 @@ fn write_until_closed<E: Display>(slot: &Slot, write: &Mutex<WriteFn<E>>, what: 
                 if let Some(text) = waiting.text.take() {
                     break text;
                 }
-                if waiting.closed == Closed::Yes {
+                if waiting.closed {
                     return;
                 }
                 waiting = slot
@@ -125,7 +117,7 @@ fn write_until_closed<E: Display>(slot: &Slot, write: &Mutex<WriteFn<E>>, what: 
 
 impl<E> Drop for LatestWriter<E> {
     fn drop(&mut self) {
-        self.slot.lock().closed = Closed::Yes;
+        self.slot.lock().closed = true;
         self.slot.wake.notify_one();
         if let Some(thread) = self.thread.take() {
             // The thread writes the last text first; a panic in it is not ours to carry on.

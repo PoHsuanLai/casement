@@ -3,7 +3,6 @@
 //! a force quit asks the edge to stop.
 
 use super::{App, AppKey, AppLife};
-use crate::effect::Held;
 use crate::ids::{ClientKey, WindowId};
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -22,41 +21,15 @@ pub const QUIT_GRACE: Duration = Duration::from_secs(3);
 /// How long an app asked to stop (SIGTERM) has before its processes are killed (SIGKILL).
 pub const KILL_GRACE: Duration = Duration::from_secs(3);
 
-/// Whether to ping a client now.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Pinging {
-    /// Send a ping and time the answer.
-    Send,
-    /// Do nothing.
-    Hold,
-}
-
-/// Whether a ping to a client is due, from its app's life (none when the client serves no app
+/// Whether a ping to a client is due (send one and time the answer), from its app's life (none when the client serves no app
 /// yet), whether a ping is out, and whether one went a moment ago.
-///
-/// ```
-/// use casement_core::app::{AppLife, Pinging, ping_plan};
-/// use casement_core::Held;
-///
-/// assert_eq!(ping_plan(Some(&AppLife::Running), Held::No, Held::No), Pinging::Send);
-/// assert_eq!(ping_plan(Some(&AppLife::Running), Held::Yes, Held::No), Pinging::Hold);
-/// ```
-pub fn ping_plan(life: Option<&AppLife>, outstanding: Held, recent: Held) -> Pinging {
+pub(crate) fn ping_due(life: Option<&AppLife>, outstanding: bool, recent: bool) -> bool {
     match (life, outstanding, recent) {
         (None | Some(AppLife::NotResponding { .. }), _, _)
-        | (Some(_), Held::Yes, _)
-        | (Some(_), _, Held::Yes) => Pinging::Hold,
-        (Some(_), Held::No, Held::No) => Pinging::Send,
+        | (Some(_), true, _)
+        | (Some(_), _, true) => false,
+        (Some(_), false, false) => true,
     }
-}
-
-/// Whether an app answers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Answer {
-    /// It answers pings.
-    Responding,
-    /// It stopped answering.
-    NotResponding,
 }
 
 /// One row of the Force Quit Applications window.
@@ -64,8 +37,8 @@ pub enum Answer {
 pub struct ForceQuitRow {
     /// The app.
     pub app: AppKey,
-    /// Whether it answers.
-    pub answer: Answer,
+    /// Whether it answers pings (otherwise it stopped answering).
+    pub responding: bool,
 }
 
 /// The rows of the Force Quit window: every app that is running, in key order.
@@ -74,10 +47,7 @@ pub fn force_quit_rows(apps: &BTreeMap<AppKey, App>) -> Vec<ForceQuitRow> {
         .filter(|app| !matches!(app.life, AppLife::Launching { .. }))
         .map(|app| ForceQuitRow {
             app: app.key.clone(),
-            answer: match app.life {
-                AppLife::NotResponding { .. } => Answer::NotResponding,
-                _ => Answer::Responding,
-            },
+            responding: !matches!(app.life, AppLife::NotResponding { .. }),
         })
         .collect()
 }
@@ -126,45 +96,21 @@ mod tests {
             since: Mono(Duration::ZERO),
         };
         let cases = [
-            ("no app", None, Held::No, Held::No, Pinging::Hold),
-            (
-                "running",
-                Some(AppLife::Running),
-                Held::No,
-                Held::No,
-                Pinging::Send,
-            ),
-            (
-                "windowless",
-                Some(AppLife::Windowless),
-                Held::No,
-                Held::No,
-                Pinging::Send,
-            ),
-            (
-                "one out",
-                Some(AppLife::Running),
-                Held::Yes,
-                Held::No,
-                Pinging::Hold,
-            ),
+            ("no app", None, false, false, false),
+            ("running", Some(AppLife::Running), false, false, true),
+            ("windowless", Some(AppLife::Windowless), false, false, true),
+            ("one out", Some(AppLife::Running), true, false, false),
             (
                 "one a moment ago",
                 Some(AppLife::Running),
-                Held::No,
-                Held::Yes,
-                Pinging::Hold,
+                false,
+                true,
+                false,
             ),
-            (
-                "already stuck",
-                Some(stuck),
-                Held::No,
-                Held::No,
-                Pinging::Hold,
-            ),
+            ("already stuck", Some(stuck), false, false, false),
         ];
         for (name, life, out, recent, want) in cases {
-            assert_eq!(ping_plan(life.as_ref(), out, recent), want, "{name}");
+            assert_eq!(ping_due(life.as_ref(), out, recent), want, "{name}");
         }
     }
 }

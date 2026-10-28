@@ -9,10 +9,10 @@
 use super::ConfigError;
 use super::doc::{CasementDoc, store};
 use super::sections::PointerSection;
-use crate::cli::ConfigHome;
 use casement_core::settings::Enabled;
 use ds_helpers::{NewFileMode, ReadCap, read_text_capped, write_atomic};
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 /// The largest settings file read here: the cap the settings library reads it with, and a FIFO or
 /// a device at the path is refused rather than waited on, so start-up cannot hang on it (CASB-13).
@@ -76,43 +76,33 @@ impl CasementDoc {
     }
 }
 
-/// What stamping the version did.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum Stamped {
-    /// There is no file, or it already says its version: nothing written.
-    Left,
-    /// The file was migrated when read; it now begins with the current version, so the next
-    /// read does not drop a value the person sets to a retired default.
-    Written,
-}
-
 /// Writes the current version at the top of `home`'s settings file when the file has none, and
 /// nothing else of it changes (comments, unknown keys and the order stay as the person wrote
-/// them). Without it a person who sets a retired default on purpose (natural scrolling off for
+/// them). Whether it wrote: `false` when there is no file, or it already says its version; `true`
+/// when the file was migrated when read and now begins with the current version, so the next
+/// read does not drop a value the person sets to a retired default. Without it a person who sets a retired default on purpose (natural scrolling off for
 /// a mouse) would lose the choice at the next start.
 ///
 /// ```no_run
-/// use casement::cli::ConfigHome;
 /// use casement::config::stamp_version;
 ///
-/// let _ = stamp_version(&ConfigHome::Xdg);
+/// let _ = stamp_version(None);
 /// ```
-pub fn stamp_version(home: &ConfigHome) -> Result<Stamped, ConfigError> {
+pub fn stamp_version(home: Option<&Path>) -> Result<bool, ConfigError> {
     let store = store(home);
     let Some(path) = store.path::<CasementDoc>() else {
-        return Ok(Stamped::Left);
+        return Ok(false);
     };
     let Ok(text) = read_text_capped(&path, SETTINGS_FILE_CAP) else {
-        return Ok(Stamped::Left);
+        return Ok(false);
     };
     if store.load::<CasementDoc>().value.version.is_some() {
-        return Ok(Stamped::Left);
+        return Ok(false);
     }
     let stamped = format!("version = {}\n{text}", Version::CURRENT.0);
     // Quire's writer: a unique temporary file beside it, synced and renamed over it, the file's
     // own permissions kept and a link at the path followed (a dotfile-managed file stays a link).
     write_atomic(&path, stamped.as_bytes(), NewFileMode::OwnerOnly)
         .map_err(|error| ConfigError::Settings(error.to_string()))?;
-    Ok(Stamped::Written)
+    Ok(true)
 }

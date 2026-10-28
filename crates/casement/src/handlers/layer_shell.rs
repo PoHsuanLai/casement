@@ -9,7 +9,7 @@ use casement_core::policy::ConnectionRole;
 use casement_wayland::ClientState;
 use casement_wayland::handler::OutputLookup;
 use casement_wayland::layer_shell::{self, LayerNamespace};
-use casement_wayland::limits::{self, Limit, Standing};
+use casement_wayland::limits::{self, Limit};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
@@ -81,7 +81,7 @@ impl WlrLayerShellHandler for State {
         if let Some(client) = surface.wl_surface().client() {
             let held =
                 ClientState::of(&client).map_or(0, |data| self.wl.layer_shell.held_by(data.key));
-            if limits::admit(&self.display, &client, Limit::Layers, held) == Standing::Over {
+            if !limits::admit(&self.display, &client, Limit::Layers, held) {
                 return;
             }
         }

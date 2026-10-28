@@ -28,15 +28,6 @@ pub enum ReadError {
     Layout,
 }
 
-/// Whether the alpha byte of a source is meaningful.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Alpha {
-    /// `argb8888`: kept.
-    Kept,
-    /// `xrgb8888`: the byte is unused, the pixel is opaque.
-    Opaque,
-}
-
 /// An image of little-endian premultiplied `Argb8888` pixels (B, G, R, A bytes), top row first,
 /// tightly packed.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -95,13 +86,14 @@ impl ArgbImage {
     /// ```
     pub fn from_shm(buffer: &WlBuffer) -> Result<ArgbImage, ReadError> {
         with_shm_pool(buffer, |pool, data| {
-            let alpha = match data.format {
-                Format::Argb8888 => Alpha::Kept,
-                Format::Xrgb8888 => Alpha::Opaque,
+            // `xrgb8888`: the alpha byte is unused, the pixel is opaque.
+            let opaque = match data.format {
+                Format::Argb8888 => false,
+                Format::Xrgb8888 => true,
                 other => return Err(ReadError::Format(other)),
             };
             let layout = Layout::of(&data).map_err(|_| ReadError::Layout)?;
-            unpack(pool, layout, alpha)
+            unpack(pool, layout, opaque)
         })?
     }
 
@@ -190,8 +182,9 @@ pub(super) fn sides(size: PhysicalSize) -> (usize, usize) {
     )
 }
 
-/// The rows of `pool` at `layout`, packed tight.
-fn unpack(pool: &[u8], layout: Layout, alpha: Alpha) -> Result<ArgbImage, ReadError> {
+/// The rows of `pool` at `layout`, packed tight; `opaque` forces every alpha byte to 255 (the
+/// source's is unused).
+fn unpack(pool: &[u8], layout: Layout, opaque: bool) -> Result<ArgbImage, ReadError> {
     let row = layout.width.saturating_mul(4);
     let mut argb = Vec::with_capacity(row.saturating_mul(layout.height));
     for y in 0..layout.height {
@@ -203,7 +196,7 @@ fn unpack(pool: &[u8], layout: Layout, alpha: Alpha) -> Result<ArgbImage, ReadEr
             .ok_or(ReadError::Layout)?;
         argb.extend_from_slice(line);
     }
-    if alpha == Alpha::Opaque {
+    if opaque {
         argb.as_chunks_mut::<4>()
             .0
             .iter_mut()
@@ -254,7 +247,7 @@ mod tests {
         let mut pool = vec![0xEE; 40];
         pool[2..10].copy_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8]);
         pool[14..22].copy_from_slice(&[9, 10, 11, 12, 13, 14, 15, 16]);
-        let image = unpack(&pool, layout, Alpha::Kept).expect("fits");
+        let image = unpack(&pool, layout, false).expect("fits");
         assert_eq!(image.size, size(2, 2));
         assert_eq!(image.argb, (1..=16).collect::<Vec<u8>>());
     }
@@ -267,7 +260,7 @@ mod tests {
             width: 1,
             height: 1,
         };
-        let image = unpack(&[1, 2, 3, 0], layout, Alpha::Opaque).expect("fits");
+        let image = unpack(&[1, 2, 3, 0], layout, true).expect("fits");
         assert_eq!(image.argb, [1, 2, 3, 255]);
     }
 
@@ -280,7 +273,7 @@ mod tests {
             height: 2,
         };
         assert!(matches!(
-            unpack(&[0; 10], layout, Alpha::Kept),
+            unpack(&[0; 10], layout, false),
             Err(ReadError::Layout)
         ));
     }

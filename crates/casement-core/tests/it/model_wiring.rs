@@ -6,7 +6,7 @@ use crate::support;
 
 use casement_core::focus::TokenCheck;
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
-use casement_core::window::{Parent, WindowState, WindowTitle};
+use casement_core::window::{WindowState, WindowTitle};
 use casement_core::{Cause, Effect, Event, MappedToplevel, ToplevelMeta, WindowId};
 use casement_protocols::vocab::Modality;
 use support::driver::{Op, last, map, mapped, plug, run, unmap};
@@ -33,7 +33,7 @@ fn a_window_is_listed_when_it_maps_relisted_when_it_is_named_and_unlisted_when_i
 fn a_dialog_hint_set_after_the_map_opens_and_closes_a_sheet() {
     let mail = proven("org.quire.Mail");
     let child = MappedToplevel {
-        parent: Parent::Window(WindowId(1)),
+        parent: Some(WindowId(1)),
         modality: Modality::Modeless,
         ..mapped(2, &mail, TokenCheck::Missing)
     };

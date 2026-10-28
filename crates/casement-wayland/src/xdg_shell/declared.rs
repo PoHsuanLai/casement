@@ -3,7 +3,7 @@
 
 use casement_core::ClientKey;
 use casement_core::geometry::LogicalSize;
-use casement_core::window::{MaxSize, SizeLimits};
+use casement_core::window::SizeLimits;
 use casement_protocols::vocab::{Modality, WindowRole};
 use porter_core::ClaimedId;
 use smithay::wayland::shell::xdg::dialog::ToplevelDialogHint;
@@ -51,8 +51,8 @@ pub fn limits_of(min: (i32, i32), max: (i32, i32)) -> SizeLimits {
             h: side(min.1),
         },
         max: match (max_w, max_h) {
-            (0, 0) => MaxSize::Unbounded,
-            (w, h) => MaxSize::Bounded(LogicalSize {
+            (0, 0) => None,
+            (w, h) => Some(LogicalSize {
                 w: if w == 0 { u32::MAX } else { w },
                 h: if h == 0 { u32::MAX } else { h },
             }),
@@ -111,20 +111,20 @@ mod tests {
     fn limits_treat_zero_as_unbounded_per_axis() {
         let none = limits_of((0, 0), (0, 0));
         assert_eq!(none.min, LogicalSize { w: 0, h: 0 });
-        assert_eq!(none.max, MaxSize::Unbounded);
+        assert_eq!(none.max, None);
         let both = limits_of((200, 100), (800, 600));
         assert_eq!(both.min, LogicalSize { w: 200, h: 100 });
-        assert_eq!(both.max, MaxSize::Bounded(LogicalSize { w: 800, h: 600 }));
+        assert_eq!(both.max, Some(LogicalSize { w: 800, h: 600 }));
         let one_axis = limits_of((0, 0), (800, 0));
         assert_eq!(
             one_axis.max,
-            MaxSize::Bounded(LogicalSize {
+            Some(LogicalSize {
                 w: 800,
                 h: u32::MAX
             })
         );
         let negative = limits_of((-5, 3), (-1, -1));
         assert_eq!(negative.min, LogicalSize { w: 0, h: 3 });
-        assert_eq!(negative.max, MaxSize::Unbounded);
+        assert_eq!(negative.max, None);
     }
 }

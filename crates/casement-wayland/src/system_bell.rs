@@ -55,7 +55,7 @@ mod tests {
     use casement_core::settings::CasementSettings;
     use casement_core::space::SpaceSeed;
     use casement_core::time::Mono;
-    use casement_core::window::{MaxSize, Parent, SizeLimits, WindowOrigin};
+    use casement_core::window::{SizeLimits, WindowOrigin};
     use casement_core::{ClientKey, MappedToplevel};
     use casement_protocols::vocab::{Modality, WindowRole};
     use porter_core::{ClaimedId, PeerIdentity};
@@ -82,10 +82,10 @@ mod tests {
                 claimed_id: claimed,
                 role: WindowRole::Document,
                 modality: Modality::None,
-                parent: Parent::None,
+                parent: None,
                 limits: SizeLimits {
                     min: LogicalSize { w: 0, h: 0 },
-                    max: MaxSize::Unbounded,
+                    max: None,
                 },
                 first_size: LogicalSize { w: 640, h: 480 },
                 activation: TokenCheck::Missing,

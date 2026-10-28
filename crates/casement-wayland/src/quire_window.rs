@@ -18,14 +18,15 @@
 mod hints;
 
 pub use hints::{
-    A11Y_MAX_LEN, BadRole, PLACEMENT_POLICY, PendingHints, PlacementPolicy, a11y_of,
+    A11Y_MAX_LEN, A11yTooLong, BadRole, PLACEMENT_POLICY, PendingHints, PlacementPolicy, a11y_of,
     first_mouse_of, forgotten, frame_of, placement_events, role_request,
 };
 
 use crate::client::ClientState;
 use crate::states::{GlobalFilter, WaylandFault};
+use casement_core::geometry::LogicalRect;
 use casement_core::policy::GlobalKind;
-use casement_core::window::{A11yRoot, FirstMouse, FrameHint};
+use casement_core::window::{A11yRoot, FrameHint};
 use casement_core::{ClientKey, Event, InputSerial, WindowHintChange, WindowId};
 use casement_protocols::server::quire_window_v1::quire_window_manager_v1::{
     self, QuireWindowManagerV1,
@@ -265,7 +266,7 @@ where
         };
         let events = match request {
             quire_window_v1::Request::SetFirstMouse { region } => {
-                let first_mouse = region.as_ref().map_or(FirstMouse::Nowhere, |region| {
+                let first_mouse = region.as_ref().map_or_else(Vec::new, |region| {
                     first_mouse_of(&get_region_attributes(region))
                 });
                 on_set_first_mouse(state.quire_window_part(), window, first_mouse)
@@ -313,8 +314,8 @@ where
                 bus_name,
                 object_path,
             } => match a11y_of(&bus_name, &object_path) {
-                Some(root) => on_set_a11y_root(state.quire_window_part(), window, root),
-                None => Vec::new(),
+                Ok(root) => on_set_a11y_root(state.quire_window_part(), window, root),
+                Err(A11yTooLong) => Vec::new(),
             },
             quire_window_v1::Request::SetEdited { edited } => {
                 match code_of(edited).and_then(|code| Edited::from_code(code).ok()) {
@@ -441,7 +442,7 @@ pub fn on_get_window(
 pub fn on_set_first_mouse(
     part: &mut QuireWindowPart,
     window: WindowId,
-    first_mouse: FirstMouse,
+    first_mouse: Vec<LogicalRect>,
 ) -> Vec<Event> {
     stage(part, window, |pending| {
         pending.with_first_mouse(first_mouse)
@@ -490,7 +491,7 @@ pub fn on_set_role(_part: &mut QuireWindowPart, window: WindowId, role: WindowRo
 pub fn on_set_a11y_root(
     _part: &mut QuireWindowPart,
     window: WindowId,
-    root: A11yRoot,
+    root: Option<A11yRoot>,
 ) -> Vec<Event> {
     hint(window, WindowHintChange::A11y(root))
 }

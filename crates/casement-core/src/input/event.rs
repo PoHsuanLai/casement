@@ -4,6 +4,7 @@ use super::{ButtonCode, KeyCode, Origin};
 use crate::geometry::{LogicalPoint, SubPoint};
 use crate::ids::DeviceId;
 use crate::time::Mono;
+use casement_protocols::vocab::PressEdge;
 use ds_core::vocab::Fraction;
 
 /// One input event: where from, which device, when, and what.
@@ -27,7 +28,7 @@ pub enum InputKind {
         /// The key.
         code: KeyCode,
         /// Down or up.
-        edge: Edge,
+        edge: PressEdge,
     },
     /// The pointer moved by this much.
     Motion {
@@ -44,7 +45,7 @@ pub enum InputKind {
         /// The button.
         button: ButtonCode,
         /// Down or up.
-        edge: Edge,
+        edge: PressEdge,
     },
     /// One scroll frame.
     Axis(AxisFrame),
@@ -60,15 +61,6 @@ pub enum InputKind {
     Switch(SwitchStep),
 }
 
-/// Down or up.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Edge {
-    /// Pressed.
-    Press,
-    /// Released.
-    Release,
-}
-
 /// One scroll frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AxisFrame {
@@ -79,7 +71,7 @@ pub struct AxisFrame {
     /// The distance, in sub-pixels.
     pub px: SubPoint,
     /// Whether the scroll stopped (kinetic scrolling ends here).
-    pub stop: AxisStop,
+    pub stopped: bool,
 }
 
 /// What produced a scroll.
@@ -93,15 +85,6 @@ pub enum AxisSource {
     Continuous,
     /// A tilted wheel.
     WheelTilt,
-}
-
-/// Whether a scroll is still going.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum AxisStop {
-    /// Still scrolling.
-    Running,
-    /// The fingers lifted or the wheel stopped.
-    Stopped,
 }
 
 /// One step of a touchpad gesture.
@@ -169,26 +152,14 @@ pub enum TouchStep {
 /// A switch's change.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SwitchStep {
-    /// The lid.
-    Lid(LidState),
-    /// Tablet mode.
-    TabletMode(TabletState),
-}
-
-/// The lid's state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum LidState {
-    /// Open.
-    Open,
-    /// Closed.
-    Closed,
-}
-
-/// Tablet mode.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum TabletState {
-    /// A laptop.
-    Off,
-    /// A tablet.
-    On,
+    /// The lid is now closed (`closed`) or open.
+    Lid {
+        /// Whether it is closed.
+        closed: bool,
+    },
+    /// Tablet mode is now on (`tablet`: a tablet) or off (a laptop).
+    TabletMode {
+        /// Whether it is a tablet.
+        tablet: bool,
+    },
 }

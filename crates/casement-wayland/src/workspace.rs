@@ -370,17 +370,7 @@ pub struct Placed {
     /// What it holds.
     pub kind: SpaceKind,
     /// Whether its output shows it.
-    pub activity: Activity,
-}
-
-/// Whether a Space is the one its output shows.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum Activity {
-    /// Shown.
-    Active,
-    /// Not shown.
-    Inactive,
+    pub active: bool,
 }
 
 /// The Spaces as they are published: a group per output with Spaces, each Space once.
@@ -403,10 +393,6 @@ impl Layout {
                 .is_some_and(|shown| shown.id == space.id);
             let kind = space.content.kind();
             let name = space.plain_name();
-            let activity = match active {
-                true => Activity::Active,
-                false => Activity::Inactive,
-            };
             layout.spaces.insert(
                 space.id.clone(),
                 Placed {
@@ -414,7 +400,7 @@ impl Layout {
                     name,
                     position: space.position.0,
                     kind,
-                    activity,
+                    active,
                 },
             );
         }
@@ -432,9 +418,9 @@ impl Layout {
 
 /// The workspace `state` event of a Space.
 fn state_of(placed: &Placed) -> State {
-    match placed.activity {
-        Activity::Active => State::Active,
-        Activity::Inactive => State::empty(),
+    match placed.active {
+        true => State::Active,
+        false => State::empty(),
     }
 }
 
@@ -565,7 +551,7 @@ fn update(bound: &mut Bound, id: &SpaceId, placed: &Placed) -> usize {
             .coordinates(placed.position.to_ne_bytes().to_vec());
         sent += 1;
     }
-    if hold.told.activity != placed.activity {
+    if hold.told.active != placed.active {
         hold.handle.state(state_of(placed));
         sent += 1;
     }
@@ -678,9 +664,9 @@ mod tests {
         assert_eq!(ids("DP-1"), ["s-a", "s-b"], "in row order");
         assert_eq!(ids("DP-2"), ["s-c"]);
         let at = |id: &str| &layout.spaces[&SpaceId::parse(id).expect("id")];
-        assert_eq!(at("s-b").activity, Activity::Active);
-        assert_eq!(at("s-a").activity, Activity::Inactive);
-        assert_eq!(at("s-c").activity, Activity::Inactive);
+        assert!(at("s-b").active);
+        assert!(!at("s-a").active);
+        assert!(!at("s-c").active);
         assert_eq!(at("s-a").name, "Desktop 1");
         assert_eq!(at("s-b").position, 1);
     }

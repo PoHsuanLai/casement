@@ -13,16 +13,7 @@ use peephole_core::{RoleName, roles};
 use std::os::fd::OwnedFd;
 use std::os::unix::net::UnixStream;
 
-/// What the caller gets.
-#[derive(Debug)]
-pub enum HandOut {
-    /// A new connection: the server end for the display, the client end for the caller.
-    Granted(Handed),
-    /// Nothing, and why.
-    Refused(RefuseWhy),
-}
-
-/// A granted connection: a socket pair and the role its client is inserted with.
+/// A granted connection (the new connection the caller gets): a socket pair and the role its client is inserted with.
 #[derive(Debug)]
 pub struct Handed {
     /// The role the client has (I7).
@@ -50,21 +41,21 @@ pub enum RefuseWhy {
 /// caller (`casement_ipc::dbus`), never anything the caller said; this check is the second line
 /// should a caller of this function ask for more than the proof gave. The caller of this
 /// function inserts the server end into the display.
-pub fn hand_out(wanted: &ConnectionRole, held: &RoleName) -> HandOut {
+pub fn hand_out(wanted: &ConnectionRole, held: &RoleName) -> Result<Handed, RefuseWhy> {
     match connection_role(held) {
-        None => HandOut::Refused(RefuseWhy::UnknownUnit),
-        Some(allowed) if allowed != *wanted => HandOut::Refused(RefuseWhy::RoleNotAllowed),
+        None => Err(RefuseWhy::UnknownUnit),
+        Some(allowed) if allowed != *wanted => Err(RefuseWhy::RoleNotAllowed),
         Some(allowed) => match UnixStream::pair().and_then(|pair| {
             // The display reads the server end from its event loop: it must never block.
             pair.0.set_nonblocking(true)?;
             Ok(pair)
         }) {
-            Ok((server, client)) => HandOut::Granted(Handed {
+            Ok((server, client)) => Ok(Handed {
                 role: allowed,
                 server,
                 client: OwnedFd::from(client),
             }),
-            Err(_) => HandOut::Refused(RefuseWhy::NoSocket),
+            Err(_) => Err(RefuseWhy::NoSocket),
         },
     }
 }
@@ -160,8 +151,8 @@ mod tests {
         ];
         for (case, held, wanted, refused) in cases {
             match (hand_out(&wanted, &held), refused) {
-                (HandOut::Granted(handed), None) => assert_eq!(handed.role, wanted, "{case}"),
-                (HandOut::Refused(why), Some(want)) => assert_eq!(why, want, "{case}"),
+                (Ok(handed), None) => assert_eq!(handed.role, wanted, "{case}"),
+                (Err(why), Some(want)) => assert_eq!(why, want, "{case}"),
                 (other, _) => panic!("{case}: {other:?}"),
             }
         }

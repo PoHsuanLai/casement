@@ -11,7 +11,7 @@ use crate::notify::{Notify, SocketNotify};
 use crate::privacy::{
     BackgroundPrivacyStore, FloorOnlyStore, NoPrivacyStore, PrivacyFiles, PrivacyStore, SystemDir,
 };
-use crate::space_store::{BackgroundSpaceStore, EphemeralSpaceStore, SpaceStore, StateHome};
+use crate::space_store::{BackgroundSpaceStore, EphemeralSpaceStore, SpaceStore, StateDirs};
 use crate::space_sync::SpaceSync;
 use crate::spawn::{ChildEnv, ProcessSpawner, Spawner};
 use crate::time::WallClock;
@@ -122,24 +122,24 @@ impl Seams {
     /// The real seams: the Spaces file and the privacy book in `home` (none kept for an
     /// ephemeral run), the administrator's floor in `system` (read by every run, ephemeral or
     /// not), the system clock, the session bus on first use, child processes.
-    pub fn real(home: &StateHome, system: &SystemDir) -> Seams {
+    pub fn real(home: Option<&StateDirs>, system: &SystemDir) -> Seams {
         let space_store: Box<dyn SpaceStore> = match home {
-            StateHome::At(dirs) => Box::new(BackgroundSpaceStore::new(dirs)),
-            StateHome::Ephemeral => Box::new(EphemeralSpaceStore),
+            Some(dirs) => Box::new(BackgroundSpaceStore::new(dirs)),
+            None => Box::new(EphemeralSpaceStore),
         };
         let lock_marker: Box<dyn LockMarker> = match home {
-            StateHome::At(dirs) => match dirs.runtime_dir() {
+            Some(dirs) => match dirs.runtime_dir() {
                 Some(dir) => Box::new(FileLockMarker::in_dir(dir)),
                 None => Box::new(NoLockMarker),
             },
-            StateHome::Ephemeral => Box::new(NoLockMarker),
+            None => Box::new(NoLockMarker),
         };
         let privacy: Box<dyn PrivacyStore> = match home {
-            StateHome::At(dirs) => Box::new(BackgroundPrivacyStore::new(PrivacyFiles {
+            Some(dirs) => Box::new(BackgroundPrivacyStore::new(PrivacyFiles {
                 book: dirs.privacy_file(),
                 floor: crate::privacy::floor_in(system),
             })),
-            StateHome::Ephemeral => Box::new(FloorOnlyStore::new(crate::privacy::floor_in(system))),
+            None => Box::new(FloorOnlyStore::new(crate::privacy::floor_in(system))),
         };
         Seams::new(
             space_store,

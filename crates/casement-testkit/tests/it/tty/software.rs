@@ -4,7 +4,7 @@
 
 use casement_backend::tty::{
     ConnectorId, DevicePath, Drawing, NoGpus, Pace, PresentOutcome, RenderMode, TtyBackend,
-    TtySeams, Turn,
+    TtySeams,
 };
 use casement_core::OutputName;
 use casement_core::geometry::{LogicalPoint, Transform};
@@ -166,18 +166,18 @@ fn a_software_output_flips_and_reports_presentation_like_a_gpu_one() {
 #[test]
 fn a_flip_in_flight_makes_the_next_frame_wait_and_a_lost_flip_is_not_reported() {
     let mut pace = Pace::new();
-    assert_eq!(pace.turn(), Turn::Free(VblankSeq(0)));
+    assert_eq!(pace.turn(), Some(VblankSeq(0)));
     pace.queued();
-    assert_eq!(pace.turn(), Turn::Busy);
+    assert_eq!(pace.turn(), None);
     assert_eq!(pace.pending(), Some(VblankSeq(0)));
     let shown = pace.landed(at(16)).expect("the flip landed");
     assert_eq!((shown.seq, shown.at), (VblankSeq(0), at(16)));
-    assert_eq!(pace.turn(), Turn::Free(VblankSeq(1)));
+    assert_eq!(pace.turn(), Some(VblankSeq(1)));
     assert_eq!(pace.landed(at(33)), None, "nothing was in flight");
 
     // The output went dark with a frame in flight: it never lands, and the count stays put.
     pace.queued();
     pace.lost();
-    assert_eq!(pace.turn(), Turn::Free(VblankSeq(1)));
+    assert_eq!(pace.turn(), Some(VblankSeq(1)));
     assert_eq!(pace.landed(at(50)), None);
 }

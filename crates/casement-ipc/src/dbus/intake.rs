@@ -27,15 +27,6 @@ pub const TRACKED_CALLERS: usize = 1024;
 /// How long a call waits for the event loop's answer before it is given up on.
 pub const ANSWER_WAIT: Duration = Duration::from_secs(10);
 
-/// Whether a call may go on.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Admission {
-    /// Within the rate.
-    Admit,
-    /// Over the rate, or no room to count the caller.
-    Refuse,
-}
-
 /// The calls each caller made in the current window. No clock is read: whoever owns the window
 /// calls [`RateLimit::new_window`] when it passes.
 #[derive(Debug, Default)]
@@ -44,19 +35,20 @@ pub struct RateLimit {
 }
 
 impl RateLimit {
-    /// Counts a call by `name` and says whether it is within the rate.
-    pub fn admit(&mut self, name: &str) -> Admission {
+    /// Counts a call by `name` and says whether it is within the rate (false: over the rate, or
+    /// no room to count the caller).
+    pub fn admit(&mut self, name: &str) -> bool {
         let full = self.calls.len() >= TRACKED_CALLERS;
         match self.calls.get_mut(name) {
-            Some(count) if *count >= CALLS_PER_WINDOW => Admission::Refuse,
+            Some(count) if *count >= CALLS_PER_WINDOW => false,
             Some(count) => {
                 *count += 1;
-                Admission::Admit
+                true
             }
-            None if full => Admission::Refuse,
+            None if full => false,
             None => {
                 self.calls.insert(name.to_owned(), 1);
-                Admission::Admit
+                true
             }
         }
     }
@@ -91,9 +83,10 @@ impl Intake {
     /// Counts a call by the unique bus name `caller`.
     pub fn rate(&self, caller: &str) -> Result<(), ConnectRefusal> {
         let mut rate = self.rate.lock().unwrap_or_else(PoisonError::into_inner);
-        match rate.admit(caller) {
-            Admission::Admit => Ok(()),
-            Admission::Refuse => Err(ConnectRefusal::TooMany),
+        if rate.admit(caller) {
+            Ok(())
+        } else {
+            Err(ConnectRefusal::TooMany)
         }
     }
 
@@ -146,15 +139,12 @@ mod tests {
     #[test]
     fn a_caller_is_counted_per_window_and_forgiven_when_it_turns() {
         let mut rate = RateLimit::default();
-        let first: Vec<Admission> = (0..=CALLS_PER_WINDOW).map(|_| rate.admit(":1.1")).collect();
-        let want: Vec<Admission> = (0..CALLS_PER_WINDOW)
-            .map(|_| Admission::Admit)
-            .chain([Admission::Refuse])
-            .collect();
+        let first: Vec<bool> = (0..=CALLS_PER_WINDOW).map(|_| rate.admit(":1.1")).collect();
+        let want: Vec<bool> = (0..CALLS_PER_WINDOW).map(|_| true).chain([false]).collect();
         assert_eq!(first, want);
-        assert_eq!(rate.admit(":1.2"), Admission::Admit, "another caller");
+        assert!(rate.admit(":1.2"), "another caller");
         rate.new_window();
-        assert_eq!(rate.admit(":1.1"), Admission::Admit);
+        assert!(rate.admit(":1.1"));
     }
 
     /// CASW-05: a flood of calls from a hundred thousand callers holds the queue at its bound and

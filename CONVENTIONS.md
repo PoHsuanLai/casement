@@ -18,8 +18,9 @@ What casement adds, each with its reason (the first twelve are the freeze plan's
    link. `scripts/check-boundary.sh` (row B20) trips on any of their names in code.
 2. **No panics in the event loop.** Client misbehaviour is a protocol error; backend failure is
    logged and degrades; `unwrap`/`expect` only in tests or with a same-line proof.
-3. **The edge converts.** smithay's `bool`s, loose integers and serial types become our enums
-   and newtypes in `casement/src/handlers/*` and `casement-wayland`, never deeper.
+3. **The edge converts.** smithay's loose integers and serial types become our newtypes in
+   `casement/src/handlers/*` and `casement-wayland`, never deeper. A two-way fact stays a
+   `bool` (see 17).
 4. **The handler recipe** (one shape for every protocol): smithay callback in
    `casement/src/handlers/<p>.rs` → `casement_wayland::<p>::on_<request>(&mut wl.<p>, …) ->
    Vec<core::Event>` → `Model::step` → `Vec<Effect>` → `casement::exec` →
@@ -55,3 +56,12 @@ And the repo's own:
     is read-only and is the gate's form; it needs every sibling checkout of those workspaces.
 16. **Every crate's manifest says `license = "MIT OR Apache-2.0"`** through the workspace;
     `cargo deny` reports an unlicensed root otherwise.
+17. **Types are plain Rust first** (2026-10-28, replaces "no bool in a field" and "never `dyn`"):
+    `bool` is fine for fields, returns, locals and private fns; use an enum only when a public fn
+    would read `f(true, false)`, a third state is realistic, or the value is persisted or on the
+    bus. One fact, one type: the lower crate owns it (casement-protocols' `vocab` for anything on
+    the wire), and higher crates add behaviour with methods, never a mirror enum plus a mapping fn.
+    Two-way outcomes are `Result`/`Option`; "absent or one real thing" is `Option<T>`. A growing
+    set is data (one table), not three ladders. Newtypes only for a rule or a unit. Behaviour that
+    differs by case is a trait with default methods; `Box<dyn Trait>` is fine when run-time config
+    picks the case. A single-variant enum is not a type.

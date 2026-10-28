@@ -10,9 +10,8 @@
 use crate::eis::RemoteInput;
 use casement_core::DeviceId;
 use casement_core::LeaseId;
-use casement_core::input::{
-    ButtonCode, DeviceClass, Edge, InputKind, KeyCode, Origin, PortalSessionId,
-};
+use casement_core::input::{ButtonCode, DeviceClass, InputKind, KeyCode, Origin, PortalSessionId};
+use casement_protocols::vocab::PressEdge;
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -112,13 +111,13 @@ impl Held {
     }
 
     /// Notes key `code` going to `edge`.
-    pub(crate) fn key(&self, code: u32, edge: Edge) -> Fit {
+    pub(crate) fn key(&self, code: u32, edge: PressEdge) -> Fit {
         let mut sets = self.sets();
         note(&mut sets.keys, code, edge)
     }
 
     /// Notes button `code` going to `edge`.
-    pub(crate) fn button(&self, code: u32, edge: Edge) -> Fit {
+    pub(crate) fn button(&self, code: u32, edge: PressEdge) -> Fit {
         let mut sets = self.sets();
         note(&mut sets.buttons, code, edge)
     }
@@ -133,14 +132,14 @@ impl Held {
     }
 }
 
-fn note(set: &mut BTreeSet<u32>, code: u32, edge: Edge) -> Fit {
+fn note(set: &mut BTreeSet<u32>, code: u32, edge: PressEdge) -> Fit {
     match edge {
-        Edge::Press if set.len() >= MAX_HELD && !set.contains(&code) => Fit::Full,
-        Edge::Press => {
+        PressEdge::Press if set.len() >= MAX_HELD && !set.contains(&code) => Fit::Full,
+        PressEdge::Press => {
             set.insert(code);
             Fit::Held
         }
-        Edge::Release => match set.remove(&code) {
+        PressEdge::Release => match set.remove(&code) {
             true => Fit::Held,
             false => Fit::Unheld,
         },
@@ -214,7 +213,7 @@ pub(crate) fn releases(owner: RemoteFor, slot: RemoteSlot, held: &Held) -> Vec<R
                 DeviceClass::Keyboard,
                 InputKind::Key {
                     code: KeyCode(code),
-                    edge: Edge::Release,
+                    edge: PressEdge::Release,
                 },
             )
         })
@@ -225,7 +224,7 @@ pub(crate) fn releases(owner: RemoteFor, slot: RemoteSlot, held: &Held) -> Vec<R
                 DeviceClass::Pointer,
                 InputKind::Button {
                     button: ButtonCode(code),
-                    edge: Edge::Release,
+                    edge: PressEdge::Release,
                 },
             )
         }))
@@ -276,23 +275,23 @@ mod tests {
         let held = Held::default();
         let cap = u32::try_from(MAX_HELD).expect("a small cap");
         for code in 0..cap {
-            assert_eq!(held.key(code, Edge::Press), Fit::Held);
+            assert_eq!(held.key(code, PressEdge::Press), Fit::Held);
         }
-        assert_eq!(held.key(cap, Edge::Press), Fit::Full);
+        assert_eq!(held.key(cap, PressEdge::Press), Fit::Full);
         assert_eq!(
-            held.key(3, Edge::Press),
+            held.key(3, PressEdge::Press),
             Fit::Held,
             "a key already held fits"
         );
-        assert_eq!(held.key(3, Edge::Release), Fit::Held);
-        assert_eq!(held.key(cap, Edge::Press), Fit::Held, "room again");
+        assert_eq!(held.key(3, PressEdge::Release), Fit::Held);
+        assert_eq!(held.key(cap, PressEdge::Press), Fit::Held, "room again");
         assert_eq!(
-            held.key(3, Edge::Release),
+            held.key(3, PressEdge::Release),
             Fit::Unheld,
             "a key let go once is not let go again"
         );
         assert_eq!(
-            held.button(0x110, Edge::Release),
+            held.button(0x110, PressEdge::Release),
             Fit::Unheld,
             "never pressed"
         );
@@ -301,8 +300,8 @@ mod tests {
     #[test]
     fn a_handle_releases_what_is_held_once() {
         let held = Held::default();
-        held.key(30, Edge::Press);
-        held.button(0x110, Edge::Press);
+        held.key(30, PressEdge::Press);
+        held.button(0x110, PressEdge::Press);
         let handle = RemoteHandle::new(
             RemoteFor::Portal(PortalSessionId(4)),
             RemoteSlot(2),
@@ -318,11 +317,11 @@ mod tests {
             vec![
                 InputKind::Key {
                     code: KeyCode(30),
-                    edge: Edge::Release
+                    edge: PressEdge::Release
                 },
                 InputKind::Button {
                     button: ButtonCode(0x110),
-                    edge: Edge::Release
+                    edge: PressEdge::Release
                 },
             ]
         );

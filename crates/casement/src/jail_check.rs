@@ -5,47 +5,8 @@
 
 use crate::cli::StartConfig;
 use casement_backend::BackendChoice;
+use casement_privacy::{JailBreach, breach};
 use std::path::Path;
-
-/// Whether this process is in the jail.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum JailCheck {
-    /// Every condition holds.
-    Inside,
-    /// This condition (the first found) does not.
-    Outside(JailBreach),
-}
-
-/// A condition of the jail that does not hold.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum JailBreach {
-    /// `/dev/input` exists.
-    InputDevices,
-    /// `/run/user/$UID/wayland-0` (the user's session) exists.
-    SessionSocket,
-    /// `/run/dbus/system_bus_socket` exists.
-    SystemBus,
-    /// PID 1 of this namespace is not bwrap.
-    NotPidNamespace,
-}
-
-/// Checks the jail's conditions under `root` (`/` in the binary, a scratch tree in tests).
-pub fn require_jail(root: &Path) -> JailCheck {
-    let uid = rustix::process::getuid().as_raw();
-    let present = |path: &str| root.join(path).symlink_metadata().is_ok();
-    let pid_one = std::fs::read_to_string(root.join("proc/1/comm")).unwrap_or_default();
-    if present("dev/input") {
-        JailCheck::Outside(JailBreach::InputDevices)
-    } else if present(&format!("run/user/{uid}/wayland-0")) {
-        JailCheck::Outside(JailBreach::SessionSocket)
-    } else if present("run/dbus/system_bus_socket") {
-        JailCheck::Outside(JailBreach::SystemBus)
-    } else if pid_one.trim_end() != "bwrap" {
-        JailCheck::Outside(JailBreach::NotPidNamespace)
-    } else {
-        JailCheck::Inside
-    }
-}
 
 /// Why a binary that can mint test input will not start.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
@@ -59,63 +20,56 @@ pub enum JailRefusal {
     Outside(JailBreach),
 }
 
-/// Whether a start with `config` may go ahead under `root` (`/` in the binary).
+/// Whether a start with `config` may go ahead under `root` (`/` in the binary). The jail's
+/// conditions are `casement_privacy::breach`'s, shared with `casementctl`.
 pub fn require_start(config: &StartConfig, root: &Path) -> Result<(), JailRefusal> {
     if config.backend != BackendChoice::Headless {
         return Err(JailRefusal::Backend);
     }
-    match require_jail(root) {
-        JailCheck::Inside => Ok(()),
-        JailCheck::Outside(breach) => Err(JailRefusal::Outside(breach)),
+    match breach(root, rustix::process::getuid().as_raw()) {
+        None => Ok(()),
+        Some(breach) => Err(JailRefusal::Outside(breach)),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cli::{self, Command};
     use std::fs;
 
-    fn jail_tree() -> tempfile::TempDir {
+    fn start(backend: &str) -> StartConfig {
+        let args = ["--backend", backend].map(str::to_owned);
+        let Ok(Command::Run(start)) = cli::parse_args(&args) else {
+            panic!("the arguments parse to a run");
+        };
+        *start
+    }
+
+    fn jail_tree(pid_one: &str) -> tempfile::TempDir {
         let root = tempfile::tempdir().expect("temp dir");
         fs::create_dir_all(root.path().join("proc/1")).expect("proc");
-        fs::write(root.path().join("proc/1/comm"), "bwrap\n").expect("comm");
-        fs::create_dir_all(root.path().join("dev")).expect("dev");
+        fs::write(root.path().join("proc/1/comm"), pid_one).expect("comm");
         root
     }
 
     #[test]
-    fn a_jail_shaped_tree_is_inside() {
-        assert_eq!(require_jail(jail_tree().path()), JailCheck::Inside);
+    fn a_headless_start_inside_the_jail_goes_ahead() {
+        assert_eq!(
+            require_start(&start("headless"), jail_tree("bwrap\n").path()),
+            Ok(())
+        );
     }
 
     #[test]
-    fn each_breach_is_named() {
-        let uid = rustix::process::getuid().as_raw();
-        let input = jail_tree();
-        fs::create_dir_all(input.path().join("dev/input")).expect("input");
+    fn a_start_outside_the_jail_or_on_a_real_backend_is_refused() {
         assert_eq!(
-            require_jail(input.path()),
-            JailCheck::Outside(JailBreach::InputDevices)
+            require_start(&start("headless"), jail_tree("systemd\n").path()),
+            Err(JailRefusal::Outside(JailBreach::NotPidNamespace))
         );
-        let session = jail_tree();
-        fs::create_dir_all(session.path().join(format!("run/user/{uid}"))).expect("run");
-        fs::write(session.path().join(format!("run/user/{uid}/wayland-0")), "").expect("socket");
         assert_eq!(
-            require_jail(session.path()),
-            JailCheck::Outside(JailBreach::SessionSocket)
-        );
-        let bus = jail_tree();
-        fs::create_dir_all(bus.path().join("run/dbus")).expect("dbus");
-        fs::write(bus.path().join("run/dbus/system_bus_socket"), "").expect("bus");
-        assert_eq!(
-            require_jail(bus.path()),
-            JailCheck::Outside(JailBreach::SystemBus)
-        );
-        let host = jail_tree();
-        fs::write(host.path().join("proc/1/comm"), "systemd\n").expect("comm");
-        assert_eq!(
-            require_jail(host.path()),
-            JailCheck::Outside(JailBreach::NotPidNamespace)
+            require_start(&start("tty"), jail_tree("bwrap\n").path()),
+            Err(JailRefusal::Backend)
         );
     }
 }

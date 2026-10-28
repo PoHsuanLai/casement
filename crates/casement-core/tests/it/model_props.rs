@@ -8,18 +8,19 @@ use casement_core::focus::{HitPart, Press, TokenCheck};
 use casement_core::geometry::{LogicalPoint, LogicalSize};
 use casement_core::input::{DesktopCommand, DeviceClass, Origin, SpaceStep};
 use casement_core::layer::{
-    Anchor, Anchors, ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerSpec, Margins,
-    ShellRoleTag,
+    Anchors, ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerSpec, Margins, ShellRoleTag,
 };
 use casement_core::lock::LockEvent;
 use casement_core::settings::{CasementSettings, Enabled};
 use casement_core::time::TimerKey;
-use casement_core::window::{FirstMouse, MaxSize, Parent, SizeLimits, SplitSide, WindowTitle};
+use casement_core::window::{SizeLimits, WindowTitle};
 use casement_core::{
     ClientKey, Event, KeyboardTarget, LayerKey, MappedToplevel, ResizeEdges, ToplevelMeta,
     ToplevelRequest, WindowHintChange, WindowId,
 };
-use casement_protocols::vocab::{ActorKind, MacMods, Modality, PlaceTarget, Toggle, WindowRole};
+use casement_protocols::vocab::{
+    ActorKind, MacMods, Modality, PlaceTarget, SplitSide, Toggle, WindowRole,
+};
 use proptest::prelude::*;
 use support::driver::{Op, run};
 use support::{claimed, headless, proven};
@@ -86,7 +87,7 @@ fn mapping() -> impl Strategy<Value = Op> {
         .prop_map(|(n, app, token, role, parent, modality)| {
             Op::Event(Event::ToplevelMapped(MappedToplevel {
                 role,
-                parent: parent.map_or(Parent::None, |p| Parent::Window(WindowId(p))),
+                parent: parent.map(WindowId),
                 modality: match modality {
                     0 => Modality::None,
                     1 => Modality::WindowModal,
@@ -147,7 +148,6 @@ fn layer_spec() -> impl Strategy<Value = LayerSpec> {
         ],
     )
         .prop_map(|(output, level, edge, zone, keyboard, owner)| {
-            let held = |on: bool| if on { Anchor::Held } else { Anchor::Free };
             let [top, bottom, left, right] = match edge {
                 0 => [true, false, true, true],
                 1 => [false, true, true, true],
@@ -158,10 +158,10 @@ fn layer_spec() -> impl Strategy<Value = LayerSpec> {
                 output: headless(output).key,
                 level,
                 anchor: Anchors {
-                    top: held(top),
-                    bottom: held(bottom),
-                    left: held(left),
-                    right: held(right),
+                    top,
+                    bottom,
+                    left,
+                    right,
                 },
                 exclusive: if zone == 0 {
                     ExclusiveZone::Ignore
@@ -246,13 +246,13 @@ fn op() -> impl Strategy<Value = Op> {
         }),
         (window(), window()).prop_map(|(n, parent)| Event::ToplevelMeta {
             window: WindowId(n),
-            meta: ToplevelMeta::Parent(Parent::Window(WindowId(parent)))
+            meta: ToplevelMeta::Parent(Some(WindowId(parent)))
         }),
         (window(), 0u32..200).prop_map(|(n, min)| Event::ToplevelMeta {
             window: WindowId(n),
             meta: ToplevelMeta::Limits(SizeLimits {
                 min: LogicalSize { w: min, h: min },
-                max: MaxSize::Unbounded
+                max: None
             })
         }),
         (window(), role()).prop_map(|(n, role)| Event::WindowHint {
@@ -285,7 +285,7 @@ fn op() -> impl Strategy<Value = Op> {
             at: support::ms(1),
             kind: casement_core::input::InputKind::Key {
                 code: casement_core::input::KeyCode(30),
-                edge: casement_core::input::Edge::Press,
+                edge: casement_protocols::vocab::PressEdge::Press,
             },
         })),
         window().prop_map(|n| Event::ToplevelMeta {
@@ -294,7 +294,7 @@ fn op() -> impl Strategy<Value = Op> {
         }),
         window().prop_map(|n| Event::WindowHint {
             window: WindowId(n),
-            hint: WindowHintChange::FirstMouse(FirstMouse::Nowhere)
+            hint: WindowHintChange::FirstMouse(Vec::new())
         }),
     ];
     prop_oneof![

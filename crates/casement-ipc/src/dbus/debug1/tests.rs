@@ -4,7 +4,8 @@
 use super::*;
 use crate::test_bus::PrivateBus;
 use casement_core::geometry::LogicalPoint;
-use casement_core::input::{ButtonCode, Edge, Keysym};
+use casement_core::input::{ButtonCode, Keysym};
+use casement_protocols::vocab::PressEdge;
 use std::thread::JoinHandle;
 
 type Answer = Box<dyn Fn(&DebugRequest) -> DebugReply + Send>;
@@ -68,7 +69,7 @@ async fn inject_parses_every_line_then_forwards_them_in_order() {
         vec![DebugRequest::Inject(vec![
             InjectLine::Move(LogicalPoint { x: 3, y: 4 }),
             InjectLine::Press(ButtonCode(0x110)),
-            InjectLine::Key(Keysym(0x61), Edge::Release),
+            InjectLine::Key(Keysym(0x61), PressEdge::Release),
         ])]
     );
 }

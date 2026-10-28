@@ -46,24 +46,6 @@ const FENCE_DEADLINE: Duration = Duration::from_millis(500);
 /// The formats the picture may take, best first: opaque, so the scanout GPU blends nothing.
 const WANTED: [CoreFourcc; 2] = [CoreFourcc(0x3432_5258), CoreFourcc(0x3432_5241)];
 
-/// Whether the picture holds the previous frame, which the damage tracker may build on.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Held {
-    /// It holds nothing usable (new, or the screen was lost): draw everything.
-    Nothing,
-    /// It holds the last frame drawn.
-    LastFrame,
-}
-
-/// What drawing a frame on this route did.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Drawn {
-    /// Nothing changed since the last frame.
-    Unchanged,
-    /// The scanout GPU's compositor holds a new frame to queue.
-    Frame,
-}
-
 /// One output's copy route.
 pub(super) struct Bridge {
     render: Rc<RefCell<GlesRenderer>>,
@@ -71,7 +53,9 @@ pub(super) struct Bridge {
     picture: Dmabuf,
     tracker: OutputDamageTracker,
     shown: TextureRenderBuffer<GlesTexture>,
-    held: Held,
+    /// Whether the picture holds the previous frame, which the damage tracker may build on
+    /// (`false`: it holds nothing usable, new or the screen was lost: draw everything).
+    holds_last: bool,
 }
 
 impl Bridge {
@@ -128,7 +112,7 @@ impl Bridge {
             picture,
             tracker: OutputDamageTracker::new(mode, scale, transform),
             shown,
-            held: Held::Nothing,
+            holds_last: false,
         })
     }
 
@@ -139,35 +123,34 @@ impl Bridge {
 
     /// The screen was lost (dark, or the seat came back): the next frame draws everything.
     pub(super) fn forget(&mut self) {
-        self.held = Held::Nothing;
+        self.holds_last = false;
     }
 
     /// Draws `source` on the render GPU into the picture and, when anything changed, makes the
-    /// scanout GPU's `compositor` compose the picture.
+    /// scanout GPU's `compositor` compose the picture. Whether the compositor holds a new frame
+    /// to queue (`false`: nothing changed since the last frame).
     pub(super) fn draw(
         &mut self,
         compositor: &mut Compositor,
         source: &dyn FrameSource,
-    ) -> Result<Drawn, KmsError> {
-        if self.paint(source)? == Drawn::Unchanged {
-            return Ok(Drawn::Unchanged);
+    ) -> Result<bool, KmsError> {
+        if !self.paint(source)? {
+            return Ok(false);
         }
         let elements = [self.element()];
         let mut local = self.local.borrow_mut();
         let result = compositor
             .render_frame(&mut *local, &elements, CLEAR, FrameFlags::DEFAULT)
             .map_err(refused)?;
-        Ok(match result.is_empty {
-            true => Drawn::Unchanged,
-            false => Drawn::Frame,
-        })
+        Ok(!result.is_empty)
     }
 
-    /// Draws the frame into the picture and waits for the render GPU to finish.
-    fn paint(&mut self, source: &dyn FrameSource) -> Result<Drawn, KmsError> {
-        let age = match self.held {
-            Held::Nothing => 0,
-            Held::LastFrame => 1,
+    /// Draws the frame into the picture and waits for the render GPU to finish; whether anything
+    /// changed.
+    fn paint(&mut self, source: &dyn FrameSource) -> Result<bool, KmsError> {
+        let age = match self.holds_last {
+            false => 0,
+            true => 1,
         };
         let mut render = self.render.borrow_mut();
         let elements = source.gles(&mut render);
@@ -179,11 +162,8 @@ impl Bridge {
             .map_err(refused)?;
         let changed = rendered.damage.is_some();
         wait_bounded(&rendered.sync)?;
-        self.held = Held::LastFrame;
-        Ok(match changed {
-            true => Drawn::Frame,
-            false => Drawn::Unchanged,
-        })
+        self.holds_last = true;
+        Ok(changed)
     }
 
     /// The picture as the one element the scanout compositor draws, all of it changed.
@@ -235,7 +215,7 @@ fn entries<'a>(formats: impl Iterator<Item = &'a Format>) -> Vec<FormatEntry> {
 impl std::fmt::Debug for Bridge {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Bridge")
-            .field("held", &self.held)
+            .field("holds_last", &self.holds_last)
             .finish_non_exhaustive()
     }
 }

@@ -4,6 +4,9 @@
 //! `casement_core::privilege`; the composition root (`casement::privacy`) feeds it what this
 //! crate reads and writes what it asks to keep.
 //!
+//! It also holds the structural jail check ([`breach`]) that the compositor's test builds and
+//! `casementctl` both run, because `casementctl` links this crate and not the compositor.
+//!
 //! ```text
 //! $XDG_STATE_HOME/casement/privacy.toml        the person's book; casement alone writes it
 //! /etc/quire/privacy.toml, privacy.d/*.toml    the administrator's floor; casement only reads it
@@ -15,12 +18,14 @@
 //! believed only when it and its folder belong to the administrator alone.
 
 mod floor_files;
+mod jail;
 mod listing;
 mod load;
 mod store;
 mod system_dir;
 
 pub use floor_files::{DROP_INS_MAX, FloorFiles, Owner};
+pub use jail::{JailBreach, breach};
 pub use listing::{Listing, NOBODY_ASKED, list};
 pub use load::{load_book, load_floor, save_book};
 pub use store::{

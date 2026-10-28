@@ -74,15 +74,6 @@ pub use spaces::MAX_DESKTOPS_PER_OUTPUT;
 use std::collections::{BTreeMap, BTreeSet};
 pub use swipe::{SpaceStrip, SwipeOwner};
 
-/// Whether a step compares what clients are shown before and after it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Watch {
-    /// It may change the window lists, the Spaces or the desktop's notes.
-    Published,
-    /// It cannot (an input event that is not a swipe).
-    Nothing,
-}
-
 /// Everything casement knows, as one value.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Model {
@@ -213,8 +204,9 @@ impl Model {
         // An input event that is not a swipe changes nothing a window-list or desktop client
         // is shown, so it skips the two snapshots (each clones every window): at input rate
         // they were the cost a client with thousands of windows could stall the loop with.
+        // Whether the step may change the window lists, the Spaces or the desktop's notes.
         let watch = match &event {
-            Event::Input(input) if !matches!(input.kind, InputKind::Swipe(_)) => Watch::Nothing,
+            Event::Input(input) if !matches!(input.kind, InputKind::Swipe(_)) => false,
             // Timers and ticks that change nothing a client is shown, at key-repeat and idle
             // rates (CASC-03).
             Event::TimerFired(
@@ -223,19 +215,17 @@ impl Model {
                 | TimerKey::ImeHold
                 | TimerKey::AgentHold,
             )
-            | Event::NightLightTick(_) => Watch::Nothing,
+            | Event::NightLightTick(_) => false,
             // Consent changes nothing a window-list or desktop client is shown.
             Event::ClientStanding { .. }
             | Event::PrivilegeUse { .. }
             | Event::PermissionAnswered { .. }
-            | Event::PrivilegeGranted { .. }
-            | Event::PrivilegeRevoked { .. }
-            | Event::PrivilegeForgotten { .. }
+            | Event::PrivilegeEdited { .. }
             | Event::ShellReady
             | Event::ShellGone
             | Event::BookLoaded(_)
-            | Event::FloorLoaded(_) => Watch::Nothing,
-            _ => Watch::Published,
+            | Event::FloorLoaded(_) => false,
+            _ => true,
         };
         self.run_watching(now, watch, |model| model.route(event))
     }
@@ -248,7 +238,7 @@ impl Model {
     /// `f` on this model at `now`, then the keyboard effect if who holds the keyboard moved,
     /// and the publishing effects for what `f` changed.
     fn run(self, now: Mono, f: impl FnOnce(Model) -> Moved) -> (Model, Vec<Effect>) {
-        self.run_watching(now, Watch::Published, f)
+        self.run_watching(now, true, f)
     }
 
     /// [`Model::run`], publishing only when `watch` says the step can change what clients are
@@ -256,15 +246,12 @@ impl Model {
     fn run_watching(
         self,
         now: Mono,
-        watch: Watch,
+        watch: bool,
         f: impl FnOnce(Model) -> Moved,
     ) -> (Model, Vec<Effect>) {
         let before = self.keyboard_target();
         let keyed = self.focus.key;
-        let shown = match watch {
-            Watch::Published => Some(published::Published::of(&self)),
-            Watch::Nothing => None,
-        };
+        let shown = watch.then(|| published::Published::of(&self));
         let mut moved = f(Model { now, ..self });
         moved.model.forget_gone_minimise_rects();
         moved.model.forget_gone_placements();
@@ -338,15 +325,7 @@ impl Model {
             Event::PermissionAnswered { ask, answer, at } => {
                 self.privileged(Input::Answered { ask, answer, at })
             }
-            Event::PrivilegeGranted { subject, power, at } => {
-                self.privileged(Input::Granted { subject, power, at })
-            }
-            Event::PrivilegeRevoked { subject, power, at } => {
-                self.privileged(Input::Revoked { subject, power, at })
-            }
-            Event::PrivilegeForgotten { subject, power } => {
-                self.privileged(Input::Forgotten { subject, power })
-            }
+            Event::PrivilegeEdited { edit, at } => self.privileged(Input::Edited { edit, at }),
             Event::ShellReady => self.privileged(Input::ShellReady),
             Event::ShellGone => self.privileged(Input::ShellGone),
             Event::BookLoaded(book) => self.privileged(Input::BookLoaded(*book)),

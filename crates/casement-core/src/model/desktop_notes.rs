@@ -9,7 +9,7 @@ use crate::desktop::{DesktopNote, DesktopRef};
 use crate::effect::Effect;
 use crate::ids::{OutputKey, WindowId};
 use crate::space::Space;
-use crate::window::{Parent, SpacePlace, WindowState};
+use crate::window::{SpacePlace, WindowState};
 use casement_protocols::vocab::{
     AppLifeKind, AppVisibility as Visibility, Attention, Emphasis, Modality, PlacementMark,
     SensitivityLevel, WindowRole,
@@ -38,7 +38,7 @@ struct WindowDesk {
     state: WindowState,
     mark: PlacementMark,
     output: Option<OutputKey>,
-    parent: Parent,
+    parent: Option<WindowId>,
     emphasis: Emphasis,
     sensitivity: SensitivityLevel,
     life: AppLifeKind,
@@ -150,17 +150,17 @@ impl DeskSnapshot {
             .spaces
             .iter()
             .filter(|(id, space)| self.spaces.get(*id) != Some(*space))
-            .map(|(id, _)| DesktopNote::Space(id.clone()));
+            .map(|(id, _)| DesktopNote::Changed(DesktopRef::Space(id.clone())));
         let apps = now
             .apps
             .iter()
             .filter(|(key, desk)| self.apps.get(*key) != Some(*desk))
-            .map(|(key, _)| DesktopNote::App(key.clone()));
+            .map(|(key, _)| DesktopNote::Changed(DesktopRef::App(key.clone())));
         let windows = now
             .windows
             .iter()
             .filter(|(id, desk)| self.windows.get(*id) != Some(*desk))
-            .map(|(id, _)| DesktopNote::Window(*id));
+            .map(|(id, _)| DesktopNote::Changed(DesktopRef::Window(*id)));
         let active = (self.active != now.active).then_some(DesktopNote::Active);
         let gone_windows = self
             .windows

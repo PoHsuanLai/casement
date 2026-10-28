@@ -2,8 +2,9 @@
 
 use casement_core::OutputName;
 use casement_core::geometry::{LogicalPoint, PhysicalSize};
-use casement_core::input::{DeviceClass, Edge, KeyCode};
+use casement_core::input::{DeviceClass, KeyCode};
 use casement_core::policy::ConnectionRole;
+use casement_protocols::vocab::PressEdge;
 use casement_testclient::seat::keyboard::Keyboard;
 use casement_testclient::seat::pointer::Pointer;
 use casement_testclient::surface::layer::{
@@ -79,7 +80,7 @@ fn an_exclusive_layer_takes_the_keyboard_on_its_mapping_commit() {
         TestOrigin::Physical(DeviceClass::Keyboard),
     );
     // A person is holding shift when the layer maps.
-    fixture.input().key(device, KEY_LEFTSHIFT, Edge::Press);
+    fixture.input().key(device, KEY_LEFTSHIFT, PressEdge::Press);
     // Exclusive keyboard is the shell's (CASC-02); another client's waits for a press.
     let id = fixture.connect(ConnectionRole::Shell);
     fixture.pump();

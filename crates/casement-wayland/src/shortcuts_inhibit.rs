@@ -46,15 +46,6 @@ impl ShortcutsInhibitPart {
     }
 }
 
-/// Whether the bindings are being taken, for the key path to ask before it resolves a chord.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Bindings {
-    /// Chords resolve as usual.
-    Active,
-    /// The focused client asked for every key: nothing resolves, every key is forwarded.
-    Suspended,
-}
-
 /// A surface asked to inhibit shortcuts. It is remembered and activated while its surface has
 /// keyboard focus ([`sync_focus`]); nothing is reported to the model.
 pub fn on_inhibit(
@@ -87,11 +78,9 @@ pub fn sync_focus(part: &ShortcutsInhibitPart, focused: Option<&WlSurface>) {
     }
 }
 
-/// Whether `seat`'s bindings are suspended by an active inhibitor.
-pub fn bindings<D: SeatHandler + 'static>(seat: &Seat<D>) -> Bindings {
-    if seat.keyboard_shortcuts_inhibited() {
-        Bindings::Suspended
-    } else {
-        Bindings::Active
-    }
+/// Whether `seat`'s bindings are suspended by an active inhibitor: the focused client asked for
+/// every key, so nothing resolves and every key is forwarded. The key path asks before it
+/// resolves a chord.
+pub fn bindings_suspended<D: SeatHandler + 'static>(seat: &Seat<D>) -> bool {
+    seat.keyboard_shortcuts_inhibited()
 }

@@ -1,8 +1,7 @@
 //! The reveal machine, step by step on a script of (instant, input) pairs.
 
 use super::{
-    Cover, FullScreenBar, Look, Place, Popup, Reduced, Reveal, RevealEdge, RevealIn, RevealOut,
-    RevealTiming, Stacking,
+    FullScreenBar, Look, Place, Reduced, Reveal, RevealEdge, RevealIn, RevealOut, RevealTiming,
 };
 use crate::time::Mono;
 use casement_protocols::vocab::Shown;
@@ -35,7 +34,7 @@ type Script = Vec<(u64, RevealIn)>;
 /// What a script gave, as (instant, output) pairs.
 type Told = Vec<(u64, RevealOut)>;
 
-const COVERED: RevealIn = RevealIn::Cover(Cover::Yes);
+const COVERED: RevealIn = RevealIn::Cover(true);
 const AT_EDGE: RevealIn = RevealIn::Pointer(Place::InStrip);
 const AWAY: RevealIn = RevealIn::Pointer(Place::Away);
 const ON_SURFACE: RevealIn = RevealIn::Pointer(Place::OnSurface);
@@ -50,23 +49,23 @@ const HIDDEN: RevealOut = RevealOut::Tell(Shown::Hidden);
 #[test]
 fn the_dwell_fires_at_the_bar_delay_and_not_before() {
     // name, the script, the stacking after it, the outputs
-    let cases: [(&str, Script, Stacking, Told); 4] = [
+    let cases: [(&str, Script, bool, Told); 4] = [
         (
             "arrives",
             vec![(0, COVERED), (1000, AT_EDGE)],
-            Stacking::Behind,
+            false,
             vec![(1000, arm(1450))],
         ),
         (
             "one millisecond short",
             vec![(0, COVERED), (1000, AT_EDGE), (1449, RevealIn::Tick)],
-            Stacking::Behind,
+            false,
             vec![(1000, arm(1450))],
         ),
         (
             "on the dot",
             vec![(0, COVERED), (1000, AT_EDGE), (1450, RevealIn::Tick)],
-            Stacking::Above,
+            true,
             vec![(1000, arm(1450)), (1450, SHOWN), (1450, arm(1650))],
         ),
         (
@@ -77,13 +76,13 @@ fn the_dwell_fires_at_the_bar_delay_and_not_before() {
                 (1200, AT_EDGE),
                 (1450, RevealIn::Tick),
             ],
-            Stacking::Above,
+            true,
             vec![(1000, arm(1450)), (1450, SHOWN), (1450, arm(1650))],
         ),
     ];
     for (name, script, stacking, outputs) in cases {
         let (machine, seen) = run(RevealEdge::Top, Reduced::No, &script);
-        assert_eq!(machine.stacking(), stacking, "{name}");
+        assert_eq!(machine.raised(), stacking, "{name}");
         assert_eq!(seen, outputs, "{name}");
     }
 }
@@ -97,7 +96,7 @@ fn leaving_the_strip_cancels_the_wait() {
         (1450, RevealIn::Tick),
     ];
     let (machine, seen) = run(RevealEdge::Top, Reduced::No, &script);
-    assert_eq!(machine.stacking(), Stacking::Behind);
+    assert!(!machine.raised());
     assert_eq!(seen, [(1000, arm(1450)), (1200, RevealOut::Cancel)]);
 }
 
@@ -105,7 +104,7 @@ fn leaving_the_strip_cancels_the_wait() {
 fn outside_full_screen_nothing_is_ever_asked() {
     let script = [(1000, AT_EDGE), (1450, RevealIn::Tick), (2000, AWAY)];
     let (machine, seen) = run(RevealEdge::Top, Reduced::No, &script);
-    assert_eq!(machine.stacking(), Stacking::Behind);
+    assert!(!machine.raised());
     assert!(seen.is_empty(), "{seen:?}");
 }
 
@@ -113,7 +112,7 @@ fn outside_full_screen_nothing_is_ever_asked() {
 fn a_pointer_already_at_the_edge_when_full_screen_begins_rests_from_then() {
     let script = [(1000, AT_EDGE), (5000, COVERED), (5450, RevealIn::Tick)];
     let (machine, seen) = run(RevealEdge::Top, Reduced::No, &script);
-    assert_eq!(machine.stacking(), Stacking::Above);
+    assert!(machine.raised());
     assert_eq!(seen, [(5000, arm(5450)), (5450, SHOWN), (5450, arm(5650))]);
 }
 
@@ -133,7 +132,7 @@ fn it_goes_when_the_pointer_leaves_and_drops_behind_the_window_after_the_slide()
     let mut script = shown_bar();
     script.push((3000, AWAY));
     let (machine, seen) = run(RevealEdge::Top, Reduced::No, &script);
-    assert_eq!(machine.stacking(), Stacking::Above, "sliding away");
+    assert!(machine.raised(), "sliding away");
     assert_eq!(
         seen.last(),
         Some(&(3000, arm(3200))),
@@ -142,11 +141,11 @@ fn it_goes_when_the_pointer_leaves_and_drops_behind_the_window_after_the_slide()
 
     script.push((3100, RevealIn::Tick));
     let (machine, _) = run(RevealEdge::Top, Reduced::No, &script);
-    assert_eq!(machine.stacking(), Stacking::Above, "still on its way");
+    assert!(machine.raised(), "still on its way");
 
     script.push((3200, RevealIn::Tick));
     let (machine, seen) = run(RevealEdge::Top, Reduced::No, &script);
-    assert_eq!(machine.stacking(), Stacking::Behind, "below the window");
+    assert!(!machine.raised(), "below the window");
     assert_eq!(seen.last(), Some(&(3200, HIDDEN)), "told when it is gone");
 }
 
@@ -154,17 +153,17 @@ fn it_goes_when_the_pointer_leaves_and_drops_behind_the_window_after_the_slide()
 fn an_open_popup_keeps_it_up_until_it_closes() {
     let mut script = shown_bar();
     script.extend([
-        (2000, RevealIn::Popup(Popup::Open)),
+        (2000, RevealIn::Popup(true)),
         (3000, AWAY),
         (4000, RevealIn::Tick),
     ]);
     let (machine, seen) = run(RevealEdge::Top, Reduced::No, &script);
-    assert_eq!(machine.stacking(), Stacking::Above);
+    assert!(machine.raised());
     assert!(!seen.iter().any(|(_, out)| *out == HIDDEN), "{seen:?}");
 
-    script.push((5000, RevealIn::Popup(Popup::Closed)));
+    script.push((5000, RevealIn::Popup(false)));
     let (machine, seen) = run(RevealEdge::Top, Reduced::No, &script);
-    assert_eq!(machine.stacking(), Stacking::Above, "sliding away");
+    assert!(machine.raised(), "sliding away");
     assert_eq!(seen.last(), Some(&(5000, arm(5200))), "the slide timed");
 
     script.push((5200, RevealIn::Tick));
@@ -178,7 +177,7 @@ fn the_pointer_coming_back_while_it_goes_turns_it_round_from_where_it_is() {
     let mut script = shown_bar();
     script.extend([(3000, AWAY), (3100, ON_SURFACE)]);
     let (machine, seen) = run(RevealEdge::Top, Reduced::No, &script);
-    assert_eq!(machine.stacking(), Stacking::Above);
+    assert!(machine.raised());
     assert_eq!(
         seen[seen.len() - 2..],
         [(3000, arm(3200)), (3100, arm(3300))],
@@ -200,11 +199,11 @@ fn the_dock_keeps_its_own_numbers() {
     );
     let script = [(0, COVERED), (1000, AT_EDGE), (1199, RevealIn::Tick)];
     let (machine, _) = run(RevealEdge::Bottom, Reduced::No, &script);
-    assert_eq!(machine.stacking(), Stacking::Behind, "199 ms is not a rest");
+    assert!(!machine.raised(), "199 ms is not a rest");
 
     let script = [(0, COVERED), (1000, AT_EDGE), (1200, RevealIn::Tick)];
     let (machine, seen) = run(RevealEdge::Bottom, Reduced::No, &script);
-    assert_eq!(machine.stacking(), Stacking::Above);
+    assert!(machine.raised());
     assert_eq!(
         seen,
         [(1000, arm(1200)), (1200, SHOWN), (1200, arm(1700))],
@@ -244,17 +243,17 @@ fn leaving_full_screen_puts_it_away_at_once() {
     let cases: [(&str, Script, Vec<RevealOut>); 3] = [
         (
             "shown",
-            vec![(2000, RevealIn::Cover(Cover::No))],
+            vec![(2000, RevealIn::Cover(false))],
             vec![RevealOut::Cancel, HIDDEN],
         ),
         (
             "waiting",
-            vec![(1200, RevealIn::Cover(Cover::No))],
+            vec![(1200, RevealIn::Cover(false))],
             vec![RevealOut::Cancel],
         ),
         (
             "already going",
-            vec![(3000, AWAY), (3100, RevealIn::Cover(Cover::No))],
+            vec![(3000, AWAY), (3100, RevealIn::Cover(false))],
             vec![RevealOut::Cancel, HIDDEN],
         ),
     ];
@@ -272,7 +271,7 @@ fn leaving_full_screen_puts_it_away_at_once() {
             .map(|(_, out)| *out)
             .filter(|out| !matches!(out, RevealOut::Arm(_)))
             .collect();
-        assert_eq!(machine.stacking(), Stacking::Behind, "{name}");
+        assert!(!machine.raised(), "{name}");
         assert_eq!(after.last().copied(), told.last().copied(), "{name}");
         assert!(after.ends_with(&told), "{name}: {after:?}");
     }
@@ -281,17 +280,17 @@ fn leaving_full_screen_puts_it_away_at_once() {
 #[test]
 fn with_the_bar_kept_the_top_edge_never_reveals_and_the_dock_still_does() {
     // name, edge, the stacking after the script, the outputs
-    let cases: [(&str, RevealEdge, Stacking, Told); 2] = [
-        ("bar", RevealEdge::Top, Stacking::Behind, vec![]),
+    let cases: [(&str, RevealEdge, bool, Told); 2] = [
+        ("bar", RevealEdge::Top, false, vec![]),
         (
             "dock",
             RevealEdge::Bottom,
-            Stacking::Above,
+            true,
             vec![(1000, arm(1200)), (1200, SHOWN), (1200, arm(1700))],
         ),
     ];
     for (name, edge, stacking, outputs) in cases {
-        let cover = RevealIn::Cover(edge.covered(FullScreenBar::Keep, Cover::Yes));
+        let cover = RevealIn::Cover(edge.covered(FullScreenBar::Keep, true));
         let script = [
             (0, cover),
             (1000, AT_EDGE),
@@ -299,7 +298,7 @@ fn with_the_bar_kept_the_top_edge_never_reveals_and_the_dock_still_does() {
             (3000, RevealIn::Tick),
         ];
         let (machine, seen) = run(edge, Reduced::No, &script);
-        assert_eq!(machine.stacking(), stacking, "{name}");
+        assert_eq!(machine.raised(), stacking, "{name}");
         assert_eq!(seen, outputs, "{name}");
     }
 }
@@ -307,7 +306,7 @@ fn with_the_bar_kept_the_top_edge_never_reveals_and_the_dock_still_does() {
 #[test]
 fn switching_to_keep_puts_a_shown_bar_away_at_once_and_back_to_reveal_starts_the_rest_again() {
     let top = RevealEdge::Top;
-    let keep = RevealIn::Cover(top.covered(FullScreenBar::Keep, Cover::Yes));
+    let keep = RevealIn::Cover(top.covered(FullScreenBar::Keep, true));
     let script = [
         (0, COVERED),
         (1000, AT_EDGE),
@@ -327,7 +326,7 @@ fn switching_to_keep_puts_a_shown_bar_away_at_once_and_back_to_reveal_starts_the
             (2000, arm(2450)),
         ]
     );
-    assert_eq!(machine.stacking(), Stacking::Behind);
+    assert!(!machine.raised());
 }
 
 #[test]

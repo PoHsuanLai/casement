@@ -5,15 +5,14 @@
 //! shadow (`readback.rs`) draws only when no GPU does: a lender that keeps no scenes, a busy
 //! renderer, a draw that failed.
 
+use super::TtyBackend;
 use super::capture_gpu::{BodyCopy, CaptureRoute, Picture, SceneSupport, body_copy, capture_route};
-use super::{Residence, TtyBackend};
 use crate::backend::BackendError;
-use crate::capture_path::{Import, RendererClass};
 use crate::headless::{FramePixels, FrameSource, PresentedFrame};
 use casement_core::OutputName;
 use casement_core::geometry::{PhysicalRect, PhysicalSize};
 use casement_core::time::{Mono, VblankSeq};
-use casement_render::pass::{CapturedFrame, CursorInclusion};
+use casement_render::pass::CapturedFrame;
 use ds_core::geometry::scale::Scale;
 use smithay::backend::allocator::Format;
 use smithay::backend::allocator::dmabuf::Dmabuf;
@@ -112,25 +111,18 @@ impl TtyBackend {
         }
     }
 
-    /// What the display GPU is to a capture into a dma-buf of format `wanted` (a window: the
-    /// scene is rendered fresh). Software when no device lends a renderer.
-    pub fn capture_class(&self, wanted: Format) -> RendererClass {
-        match self.devices.capture_gpu() {
-            None => RendererClass::Software,
-            Some(gpu) => RendererClass::Gpu(match capture_route(wanted, &gpu.formats()) {
-                CaptureRoute::Gpu => Import::Accepted,
-                CaptureRoute::Software => Import::Refused,
-            }),
-        }
+    /// Whether the display GPU can draw a capture into a dma-buf of format `wanted` (a window:
+    /// the scene is rendered fresh). `false` when no device lends a renderer.
+    pub fn binds_format(&self, wanted: Format) -> bool {
+        self.devices
+            .capture_gpu()
+            .is_some_and(|gpu| matches!(capture_route(wanted, &gpu.formats()), CaptureRoute::Gpu))
     }
 
-    /// What draws a capture of `output` into a dma-buf of format `wanted`: the display GPU when
-    /// the frame last drawn is on it, else the software shadow.
-    pub fn output_class(&self, output: &OutputName, wanted: Format) -> RendererClass {
-        match self.readback.residence(output) {
-            Residence::Gpu => self.capture_class(wanted),
-            Residence::Shadow => RendererClass::Software,
-        }
+    /// Whether a capture of `output` can be drawn into a dma-buf of format `wanted`: the display
+    /// GPU when the frame last drawn is on it, else the software shadow, which cannot.
+    pub fn output_binds_format(&self, output: &OutputName, wanted: Format) -> bool {
+        self.readback.on_gpu(output) && self.binds_format(wanted)
     }
 
     /// Renders `source` alone straight into a client's dma-buf `target` of exactly `size` with
@@ -151,11 +143,11 @@ impl TtyBackend {
     pub fn blit_output_dmabuf(
         &mut self,
         output: &OutputName,
-        cursor: CursorInclusion,
+        cursor: bool,
         from: PhysicalRect,
         target: &mut Dmabuf,
     ) -> Result<(), BackendError> {
-        if self.readback.residence(output) != Residence::Gpu {
+        if !self.readback.on_gpu(output) {
             return Err(BackendError::NoFrame);
         }
         let mut gpu = self.devices.capture_gpu().ok_or(BackendError::NoFrame)?;
@@ -167,7 +159,7 @@ impl TtyBackend {
     pub fn read_output(
         &mut self,
         output: &OutputName,
-        cursor: CursorInclusion,
+        cursor: bool,
         area: PhysicalRect,
     ) -> Result<CapturedFrame, BackendError> {
         let mut gpu = self.devices.capture_gpu().ok_or(BackendError::NoFrame)?;

@@ -19,8 +19,7 @@ pub use connect_ask::{
     GoneAsk, LeaseAsk, NOT_THE_CALLER, Proven, RemoteAsk,
 };
 pub use intake::{
-    ANSWER_WAIT, Admission, CALLS_PER_WINDOW, CONNECT_QUEUE, Intake, RATE_WINDOW, RateLimit,
-    TRACKED_CALLERS,
+    ANSWER_WAIT, CALLS_PER_WINDOW, CONNECT_QUEUE, Intake, RATE_WINDOW, RateLimit, TRACKED_CALLERS,
 };
 /// The caller table and the files it is read from (the caller-identity library's), so the
 /// composition root names no second crate for them.

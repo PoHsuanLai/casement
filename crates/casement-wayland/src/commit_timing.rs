@@ -4,7 +4,7 @@
 use crate::client::ClearedClients;
 use crate::presentation::Presented;
 use crate::states::{GlobalFilter, WaylandFault};
-use crate::watch_mark::{self, Marked};
+use crate::watch_mark;
 use casement_core::{Event, OutputKey};
 use smithay::reexports::wayland_protocols::wp::commit_timing::v1::server::wp_commit_timing_manager_v1::WpCommitTimingManagerV1;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -73,7 +73,7 @@ fn is_timed(surface: &WlSurface) -> bool {
 /// pre-commit hook, and the surface is watched until its barriers are signalled.
 pub fn on_barrier(part: &mut CommitTimingPart, surface: &WlSurface) -> Vec<Event> {
     // The mark says the surface is in the list already: no search (CASW-20).
-    if is_timed(surface) && watch_mark::set::<Watched>(surface) == Marked::Now {
+    if is_timed(surface) && !watch_mark::set::<Watched>(surface) {
         part.watched.push(surface.downgrade());
     }
     Vec::new()

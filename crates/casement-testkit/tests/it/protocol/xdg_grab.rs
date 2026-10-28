@@ -9,9 +9,10 @@ use crate::protocol::xdg_shell::{boot, click, pointer, rect_of, settle, windows}
 use casement_core::DeviceId;
 use casement_core::WindowId;
 use casement_core::geometry::{LogicalPoint, LogicalRect, SubPoint, SubPx};
-use casement_core::input::{ButtonCode, Edge};
+use casement_core::input::ButtonCode;
 use casement_core::window::WindowState;
 use casement_layout::{LayoutKnobs, zone_rect};
+use casement_protocols::vocab::PressEdge;
 use casement_protocols::vocab::TileZone;
 use casement_testclient::surface::toplevel::{
     BoundPointer, ResizeEdge, Toplevel, WmBase, bind_pointer,
@@ -77,7 +78,7 @@ impl Desk {
         self.fixture.input().pointer_to(self.device, at);
     }
 
-    fn button(&mut self, button: ButtonCode, edge: Edge) {
+    fn button(&mut self, button: ButtonCode, edge: PressEdge) {
         self.fixture.input().button(self.device, button, edge);
     }
 }
@@ -90,7 +91,7 @@ fn a_grab_ends_with_its_own_button() {
     desk.pointer_to(start.centre());
     desk.top.request_move(&desk.seat.seat, desk.serial);
     desk.fixture.pump();
-    desk.button(BTN_LEFT, Edge::Press);
+    desk.button(BTN_LEFT, PressEdge::Press);
     let centre = start.centre();
     desk.pointer_to(LogicalPoint {
         x: centre.x + 50,
@@ -98,8 +99,8 @@ fn a_grab_ends_with_its_own_button() {
     });
     assert_eq!(desk.rect().origin.x, start.origin.x + 50);
     // Another button comes and goes while the first is held: the grab goes on.
-    desk.button(BTN_RIGHT, Edge::Press);
-    desk.button(BTN_RIGHT, Edge::Release);
+    desk.button(BTN_RIGHT, PressEdge::Press);
+    desk.button(BTN_RIGHT, PressEdge::Release);
     desk.pointer_to(LogicalPoint {
         x: centre.x + 80,
         y: centre.y,
@@ -110,7 +111,7 @@ fn a_grab_ends_with_its_own_button() {
         "a second button's release did not end the move"
     );
     // The first button's release ends it: the window stays where it was dropped.
-    desk.button(BTN_LEFT, Edge::Release);
+    desk.button(BTN_LEFT, PressEdge::Release);
     desk.pointer_to(LogicalPoint {
         x: centre.x + 200,
         y: centre.y,
@@ -135,7 +136,7 @@ fn a_resize_respects_the_size_limits() {
     desk.top
         .request_resize(&desk.seat.seat, desk.serial, ResizeEdge::TopLeft);
     desk.fixture.pump();
-    desk.button(BTN_LEFT, Edge::Press);
+    desk.button(BTN_LEFT, PressEdge::Press);
     desk.pointer_to(LogicalPoint {
         x: start.origin.x + 250,
         y: start.origin.y + 200,
@@ -173,7 +174,7 @@ fn a_resize_respects_the_size_limits() {
         (right, bottom),
         "the bottom-right corner did not move"
     );
-    desk.button(BTN_LEFT, Edge::Release);
+    desk.button(BTN_LEFT, PressEdge::Release);
 }
 
 /// A resize tells the client the size it is dragged to (a configure per step), so it can draw
@@ -193,7 +194,7 @@ fn a_resize_configures_the_client_to_the_dragged_size() {
     desk.top
         .request_resize(&desk.seat.seat, desk.serial, ResizeEdge::BottomRight);
     desk.fixture.pump();
-    desk.button(BTN_LEFT, Edge::Press);
+    desk.button(BTN_LEFT, PressEdge::Press);
     desk.pointer_to(LogicalPoint {
         x: right + 98,
         y: bottom + 78,
@@ -205,7 +206,7 @@ fn a_resize_configures_the_client_to_the_dragged_size() {
         (500, 380),
         "the client was configured to the dragged size"
     );
-    desk.button(BTN_LEFT, Edge::Release);
+    desk.button(BTN_LEFT, PressEdge::Release);
 }
 
 impl Desk {
@@ -244,7 +245,7 @@ impl Desk {
         self.pointer_to(centre);
         self.top.request_move(&self.seat.seat, self.serial);
         self.fixture.pump();
-        self.button(BTN_LEFT, Edge::Press);
+        self.button(BTN_LEFT, PressEdge::Press);
     }
 }
 
@@ -256,7 +257,7 @@ fn a_drag_to_the_left_edge_tiles_the_left_half() {
     desk.begin_move();
     let y = desk.output_rect().centre().y;
     desk.pointer_to(LogicalPoint { x: 0, y });
-    desk.button(BTN_LEFT, Edge::Release);
+    desk.button(BTN_LEFT, PressEdge::Release);
     assert!(
         matches!(
             desk.state(),
@@ -300,7 +301,7 @@ fn the_top_edge_fills_and_a_corner_tiles_a_quarter() {
         desk.begin_move();
         let at = point(desk.output_rect());
         desk.pointer_to(at);
-        desk.button(BTN_LEFT, Edge::Release);
+        desk.button(BTN_LEFT, PressEdge::Release);
         match (zone, desk.state()) {
             (None, WindowState::Filled { .. }) => {}
             (Some(want), WindowState::Tiled { zone, .. }) if zone == want => {}
@@ -321,7 +322,7 @@ fn a_drag_off_the_edge_or_away_from_it_tiles_nothing() {
         x: 300,
         y: centre.y,
     });
-    desk.button(BTN_LEFT, Edge::Release);
+    desk.button(BTN_LEFT, PressEdge::Release);
     assert!(
         matches!(desk.state(), WindowState::Floating(_)),
         "floating, not {:?}",
@@ -380,7 +381,7 @@ fn dragged_by_the_titlebar(output: &str) {
     };
     fixture.input().pointer_to(device, grip);
     fixture.pump();
-    fixture.input().button(device, BTN_LEFT, Edge::Press);
+    fixture.input().button(device, BTN_LEFT, PressEdge::Press);
     fixture.pump();
     let mut acked = top.configures().len();
     let mut draw = |fixture: &mut Fixture| {
@@ -427,7 +428,7 @@ fn dragged_by_the_titlebar(output: &str) {
         );
     }
     let dropped = floating(&fixture);
-    fixture.input().button(device, BTN_LEFT, Edge::Release);
+    fixture.input().button(device, BTN_LEFT, PressEdge::Release);
     fixture.pump();
     draw(&mut fixture);
     settle(&mut fixture);

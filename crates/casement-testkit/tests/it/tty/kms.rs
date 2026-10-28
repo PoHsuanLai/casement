@@ -3,8 +3,8 @@
 use casement_backend::headless::ConnectorEvent;
 use casement_backend::tty::{
     CommitVerdict, ConnectorId, ConnectorStatus, CrtcId, DevicePath, EdidError, Kms, KmsCommit,
-    KmsError, KmsRefusal, KnownConnectors, ModesetPolicy, OutputCommit, TtyDevices, VrrPolicy,
-    VrrState, output_facts, parse_edid, plan_outputs, reconcile,
+    KmsError, KmsRefusal, KnownConnectors, OutputCommit, TtyDevices, VrrPolicy, output_facts,
+    parse_edid, plan_outputs, reconcile,
 };
 use casement_core::OutputName;
 use casement_core::geometry::PhysicalSize;
@@ -27,7 +27,7 @@ fn no_wishes() -> BTreeMap<OutputName, ModeWish> {
 
 fn first_commit(kms: &FakeKms, policy: VrrPolicy) -> KmsCommit {
     let plan = plan_outputs(&kms.resources(), &no_wishes(), policy);
-    KmsCommit::new(plan, ModesetPolicy::Allow)
+    KmsCommit::new(plan, true)
 }
 
 #[test]
@@ -49,11 +49,11 @@ fn a_frame_commit_after_the_modeset_needs_none_and_a_mode_change_does() {
     let mut kms = FakeKms::synthetic(SyntheticTopology::LaptopPanel);
     let commit = first_commit(&kms, VrrPolicy::Off);
     kms.commit(commit.clone()).expect("modeset");
-    let frame = KmsCommit::new(commit.outputs.clone(), ModesetPolicy::Forbid);
+    let frame = KmsCommit::new(commit.outputs.clone(), false);
     assert_eq!(kms.test(&frame), CommitVerdict::Accepted);
     let slower = kms.resources().connectors[0].modes[1];
-    let change = OutputCommit::new(ConnectorId(1), CrtcId(10), slower, VrrState::Off);
-    let change = KmsCommit::new(vec![change], ModesetPolicy::Forbid);
+    let change = OutputCommit::new(ConnectorId(1), CrtcId(10), slower, false);
+    let change = KmsCommit::new(vec![change], false);
     assert_eq!(kms.test(&change), CommitVerdict::NeedsModeset);
     assert!(matches!(
         kms.commit(change),
@@ -68,11 +68,11 @@ fn the_kernel_refuses_what_does_not_fit() {
     assert_eq!(plan.len(), 3);
     let mut crowded = plan.clone();
     crowded[1].crtc = crowded[0].crtc;
-    let verdict = kms.test(&KmsCommit::new(crowded, ModesetPolicy::Allow));
+    let verdict = kms.test(&KmsCommit::new(crowded, true));
     assert_eq!(verdict, CommitVerdict::Refused(KmsRefusal::NoCrtc));
     let mut odd = plan[..1].to_vec();
     odd[0].mode = kms.resources().connectors[1].modes[0];
-    let verdict = kms.test(&KmsCommit::new(odd, ModesetPolicy::Allow));
+    let verdict = kms.test(&KmsCommit::new(odd, true));
     assert_eq!(verdict, CommitVerdict::Refused(KmsRefusal::Mode));
 }
 
@@ -216,19 +216,16 @@ fn dpms_off_and_on_reach_the_device() {
 fn variable_refresh_follows_the_policy_only_on_capable_monitors() {
     let mut kms = FakeKms::synthetic(SyntheticTopology::Dock);
     let off = plan_outputs(&kms.resources(), &no_wishes(), VrrPolicy::Off);
-    assert!(off.iter().all(|o| o.vrr == VrrState::Off));
+    assert!(off.iter().all(|o| !o.vrr));
     let on = plan_outputs(&kms.resources(), &no_wishes(), VrrPolicy::WhenCapable);
-    let states: Vec<VrrState> = on.iter().map(|o| o.vrr).collect();
+    let states: Vec<bool> = on.iter().map(|o| o.vrr).collect();
     // The panel is capable, the Dell and the HDMI monitor are not.
-    assert_eq!(states, vec![VrrState::On, VrrState::Off, VrrState::Off]);
-    assert_eq!(
-        kms.test(&KmsCommit::new(on, ModesetPolicy::Allow)),
-        CommitVerdict::Accepted
-    );
+    assert_eq!(states, vec![true, false, false]);
+    assert_eq!(kms.test(&KmsCommit::new(on, true)), CommitVerdict::Accepted);
     let mut forced = off;
-    forced[1].vrr = VrrState::On;
+    forced[1].vrr = true;
     assert_eq!(
-        kms.test(&KmsCommit::new(forced, ModesetPolicy::Allow)),
+        kms.test(&KmsCommit::new(forced, true)),
         CommitVerdict::Refused(KmsRefusal::Unsupported)
     );
 }
@@ -241,7 +238,7 @@ fn a_connector_with_no_modes_is_left_dark() {
     assert!(facts.modes.is_empty());
     assert_eq!(pick_mode(&facts, &ModeWish::Preferred).size.w, 0);
     assert!(plan_outputs(&resources, &no_wishes(), VrrPolicy::WhenCapable).is_empty());
-    let commit = KmsCommit::new(Vec::new(), ModesetPolicy::Allow);
+    let commit = KmsCommit::new(Vec::new(), true);
     assert_eq!(kms.test(&commit), CommitVerdict::Accepted);
     // It still counts as a plugged display, anonymous and keyed by its connector.
     let (known, events) = reconcile(&KnownConnectors::default(), &resources);

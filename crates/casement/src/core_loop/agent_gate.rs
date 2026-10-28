@@ -23,9 +23,10 @@ use super::scene::{Hit, hit_test, stack};
 use super::{divider, frames, overview};
 use crate::state::State;
 use casement_core::geometry::LogicalPoint;
-use casement_core::input::{Edge, InputEvent, InputKind, Origin};
+use casement_core::input::{InputEvent, InputKind, Origin};
 use casement_core::layer::{LayerLevel, LayerOwner};
 use casement_core::{LeaseId, WindowId};
+use casement_protocols::vocab::PressEdge;
 use casement_wayland::compositor::root_of;
 use casement_wayland::seat::Pressed;
 use smithay::desktop::{PopupKind, find_popup_root_surface};
@@ -80,7 +81,7 @@ pub(super) fn gate(
     event: &InputEvent,
     at: Option<LogicalPoint>,
 ) -> Gate {
-    if let Some((what, Edge::Release)) = pressed_of(&event.kind) {
+    if let Some((what, PressEdge::Release)) = pressed_of(&event.kind) {
         return match state.wl.seat.agent_down.holds(lease, what) {
             true => Gate::Open,
             false => Gate::Shut(Rule::NoPress),
@@ -108,8 +109,8 @@ pub(super) fn gate(
 pub(super) fn note(state: &mut State, lease: LeaseId, kind: &InputKind) {
     let down = std::mem::take(&mut state.wl.seat.agent_down);
     state.wl.seat.agent_down = match pressed_of(kind) {
-        Some((what, Edge::Press)) => down.pressed(lease, what),
-        Some((what, Edge::Release)) => down.held_back(lease, what),
+        Some((what, PressEdge::Press)) => down.pressed(lease, what),
+        Some((what, PressEdge::Release)) => down.held_back(lease, what),
         None => down,
     };
 }
@@ -125,7 +126,7 @@ pub(super) fn held_back(state: &mut State, origin: Origin, what: Pressed) -> boo
     true
 }
 
-fn pressed_of(kind: &InputKind) -> Option<(Pressed, Edge)> {
+fn pressed_of(kind: &InputKind) -> Option<(Pressed, PressEdge)> {
     match kind {
         InputKind::Key { code, edge } => Some((Pressed::Key(*code), *edge)),
         InputKind::Button { button, edge } => Some((Pressed::Button(*button), *edge)),

@@ -52,8 +52,8 @@ pub mod window;
 pub use cause::{Cause, MinimiseTarget, SwipeRelease};
 pub use ds_behaviour::space_swipe::PageMilli;
 pub use effect::{
-    ConfigureSize, ConfigureSpec, CoreNote, Deferred, Effect, GrabSpec, Held, KeyboardTarget,
-    ProtocolFault, TiledEdges, ToplevelStates,
+    ConfigureSize, ConfigureSpec, CoreNote, Effect, GrabSpec, KeyboardTarget, ProtocolFault,
+    TiledEdges, ToplevelStates,
 };
 pub use error::CoreError;
 pub use event::{

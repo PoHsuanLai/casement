@@ -6,7 +6,6 @@ use super::tree::Tree;
 use super::{SplitNodes, WindowNode};
 use casement_core::WindowId;
 use casement_core::space::SplitPair;
-use casement_core::window::MaxSize;
 use casement_layout::{OutputSpec, SpaceSpec, WindowSpec};
 
 /// The row's nodes; `None` when the pair names a window the Space does not hold (RustScene
@@ -56,8 +55,8 @@ fn find(space: &SpaceSpec, id: WindowId) -> Option<(usize, &WindowSpec)> {
 /// half's own extent", which is also what no maximum means).
 fn held(window: &WindowSpec) -> Props {
     let (w, h) = match window.limits.max {
-        MaxSize::Unbounded => (0, 0),
-        MaxSize::Bounded(max) => (max.w, max.h),
+        None => (0, 0),
+        Some(max) => (max.w, max.h),
     };
     Props::new().px("max-w", w).px("max-h", h)
 }

@@ -8,8 +8,8 @@
 //! verifies; its tree is not offered to the assistant tier, which is the safe default.
 //!
 //! [`A11yWorker`] does the asking on a thread of its own (the event loop never waits on the bus)
-//! and answers down a channel with the root the model may adopt: [`A11yRoot::At`] when verified,
-//! [`A11yRoot::Unknown`] otherwise. Until the answer arrives the window's root is `Unknown`.
+//! and answers down a channel with the root the model may adopt: `Some` root when verified,
+//! `None` otherwise. Until the answer arrives the window has no root.
 
 use calloop::channel::{Channel, SyncSender, sync_channel};
 use casement_core::WindowId;
@@ -21,10 +21,10 @@ use zbus::fdo::DBusProxy;
 use zbus::names::BusName;
 
 /// The most roots waiting to be checked, and the most answers waiting for the event loop. A root
-/// asked beyond it stays `Unknown` and is asked again when the client sets it again.
+/// asked beyond it gets none and is asked again when the client sets it again.
 pub const A11Y_QUEUE: usize = 32;
 
-/// How long the bus may take to say who owns a name before the root stays `Unknown`.
+/// How long the bus may take to say who owns a name before the window has no root.
 pub const OWNER_WAIT: Duration = Duration::from_secs(2);
 
 /// One root to check.
@@ -46,7 +46,7 @@ pub struct A11yVerdict {
     /// The window.
     pub window: WindowId,
     /// The root the model may adopt.
-    pub root: A11yRoot,
+    pub root: Option<A11yRoot>,
 }
 
 /// Why a root could not be queued.
@@ -60,20 +60,20 @@ pub enum A11yFault {
 }
 
 /// The root `ask` may have: its own, when the process that owns the name is the client's.
-pub async fn verify(connection: &Connection, ask: &A11yAsk) -> A11yRoot {
+pub async fn verify(connection: &Connection, ask: &A11yAsk) -> Option<A11yRoot> {
     let Ok(name) = BusName::try_from(ask.bus_name.as_str()) else {
-        return A11yRoot::Unknown;
+        return None;
     };
     let Ok(bus) = DBusProxy::new(connection).await else {
-        return A11yRoot::Unknown;
+        return None;
     };
     let owner = tokio::time::timeout(OWNER_WAIT, bus.get_connection_unix_process_id(name)).await;
     match owner {
-        Ok(Ok(pid)) if pid == ask.client_pid => A11yRoot::At {
+        Ok(Ok(pid)) if pid == ask.client_pid => Some(A11yRoot {
             bus_name: ask.bus_name.clone(),
             object_path: ask.object_path.clone(),
-        },
-        _ => A11yRoot::Unknown,
+        }),
+        _ => None,
     }
 }
 
@@ -118,7 +118,7 @@ fn run(address: &str, mut incoming: Receiver<A11yAsk>, verdicts: &SyncSender<A11
         while let Some(ask) = incoming.recv().await {
             let root = match connected(&mut connection, address).await {
                 Ok(bus) => verify(&bus, &ask).await,
-                Err(_) => A11yRoot::Unknown,
+                Err(_) => None,
             };
             // Blocks this thread only, when the event loop is behind; a loop that is gone ends it.
             if verdicts
@@ -196,11 +196,11 @@ mod tests {
             let verdict = answers.recv().expect("an answer");
             assert_eq!(verdict.window, WindowId(4), "{case}");
             let want = match comes {
-                Comes::Verified => A11yRoot::At {
+                Comes::Verified => Some(A11yRoot {
                     bus_name: asked.bus_name,
                     object_path: asked.object_path,
-                },
-                Comes::Unknown => A11yRoot::Unknown,
+                }),
+                Comes::Unknown => None,
             };
             assert_eq!(verdict.root, want, "{case}");
         }

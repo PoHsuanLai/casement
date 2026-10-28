@@ -3,7 +3,6 @@
 
 use super::shell::{bindings_of, merge};
 use crate::State;
-use crate::cli::ConfigHome;
 use casement_core::Event;
 use casement_core::input::Bindings;
 use chordkit::{Desktop, KeymapSource, Platform, Watch};
@@ -27,10 +26,10 @@ const SOCKET: &str = "keycap.sock";
 /// The keymap source of `home`. The real home reads the environment (`$KEYCAP_SOCKET`,
 /// `$KEYCAP_CONFIG_DIR`, `$XDG_CONFIG_HOME`); a stand-in directory reads only inside itself, and
 /// no daemon answers there, so a test or a jail never reaches the real machine's keymap.
-pub fn source_for(home: &ConfigHome) -> KeycapSource {
+pub fn source_for(home: Option<&Path>) -> KeycapSource {
     match home {
-        ConfigHome::Xdg => KeycapSource::standard(),
-        ConfigHome::At(dir) => stand_in(dir),
+        None => KeycapSource::standard(),
+        Some(dir) => stand_in(dir),
     }
 }
 
@@ -71,7 +70,7 @@ impl Live {
 /// Reads the keymap into the model's settings now, and again whenever it changes. The bindings
 /// already in the settings (casement's own `[bindings]`) stay first. A watch that cannot start
 /// is logged and the keymap read once is kept.
-pub fn attach(state: &mut State, home: &ConfigHome) -> Result<(), crate::StartError> {
+pub fn attach(state: &mut State, home: Option<&Path>) -> Result<(), crate::StartError> {
     let source = source_for(home);
     let (sender, receiver) = channel::channel::<()>();
     let sender = Mutex::new(sender);
@@ -137,7 +136,7 @@ mod tests {
     #[test]
     fn a_home_with_no_keymap_files_gives_the_conventions() {
         let home = tempfile::tempdir().expect("a scratch directory");
-        let (bindings, problems) = load_bindings(&source_for(&ConfigHome::At(home.path().into())));
+        let (bindings, problems) = load_bindings(&source_for(Some(home.path())));
         assert_eq!(problems, Vec::<String>::new());
         assert_eq!(what(&bindings, "cmd+space"), launcher());
     }
@@ -153,7 +152,7 @@ mod tests {
             std::fs::create_dir_all(&dir).expect("a directory");
             std::fs::write(dir.join(FILE), text).expect("a keymap file");
         }
-        let (bindings, _) = load_bindings(&source_for(&ConfigHome::At(home.path().into())));
+        let (bindings, _) = load_bindings(&source_for(Some(home.path())));
         assert_eq!(what(&bindings, "ctrl+shift+cmd+space"), launcher());
         assert_eq!(what(&bindings, "shift+cmd+space"), None);
         assert_eq!(what(&bindings, "cmd+space"), None);
@@ -169,7 +168,7 @@ mod tests {
             "nonsense\nlauncher = Ctrl+Shift+Primary+Space\n",
         )
         .expect("a file");
-        let (bindings, problems) = load_bindings(&source_for(&ConfigHome::At(home.path().into())));
+        let (bindings, problems) = load_bindings(&source_for(Some(home.path())));
         assert_eq!(problems.len(), 1);
         assert_eq!(what(&bindings, "ctrl+shift+cmd+space"), launcher());
     }

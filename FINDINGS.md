@@ -5455,3 +5455,9 @@ pointer resting at the top edge brings the surface with the role `bar` over the 
 - The compiler then found three more bare draws: `pass/window.rs` (twice) and `pass/window_texture.rs`. They draw one window's
   plain surfaces, so routing them changes nothing; they route like everything else, and no opt-out exists.
 - `FrameSource` still hands out `CasementElement`s: with no `RenderElement` on them, a backend can do nothing with them but route.
+
+## wh-tcas (2026-10-28): type rules, plain Rust first
+
+- CONVENTIONS 3 and 17 now follow the shared rule 4: bool is fine for fields, returns, locals and private fns; mirror enums,
+  two-arm Option/Result lookalikes and one-variant enums are removed. Done per audit findings C-1..C-20 (not C-17's Maker,
+  not C-21, C-22); see the commit message and `~/rs-wt/enum-audit/casement.md`.

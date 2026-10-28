@@ -9,7 +9,7 @@
 //! its input goes through the generic conversion libinput's events take, into the same
 //! [`FedInput`] the tty backend feeds.
 
-use crate::backend::BackendError;
+use crate::backend::{Backend, BackendError};
 use crate::headless::{ConnectorEvent, FrameSource, VirtualOutputSpec, facts_of};
 use crate::input::{DeviceName, FedDevice, FedInput, PollContext, input_kind_of};
 use crate::winit_held::HeldInput;
@@ -65,17 +65,8 @@ pub struct WinitBackend {
     /// Keys and buttons held, released when the window loses focus.
     held: HeldInput,
     /// Whether the host asked for the next frame: a swap before it blocks until it does, and a
-    /// hidden window is never asked.
-    paced: Paced,
-}
-
-/// The host's pacing of the window's frames.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Paced {
-    /// A frame was shown; the next waits for the host's redraw.
-    Waiting,
-    /// The host asked for a frame.
-    Granted,
+    /// hidden window is never asked. `false` after a frame was shown, until the host's redraw.
+    granted: bool,
 }
 
 impl fmt::Debug for WinitBackend {
@@ -110,7 +101,7 @@ impl WinitBackend {
             announce,
             devices: seat_devices(),
             held: HeldInput::new(),
-            paced: Paced::Granted,
+            granted: true,
         })
     }
 
@@ -171,7 +162,7 @@ impl WinitBackend {
                 );
             }
             WinitEvent::Input(raw) => turn.fed.extend(self.converted(&raw, context)),
-            WinitEvent::Redraw => self.paced = Paced::Granted,
+            WinitEvent::Redraw => self.granted = true,
             _ => {}
         }
     }
@@ -202,7 +193,7 @@ impl WinitBackend {
     /// host has not asked for a frame: swapping then would block the whole loop (a hidden window
     /// is never asked).
     pub fn present(&mut self, source: &dyn FrameSource) -> Result<Option<VblankSeq>, BackendError> {
-        if self.paced == Paced::Waiting {
+        if !self.granted {
             return Ok(None);
         }
         let age = self.graphics.buffer_age().unwrap_or(0);
@@ -222,10 +213,17 @@ impl WinitBackend {
         self.graphics
             .submit(Some(&damage))
             .map_err(BackendError::from)?;
-        self.paced = Paced::Waiting;
+        self.granted = false;
         self.graphics.window().request_redraw();
         self.presented = self.presented.saturating_add(1);
         Ok(Some(VblankSeq(self.presented)))
+    }
+}
+
+/// The window has no renderer of its own to capture with and no gamma to drive: the defaults.
+impl Backend for WinitBackend {
+    fn announce(&mut self) -> Vec<ConnectorEvent> {
+        WinitBackend::announce(self)
     }
 }
 

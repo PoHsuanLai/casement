@@ -19,9 +19,7 @@ mod under;
 
 pub use agent_down::{AgentDown, Pressed};
 pub use grab::Drag;
-pub use key_route::{
-    KeyRoute, MethodGrab, PastKeys, RouteFacts, SeatHolds, deliver_past_grab, route_facts,
-};
+pub use key_route::{KeyRoute, PastKeys, RouteFacts, deliver_past_grab, route_facts};
 pub use live::Live;
 pub use pointer::{apply_axis, apply_gesture, apply_pointer, apply_refocus, end_grab, forget_dead};
 pub use taken::{PressFate, Taken};
@@ -33,10 +31,11 @@ use crate::seat_keymap::{KeymapBook, xkb_config};
 use crate::serial::{PressRecord, SerialBook};
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::geometry::{LogicalPoint, SubPoint};
-use casement_core::input::{ButtonCode, Edge, GestureStep, KeyCode, Origin, PinchDelta};
+use casement_core::input::{ButtonCode, GestureStep, KeyCode, Origin, PinchDelta};
 use casement_core::settings::KeyboardSettings;
 use casement_core::time::Mono;
 use casement_core::{DeviceId, Event, InputSerial};
+use casement_protocols::vocab::PressEdge;
 use smithay::input::keyboard::{FilterResult, KeyboardHandle, KeysymHandle, ModifiersState};
 use smithay::input::pointer::{CursorImageStatus, PointerHandle};
 use smithay::input::touch::TouchHandle;
@@ -148,7 +147,7 @@ pub enum PointerDelivery {
         /// Which.
         button: ButtonCode,
         /// Down or up.
-        edge: Edge,
+        edge: PressEdge,
         /// The serial the press is known by.
         serial: InputSerial,
         /// When.
@@ -163,7 +162,7 @@ pub struct KeyDelivery {
     /// The key.
     pub code: KeyCode,
     /// Down or up.
-    pub edge: Edge,
+    pub edge: PressEdge,
     /// The serial.
     pub serial: InputSerial,
     /// When.

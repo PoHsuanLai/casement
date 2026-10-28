@@ -4,7 +4,6 @@
 
 use super::kms::{
     ConnectorFacts, ConnectorId, ConnectorStatus, CrtcFacts, CrtcId, KmsResources, OutputCommit,
-    VrrState,
 };
 use casement_core::OutputKey;
 use casement_core::OutputName;
@@ -193,13 +192,17 @@ pub enum VrrPolicy {
     WhenCapable,
 }
 
-/// The variable-refresh state `policy` gives an output: on only when asked for and when both
+/// Whether `policy` turns variable refresh on for an output: only when asked for and when both
 /// the monitor and the CRTC can do it, so a commit never sets a property the device lacks.
-pub fn vrr_state(policy: VrrPolicy, connector: &ConnectorFacts, crtc: &CrtcFacts) -> VrrState {
-    match (policy, connector.vrr, crtc.vrr) {
-        (VrrPolicy::WhenCapable, VrrCapability::Capable, VrrCapability::Capable) => VrrState::On,
-        _ => VrrState::Off,
-    }
+pub fn vrr_enabled(policy: VrrPolicy, connector: &ConnectorFacts, crtc: &CrtcFacts) -> bool {
+    matches!(
+        (policy, connector.vrr, crtc.vrr),
+        (
+            VrrPolicy::WhenCapable,
+            VrrCapability::Capable,
+            VrrCapability::Capable
+        )
+    )
 }
 
 /// What to commit for every attached connector of `resources`: the mode `wishes` asks for by
@@ -230,7 +233,7 @@ pub fn plan_outputs(
             .and_then(|id| resources.crtcs.iter().find(|c| c.id == *id));
         if let (Some(crtc), true) = (crtc, mode.size.w > 0 && mode.size.h > 0) {
             taken.insert(crtc.id);
-            let vrr = vrr_state(policy, connector, crtc);
+            let vrr = vrr_enabled(policy, connector, crtc);
             plan.push(OutputCommit::new(connector.id, crtc.id, mode, vrr));
         }
     }

@@ -5,7 +5,7 @@
 
 use crate::{ConfigureNeed, LayoutReport, WindowTarget};
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
-use casement_core::window::{MaxSize, SizeLimits};
+use casement_core::window::SizeLimits;
 use casement_core::{OutputKey, WindowId};
 
 /// Where a floating window at `rect` on `output` goes in `usable`, keeping `grip` of it there.
@@ -116,8 +116,8 @@ pub(crate) fn placed(
 /// unless the area has none.
 pub(crate) fn fit_size(want: LogicalSize, limits: SizeLimits, usable: LogicalRect) -> LogicalSize {
     let capped = match limits.max {
-        MaxSize::Unbounded => want,
-        MaxSize::Bounded(max) => LogicalSize {
+        None => want,
+        Some(max) => LogicalSize {
             w: want.w.min(max.w),
             h: want.h.min(max.h),
         },
@@ -189,7 +189,7 @@ mod tests {
     fn limits(min: (u32, u32), max: Option<(u32, u32)>) -> SizeLimits {
         SizeLimits {
             min: size(min.0, min.1),
-            max: max.map_or(MaxSize::Unbounded, |(w, h)| MaxSize::Bounded(size(w, h))),
+            max: max.map(|(w, h)| size(w, h)),
         }
     }
 

@@ -25,7 +25,7 @@ const MAX_BYTES: usize = 192 * 1024 * 1024;
 
 /// What decides whether a window's last image is worth taking.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Verdict {
+pub(super) enum BodyChoice {
     /// Take it.
     Take,
     /// The window has no frame of ours: nothing is drawn for it as it closes.
@@ -42,47 +42,29 @@ pub(super) enum Verdict {
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Facts {
     /// Whether the loop kept a frame for it (only framed windows get a closing animation).
-    pub(super) frame: FrameKept,
+    pub(super) framed: bool,
     /// Its content size.
     pub(super) size: LogicalSize,
     /// Its output's scale in 120ths (`Scale::numerator`: 120 is 1x).
     pub(super) units: u32,
     /// Whether an image of it is kept already.
-    pub(super) image: ImageKept,
-}
-
-/// Whether the loop kept a frame for a window.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum FrameKept {
-    /// It did.
-    Yes,
-    /// It did not.
-    No,
-}
-
-/// Whether an image is kept for a window.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ImageKept {
-    /// It is.
-    Yes,
-    /// It is not.
-    No,
+    pub(super) imaged: bool,
 }
 
 /// Whether to take the last image of the window `facts` describe. Motion's departure fades every
 /// framed window, whatever the motion level (reduced motion only drops the shrink), so every
 /// framed window animates.
-pub(super) fn verdict(facts: Facts) -> Verdict {
+pub(super) fn verdict(facts: Facts) -> BodyChoice {
     let pixels = |side: u32| u64::from(side) * u64::from(facts.units) / 120;
     let bytes = pixels(facts.size.w)
         .saturating_mul(pixels(facts.size.h))
         .saturating_mul(4);
-    match (facts.frame, facts.image) {
-        (FrameKept::No, _) => Verdict::Unframed,
-        (_, ImageKept::Yes) => Verdict::Held,
-        _ if facts.size.w == 0 || facts.size.h == 0 => Verdict::Empty,
-        _ if bytes > u64::try_from(MAX_BYTES).unwrap_or(u64::MAX) => Verdict::TooBig,
-        _ => Verdict::Take,
+    match (facts.framed, facts.imaged) {
+        (false, _) => BodyChoice::Unframed,
+        (_, true) => BodyChoice::Held,
+        _ if facts.size.w == 0 || facts.size.h == 0 => BodyChoice::Empty,
+        _ if bytes > u64::try_from(MAX_BYTES).unwrap_or(u64::MAX) => BodyChoice::TooBig,
+        _ => BodyChoice::Take,
     }
 }
 
@@ -103,11 +85,8 @@ impl Bodies {
     }
 
     /// Whether an image is kept for `window`.
-    fn image_of(&self, window: &WindowId) -> ImageKept {
-        match self.get(window) {
-            Some(_) => ImageKept::Yes,
-            None => ImageKept::No,
-        }
+    fn has_image(&self, window: &WindowId) -> bool {
+        self.get(window).is_some()
     }
 
     /// The id the next image gets.
@@ -176,12 +155,12 @@ pub(super) fn take(state: &mut State, window: WindowId) {
         return;
     };
     let facts = Facts {
-        frame: style.map_or(FrameKept::No, |_| FrameKept::Yes),
+        framed: style.is_some(),
         size,
         units: scale.numerator(),
-        image: state.render.bodies.image_of(&window),
+        imaged: state.render.bodies.has_image(&window),
     };
-    let (Verdict::Take, Some(style)) = (verdict(facts), style) else {
+    let (BodyChoice::Take, Some(style)) = (verdict(facts), style) else {
         return;
     };
     let id = state.render.bodies.next_id();
@@ -250,12 +229,12 @@ mod tests {
     use casement_core::geometry::PhysicalSize;
     use ds_core::geometry::scale::Scale;
 
-    fn facts(frame: FrameKept, (w, h): (u32, u32), image: ImageKept) -> Facts {
+    fn facts(framed: bool, (w, h): (u32, u32), imaged: bool) -> Facts {
         Facts {
-            frame,
+            framed,
             size: LogicalSize { w, h },
             units: 120,
-            image,
+            imaged,
         }
     }
 
@@ -267,19 +246,22 @@ mod tests {
 
     #[test]
     fn only_a_framed_sized_window_without_an_image_is_taken() {
-        use FrameKept::{No, Yes};
-        use ImageKept::{No as Absent, Yes as Present};
+        let (yes, no, absent, present) = (true, false, false, true);
         // name, facts, verdict
         let table = [
-            ("framed", facts(Yes, (800, 600), Absent), Verdict::Take),
-            ("no frame", facts(No, (800, 600), Absent), Verdict::Unframed),
-            ("already", facts(Yes, (800, 600), Present), Verdict::Held),
-            ("no width", facts(Yes, (0, 600), Absent), Verdict::Empty),
-            ("no height", facts(Yes, (800, 0), Absent), Verdict::Empty),
+            ("framed", facts(yes, (800, 600), absent), BodyChoice::Take),
+            (
+                "no frame",
+                facts(no, (800, 600), absent),
+                BodyChoice::Unframed,
+            ),
+            ("already", facts(yes, (800, 600), present), BodyChoice::Held),
+            ("no width", facts(yes, (0, 600), absent), BodyChoice::Empty),
+            ("no height", facts(yes, (800, 0), absent), BodyChoice::Empty),
             (
                 "too big",
-                facts(Yes, (9_000, 9_000), Absent),
-                Verdict::TooBig,
+                facts(yes, (9_000, 9_000), absent),
+                BodyChoice::TooBig,
             ),
         ];
         for (name, input, want) in table {
@@ -292,10 +274,10 @@ mod tests {
         // 5000 x 4000 logical is 80 MB at 1x and 320 MB at 2x.
         let at = |units| Facts {
             units,
-            ..facts(FrameKept::Yes, (5_000, 4_000), ImageKept::No)
+            ..facts(true, (5_000, 4_000), false)
         };
-        assert_eq!(verdict(at(120)), Verdict::Take);
-        assert_eq!(verdict(at(240)), Verdict::TooBig);
+        assert_eq!(verdict(at(120)), BodyChoice::Take);
+        assert_eq!(verdict(at(240)), BodyChoice::TooBig);
     }
 
     #[test]

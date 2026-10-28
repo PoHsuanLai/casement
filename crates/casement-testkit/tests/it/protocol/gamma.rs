@@ -244,9 +244,8 @@ fn a_power_taken_back_fails_the_control_and_restores_the_curve() {
         Some(GammaRamp::Table(_))
     ));
 
-    fixture.feed_events(vec![Event::PrivilegeRevoked {
-        subject: program(ASKED_PROGRAM),
-        power: Power::Displays,
+    fixture.feed_events(vec![Event::PrivilegeEdited {
+        edit: casement_core::privilege::Edit::Deny(program(ASKED_PROGRAM), Power::Displays),
         at: UnixSeconds(2),
     }]);
     settle(&mut fixture, &mut gamma);

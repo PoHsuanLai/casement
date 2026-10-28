@@ -11,11 +11,11 @@ use crate::app::{AppKey, AppVisibility};
 use crate::effect::Effect;
 use crate::focus::{FocusIn, Press};
 use crate::ids::{ClientKey, WindowId};
-use crate::input::{DesktopCommand, InputTarget, InputUse, Origin, Reach, ReachFacts, reach};
+use crate::input::{DesktopCommand, InputTarget, InputUse, Origin, ReachFacts, Refusal, reach};
 use crate::lock::LockState;
 use crate::settings::Enabled;
 use crate::time::Mono;
-use crate::window::{Parent, SpacePlace, Window, WindowState};
+use crate::window::{SpacePlace, Window, WindowState};
 use casement_protocols::vocab::{ActorKind, Toggle};
 
 impl Model {
@@ -23,7 +23,12 @@ impl Model {
     /// the feed and trusted surfaces: the reach table over this model's lock and leases). A
     /// lease's window includes the windows it opened over itself: a dialog or file chooser whose
     /// parent chain leads to the held window is reached as that window, and so are its popups.
-    pub fn reach(&self, origin: &Origin, target: &InputTarget, use_: InputUse) -> Reach {
+    pub fn reach(
+        &self,
+        origin: &Origin,
+        target: &InputTarget,
+        use_: InputUse,
+    ) -> Result<(), Refusal> {
         let facts = ReachFacts {
             lock: &self.lock,
             leases: &self.leases,
@@ -38,12 +43,7 @@ impl Model {
         for _ in 0..=self.windows.len() {
             match at {
                 Some(found) if found == held => return true,
-                Some(found) => {
-                    at = match self.windows.get(&found).map(|w| w.parent) {
-                        Some(Parent::Window(parent)) => Some(parent),
-                        _ => None,
-                    }
-                }
+                Some(found) => at = self.windows.get(&found).and_then(|w| w.parent),
                 None => return false,
             }
         }

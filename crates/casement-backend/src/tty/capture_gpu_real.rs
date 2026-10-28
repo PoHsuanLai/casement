@@ -10,7 +10,7 @@ use casement_core::OutputName;
 use casement_core::geometry::{PhysicalRect, PhysicalSize};
 use casement_render::RenderError;
 use casement_render::pass::{
-    CapturedFrame, CursorInclusion, render_window_dmabuf, render_window_texture, write_dmabuf,
+    CapturedFrame, render_window_dmabuf, render_window_texture, write_dmabuf,
 };
 use ds_core::geometry::scale::Scale;
 use smithay::backend::allocator::Format;
@@ -99,7 +99,7 @@ impl CaptureGpu for RealCaptureGpu {
     fn blit_scene(
         &mut self,
         output: &OutputName,
-        cursor: CursorInclusion,
+        cursor: bool,
         from: PhysicalRect,
         target: &mut Dmabuf,
     ) -> Result<(), BackendError> {
@@ -111,7 +111,7 @@ impl CaptureGpu for RealCaptureGpu {
     fn read_scene(
         &mut self,
         output: &OutputName,
-        cursor: CursorInclusion,
+        cursor: bool,
         area: PhysicalRect,
     ) -> Result<CapturedFrame, BackendError> {
         let mut renderer = self.renderer()?;

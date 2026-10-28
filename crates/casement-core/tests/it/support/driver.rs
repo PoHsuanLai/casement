@@ -8,7 +8,7 @@ use casement_core::geometry::LogicalSize;
 use casement_core::input::{DesktopCommand, DeviceClass, Origin};
 use casement_core::settings::CasementSettings;
 use casement_core::space::SpaceSeed;
-use casement_core::window::{MaxSize, Parent, SizeLimits, WindowOrigin};
+use casement_core::window::{SizeLimits, WindowOrigin};
 use casement_core::{ClientKey, Effect, Event, MappedToplevel, Model, ToplevelRequest, WindowId};
 use casement_protocols::vocab::{ActorKind, MacMods, Modality, WindowRole};
 
@@ -116,10 +116,10 @@ pub fn mapped(n: u64, app: &AppKey, activation: TokenCheck) -> MappedToplevel {
         claimed_id: claimed("test"),
         role: WindowRole::Document,
         modality: Modality::None,
-        parent: Parent::None,
+        parent: None,
         limits: SizeLimits {
             min: LogicalSize { w: 0, h: 0 },
-            max: MaxSize::Unbounded,
+            max: None,
         },
         first_size: LogicalSize { w: 800, h: 600 },
         activation,
@@ -131,7 +131,7 @@ pub fn map_sheet(n: u64, app: &AppKey, parent: u64) -> Op {
     Op::Event(Event::ToplevelMapped(MappedToplevel {
         role: WindowRole::Dialog,
         modality: Modality::WindowModal,
-        parent: Parent::Window(WindowId(parent)),
+        parent: Some(WindowId(parent)),
         ..mapped(n, app, TokenCheck::Missing)
     }))
 }

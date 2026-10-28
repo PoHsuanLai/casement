@@ -34,7 +34,7 @@ pub(super) fn of(
     frame: &OutputFrame,
     view: &OutputView,
     styles: &BTreeMap<WindowId, FrameStyle>,
-    overview: &OverviewDraw,
+    overview: Option<&OverviewDraw>,
 ) -> BTreeMap<WindowId, RasterImage> {
     if styles.is_empty() {
         return BTreeMap::new();
@@ -58,7 +58,7 @@ pub(super) fn of(
             // In Mission Control a window that is not in a flight has its frame drawn at the
             // window's own size and shrunk with it, so its title is made for the full titlebar.
             let drawn = match (overview, placed.flight) {
-                (OverviewDraw::On { .. }, None) => window_content(placed, &entry.root),
+                (Some(_), None) => window_content(placed, &entry.root),
                 _ => window_drawn(placed, &entry.root, effect),
             };
             let bar = style.around(drawn).titlebar();

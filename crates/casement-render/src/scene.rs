@@ -83,8 +83,8 @@ pub struct LayerDraw {
     /// How strongly the blur behind each layer surface frosts; a layer not in it is
     /// [`BlurStrength::Regular`].
     pub blur_strengths: BTreeMap<LayerKey, BlurStrength>,
-    /// Whether Mission Control is drawn, and the window the pointer is on.
-    pub overview: OverviewDraw,
+    /// Mission Control, when it is drawn (`None`: the desktop), and the window the pointer is on.
+    pub overview: Option<OverviewDraw>,
     /// The frames of windows that have closed and are still fading out: the snapshot taken
     /// while they lived. Drawn for a window the surface book no longer holds.
     pub closing: BTreeMap<WindowId, ClosingFrame>,
@@ -112,23 +112,16 @@ pub struct RaisedDraw {
 
 /// Mission Control on an output: its windows are drawn scaled to the size they have been sampled
 /// at (their slots), their frames round them, over a dimmed picture.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-#[non_exhaustive]
-pub enum OverviewDraw {
-    /// Not drawn: the desktop.
-    #[default]
-    Off,
-    /// Drawn, with this window under the pointer, if any.
-    On {
-        /// The hovered window.
-        hover: Option<OverviewHover>,
-        /// The dimming and the ring's colours.
-        look: OverviewLook,
-        /// The window the person is dragging: drawn above every other window.
-        lift: Option<WindowId>,
-        /// The app icon under each window that has one.
-        icons: BTreeMap<WindowId, OverviewIcon>,
-    },
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OverviewDraw {
+    /// The window under the pointer, if any.
+    pub hover: Option<OverviewHover>,
+    /// The dimming and the ring's colours.
+    pub look: OverviewLook,
+    /// The window the person is dragging: drawn above every other window.
+    pub lift: Option<WindowId>,
+    /// The app icon under each window that has one.
+    pub icons: BTreeMap<WindowId, OverviewIcon>,
 }
 
 /// The window under the pointer in Mission Control: ringed, with its title under it.
@@ -257,13 +250,13 @@ pub fn output_elements<R: Compositor>(
         .partition(|placed| layers.full_screen.contains(&placed.window));
     // The window being dragged in Mission Control goes last: the front-most (this list is back
     // first), above the slots it passes over.
-    if let OverviewDraw::On {
+    if let Some(OverviewDraw {
         lift: Some(lifted), ..
-    } = &layers.overview
+    }) = &layers.overview
     {
         lift_last(&mut others, |placed| placed.window == *lifted);
     }
-    if matches!(layers.overview, OverviewDraw::Off) {
+    if layers.overview.is_none() {
         // The icons were uploaded for an overview that is over.
         book.cache().drop_icons();
     }
@@ -282,10 +275,7 @@ pub fn output_elements<R: Compositor>(
                 };
                 // In Mission Control the frame is drawn at the window's own size and shrunk with it.
                 let at_rest = window_content(placed, &entry.root);
-                let shrunk = matches!(
-                    (&layers.overview, placed.flight),
-                    (OverviewDraw::On { .. }, None)
-                );
+                let shrunk = layers.overview.is_some() && placed.flight.is_none();
                 let (flown, effect) = in_overview(placed, at_rest, layers);
                 let placed = &flown;
                 let flight = choose(effect, placed.flight);
@@ -297,7 +287,7 @@ pub fn output_elements<R: Compositor>(
                     .rounds
                     .get(&placed.window)
                     .filter(|_| style.is_none() && !covers);
-                let cast = round.and_then(ClientRound::cast);
+                let cast = round.and_then(|round| round.cast.as_ref());
                 // A window casement frames is clipped at its bottom corners, unless it
                 // covers the screen (macOS drops the radius in full screen; a zoomed
                 // window keeps it).
@@ -397,15 +387,15 @@ pub fn output_elements<R: Compositor>(
                 };
                 // The app's icon under the window, arriving with its slot.
                 let icon = match (&layers.overview, shrunk) {
-                    (OverviewDraw::On { icons, .. }, true) => icons.get(&placed.window),
+                    (Some(OverviewDraw { icons, .. }), true) => icons.get(&placed.window),
                     _ => None,
                 }
                 .and_then(|icon| Some((icon, icon_place(icon, content, full)?)));
-                if let OverviewDraw::On {
+                if let Some(OverviewDraw {
                     hover: Some(hover),
                     look,
                     ..
-                } = &layers.overview
+                }) = &layers.overview
                     && hover.window == placed.window
                 {
                     let visual =
@@ -467,7 +457,7 @@ pub fn output_elements<R: Compositor>(
         elements.extend(tile_preview_elements(preview, view, renderer));
     }
     draw_windows(&others, &mut elements, renderer);
-    if let OverviewDraw::On { look, .. } = &layers.overview {
+    if let Some(OverviewDraw { look, .. }) = &layers.overview {
         elements.extend(dim_elements(view, book, look));
     }
     draw_level(&layers.bottom, &mut elements, renderer);
@@ -485,7 +475,7 @@ fn in_overview(
     layers: &LayerDraw,
 ) -> (PlacedWindow, MinimiseEffect) {
     match (&layers.overview, placed.flight) {
-        (OverviewDraw::On { .. }, None) => (
+        (Some(_), None) => (
             PlacedWindow {
                 flight: Some(Flight::new(content, content, Fraction(0))),
                 ..*placed

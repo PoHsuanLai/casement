@@ -4,11 +4,12 @@
 
 use crate::protocol::xdg_shell::{click_at, map_toplevel, pointer, windows};
 use casement_core::geometry::LogicalPoint;
-use casement_core::input::{DeviceClass, Edge, KeyCode};
+use casement_core::input::{DeviceClass, KeyCode};
 use casement_core::overview::Overview;
 use casement_core::policy::ConnectionRole;
 use casement_core::{DeviceId, WindowId};
 use casement_layout::{LayoutKnobs, OverviewSlot, RustScene, SceneLayout, spec_of};
+use casement_protocols::vocab::PressEdge;
 use casement_testclient::quire::shell::{OverviewMode, OverviewState, ShellHandle, Toggle};
 use casement_testclient::surface::toplevel::{Toplevel, WmBase};
 use casement_testkit::{Fixture, FixtureSpec, TestOrigin};
@@ -143,8 +144,12 @@ fn escape_leaves_mission_control() {
         DeviceClass::Keyboard,
         TestOrigin::Physical(DeviceClass::Keyboard),
     );
-    desk.fixture.input().key(keyboard, KEY_ESC, Edge::Press);
-    desk.fixture.input().key(keyboard, KEY_ESC, Edge::Release);
+    desk.fixture
+        .input()
+        .key(keyboard, KEY_ESC, PressEdge::Press);
+    desk.fixture
+        .input()
+        .key(keyboard, KEY_ESC, PressEdge::Release);
     desk.fixture.pump();
     assert_eq!(desk.fixture.model().overview(), Overview::Leaving);
 }

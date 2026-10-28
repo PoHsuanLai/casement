@@ -14,14 +14,14 @@
 //! each signal is checked again against that owner's unique name before it is acted on.
 //!
 //! ```no_run
-//! use casement_ipc::sleep::{SleepBus, SleepHandler, SleepWatch};
+//! use casement_ipc::sleep::{SleepHandler, SleepWatch};
 //!
 //! struct Say;
 //! impl SleepHandler for Say {
 //!     fn starting(&mut self) { println!("sleeping"); }
 //!     fn resumed(&mut self) { println!("awake"); }
 //! }
-//! let _watch = SleepWatch::start(SleepBus::System, Say).expect("login1 is on the bus");
+//! let _watch = SleepWatch::start(None, Say).expect("login1 is on the bus");
 //! ```
 
 use crate::stop_on_drop::StopOnDrop;
@@ -42,16 +42,6 @@ const MANAGER_PATH: &str = "/org/freedesktop/login1";
 
 /// How long [`SleepWatch::start`] waits for the bus before giving up.
 const CONNECT_WITHIN: Duration = Duration::from_secs(10);
-
-/// Which bus login1 is on.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum SleepBus {
-    /// The system bus (a real seat).
-    System,
-    /// A bus at this address (a test's private bus, with the fake logind on it).
-    At(String),
-}
 
 /// What the watcher tells the compositor.
 pub trait SleepHandler: Send + 'static {
@@ -91,14 +81,19 @@ pub struct SleepWatch {
 }
 
 impl SleepWatch {
-    /// Connects to `bus`, subscribes to `PrepareForSleep` and takes the delay inhibitor. Returns
-    /// once the subscription is made, so a signal sent after this is heard.
-    pub fn start(bus: SleepBus, handler: impl SleepHandler) -> Result<SleepWatch, SleepError> {
+    /// Connects to the bus login1 is on (the bus at `address`: a test's private bus, with the
+    /// fake logind on it; none for the system bus, a real seat), subscribes to
+    /// `PrepareForSleep` and takes the delay inhibitor. Returns once the subscription is made,
+    /// so a signal sent after this is heard.
+    pub fn start(
+        address: Option<String>,
+        handler: impl SleepHandler,
+    ) -> Result<SleepWatch, SleepError> {
         let (stop, stopped) = oneshot::channel();
         let (ready_tx, ready) = mpsc::channel();
         let thread = std::thread::Builder::new()
             .name("casement-sleep".to_owned())
-            .spawn(move || run(bus, handler, stopped, ready_tx))
+            .spawn(move || run(address, handler, stopped, ready_tx))
             .map_err(SleepError::Thread)?;
         match ready.recv_timeout(CONNECT_WITHIN) {
             Ok(Ok(())) => Ok(SleepWatch {
@@ -112,7 +107,7 @@ impl SleepWatch {
 
 /// The thread: a current-thread runtime, the connection, the subscription, the loop.
 fn run(
-    bus: SleepBus,
+    address: Option<String>,
     mut handler: impl SleepHandler,
     mut stopped: oneshot::Receiver<()>,
     ready: mpsc::Sender<Result<(), SleepError>>,
@@ -128,7 +123,7 @@ fn run(
         }
     };
     runtime.block_on(async move {
-        let (connection, mut signals) = match subscribe(&bus).await {
+        let (connection, mut signals) = match subscribe(address.as_deref()).await {
             Ok(subscribed) => subscribed,
             Err(error) => {
                 let _ = ready.send(Err(error.into()));
@@ -171,15 +166,12 @@ fn run(
 
 type Signals = Pin<Box<MessageStream>>;
 
-/// Connects to `bus` and subscribes to `PrepareForSleep`.
-async fn subscribe(bus: &SleepBus) -> zbus::Result<(Connection, Signals)> {
-    let connection = match bus {
-        SleepBus::System => Connection::system().await?,
-        SleepBus::At(address) => {
-            zbus::connection::Builder::address(address.as_str())?
-                .build()
-                .await?
-        }
+/// Connects to the bus at `address` (the system bus when none) and subscribes to
+/// `PrepareForSleep`.
+async fn subscribe(address: Option<&str>) -> zbus::Result<(Connection, Signals)> {
+    let connection = match address {
+        None => Connection::system().await?,
+        Some(address) => zbus::connection::Builder::address(address)?.build().await?,
     };
     let rule = MatchRule::builder()
         .msg_type(Type::Signal)

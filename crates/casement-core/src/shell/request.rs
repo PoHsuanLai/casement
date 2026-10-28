@@ -3,8 +3,9 @@
 
 use crate::geometry::LogicalRect;
 use crate::ids::{LayerKey, WindowId};
-use crate::window::MenuEntry;
-use casement_protocols::vocab::{FullScreenBar, Motion, OverviewMode, ShellRole, Toggle};
+use casement_protocols::vocab::{
+    FullScreenBar, Motion, OverviewMode, ShellRole, Toggle, WindowEntry,
+};
 use ds_core::vocab::Fraction;
 
 /// One request from the shell.
@@ -42,7 +43,7 @@ pub enum ShellRequest {
         /// The window.
         window: WindowId,
         /// The entry.
-        entry: MenuEntry,
+        entry: WindowEntry,
     },
     /// The person picked `window` for the other half of the Split View being chosen
     /// ([`ShellNote::SplitChoose`](super::ShellNote::SplitChoose)). A window that is not among

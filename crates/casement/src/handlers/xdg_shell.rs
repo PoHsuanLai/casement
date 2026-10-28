@@ -11,7 +11,7 @@ use crate::state::State;
 use casement_core::{ClientKey, InputSerial, OutputKey, WindowId};
 use casement_protocols::vocab::Toggle;
 use casement_wayland::convert::{point_of, serial_of};
-use casement_wayland::limits::{self, Limit, Standing};
+use casement_wayland::limits::{self, Limit};
 use casement_wayland::serial::PressRecord;
 use casement_wayland::xdg_shell::{
     self, GrabUse, edges_of, grab_proven, heaviest_holder, on_app_id, on_full_screen, on_maximise,
@@ -135,7 +135,7 @@ impl XdgShellHandler for State {
         if let Some(client) = surface.wl_surface().client() {
             let held =
                 ClientState::of(&client).map_or(0, |data| self.wl.xdg_shell.toplevels_of(data.key));
-            if limits::admit(&self.display, &client, Limit::Toplevels, held) == Standing::Over {
+            if !limits::admit(&self.display, &client, Limit::Toplevels, held) {
                 return;
             }
             // The whole session holds a bounded number too: every model step walks every window.
@@ -144,7 +144,7 @@ impl XdgShellHandler for State {
             // is cut when it is that client, and then nothing is made for it. An innocent asker
             // is let through: the cut of the largest holder is queued and takes its windows.
             let all = self.core.model.windows().len();
-            if Limit::Windows.judge(all) == Standing::Over {
+            if !Limit::Windows.allows(all) {
                 match self.cut_for_room(&client) {
                     Cut::Other(heaviest) => limits::cut(&heaviest, Limit::Windows),
                     Cut::Asker => {

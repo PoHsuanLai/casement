@@ -7,12 +7,13 @@
 //! wall time as they would on a screen.
 
 use crate::adapter::{
-    Button, Compositor, Edge, Fixed, FixedPoint, Flow, Position, WlcsClient, WlcsEvent,
+    Button, Compositor, Fixed, FixedPoint, Flow, Position, WlcsClient, WlcsEvent,
     WlcsSurface, WlcsTouchId,
 };
 use casement::relax::AckPolicy;
 use casement_core::geometry::{LogicalPoint, SubPoint, SubPx};
-use casement_core::input::{ButtonCode, DeviceClass, Edge as InputEdge, TouchStep};
+use casement_core::input::{ButtonCode, DeviceClass, TouchStep};
+use casement_protocols::vocab::PressEdge;
 use casement_core::policy::ConnectionRole;
 use casement_core::window::WindowState;
 use casement_core::{DeviceId, WindowId};
@@ -198,8 +199,8 @@ impl Compositor for Host {
                 let device = self.pointer;
                 self.fixture
                     .input()
-                    .button(device, code(button), input_edge(edge));
-                if input_edge(edge) == InputEdge::Release {
+                    .button(device, code(button), edge);
+                if edge == PressEdge::Release {
                     // A dragged window glides after the pointer (a spring); the test's next step
                     // hit-tests where it dropped.
                     self.fixture.advance(SETTLE);
@@ -236,13 +237,6 @@ fn slot(id: WlcsTouchId) -> u32 {
 
 fn code(button: Button) -> ButtonCode {
     ButtonCode(button.0)
-}
-
-fn input_edge(edge: Edge) -> InputEdge {
-    match edge {
-        Edge::Press => InputEdge::Press,
-        Edge::Release => InputEdge::Release,
-    }
 }
 
 fn whole(at: Position) -> LogicalPoint {

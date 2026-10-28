@@ -8,7 +8,7 @@
 use super::Host;
 use crate::conn::TestClient;
 use crate::surface::toplevel::Shared;
-use casement_core::input::Edge;
+use casement_protocols::vocab::PressEdge;
 use wayland_client::protocol::wl_pointer::{self, WlPointer};
 use wayland_client::protocol::wl_seat::{self, WlSeat};
 use wayland_client::{Connection, Dispatch, QueueHandle, WEnum};
@@ -21,7 +21,7 @@ pub struct PressSeen {
     /// The button code.
     pub button: u32,
     /// Pressed or released.
-    pub edge: Edge,
+    pub edge: PressEdge,
 }
 
 /// What a pointer was told.
@@ -60,7 +60,7 @@ impl BoundPointer {
             seen.buttons
                 .iter()
                 .rev()
-                .find(|button| button.edge == Edge::Press)
+                .find(|button| button.edge == PressEdge::Press)
                 .map(|button| button.serial)
         })
     }
@@ -111,8 +111,8 @@ impl Dispatch<WlPointer, PressLog> for Host {
                 ..
             } => {
                 let edge = match pressed {
-                    WEnum::Value(wl_pointer::ButtonState::Pressed) => Edge::Press,
-                    _ => Edge::Release,
+                    WEnum::Value(wl_pointer::ButtonState::Pressed) => PressEdge::Press,
+                    _ => PressEdge::Release,
                 };
                 log.with(|seen| {
                     seen.buttons.push(PressSeen {

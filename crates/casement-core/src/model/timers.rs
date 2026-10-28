@@ -3,9 +3,9 @@
 use super::Model;
 use super::moved::Moved;
 use super::privilege::Input;
-use crate::app::{AppKey, AppLife, PING_DEADLINE, PING_GAP, Pinging, ping_plan};
+use crate::app::{AppKey, AppLife, PING_DEADLINE, PING_GAP, ping_due};
 use crate::cause::Cause;
-use crate::effect::{CoreNote, Effect, Held};
+use crate::effect::{CoreNote, Effect};
 use crate::ids::ClientKey;
 use crate::settings::CasementSettings;
 use crate::time::{Due, TimerKey};
@@ -21,21 +21,21 @@ impl Model {
             return Moved::of(model);
         };
         match (gone, &key) {
-            (Gone::Yes, _) => Moved::of(model).with(Effect::Note(CoreNote::StaleTimer(key))),
-            (Gone::No, TimerKey::Ping(client)) => model.not_responding(*client),
-            (Gone::No, TimerKey::QuitGrace(app)) => model.quit_grace_over(app),
-            (Gone::No, TimerKey::LockWait) => model.lock_wait_over(),
-            (Gone::No, TimerKey::OverviewSettle) => model.overview_settled(),
-            (Gone::No, TimerKey::AskDeadline) => model.privileged(Input::Tick),
-            (Gone::No, TimerKey::DisplayTrial) => model.display_trial_timed_out(),
-            (Gone::No, TimerKey::SpaceFinish(_)) => model.space_swipe(SwipeIn::Elapsed),
-            (Gone::No, _) => Moved::of(model),
+            (true, _) => Moved::of(model).with(Effect::Note(CoreNote::StaleTimer(key))),
+            (false, TimerKey::Ping(client)) => model.not_responding(*client),
+            (false, TimerKey::QuitGrace(app)) => model.quit_grace_over(app),
+            (false, TimerKey::LockWait) => model.lock_wait_over(),
+            (false, TimerKey::OverviewSettle) => model.overview_settled(),
+            (false, TimerKey::AskDeadline) => model.privileged(Input::Tick),
+            (false, TimerKey::DisplayTrial) => model.display_trial_timed_out(),
+            (false, TimerKey::SpaceFinish(_)) => model.space_swipe(SwipeIn::Elapsed),
+            (false, _) => Moved::of(model),
         }
     }
 
     /// Whether what `key` is for is gone; none for a timer the model does not track.
-    fn is_gone(&self, key: &TimerKey) -> Option<Gone> {
-        let exists = |found: Option<()>| found.map_or(Gone::Yes, |()| Gone::No);
+    fn is_gone(&self, key: &TimerKey) -> Option<bool> {
+        let exists = |found: Option<()>| found.is_none();
         match key {
             TimerKey::Ping(client) | TimerKey::PingGap(client) => {
                 Some(exists(self.clients.get(client).map(|_| ())))
@@ -55,7 +55,7 @@ impl Model {
             TimerKey::LockWait
             | TimerKey::OverviewSettle
             | TimerKey::AskDeadline
-            | TimerKey::DisplayTrial => Some(Gone::No),
+            | TimerKey::DisplayTrial => Some(false),
         }
     }
 
@@ -73,23 +73,20 @@ impl Model {
         }
     }
 
-    /// `client` is pinged when [`ping_plan`] says one is due, by the life of `app` (the key
+    /// `client` is pinged when [`ping_due`] says one is due, by the life of `app` (the key
     /// window's); the deadline and the gap are armed here and in the book, so the next input
     /// sees them.
     fn pinged(self, client: ClientKey, app: &AppKey) -> Moved {
         let life = self.apps.get(app).map(|record| record.life.clone());
-        let held = |key: TimerKey| match self.timers.is_armed(&key) {
-            true => Held::Yes,
-            false => Held::No,
-        };
-        let plan = ping_plan(
+        let held = |key: TimerKey| self.timers.is_armed(&key);
+        let due = ping_due(
             life.as_ref(),
             held(TimerKey::Ping(client)),
             held(TimerKey::PingGap(client)),
         );
-        match plan {
-            Pinging::Hold => Moved::of(self),
-            Pinging::Send => {
+        match due {
+            false => Moved::of(self),
+            true => {
                 let deadline = Due {
                     at: self.now.after(PING_DEADLINE),
                     key: TimerKey::Ping(client),
@@ -164,10 +161,4 @@ impl Model {
             .redrawn(Cause::Configure, outputs)
             .then(Model::night_drive)
     }
-}
-
-/// Whether the thing a timer was armed for still exists.
-enum Gone {
-    Yes,
-    No,
 }

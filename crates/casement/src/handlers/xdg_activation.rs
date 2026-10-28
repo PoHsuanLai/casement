@@ -7,7 +7,7 @@ use casement_core::ClientKey;
 use casement_wayland::ClientState;
 use casement_wayland::convert::serial_of;
 use casement_wayland::xdg_activation::{
-    PressProof, TokenAsk, TokenVerdict, on_activate, on_token_request, proof_of, use_token,
+    TokenAsk, earned_by_press, on_activate, on_token_request, use_token,
 };
 use smithay::reexports::wayland_server::backend::ClientId;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -38,7 +38,7 @@ impl XdgActivationHandler for State {
             .client_id
             .as_ref()
             .and_then(|id| self.client_key_of(id));
-        let proof = match (&data.serial, requester) {
+        let pressed = match (&data.serial, requester) {
             (Some((serial, _seat)), Some(client)) => {
                 let record = self
                     .wl
@@ -46,13 +46,12 @@ impl XdgActivationHandler for State {
                     .serials
                     .answers(serial_of(*serial), client)
                     .copied();
-                proof_of(record.as_ref(), now)
+                earned_by_press(record.as_ref(), now)
             }
-            _ => PressProof::Unproven,
+            _ => false,
         };
-        let ask = TokenAsk { requester, proof };
+        let ask = TokenAsk { requester, pressed };
         on_token_request(&mut self.wl.xdg_activation, &token, &data, now, ask)
-            == TokenVerdict::Issue
     }
 
     fn request_activation(

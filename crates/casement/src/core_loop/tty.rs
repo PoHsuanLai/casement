@@ -12,15 +12,15 @@ use casement_backend::input::{
     Applied, FedDevice, FedInput, PollContext, device_settings, scaled_scroll,
 };
 use casement_backend::tty::{
-    Health, PresentOutcome, SeatState, SessionNote, TtyBackend, TtyNote, VtHeld, VtNumber, Watch,
-    vt_of_chord,
+    Health, PresentOutcome, SeatState, SessionNote, TtyBackend, TtyNote, VtNumber, vt_of_chord,
 };
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
-use casement_core::input::{DeviceClass, Edge, InputEvent, Keysym, Origin};
+use casement_core::input::{DeviceClass, InputEvent, Keysym, Origin};
 use casement_core::output::OutputConfig;
 use casement_core::settings::PointerSettings;
 use casement_core::time::Mono;
 use casement_core::{Effect, Event, OutputKey, OutputName};
+use casement_protocols::vocab::PressEdge;
 use casement_wayland::image_capture::CaptureBook;
 use casement_wayland::screencopy::ScreencopyPart;
 use smithay::input::keyboard::Keysym as XkbKeysym;
@@ -225,11 +225,8 @@ pub(super) fn capture_watch(
     book: &CaptureBook,
     screencopy: &ScreencopyPart,
     output: &OutputKey,
-) -> Watch {
-    match book.sessions.values().any(|watched| watched == output) || screencopy.wants(output) {
-        true => Watch::On,
-        false => Watch::Off,
-    }
+) -> bool {
+    book.sessions.values().any(|watched| watched == output) || screencopy.wants(output)
 }
 
 /// A frame of `source` on `name`, with its capture shadow kept per `capture`.
@@ -237,7 +234,7 @@ pub(super) fn present(
     tty: &mut TtyBackend,
     name: &OutputName,
     config: &OutputConfig,
-    capture: Watch,
+    capture: bool,
     now: Mono,
     source: &dyn FrameSource,
 ) -> Result<PresentOutcome, BackendError> {
@@ -254,18 +251,15 @@ pub(super) fn vt_chord(
     mods: &ModifiersState,
     syms: &[XkbKeysym],
     raw: &[XkbKeysym],
-    edge: Edge,
+    edge: PressEdge,
 ) -> Option<VtNumber> {
     let BackendKind::Tty(tty) = &mut state.backend else {
         return None;
     };
-    let held = match (mods.ctrl, mods.alt) {
-        (true, true) => VtHeld::CtrlAlt,
-        _ => VtHeld::Other,
-    };
+    let held = mods.ctrl && mods.alt;
     let own = |syms: &[XkbKeysym]| syms.iter().map(|sym| Keysym(sym.raw())).collect::<Vec<_>>();
     let vt = vt_of_chord(held, &own(syms), &own(raw))?;
-    if edge == Edge::Press
+    if edge == PressEdge::Press
         && let Err(error) = tty.switch_to(vt)
     {
         tracing::warn!(vt = vt.0, %error, "the VT switch was refused");

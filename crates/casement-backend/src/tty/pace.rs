@@ -8,30 +8,20 @@
 use super::surface::Presented;
 use casement_core::time::{Mono, VblankSeq};
 
-/// Whether a frame may be queued now.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum Turn {
-    /// No flip is in flight: a frame queued now is for this vblank.
-    Free(VblankSeq),
-    /// A flip is in flight; try at the next vblank.
-    Busy,
-}
-
 /// One surface's flip count.
 ///
 /// ```
-/// use casement_backend::tty::{Pace, Turn};
+/// use casement_backend::tty::Pace;
 /// use casement_core::time::{Mono, VblankSeq};
 /// use std::time::Duration;
 ///
 /// let mut pace = Pace::new();
-/// assert_eq!(pace.turn(), Turn::Free(VblankSeq(0)));
+/// assert_eq!(pace.turn(), Some(VblankSeq(0)));
 /// pace.queued();
-/// assert_eq!(pace.turn(), Turn::Busy);
+/// assert_eq!(pace.turn(), None);
 /// let shown = pace.landed(Mono(Duration::ZERO)).expect("a flip was in flight");
 /// assert_eq!(shown.seq, VblankSeq(0));
-/// assert_eq!(pace.turn(), Turn::Free(VblankSeq(1)));
+/// assert_eq!(pace.turn(), Some(VblankSeq(1)));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Pace {
@@ -56,11 +46,12 @@ impl Pace {
         }
     }
 
-    /// Whether a frame may be queued, and for which vblank.
-    pub fn turn(&self) -> Turn {
+    /// The vblank a frame queued now is for; none while a flip is in flight (try at the next
+    /// vblank).
+    pub fn turn(&self) -> Option<VblankSeq> {
         match self.pending {
-            Some(_) => Turn::Busy,
-            None => Turn::Free(self.next),
+            Some(_) => None,
+            None => Some(self.next),
         }
     }
 

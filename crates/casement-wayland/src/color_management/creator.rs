@@ -19,20 +19,13 @@ use std::sync::{Mutex, MutexGuard};
 const MIN_LUMINANCE: u32 = 2000;
 const MAX_LUMINANCE: u32 = 80;
 
-/// Whether `get_information` is allowed on a description.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum InfoAllowed {
-    /// The description came from an output or a surface's feedback.
-    Yes,
-    /// A client made it itself.
-    No,
-}
-
 /// An image description's data: its tag, none when it failed.
 #[derive(Debug, Clone, Copy)]
 pub struct DescriptionData {
     tag: Option<ColorTag>,
-    info: InfoAllowed,
+    /// Whether `get_information` is allowed: the description came from an output or a surface's
+    /// feedback, not from a client making it itself.
+    info_allowed: bool,
 }
 
 impl DescriptionData {
@@ -48,7 +41,7 @@ pub(super) fn describe<D>(
     data_init: &mut DataInit<'_, D>,
     id: New<WpImageDescriptionV1>,
     tag: ColorTag,
-    info: InfoAllowed,
+    info_allowed: bool,
 ) where
     D: ColorHandler + Dispatch<WpImageDescriptionV1, DescriptionData>,
 {
@@ -57,7 +50,7 @@ pub(super) fn describe<D>(
         id,
         DescriptionData {
             tag: Some(tag),
-            info,
+            info_allowed,
         },
     );
     let low = u32::try_from(identity & 0xffff_ffff).unwrap_or(0);
@@ -80,7 +73,7 @@ pub(super) fn refuse<D>(
         id,
         DescriptionData {
             tag: None,
-            info: InfoAllowed::No,
+            info_allowed: false,
         },
     );
     description.failed(cause, message.to_owned());
@@ -205,7 +198,7 @@ where
                             primaries,
                             transfer,
                         },
-                        InfoAllowed::No,
+                        false,
                     ),
                     (PrimariesGiven::Unusable, Some(_)) => refuse(
                         data_init,
@@ -264,13 +257,13 @@ where
             return;
         };
         let info = data_init.init(information, InfoData);
-        match (self.tag, self.info) {
+        match (self.tag, self.info_allowed) {
             (None, _) => resource.post_error(Error::NotReady, "the image description is not ready"),
-            (Some(_), InfoAllowed::No) => resource.post_error(
+            (Some(_), false) => resource.post_error(
                 Error::NoInformation,
                 "this image description does not allow get_information",
             ),
-            (Some(tag), InfoAllowed::Yes) => state.color_part().unsent.push((info, tag)),
+            (Some(tag), true) => state.color_part().unsent.push((info, tag)),
         }
     }
 }

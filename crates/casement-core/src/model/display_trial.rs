@@ -31,15 +31,6 @@ pub(super) struct Trial {
     before: BTreeMap<OutputKey, OutputConfig>,
 }
 
-/// How a trial ends.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Ending {
-    /// The new setup stays.
-    Kept,
-    /// The previous setup comes back.
-    Reverted,
-}
-
 impl Model {
     /// `output` was changed by `by` and was `before` until now.
     pub(super) fn display_changed(
@@ -50,7 +41,7 @@ impl Model {
     ) -> Moved {
         match by {
             Requester::Program => self.trial_asked(output, before),
-            Requester::Shell => self.trial_over(Ending::Kept),
+            Requester::Shell => self.trial_over(false),
             Requester::Restore => Moved::of(self),
         }
     }
@@ -63,15 +54,15 @@ impl Model {
             .as_ref()
             .is_some_and(|open| open.id == trial);
         match (ours, answer) {
-            (true, TrialAnswer::Keep) => self.trial_over(Ending::Kept),
-            (true, TrialAnswer::Revert) => self.trial_over(Ending::Reverted),
+            (true, TrialAnswer::Keep) => self.trial_over(false),
+            (true, TrialAnswer::Revert) => self.trial_over(true),
             (false, _) => Moved::of(self),
         }
     }
 
     /// The person did not answer in time: the previous setup comes back.
     pub(super) fn display_trial_timed_out(self) -> Moved {
-        self.trial_over(Ending::Reverted)
+        self.trial_over(true)
     }
 
     /// A trial opens, or the open one is restarted by a further change; the shell is asked.
@@ -96,9 +87,9 @@ impl Model {
             })
     }
 
-    /// The open trial, if any, ends: the shell is told, the timer goes, and on a revert every
-    /// output it changed gets its previous configuration back.
-    fn trial_over(self, ending: Ending) -> Moved {
+    /// The open trial, if any, ends: the shell is told, the timer goes, and on a `revert` every
+    /// output it changed gets its previous configuration back (otherwise the new setup stays).
+    fn trial_over(self, revert: bool) -> Moved {
         let mut model = self;
         let Some(trial) = model.display_trial.take() else {
             return Moved::of(model);
@@ -110,9 +101,9 @@ impl Model {
             true => ended.with(Effect::CancelTimer(TimerKey::DisplayTrial)),
             false => ended,
         };
-        match ending {
-            Ending::Kept => ended,
-            Ending::Reverted => trial
+        match revert {
+            false => ended,
+            true => trial
                 .before
                 .into_iter()
                 .fold(ended, |moved, (output, config)| {

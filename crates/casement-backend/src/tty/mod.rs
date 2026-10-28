@@ -76,9 +76,9 @@ pub use capture_gpu::{
     capture_route, merged_formats, renderable_formats,
 };
 pub use connector::{
-    EdidError, VrrPolicy, attached_outputs, output_facts, parse_edid, plan_outputs, vrr_state,
+    EdidError, VrrPolicy, attached_outputs, output_facts, parse_edid, plan_outputs, vrr_enabled,
 };
-pub use device::{Announced, OpenDevice, TtyDevices};
+pub use device::{OpenDevice, TtyDevices};
 pub use direct::{
     DirectSession, DriverRefusal, FixedNode, NoGpus, POLL_EVERY, VKMS_DRIVER, require_vkms,
 };
@@ -90,31 +90,31 @@ pub use judge::{Lit, judge};
 pub use kms::{
     CommitVerdict, ConnectorFacts, ConnectorId, ConnectorStatus, CrtcFacts, CrtcId,
     DEFAULT_GAMMA_SIZE, Kms, KmsCommit, KmsError, KmsOpener, KmsRefusal, KmsResources,
-    ModesetPolicy, OutputCommit, PlaneFacts, PlaneId, PlaneKind, VrrState,
+    OutputCommit, PlaneFacts, PlaneId, PlaneKind,
 };
 pub use lit::{Lighting, LitOutput};
 pub use master::{Master, MasterWatch, RETRY_EVERY};
 pub use offer::scanout_formats;
-pub use pace::{Pace, Turn};
-pub use readback::{Readback, Residence, Watch};
+pub use pace::Pace;
+pub use readback::Readback;
 pub use render_mode::{Drawing, Opened, RenderMode, Routes, ScanoutMaker};
-pub use report::{Due, KmsReport, REPORT_EVERY, ReportPacer, ReportedOutput};
+pub use report::{KmsReport, REPORT_EVERY, ReportPacer, ReportedOutput};
 pub use scanouts::{Flow, FrameTally, PresentOutcome, Scanout, ScanoutSet};
 pub use session::{SeatCauses, SeatSource, SeatState, SessionNote, TtySession};
 pub use sleep::{SleepInbox, SleepLink, SleepSettled, sleep_channel};
 pub use surface::{DirectCandidate, Presented, QueueOutcome, QueuedFrame, ScanoutSurface};
 pub use udev::{DeviceEvent, DevicePath, DeviceSource};
-pub use vt::{VtHeld, VtNumber, vt_of_chord, vt_of_keysym};
+pub use vt::{VtNumber, vt_of_chord, vt_of_keysym};
 pub use watch::{
-    FAILURES_ALLOWED, FLIP_DEADLINE, Failing, FailureRun, Flip, FlipWatch, Health, Level,
-    RECOVERY_WINDOW, Recoveries, STARVED_AFTER, Starved,
+    FAILURES_ALLOWED, FLIP_DEADLINE, Failing, FailureRun, FlipWatch, Health, Level,
+    RECOVERY_WINDOW, Recoveries, STARVED_AFTER,
 };
-pub use writeback::{FLIPS_TO_WAIT, RawCapture, Writeback, WritebackError, WritebackMode};
+pub use writeback::{FLIPS_TO_WAIT, RawCapture, Writeback, WritebackError};
 
 #[cfg(feature = "tty")]
 pub use direct_real::direct_seams;
 #[cfg(feature = "tty")]
-pub use kms_real::{FdSource, RealKms, RealKmsOpener, VirtualDisplays};
+pub use kms_real::{FdSource, RealKms, RealKmsOpener};
 #[cfg(feature = "tty")]
 pub use real::real_seams;
 #[cfg(feature = "tty")]
@@ -128,7 +128,7 @@ pub use surface_real::RealScanout;
 #[cfg(feature = "tty")]
 pub use udev_real::RealUdev;
 
-use crate::backend::BackendError;
+use crate::backend::{Backend, BackendError};
 use crate::gpu::{FormatSource, RenderNodes};
 use crate::headless::{ConnectorEvent, FrameSource, PresentedFrame};
 use crate::input::{Applied, DeviceSettings, FedInput, InputFeed, PollContext, PresentDevices};
@@ -273,8 +273,9 @@ pub struct TtyBackend {
     causes: SeatCauses,
     /// The devices that could not take master back, asked again as time passes.
     master: MasterWatch,
-    /// Whether a device took master back since the loop was told the seat returned.
-    revived: Revived,
+    /// Whether a device took master back since the loop was told the seat returned: the loop
+    /// applies every output again.
+    revived: bool,
     /// The outputs to set up again at the next `dispatch`.
     reinit: Vec<OutputName>,
     /// What an output set up again had waited for a frame for, so the wait goes on counting.
@@ -282,16 +283,6 @@ pub struct TtyBackend {
     /// The mode an output was lit at when its frames stopped for good, and when: left out of the
     /// modes tried for it for a while, so setting it up again does not light the same mode.
     distrust: BTreeMap<OutputName, (Mode, Mono)>,
-}
-
-/// Whether the loop still has to be told a device took master back.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-enum Revived {
-    /// Nothing to tell.
-    #[default]
-    No,
-    /// A device took master back after failing to: the loop applies every output again.
-    Yes,
 }
 
 impl TtyBackend {
@@ -349,7 +340,7 @@ impl TtyBackend {
             present: PresentDevices::default(),
             causes: SeatCauses::default(),
             master: MasterWatch::default(),
-            revived: Revived::No,
+            revived: false,
             reinit: Vec::new(),
             carried: BTreeMap::new(),
             distrust: BTreeMap::new(),
@@ -439,7 +430,7 @@ impl TtyBackend {
                 TtyNote::Reinit(name)
             })
             .collect();
-        if std::mem::take(&mut self.revived) == Revived::Yes {
+        if std::mem::take(&mut self.revived) {
             notes.push(TtyNote::Session(SessionNote::Activated));
         }
         notes
@@ -488,7 +479,7 @@ impl TtyBackend {
                     tracing::info!(path = %path.as_path().display(), "a device took master back");
                     self.master.regain(&path);
                     self.scanouts.reset();
-                    self.revived = Revived::Yes;
+                    self.revived = true;
                 }
                 Err(error) if self.master.attempts() % 30 == 1 => {
                     tracing::warn!(path = %path.as_path().display(), %error, "a device still cannot take master");
@@ -709,9 +700,9 @@ impl TtyBackend {
         &mut self,
         output: &OutputName,
         config: &OutputConfig,
-        watch: Watch,
+        watch: bool,
     ) -> Result<(), BackendError> {
-        if watch == Watch::Off && self.readback.watching(output) == Watch::On {
+        if !watch && self.readback.watching(output) {
             self.capture_stopped(output);
         }
         self.readback.watch(output, config, watch)
@@ -817,6 +808,65 @@ impl TtyBackend {
             .into_iter()
             .map(|(device, settings)| (device, self.configure_device(device, &settings)))
             .collect()
+    }
+}
+
+impl Backend for TtyBackend {
+    fn announce(&mut self) -> Vec<ConnectorEvent> {
+        TtyBackend::announce(self)
+    }
+
+    fn capture_formats(&self) -> Vec<smithay::backend::allocator::Format> {
+        TtyBackend::capture_formats(self)
+    }
+
+    fn write_dmabuf(
+        &mut self,
+        target: &mut smithay::backend::allocator::dmabuf::Dmabuf,
+        frame: &casement_render::pass::CapturedFrame,
+    ) -> Result<(), BackendError> {
+        TtyBackend::write_dmabuf(self, target, frame)
+    }
+
+    fn read_dmabuf(
+        &mut self,
+        source: &smithay::backend::allocator::dmabuf::Dmabuf,
+    ) -> Result<casement_render::pass::ArgbImage, BackendError> {
+        TtyBackend::read_dmabuf(self, source)
+    }
+
+    fn render_offscreen(
+        &mut self,
+        size: casement_core::geometry::PhysicalSize,
+        scale: ds_core::geometry::scale::Scale,
+        source: &dyn FrameSource,
+    ) -> Result<crate::headless::RgbaFrame, BackendError> {
+        TtyBackend::render_offscreen(self, size, scale, source)
+    }
+
+    fn render_window_dmabuf(
+        &mut self,
+        target: &mut smithay::backend::allocator::dmabuf::Dmabuf,
+        size: casement_core::geometry::PhysicalSize,
+        scale: ds_core::geometry::scale::Scale,
+        source: &dyn FrameSource,
+    ) -> Result<(), BackendError> {
+        TtyBackend::render_window_dmabuf(self, target, size, scale, source)
+    }
+
+    fn blit_output_dmabuf(
+        &mut self,
+        output: &OutputName,
+        cursor: bool,
+        from: casement_core::geometry::PhysicalRect,
+        target: &mut smithay::backend::allocator::dmabuf::Dmabuf,
+    ) -> Result<(), BackendError> {
+        TtyBackend::blit_output_dmabuf(self, output, cursor, from, target)
+    }
+
+    /// A CRTC with no table has none to drive.
+    fn gamma_steps(&self, output: &OutputName) -> Option<u32> {
+        TtyBackend::gamma_size(self, output).filter(|size| *size > 0)
     }
 }
 

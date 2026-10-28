@@ -6,10 +6,10 @@ use crate::{State, core_loop};
 use casement_backend::{BackendKind, DeviceName, DeviceSpec};
 use casement_core::DeviceId;
 use casement_core::input::{
-    AxisFrame, AxisSource, AxisStop, ButtonCode, DeviceClass, Edge, InputKind, KeyCode, Origin,
-    PortalSessionId,
+    AxisFrame, AxisSource, ButtonCode, DeviceClass, InputKind, KeyCode, Origin, PortalSessionId,
 };
 use casement_ipc::{DeviceVerb, InjectLine, InjectOrigin};
+use casement_protocols::vocab::PressEdge;
 use smithay::input::keyboard::{Keycode, Keysym, Layout, xkb};
 use std::collections::HashMap;
 
@@ -50,8 +50,8 @@ impl Injector {
             InjectLine::Type(text) => {
                 for c in text.chars() {
                     let sym = xkb::utf32_to_keysym(u32::from(c));
-                    self.key(state, sym, Edge::Press);
-                    self.key(state, sym, Edge::Release);
+                    self.key(state, sym, PressEdge::Press);
+                    self.key(state, sym, PressEdge::Release);
                 }
             }
             other => {
@@ -123,7 +123,7 @@ impl Injector {
     /// A key by keysym: found on the keymap's first layout, with Shift held when it is the
     /// shifted form of a key (a capital, a US shifted punctuation mark). A keysym no key makes
     /// is dropped with a warning.
-    fn key(&mut self, state: &mut State, sym: Keysym, edge: Edge) {
+    fn key(&mut self, state: &mut State, sym: Keysym, edge: PressEdge) {
         let Some((code, shifted)) = keycode_for(state, sym) else {
             tracing::warn!(keysym = sym.raw(), "no key makes this keysym");
             return;
@@ -135,11 +135,11 @@ impl Injector {
         let key = InputKind::Key { code, edge };
         match (shifted, edge) {
             (false, _) => self.push(state, DeviceClass::Keyboard, key),
-            (true, Edge::Press) => {
+            (true, PressEdge::Press) => {
                 self.push(state, DeviceClass::Keyboard, shift);
                 self.push(state, DeviceClass::Keyboard, key);
             }
-            (true, Edge::Release) => {
+            (true, PressEdge::Release) => {
                 self.push(state, DeviceClass::Keyboard, key);
                 self.push(state, DeviceClass::Keyboard, shift);
             }
@@ -178,11 +178,11 @@ fn unshift(sym: Keysym) -> (Keysym, bool) {
 /// The device class a line goes through and what it pushes (lines that are not input give
 /// none).
 fn kind_of(line: &InjectLine) -> Option<(DeviceClass, InputKind)> {
-    let finger = |px, stop| AxisFrame {
+    let finger = |px, stopped| AxisFrame {
         source: AxisSource::Finger,
         v120: (0, 0),
         px,
-        stop,
+        stopped,
     };
     let zero = casement_core::geometry::SubPoint {
         x: casement_core::geometry::SubPx(0),
@@ -190,17 +190,16 @@ fn kind_of(line: &InjectLine) -> Option<(DeviceClass, InputKind)> {
     };
     Some(match line {
         InjectLine::Move(at) => (DeviceClass::Pointer, InputKind::MotionTo { at: *at }),
-        InjectLine::Press(button) => (DeviceClass::Pointer, button_kind(*button, Edge::Press)),
-        InjectLine::Release(button) => (DeviceClass::Pointer, button_kind(*button, Edge::Release)),
+        InjectLine::Press(button) => (DeviceClass::Pointer, button_kind(*button, PressEdge::Press)),
+        InjectLine::Release(button) => (
+            DeviceClass::Pointer,
+            button_kind(*button, PressEdge::Release),
+        ),
         InjectLine::Axis(frame) => (DeviceClass::Pointer, InputKind::Axis(*frame)),
-        InjectLine::ScrollFinger(px) => (
-            DeviceClass::Touchpad,
-            InputKind::Axis(finger(*px, AxisStop::Running)),
-        ),
-        InjectLine::AxisStop => (
-            DeviceClass::Touchpad,
-            InputKind::Axis(finger(zero, AxisStop::Stopped)),
-        ),
+        InjectLine::ScrollFinger(px) => {
+            (DeviceClass::Touchpad, InputKind::Axis(finger(*px, false)))
+        }
+        InjectLine::AxisStop => (DeviceClass::Touchpad, InputKind::Axis(finger(zero, true))),
         InjectLine::Swipe(step) => (DeviceClass::Touchpad, InputKind::Swipe(*step)),
         InjectLine::Pinch(step) => (DeviceClass::Touchpad, InputKind::Pinch(*step)),
         InjectLine::Hold(step) => (DeviceClass::Touchpad, InputKind::Hold(*step)),
@@ -213,6 +212,6 @@ fn kind_of(line: &InjectLine) -> Option<(DeviceClass, InputKind)> {
     })
 }
 
-fn button_kind(button: ButtonCode, edge: Edge) -> InputKind {
+fn button_kind(button: ButtonCode, edge: PressEdge) -> InputKind {
     InputKind::Button { button, edge }
 }

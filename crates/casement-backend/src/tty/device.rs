@@ -14,20 +14,10 @@ use std::collections::BTreeMap;
 pub struct TtyDevices {
     /// Each open device by its node.
     pub devices: BTreeMap<DevicePath, OpenDevice>,
-    /// Whether the start-up announcement has been made (see [`TtyDevices::announce`]).
-    pub announced: Announced,
-}
-
-/// Whether the connectors present at start have been announced.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-#[non_exhaustive]
-pub enum Announced {
-    /// Not yet: connector events are held back, and the announcement reports every connector
-    /// known at that moment.
-    #[default]
-    Pending,
-    /// Done: connector events are reported as they happen.
-    Done,
+    /// Whether the start-up announcement has been made (see [`TtyDevices::announce`]). Until it
+    /// is, connector events are held back, and the announcement reports every connector known at
+    /// that moment; after it they are reported as they happen.
+    pub announced: bool,
 }
 
 /// One open device and its connectors.
@@ -113,9 +103,9 @@ impl TtyDevices {
     /// nothing (what they saw is in the announcement); after it, it reports nothing.
     pub fn announce(&mut self) -> Vec<ConnectorEvent> {
         match self.announced {
-            Announced::Done => Vec::new(),
-            Announced::Pending => {
-                self.announced = Announced::Done;
+            true => Vec::new(),
+            false => {
+                self.announced = true;
                 self.devices
                     .values()
                     .flat_map(|device| device.known.0.values())
@@ -129,8 +119,8 @@ impl TtyDevices {
     /// `events` when the announcement is made, else nothing.
     fn released(&self, events: Vec<ConnectorEvent>) -> Vec<ConnectorEvent> {
         match self.announced {
-            Announced::Done => events,
-            Announced::Pending => Vec::new(),
+            true => events,
+            false => Vec::new(),
         }
     }
 }

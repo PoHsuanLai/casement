@@ -17,27 +17,18 @@ const UNICODE_BASE: u32 = 0x0100_0000;
 /// key with Shift held, so those two are written back that way.
 pub fn chord_of(chord: chordkit::Chord) -> Option<Chord> {
     let (key, shifted) = match chord.key() {
-        Key::Char('+') => (Keysym(0x3d), Shift::Held),
-        Key::Char('?') => (Keysym(0x2f), Shift::Held),
-        other => (keysym_of(other)?, Shift::AsWritten),
+        Key::Char('+') => (Keysym(0x3d), true),
+        Key::Char('?') => (Keysym(0x2f), true),
+        other => (keysym_of(other)?, false),
     };
     let mods = mods_of(chord.modifiers());
     Some(Chord {
         mods: match shifted {
-            Shift::Held => mods.with(MacMods::SHIFT),
-            Shift::AsWritten => mods,
+            true => mods.with(MacMods::SHIFT),
+            false => mods,
         },
         key,
     })
-}
-
-/// Whether Shift is added to what the chord wrote.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Shift {
-    /// The chord's own modifiers only.
-    AsWritten,
-    /// Shift as well: the key is the unshifted one of a symbol.
-    Held,
 }
 
 fn mods_of(mods: Modifiers) -> MacMods {

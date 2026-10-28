@@ -13,7 +13,7 @@ use crate::convert::size_of;
 use casement_core::app::AppKey;
 use casement_core::focus::TokenCheck;
 use casement_core::geometry::LogicalSize;
-use casement_core::window::{Parent, SizeLimits, WindowTitle};
+use casement_core::window::{SizeLimits, WindowTitle};
 use casement_core::{ClientKey, Event, MappedToplevel, ToplevelMeta, ToplevelRequest, WindowId};
 use porter_core::ClaimedId;
 use smithay::backend::renderer::utils::with_renderer_surface_state;
@@ -32,25 +32,6 @@ pub enum Phase {
     Mapped(LogicalSize),
 }
 
-/// Whether the initial configure has gone out.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Configured {
-    /// It has.
-    Yes,
-    /// It has not.
-    No,
-}
-
-/// What a commit left attached.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Buffer {
-    /// Nothing is attached.
-    Absent,
-    /// A buffer showing a surface of this logical size (the window geometry when the client
-    /// set one).
-    Present(LogicalSize),
-}
-
 /// What the edge does about a commit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommitStep {
@@ -67,20 +48,21 @@ pub enum CommitStep {
 }
 
 /// The step a commit takes: the whole life of a toplevel, one row per case.
-pub fn commit_step(phase: Phase, configured: Configured, buffer: Buffer) -> CommitStep {
+/// `configured`: whether the initial configure has gone out. `buffer`: the logical size of the
+/// buffer a commit left attached (the window geometry when the client set one), none when nothing
+/// is attached.
+pub fn commit_step(phase: Phase, configured: bool, buffer: Option<LogicalSize>) -> CommitStep {
     match (configured, phase, buffer) {
         // smithay resets a toplevel's role (the initial configure included) in the very commit
-        // that removes its buffer, so a mapped window reads `Configured::No` exactly then: it is
+        // that removes its buffer, so a mapped window reads as not configured exactly then: it is
         // the unmap, and the configure follows the client's next bare commit.
-        (Configured::No, Phase::Mapped(_), Buffer::Absent) => CommitStep::Unmap,
-        (Configured::No, _, _) => CommitStep::InitialConfigure,
-        (Configured::Yes, Phase::Unmapped, Buffer::Present(size)) => CommitStep::Map(size),
-        (Configured::Yes, Phase::Unmapped, Buffer::Absent) => CommitStep::Nothing,
-        (Configured::Yes, Phase::Mapped(had), Buffer::Present(size)) if had == size => {
-            CommitStep::Nothing
-        }
-        (Configured::Yes, Phase::Mapped(_), Buffer::Present(size)) => CommitStep::Resize(size),
-        (Configured::Yes, Phase::Mapped(_), Buffer::Absent) => CommitStep::Unmap,
+        (false, Phase::Mapped(_), None) => CommitStep::Unmap,
+        (false, _, _) => CommitStep::InitialConfigure,
+        (true, Phase::Unmapped, Some(size)) => CommitStep::Map(size),
+        (true, Phase::Unmapped, None) => CommitStep::Nothing,
+        (true, Phase::Mapped(had), Some(size)) if had == size => CommitStep::Nothing,
+        (true, Phase::Mapped(_), Some(size)) => CommitStep::Resize(size),
+        (true, Phase::Mapped(_), None) => CommitStep::Unmap,
     }
 }
 
@@ -98,7 +80,7 @@ pub struct ToplevelRecord {
     /// The app id the model last heard.
     pub claimed: ClaimedId,
     /// The parent the model last heard.
-    pub parent: Parent,
+    pub parent: Option<WindowId>,
     /// How the activation token it asked with before mapping checked out (A7).
     pub staged: TokenCheck,
     /// What it asked to open as (maximised, full screen) before it mapped: the model hears it
@@ -114,8 +96,10 @@ pub(super) struct Declared {
     pub(super) parent: Option<WlSurface>,
     pub(super) hint: ToplevelDialogHint,
     pub(super) limits: SizeLimits,
-    pub(super) configured: Configured,
-    pub(super) buffer: Buffer,
+    /// Whether the initial configure has gone out.
+    pub(super) configured: bool,
+    /// The size of the attached buffer, none when nothing is attached.
+    pub(super) buffer: Option<LogicalSize>,
 }
 
 impl Declared {
@@ -139,11 +123,7 @@ impl Declared {
                     WindowTitle(role.title.clone().unwrap_or_default()),
                     role.app_id.clone(),
                     role.dialog_hint,
-                    if role.initial_configure_sent {
-                        Configured::Yes
-                    } else {
-                        Configured::No
-                    },
+                    role.initial_configure_sent,
                     limits,
                     geometry,
                 ),
@@ -151,7 +131,7 @@ impl Declared {
                     WindowTitle::default(),
                     None,
                     ToplevelDialogHint::Unknown,
-                    Configured::No,
+                    false,
                     limits,
                     geometry,
                 ),
@@ -159,9 +139,9 @@ impl Declared {
         });
         let surface_size = with_renderer_surface_state(wl, |state| state.surface_size()).flatten();
         let buffer = match (surface_size, geometry) {
-            (None, _) => Buffer::Absent,
-            (Some(_), Some(geometry)) => Buffer::Present(geometry),
-            (Some(size), None) => Buffer::Present(size_of(size)),
+            (None, _) => None,
+            (Some(_), Some(geometry)) => Some(geometry),
+            (Some(size), None) => Some(size_of(size)),
         };
         Declared {
             title,
@@ -197,7 +177,7 @@ pub fn on_new_toplevel(
             limits: limits_of((0, 0), (0, 0)),
             title: WindowTitle::default(),
             claimed: claimed_of(None, state.key),
-            parent: Parent::None,
+            parent: None,
             staged: TokenCheck::Missing,
             opening: None,
         },
@@ -316,14 +296,14 @@ pub(super) fn mapped_events(
 pub(super) fn parent_of(
     parent: Option<&WlSurface>,
     toplevels: &std::collections::BTreeMap<WindowId, ToplevelSurface>,
-) -> Parent {
+) -> Option<WindowId> {
     parent
         .and_then(|surface| {
             toplevels
                 .iter()
                 .find(|(_, held)| held.wl_surface() == surface)
         })
-        .map_or(Parent::None, |(id, _)| Parent::Window(*id))
+        .map(|(id, _)| *id)
 }
 
 /// A `Limits` meta event when `limits` differ from what the model last heard.
@@ -352,71 +332,69 @@ mod tests {
     /// Every case of a toplevel's life, one row each.
     #[test]
     fn the_commit_step_table() {
-        use Buffer::{Absent, Present};
-        use Configured::{No, Yes};
         use Phase::{Mapped, Unmapped};
         let rows = [
             (
                 "first commit, no buffer: initial configure",
                 Unmapped,
-                No,
-                Absent,
+                false,
+                None,
                 CommitStep::InitialConfigure,
             ),
             (
                 "a commit still unconfigured is configured first, even with a buffer",
                 Unmapped,
-                No,
-                Present(size(10, 10)),
+                false,
+                Some(size(10, 10)),
                 CommitStep::InitialConfigure,
             ),
             (
                 "configured, no buffer yet: nothing",
                 Unmapped,
-                Yes,
-                Absent,
+                true,
+                None,
                 CommitStep::Nothing,
             ),
             (
                 "configured, first buffer: map",
                 Unmapped,
-                Yes,
-                Present(size(640, 480)),
+                true,
+                Some(size(640, 480)),
                 CommitStep::Map(size(640, 480)),
             ),
             (
                 "mapped, same size: nothing",
                 Mapped(size(640, 480)),
-                Yes,
-                Present(size(640, 480)),
+                true,
+                Some(size(640, 480)),
                 CommitStep::Nothing,
             ),
             (
                 "mapped, new size: resize",
                 Mapped(size(640, 480)),
-                Yes,
-                Present(size(800, 600)),
+                true,
+                Some(size(800, 600)),
                 CommitStep::Resize(size(800, 600)),
             ),
             (
                 "mapped, buffer removed: unmap",
                 Mapped(size(640, 480)),
-                Yes,
-                Absent,
+                true,
+                None,
                 CommitStep::Unmap,
             ),
             (
                 "mapped, null buffer, smithay already reset the role: unmap",
                 Mapped(size(640, 480)),
-                No,
-                Absent,
+                false,
+                None,
                 CommitStep::Unmap,
             ),
             (
                 "unmapped by a null buffer, smithay forgot the configure: configure again",
                 Unmapped,
-                No,
-                Absent,
+                false,
+                None,
                 CommitStep::InitialConfigure,
             ),
         ];
@@ -433,7 +411,7 @@ mod tests {
             limits: limits_of((0, 0), (0, 0)),
             title: WindowTitle::default(),
             claimed: claimed_of(None, ClientKey(1)),
-            parent: Parent::None,
+            parent: None,
             staged: TokenCheck::Missing,
             opening: None,
         };

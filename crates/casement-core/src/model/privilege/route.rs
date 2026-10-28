@@ -1,7 +1,7 @@
 //! The model's side of the consent machine: which events reach it, what it is told about the
 //! lock, and how its timer joins the model's.
 
-use super::step::{Ctx, Input, Screen};
+use super::step::{Ctx, Input};
 use super::{Class, Privilege};
 use crate::effect::Effect;
 use crate::lock::LockState;
@@ -9,18 +9,6 @@ use crate::model::Model;
 use crate::model::moved::Moved;
 use crate::policy::ConnectionRole;
 use crate::time::TimerKey;
-
-impl Screen {
-    /// Whether the person can be asked while the session is in `lock`.
-    fn of(lock: &LockState) -> Screen {
-        match lock {
-            LockState::Unlocked => Screen::Open,
-            LockState::Locking { .. }
-            | LockState::Locked { .. }
-            | LockState::LockedWithoutSurface { .. } => Screen::Covered,
-        }
-    }
-}
 
 impl Model {
     /// The consent machine.
@@ -33,7 +21,7 @@ impl Model {
     pub(in crate::model) fn privileged(self, input: Input) -> Moved {
         let ctx = Ctx {
             now: self.now,
-            screen: Screen::of(&self.lock),
+            covered: !matches!(self.lock, LockState::Unlocked),
         };
         let stepped = self.privilege.step(input, ctx);
         let timers =

@@ -7,7 +7,7 @@
 //!
 //! The caps are generous: a person's real clients are an order of magnitude under them. Each
 //! call site counts what the client holds from the collection it already keeps, asks
-//! [`Limit::judge`], and calls [`cut`] on [`Standing::Over`]. This module is the numbers and the
+//! [`Limit::allows`], and calls [`cut`] when it says no. This module is the numbers and the
 //! cut; the counting stays with the code that owns the objects.
 //!
 //! A cut is queued, never done inside the request that went over: killing a client from its own
@@ -82,21 +82,10 @@ pub const MAX_WINDOWS: usize = 4096;
 /// this one does, and is checked before a byte of the buffer is copied.
 pub const MAX_CURSOR_BUFFER_SIDE: u32 = 512;
 
-/// Whether a client's cursor buffer is small enough to read back.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CursorBuffer {
-    /// Neither side is over [`MAX_CURSOR_BUFFER_SIDE`].
-    Fits,
-    /// A side is over it: the buffer is not read.
-    TooLarge,
-}
-
-/// Whether a cursor buffer of `size` pixels may be read back.
-pub const fn judge_cursor_buffer(size: PhysicalSize) -> CursorBuffer {
-    match size.w <= MAX_CURSOR_BUFFER_SIDE && size.h <= MAX_CURSOR_BUFFER_SIDE {
-        true => CursorBuffer::Fits,
-        false => CursorBuffer::TooLarge,
-    }
+/// Whether a cursor buffer of `size` pixels may be read back: neither side is over
+/// [`MAX_CURSOR_BUFFER_SIDE`] (a buffer with a side over it is not read).
+pub const fn cursor_buffer_fits(size: PhysicalSize) -> bool {
+    size.w <= MAX_CURSOR_BUFFER_SIDE && size.h <= MAX_CURSOR_BUFFER_SIDE
 }
 
 /// The objects whose count per client is capped.
@@ -125,15 +114,6 @@ pub enum Limit {
     IdleWatches,
     /// `zwp_idle_inhibitor_v1`.
     IdleInhibitors,
-}
-
-/// Whether one more object fits.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Standing {
-    /// It fits.
-    Within,
-    /// The client already holds the most it may.
-    Over,
 }
 
 impl Limit {
@@ -172,22 +152,19 @@ impl Limit {
     }
 
     /// Whether a client that holds `held` of these may take one more.
-    pub const fn judge(self, held: usize) -> Standing {
-        match held < self.cap() {
-            true => Standing::Within,
-            false => Standing::Over,
-        }
+    pub const fn allows(self, held: usize) -> bool {
+        held < self.cap()
     }
 }
 
 /// Whether `client`, which holds `held` of `limit`, may take one more; a client that may not is
-/// queued to be cut ([`cut`]) before this returns [`Standing::Over`], and the caller makes nothing.
-pub fn admit(_display: &DisplayHandle, client: &Client, limit: Limit, held: usize) -> Standing {
-    let standing = limit.judge(held);
-    if standing == Standing::Over {
+/// queued to be cut ([`cut`]) before this returns false, and the caller makes nothing.
+pub fn admit(_display: &DisplayHandle, client: &Client, limit: Limit, held: usize) -> bool {
+    let allowed = limit.allows(held);
+    if !allowed {
         cut(client, limit);
     }
-    standing
+    allowed
 }
 
 /// Queues `client` to be cut: it asked for more `limit` than it may hold. The cut happens at [`cut_queued`], after the dispatch that asked; a client queued twice
@@ -245,10 +222,10 @@ mod tests {
             Limit::IdleInhibitors,
         ];
         for limit in all {
-            assert_eq!(limit.judge(0), Standing::Within, "{limit:?}");
-            assert_eq!(limit.judge(limit.cap() - 1), Standing::Within, "{limit:?}");
-            assert_eq!(limit.judge(limit.cap()), Standing::Over, "{limit:?}");
-            assert_eq!(limit.judge(usize::MAX), Standing::Over, "{limit:?}");
+            assert!(limit.allows(0), "{limit:?}");
+            assert!(limit.allows(limit.cap() - 1), "{limit:?}");
+            assert!(!limit.allows(limit.cap()), "{limit:?}");
+            assert!(!limit.allows(usize::MAX), "{limit:?}");
         }
     }
 
@@ -259,24 +236,16 @@ mod tests {
         let size = |w, h| PhysicalSize { w, h };
         let side = MAX_CURSOR_BUFFER_SIDE;
         let cases = [
-            ("a pointer", size(24, 24), CursorBuffer::Fits),
-            ("a 2x pointer", size(48, 48), CursorBuffer::Fits),
-            ("at the cap", size(side, side), CursorBuffer::Fits),
-            ("one too wide", size(side + 1, 24), CursorBuffer::TooLarge),
-            ("one too tall", size(24, side + 1), CursorBuffer::TooLarge),
-            (
-                "a pool-sized buffer",
-                size(8192, 8192),
-                CursorBuffer::TooLarge,
-            ),
-            (
-                "the widest",
-                size(u32::MAX, u32::MAX),
-                CursorBuffer::TooLarge,
-            ),
+            ("a pointer", size(24, 24), true),
+            ("a 2x pointer", size(48, 48), true),
+            ("at the cap", size(side, side), true),
+            ("one too wide", size(side + 1, 24), false),
+            ("one too tall", size(24, side + 1), false),
+            ("a pool-sized buffer", size(8192, 8192), false),
+            ("the widest", size(u32::MAX, u32::MAX), false),
         ];
         for (case, got, want) in cases {
-            assert_eq!(judge_cursor_buffer(got), want, "{case}");
+            assert_eq!(cursor_buffer_fits(got), want, "{case}");
         }
     }
 }

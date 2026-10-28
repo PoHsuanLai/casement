@@ -7,11 +7,11 @@ use casement_core::desktop::{DesktopRequest, WindowAsk};
 use casement_core::focus::TokenCheck;
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::shell::ShellRequest;
-use casement_core::window::{MenuEntry, WindowState};
+use casement_core::window::WindowState;
 use casement_core::{
     Cause, CoreNote, Effect, Event, GrabSpec, InputSerial, ResizeEdges, ToplevelRequest, WindowId,
 };
-use casement_protocols::vocab::{Attention, PlaceTarget, TileZone, Toggle};
+use casement_protocols::vocab::{Attention, PlaceTarget, TileZone, Toggle, WindowEntry};
 use support::driver::{Op, Run, last, map, plug, request, run};
 use support::proven;
 
@@ -338,7 +338,7 @@ fn the_shells_full_screen_asks_are_not_refused_for_a_window_that_is_not_key() {
     let mut menu = key_and_background();
     menu.push(Op::Event(Event::Shell(ShellRequest::WindowMenuPick {
         window: WindowId(2),
-        entry: MenuEntry::EnterFullScreen,
+        entry: WindowEntry::EnterFullScreen,
     })));
     assert!(matches!(
         state_of(&run(menu), 2),

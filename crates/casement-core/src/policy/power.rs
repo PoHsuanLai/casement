@@ -1,8 +1,7 @@
 //! Which global needs which consent, and which desktop services are trusted without asking.
 //!
-//! A [`Power`] is the unit of consent: what the person decides on. The match in [`power_of`]
-//! is exhaustive on purpose, like the sandbox table: a new global fails to compile until
-//! someone decides whether it needs consent.
+//! A [`Power`] is the unit of consent: what the person decides on. [`power_of`] reads the
+//! globals table, where a new global gets its row (a power, or none) on purpose.
 
 use super::globals::GlobalKind;
 use crate::privilege::ServiceRole;
@@ -10,63 +9,10 @@ pub use casement_protocols::vocab::Power;
 use casement_protocols::vocab::WireCode;
 use std::collections::BTreeSet;
 
-/// The power `global` needs consent for; none for a global every client may use. Layer shell
-/// and the security-context manager stay without one: layer shell's keyboard grab is closed in
-/// the model, and a security-context client is a sandbox, which sees none of these globals.
+/// The power `global` needs consent for; none for a global every client may use (its row in
+/// the globals table).
 pub fn power_of(global: GlobalKind) -> Option<Power> {
-    match global {
-        GlobalKind::ImageCapture | GlobalKind::ToplevelCapture => Some(Power::Screen),
-        GlobalKind::VirtualKeyboard => Some(Power::Keys),
-        GlobalKind::InputMethod => Some(Power::TypingHelp),
-        GlobalKind::ExtDataControl | GlobalKind::WlrDataControl => Some(Power::Clipboard),
-        GlobalKind::SessionLock => Some(Power::Lock),
-        GlobalKind::OutputManagement | GlobalKind::OutputPower | GlobalKind::Gamma => {
-            Some(Power::Displays)
-        }
-        GlobalKind::ForeignToplevelList | GlobalKind::WlrToplevel | GlobalKind::Workspace => {
-            Some(Power::Windows)
-        }
-        GlobalKind::Compositor
-        | GlobalKind::Subcompositor
-        | GlobalKind::Shm
-        | GlobalKind::Output
-        | GlobalKind::Viewporter
-        | GlobalKind::SinglePixel
-        | GlobalKind::AlphaModifier
-        | GlobalKind::Presentation
-        | GlobalKind::FractionalScale
-        | GlobalKind::Fifo
-        | GlobalKind::CommitTiming
-        | GlobalKind::ContentType
-        | GlobalKind::ColorManagement
-        | GlobalKind::XdgShell
-        | GlobalKind::XdgDecoration
-        | GlobalKind::XdgActivation
-        | GlobalKind::XdgDialog
-        | GlobalKind::XdgToplevelIcon
-        | GlobalKind::XdgToplevelTag
-        | GlobalKind::XdgForeign
-        | GlobalKind::SystemBell
-        | GlobalKind::QuireWindow
-        | GlobalKind::LayerShell
-        | GlobalKind::Seat
-        | GlobalKind::CursorShape
-        | GlobalKind::PointerConstraints
-        | GlobalKind::RelativePointer
-        | GlobalKind::PointerGestures
-        | GlobalKind::ShortcutsInhibit
-        | GlobalKind::Tablet
-        | GlobalKind::DataDevice
-        | GlobalKind::PrimarySelection
-        | GlobalKind::Dmabuf
-        | GlobalKind::TextInput
-        | GlobalKind::IdleNotify
-        | GlobalKind::IdleInhibit
-        | GlobalKind::SecurityContext
-        | GlobalKind::BackgroundEffect
-        | GlobalKind::QuireDesktop
-        | GlobalKind::QuireShell => None,
-    }
+    global.entry().power
 }
 
 /// The powers a desktop service of `role` is trusted with, by identity, on the public socket:

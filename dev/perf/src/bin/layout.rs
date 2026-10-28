@@ -3,7 +3,7 @@
 use casement_core::app::AppKey;
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::output::{EdidFacts, EdidSerial};
-use casement_core::window::{MaxSize, SizeLimits};
+use casement_core::window::SizeLimits;
 use casement_core::{OutputKey, OutputName, WindowId};
 use casement_layout::*;
 use casement_perf::{Options, time_row};
@@ -33,7 +33,7 @@ fn window(n: u64, placement: WindowPlacement) -> WindowSpec {
         placement,
         limits: SizeLimits {
             min: LogicalSize { w: 200, h: 120 },
-            max: MaxSize::Unbounded,
+            max: None,
         },
         stack: StackIndex(n as u32),
     }

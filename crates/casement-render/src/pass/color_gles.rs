@@ -3,7 +3,7 @@
 //! kept in the EGL context's user data, one per renderer. Only an output whose gamut is not sRGB
 //! is ever drawn through it.
 
-use super::color::ColorTransform;
+use super::color::{ColorTransform, selector};
 use smithay::backend::renderer::gles::{
     GlesError, GlesFrame, GlesRenderer, GlesTexProgram, GlesTexture, Uniform, UniformName,
     UniformType, UniformValue,
@@ -118,7 +118,7 @@ fn uniforms(transform: &ColorTransform) -> [Uniform<'static>; 2] {
                 transpose: false,
             },
         ),
-        Uniform::new("source_curve", transform.source.selector()),
+        Uniform::new("source_curve", selector(transform.source)),
     ]
 }
 

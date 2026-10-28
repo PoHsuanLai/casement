@@ -65,12 +65,12 @@ pub enum LiftOut {
     /// Mission Control is this open, in thousandths (0 closed, 1000 fully open).
     Progress(PageMilli),
     /// The fingers lifted: this is where it ends.
-    Done(Verdict),
+    Done(LiftEnd),
 }
 
 /// How a lifted swipe ends.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Verdict {
+pub enum LiftEnd {
     /// Mission Control opens.
     Open,
     /// Mission Control closes.
@@ -83,13 +83,13 @@ impl Lift {
     /// The swipe after `input` at `at`, and what it wants done.
     ///
     /// ```
-    /// use casement_core::input::lift::{Intent, Lift, LiftIn, LiftOut, Verdict};
+    /// use casement_core::input::lift::{Intent, Lift, LiftIn, LiftOut, LiftEnd};
     /// use ds_core::time::stamp::Stamp;
     ///
     /// let (lift, _) = Lift::Idle.step(LiftIn::Began(Intent::Open), Stamp(0));
     /// let (lift, _) = lift.step(LiftIn::Moved { dy: -300 }, Stamp(100));
     /// let (_, out) = lift.step(LiftIn::Ended, Stamp(500));
-    /// assert!(out.contains(&LiftOut::Done(Verdict::Open)));
+    /// assert!(out.contains(&LiftOut::Done(LiftEnd::Open)));
     /// ```
     pub fn step(self, input: LiftIn, at: Stamp) -> (Lift, Vec<LiftOut>) {
         match (self, input) {
@@ -122,7 +122,7 @@ impl Lift {
                 (Lift::Idle, vec![LiftOut::Done(verdict)])
             }
             (Lift::Tracking { .. }, LiftIn::Cancelled) => {
-                (Lift::Idle, vec![LiftOut::Done(Verdict::Stay)])
+                (Lift::Idle, vec![LiftOut::Done(LiftEnd::Stay)])
             }
             (Lift::Idle, _) => (Lift::Idle, Vec::new()),
         }
@@ -187,10 +187,10 @@ fn lift_speed(samples: &[(Stamp, i32)], at: Stamp) -> PagesPerSecMilli {
 }
 
 /// How a lift after `travelled` thousandths toward `intent` at `speed` ends.
-fn verdict(intent: Intent, travelled: i32, speed: PagesPerSecMilli) -> Verdict {
+fn verdict(intent: Intent, travelled: i32, speed: PagesPerSecMilli) -> LiftEnd {
     match (commit(PageMilli(travelled), speed), intent) {
-        (0, _) => Verdict::Stay,
-        (_, Intent::Open) => Verdict::Open,
-        (_, Intent::Close) => Verdict::Close,
+        (0, _) => LiftEnd::Stay,
+        (_, Intent::Open) => LiftEnd::Open,
+        (_, Intent::Close) => LiftEnd::Close,
     }
 }

@@ -16,7 +16,7 @@ mod frames;
 mod gate;
 
 pub(super) use cursor::sync as sync_cursors;
-pub(super) use direct::{Drawn, window as draw_window_direct};
+pub(super) use direct::window as draw_window_direct;
 pub(super) use dma::{buffer_size, deliver, fourccs, offer as dma_offer_of};
 pub(super) use frames::{last_shown, note_presented, release_waiting, write_output};
 pub(super) use gate::resolved;

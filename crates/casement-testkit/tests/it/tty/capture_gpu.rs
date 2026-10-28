@@ -3,8 +3,7 @@
 //! lend no renderer offers the linear ones alone.
 
 use casement_backend::FramePixels;
-use casement_backend::capture_path::{Import, RendererClass};
-use casement_backend::tty::{DevicePath, NoGpus, TtyBackend, TtySeams, Watch};
+use casement_backend::tty::{DevicePath, NoGpus, TtyBackend, TtySeams};
 use casement_core::OutputName;
 use casement_core::geometry::{LogicalPoint, Transform};
 use casement_core::gpu::GpuChoice;
@@ -96,9 +95,7 @@ fn watched(scenes: SceneBehaviour, frames: u64) -> (TtyBackend, FakeCaptureGpu, 
     assert_eq!(backend.announce().len(), 1, "the panel is announced");
     let at = |n: u64| Mono(Duration::from_millis(n));
     backend.apply(&panel.name, &config, at(0)).expect("lit");
-    backend
-        .watch(&panel.name, &config, Watch::On)
-        .expect("watched");
+    backend.watch(&panel.name, &config, true).expect("watched");
     for tick in 1..=frames {
         backend
             .present(&panel.name, &EmptyScene, at(tick))
@@ -118,15 +115,13 @@ fn a_gpu_that_keeps_scenes_holds_the_watched_frame_on_the_gpu() {
     );
     assert!(!gpu.world().drawn.is_empty(), "the GPU drew the scene");
     let argb = format(Fourcc::Argb8888, Modifier::Linear);
-    assert_eq!(
-        backend.output_class(&name, argb),
-        RendererClass::Gpu(Import::Accepted),
+    assert!(
+        backend.output_binds_format(&name, argb),
         "the frame is on the GPU, which lists the buffer's format"
     );
     let argb_tiled = format(Fourcc::Argb8888, tiled());
-    assert_eq!(
-        backend.output_class(&name, argb_tiled),
-        RendererClass::Gpu(Import::Refused),
+    assert!(
+        !backend.output_binds_format(&name, argb_tiled),
         "a modifier the GPU does not list"
     );
 }
@@ -141,9 +136,8 @@ fn a_gpu_that_refuses_the_scene_leaves_the_software_shadow_to_read_the_frame() {
         frame.pixels
     );
     assert!(!gpu.world().drawn.is_empty(), "the GPU was asked first");
-    assert_eq!(
-        backend.output_class(&name, format(Fourcc::Argb8888, Modifier::Linear)),
-        RendererClass::Software,
+    assert!(
+        !backend.output_binds_format(&name, format(Fourcc::Argb8888, Modifier::Linear)),
         "the frame is on the CPU: the read-back path"
     );
 }
@@ -169,9 +163,7 @@ fn an_unwatched_output_frees_its_scene() {
         position: LogicalPoint { x: 0, y: 0 },
         power: OutputPower::On,
     };
-    backend
-        .watch(&name, &config, Watch::Off)
-        .expect("unwatched");
+    backend.watch(&name, &config, false).expect("unwatched");
     assert_eq!(gpu.world().forgotten, std::slice::from_ref(&name));
     assert!(backend.last_frame(&name).is_none(), "nothing is kept");
 }

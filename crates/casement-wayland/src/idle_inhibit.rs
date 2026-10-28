@@ -1,7 +1,6 @@
 //! `zwp_idle_inhibit_manager_v1`: a visible surface (a video) keeps the session awake.
 
 use crate::states::GlobalFilter;
-use crate::idle_notify::Inhibited;
 use smithay::reexports::wayland_protocols::wp::idle_inhibit::zv1::server::zwp_idle_inhibit_manager_v1::ZwpIdleInhibitManagerV1;
 use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -72,28 +71,22 @@ impl IdleInhibitPart {
     /// needs the surface's window and the shown Spaces; neither lookup exists yet (xdg_shell
     /// keeps the window of each toplevel), so a live surface counts whether shown or not.
     /// [`IdleInhibitPart::inhibited_where`] takes the visibility test once there is one.
-    pub fn inhibited(&self) -> Inhibited {
+    pub fn inhibited(&self) -> bool {
         self.inhibited_where(|_| true)
     }
 
     /// Whether any inhibitor's live surface satisfies `visible`.
-    pub fn inhibited_where(&self, visible: impl Fn(&WlSurface) -> bool) -> Inhibited {
-        if self
-            .inhibitors
+    pub fn inhibited_where(&self, visible: impl Fn(&WlSurface) -> bool) -> bool {
+        self.inhibitors
             .iter()
             .any(|surface| surface.is_alive() && visible(surface))
-        {
-            Inhibited::Yes
-        } else {
-            Inhibited::No
-        }
     }
 }
 
 /// `surface` started inhibiting idleness (it counts while visible); says whether idleness is
 /// now held off. The model has no idle event, so the answer goes to
 /// `idle_notify::on_inhibit` instead of the core loop.
-pub fn on_inhibit(part: &mut IdleInhibitPart, surface: &WlSurface) -> Inhibited {
+pub fn on_inhibit(part: &mut IdleInhibitPart, surface: &WlSurface) -> bool {
     part.forget_dead();
     if part.inhibitors.len() < MAX_INHIBITORS {
         part.inhibitors.push(surface.clone());
@@ -104,7 +97,7 @@ pub fn on_inhibit(part: &mut IdleInhibitPart, surface: &WlSurface) -> Inhibited 
 }
 
 /// `surface` stopped inhibiting (one inhibitor of it); says whether idleness is still held off.
-pub fn on_uninhibit(part: &mut IdleInhibitPart, surface: &WlSurface) -> Inhibited {
+pub fn on_uninhibit(part: &mut IdleInhibitPart, surface: &WlSurface) -> bool {
     if let Some(at) = part.inhibitors.iter().position(|held| held == surface) {
         part.inhibitors.remove(at);
     }

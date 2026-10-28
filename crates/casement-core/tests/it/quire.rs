@@ -5,12 +5,14 @@
 use crate::support::driver::{Op, last, map, plug, run, run_from};
 use crate::support::{headless, proven};
 use casement_core::app::AppVisibility;
-use casement_core::desktop::{AppAsk, DesktopNote, DesktopRequest, SpaceAsk, WindowAsk};
+use casement_core::desktop::{
+    AppAsk, DesktopNote, DesktopRef, DesktopRequest, SpaceAsk, WindowAsk,
+};
 use casement_core::focus::TokenCheck;
-use casement_core::policy::{Advertise, ConnectionRole, GlobalKind, advertised};
+use casement_core::policy::{ConnectionRole, GlobalKind, advertised};
 use casement_core::space::SpaceIndex;
 use casement_core::window::{SpacePlace, WindowState};
-use casement_core::{CoreNote, Deferred, Effect, Event, WindowId};
+use casement_core::{CoreNote, Effect, Event, WindowId};
 use casement_protocols::vocab::{Assign, PlaceTarget};
 use porter_core::SandboxFacts;
 
@@ -30,11 +32,11 @@ fn sandbox() -> ConnectionRole {
 /// (global, public, shell, agent, sandboxed): the I7 rows P2-Z adds.
 #[test]
 fn the_p2_globals_are_seen_by_the_right_connections() {
-    use Advertise::{No, Yes};
+    let (no, yes) = (false, true);
     let rows = [
-        (GlobalKind::QuireDesktop, No, Yes, Yes, No),
-        (GlobalKind::QuireShell, No, Yes, No, No),
-        (GlobalKind::ToplevelCapture, Yes, Yes, Yes, No),
+        (GlobalKind::QuireDesktop, no, yes, yes, no),
+        (GlobalKind::QuireShell, no, yes, no, no),
+        (GlobalKind::ToplevelCapture, yes, yes, yes, no),
     ];
     assert_eq!(rows.map(|row| row.0), GLOBALS);
     for (global, public, shell, agent, sandboxed) in rows {
@@ -114,7 +116,7 @@ fn reopen_waits_for_its_machine() {
             ask: AppAsk::Reopen,
         })],
     );
-    assert!(last(&asked).contains(&Effect::Note(CoreNote::Deferred(Deferred::Reopen))));
+    assert!(last(&asked).contains(&Effect::Note(CoreNote::ReopenDeferred)));
 }
 
 #[test]
@@ -205,8 +207,16 @@ fn a_mapped_window_and_its_app_are_published() {
     let mail = proven("org.quire.Mail");
     let mapped = run(vec![plug("HEADLESS-1"), map(1, &mail, TokenCheck::Missing)]);
     let effects = last(&mapped);
-    assert!(effects.contains(&Effect::Desktop(DesktopNote::App(mail))));
-    assert!(effects.contains(&Effect::Desktop(DesktopNote::Window(WindowId(1)))));
+    assert!(
+        effects.contains(&Effect::Desktop(DesktopNote::Changed(DesktopRef::App(
+            mail
+        ))))
+    );
+    assert!(
+        effects.contains(&Effect::Desktop(DesktopNote::Changed(DesktopRef::Window(
+            WindowId(1)
+        ))))
+    );
     // Mapped without an activation token, the window does not take the key: nothing active
     // changed, so nothing active is published.
     assert!(!effects.contains(&Effect::Desktop(DesktopNote::Active)));
@@ -217,9 +227,9 @@ fn a_mapped_window_and_its_app_are_published() {
         })],
     );
     assert!(
-        last(&unmapped).contains(&Effect::Desktop(DesktopNote::Removed(
-            casement_core::desktop::DesktopRef::Window(WindowId(1))
-        )))
+        last(&unmapped).contains(&Effect::Desktop(DesktopNote::Removed(DesktopRef::Window(
+            WindowId(1)
+        ))))
     );
 }
 
@@ -236,7 +246,10 @@ fn a_step_publishes_exactly_what_changed() {
         .collect();
     assert_eq!(
         notes,
-        vec![DesktopNote::App(mail), DesktopNote::Window(WindowId(1))],
+        vec![
+            DesktopNote::Changed(DesktopRef::App(mail)),
+            DesktopNote::Changed(DesktopRef::Window(WindowId(1))),
+        ],
         "a Space is not named when it did not change, the active pair is not named when the map \
          took no key (no activation token), and the notes come in the order a client needs"
     );

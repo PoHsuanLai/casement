@@ -18,9 +18,9 @@
 //! the device's event source fills. The flip count is `pace.rs`, shared with the CPU's surface
 //! (`soft_real.rs`), which `--safe` uses so no GPU driver is loaded at all.
 
-use super::bridge_real::{Bridge, Drawn};
+use super::bridge_real::Bridge;
 use super::kms::{ConnectorId, KmsError};
-use super::pace::{Pace, Turn};
+use super::pace::Pace;
 use super::surface::{Presented, QueueOutcome, QueuedFrame, ScanoutSurface};
 use crate::headless::transform_of;
 use casement_core::output::OutputConfig;
@@ -233,7 +233,7 @@ impl RealScanout {
 
 impl ScanoutSurface for RealScanout {
     fn queue(&mut self, frame: QueuedFrame<'_>) -> QueueOutcome {
-        let Turn::Free(seq) = self.pace.turn() else {
+        let Some(seq) = self.pace.turn() else {
             return QueueOutcome::Busy;
         };
         let QueuedFrame::Draw(source) = frame else {
@@ -253,7 +253,7 @@ impl ScanoutSurface for RealScanout {
             }
             Draw::Copy(bridge) => bridge
                 .draw(&mut self.compositor, source)
-                .map(|drawn| drawn == Drawn::Unchanged),
+                .map(|changed| !changed),
         };
         // A frame with no change is not queued: `queue_frame` refuses it as empty.
         let queued = match rendered {

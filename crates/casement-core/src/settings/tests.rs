@@ -85,10 +85,7 @@ fn outputs_in_the_skip_list_keep_their_own_curve_and_the_rest_warm() {
         matches!(ramp(&other), GammaRamp::Table(_)),
         "an output not listed is warmed"
     );
-    assert_eq!(
-        settings.warming_of(&other.0, &other.1),
-        OutputWarming::Warmed
-    );
+    assert!(!settings.skips(&other.0, &other.1));
     let unlisted = NightLightSettings::defaults();
     assert!(
         unlisted.skip_outputs.is_empty(),

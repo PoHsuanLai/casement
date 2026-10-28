@@ -19,10 +19,10 @@
 
 use crate::icons::IconSearch;
 use crate::privacy::SystemDir;
-use crate::space_store::{StateDirs, StateHome};
+use crate::space_store::StateDirs;
 use crate::xwayland::{SatellitePath, XwaylandConfig, XwaylandMode};
 use casement_backend::{
-    BackendChoice, BackendError, DmabufMode, RenderCostModel, SoftRenderer, VirtualOutputSpec,
+    BackendChoice, BackendError, RenderCostModel, SoftRenderer, VirtualOutputSpec,
 };
 use std::io::Read;
 use std::path::PathBuf;
@@ -42,18 +42,20 @@ pub struct StartConfig {
     /// The headless renderer.
     pub renderer: SoftRenderer,
     /// Whether dma-buf is offered.
-    pub dmabuf: DmabufMode,
+    pub dmabuf: bool,
     /// What a frame costs (measured, except in tests).
     pub cost: RenderCostModel,
     /// Normal, or the crash guard's safe mode.
     pub mode: StartMode,
-    /// Where the settings document lives.
-    pub config_home: ConfigHome,
+    /// Where the settings document lives: the directory that stands in for `$XDG_CONFIG_HOME`
+    /// (the file is `DIR/casement/settings.toml`), or none for the real `$XDG_CONFIG_HOME` (read
+    /// where the binary starts, which the parser must not do).
+    pub config_home: Option<PathBuf>,
     /// Where Space-id entropy comes from.
     pub entropy: Entropy,
-    /// Where state files (the Spaces file) live: `At` when `--state-home DIR` named one, else
-    /// `Ephemeral` and `main` resolves it from the backend and the environment.
-    pub state_home: StateHome,
+    /// Where state files (the Spaces file) live: `Some` when `--state-home DIR` named one, else
+    /// none and `main` resolves it from the backend and the environment.
+    pub state_home: Option<StateDirs>,
     /// Where the administrator's files are looked for (`--system-dir`; `/etc/quire` unless a
     /// jailed run or a test names its own).
     pub system_dir: SystemDir,
@@ -66,7 +68,7 @@ pub struct StartConfig {
     pub tty: TtyMode,
     /// Whether the app icons in Mission Control are looked for, and where: `Off` unless `main`
     /// resolves the XDG folders for a backend that has a person at it.
-    pub icons: IconSearch,
+    pub icons: Option<IconSearch>,
 }
 
 /// Where [`StartConfig::xwayland`] came from.
@@ -134,17 +136,6 @@ pub enum StartMode {
     /// on the headless backend also the pixman renderer, and on a seat every output is drawn by
     /// the CPU into dumb buffers with no GPU driver loaded (CASB-07).
     Safe,
-}
-
-/// Where the settings document lives. (The sketch said `ConfigHome(PathBuf)`; the default is
-/// read from the environment at start, which the parser must not do: FINDINGS.)
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum ConfigHome {
-    /// `$XDG_CONFIG_HOME/casement` (read where the binary starts).
-    Xdg,
-    /// This directory stands in for `$XDG_CONFIG_HOME`: the settings file is
-    /// `DIR/casement/settings.toml`.
-    At(PathBuf),
 }
 
 /// Where Space-id entropy comes from (Space ids are minted from a seed: `Model::step` stays
@@ -221,17 +212,17 @@ pub fn parse_args(args: &[String]) -> Result<Command, CliError> {
         clock: ClockChoice::Wall,
         outputs: Vec::new(),
         renderer: SoftRenderer::Pixman,
-        dmabuf: DmabufMode::None,
+        dmabuf: false,
         cost: RenderCostModel::Measured,
         mode: StartMode::Normal,
-        config_home: ConfigHome::Xdg,
+        config_home: None,
         entropy: Entropy::System,
-        state_home: StateHome::Ephemeral,
+        state_home: None,
         system_dir: SystemDir::Etc,
         xwayland: XwaylandConfig::off(),
         xwayland_source: XwaylandSource::Default,
         tty: TtyMode::Seat,
-        icons: IconSearch::Off,
+        icons: None,
     };
     let mut node = None;
     let mut report = None;
@@ -278,17 +269,11 @@ pub fn parse_args(args: &[String]) -> Result<Command, CliError> {
                 )?
             }
             "--dmabuf" => {
-                config.dmabuf = word(
-                    flag,
-                    &value()?,
-                    &[("none", DmabufMode::None), ("soft", DmabufMode::Soft)],
-                )?
+                config.dmabuf = word(flag, &value()?, &[("none", false), ("soft", true)])?
             }
             "--safe" => config.mode = StartMode::Safe,
-            "--config-home" => config.config_home = ConfigHome::At(PathBuf::from(value()?)),
-            "--state-home" => {
-                config.state_home = StateHome::At(StateDirs::at(PathBuf::from(value()?)))
-            }
+            "--config-home" => config.config_home = Some(PathBuf::from(value()?)),
+            "--state-home" => config.state_home = Some(StateDirs::at(PathBuf::from(value()?))),
             "--system-dir" => config.system_dir = SystemDir::At(PathBuf::from(value()?)),
             "--xwayland" => {
                 config.xwayland_source = XwaylandSource::Flag;
@@ -426,9 +411,9 @@ mod tests {
         assert_eq!(config.backend, BackendChoice::Headless);
         assert_eq!(config.clock, ClockChoice::Wall);
         assert_eq!(config.renderer, SoftRenderer::Pixman);
-        assert_eq!(config.dmabuf, DmabufMode::None);
+        assert!(!config.dmabuf);
         assert_eq!(config.mode, StartMode::Normal);
-        assert_eq!(config.config_home, ConfigHome::Xdg);
+        assert_eq!(config.config_home, None);
         assert_eq!(
             config.outputs,
             vec![VirtualOutputSpec::parse(DEFAULT_OUTPUT).expect("default")]
@@ -443,18 +428,18 @@ mod tests {
         );
         assert_eq!(config.clock, ClockChoice::Stepped);
         assert_eq!(config.renderer, SoftRenderer::Llvmpipe);
-        assert_eq!(config.dmabuf, DmabufMode::Soft);
-        assert_eq!(config.config_home, ConfigHome::At(PathBuf::from("/tmp/c")));
+        assert!(config.dmabuf);
+        assert_eq!(config.config_home, Some(PathBuf::from("/tmp/c")));
         let names: Vec<&str> = config.outputs.iter().map(|o| o.name.as_str()).collect();
         assert_eq!(names, ["DP-1", "DP-2", "HDMI-A-1"]);
     }
 
     #[test]
     fn the_state_home_flag_names_the_state_directory() {
-        assert_eq!(run("").state_home, StateHome::Ephemeral);
+        assert_eq!(run("").state_home, None);
         assert_eq!(
             run("--state-home /tmp/st").state_home,
-            StateHome::At(StateDirs::at(PathBuf::from("/tmp/st")))
+            Some(StateDirs::at(PathBuf::from("/tmp/st")))
         );
         assert!(matches!(
             parse_args(&args("--state-home")),

@@ -198,37 +198,28 @@ pub enum ConfigureSize {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ToplevelStates {
     /// `activated`.
-    pub activated: Held,
+    pub activated: bool,
     /// `maximized`.
-    pub maximised: Held,
+    pub maximised: bool,
     /// `fullscreen`.
-    pub full_screen: Held,
+    pub full_screen: bool,
     /// `tiled_*`.
     pub tiled: TiledEdges,
     /// `resizing`.
-    pub resizing: Held,
-}
-
-/// Whether a toplevel state holds.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Held {
-    /// It holds.
-    Yes,
-    /// It does not.
-    No,
+    pub resizing: bool,
 }
 
 /// Which edges of a toplevel touch a neighbour or the usable area's edge.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TiledEdges {
     /// `tiled_top`.
-    pub top: Held,
+    pub top: bool,
     /// `tiled_bottom`.
-    pub bottom: Held,
+    pub bottom: bool,
     /// `tiled_left`.
-    pub left: Held,
+    pub left: bool,
     /// `tiled_right`.
-    pub right: Held,
+    pub right: bool,
 }
 
 /// Who gets the keyboard.
@@ -289,14 +280,6 @@ pub enum CoreNote {
     UnknownWindow(WindowId),
     /// A client's request to change an output was refused (P1-M1).
     RefusedOutput(crate::output::OutputRefusal),
-    /// A desktop request the model does not carry out yet (P2-Z).
-    Deferred(Deferred),
-}
-
-/// A desktop request that waits for the machine that carries it out.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum Deferred {
-    /// Reopen an app with no windows: the launch intent (P4).
-    Reopen,
+    /// A request to reopen an app with no windows, which waits for the launch intent (P4).
+    ReopenDeferred,
 }

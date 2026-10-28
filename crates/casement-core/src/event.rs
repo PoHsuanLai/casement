@@ -12,14 +12,13 @@ use crate::output::{
     GammaRamp, MinuteOfDay, OutputChangeSet, OutputConfig, OutputFacts, Requester,
 };
 use crate::policy::ConnectionRole;
-use crate::privilege::{Book, ClientStanding, Floor, Subject, UnixSeconds};
+use crate::privilege::{Book, ClientStanding, Edit, Floor, UnixSeconds};
 use crate::settings::CasementSettings;
 use crate::shell::ShellRequest;
 use crate::space::{SpaceFile, WorkspaceRequest};
 use crate::time::TimerKey;
 use crate::window::{
-    A11yRoot, FirstMouse, FrameHint, Parent, SizeLimits, WindowOrigin, WindowTitle,
-    WlrToplevelRequest,
+    A11yRoot, FrameHint, SizeLimits, WindowOrigin, WindowTitle, WlrToplevelRequest,
 };
 use casement_protocols::vocab::{
     Answer, AskId, Edited, Modality, PlaceTarget, Power, Toggle, TrialAnswer, TrialId, WindowRole,
@@ -269,32 +268,15 @@ pub enum Event {
         /// When.
         at: UnixSeconds,
     },
-    /// Settings switched a program's power on.
-    PrivilegeGranted {
-        /// The program or app.
-        subject: Subject,
-        /// The power.
-        power: Power,
+    /// Settings changed a program's answer: switched a power on or off (off, every connected
+    /// client of the program loses it at once) or forgot the answer ("Ask Again": the program
+    /// is asked at its next use, and a connected client of it loses the power now). `at` is the
+    /// wall-clock second the root read; it only stamps the book.
+    PrivilegeEdited {
+        /// The change.
+        edit: Edit,
         /// When.
         at: UnixSeconds,
-    },
-    /// Settings switched a program's power off: every connected client of it loses the power
-    /// at once.
-    PrivilegeRevoked {
-        /// The program or app.
-        subject: Subject,
-        /// The power.
-        power: Power,
-        /// When.
-        at: UnixSeconds,
-    },
-    /// Settings forgot a program's answer ("Ask Again"): it is asked at its next use, and a
-    /// connected client of it loses the power now.
-    PrivilegeForgotten {
-        /// The program or app.
-        subject: Subject,
-        /// The power.
-        power: Power,
     },
     /// The shell can be asked a question: it bound `quire_shell_v1` at the version that
     /// carries `permission_ask`.
@@ -326,7 +308,7 @@ pub struct MappedToplevel {
     /// What it blocks.
     pub modality: Modality,
     /// Its parent.
-    pub parent: Parent,
+    pub parent: Option<WindowId>,
     /// Its size limits.
     pub limits: SizeLimits,
     /// The size of its first buffer.
@@ -406,7 +388,7 @@ pub enum ToplevelMeta {
     /// Its declared app id.
     ClaimedId(ClaimedId),
     /// Its parent.
-    Parent(Parent),
+    Parent(Option<WindowId>),
     /// Its size limits.
     Limits(SizeLimits),
 }
@@ -415,7 +397,7 @@ pub enum ToplevelMeta {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WindowHintChange {
     /// Its first-mouse regions.
-    FirstMouse(FirstMouse),
+    FirstMouse(Vec<LogicalRect>),
     /// Its frame.
     Frame(FrameHint),
     /// Its frame is forgotten: the client's object is gone, and it has said nothing since.
@@ -423,7 +405,7 @@ pub enum WindowHintChange {
     /// Its role.
     Role(WindowRole),
     /// Its accessibility root.
-    A11y(A11yRoot),
+    A11y(Option<A11yRoot>),
     /// Whether its document is edited.
     Edited(Edited),
     /// Where its global menu lives (the KDE appmenu protocol, `gtk_shell1`).

@@ -2,17 +2,18 @@
 //! Privacy list Settings shows, from the model's rows, and the changes Settings makes to it.
 //!
 //! The model owns the answers. This module reads the board the event loop publishes to, and a
-//! change it accepts becomes a [`PrivacyEdit`] in the queue the loop reads; the model then
+//! change it accepts becomes an [`Edit`] in the queue the loop reads; the model then
 //! writes its book. Only the Settings app may change anything, only Settings and the shell may
 //! read, both proven all the way through the caller-identity library; anyone else is refused
 //! and hears no `Changed`.
 
 use super::board::{PrivacyBoard, PrivacyLink};
-use super::edit::PrivacyEdit;
+use super::edit::applied;
 use super::keys::{changes, listed};
 use super::write::{EditFault, edit_of};
 use crate::dbus::{CallerCheck, require};
 use calloop::channel::SyncSender;
+use casement_core::privilege::Edit;
 use ds_settings::live::{
     Access, Caller, LiveError, LiveModule, LiveSchema, Served, Snapshot, Verdict, serve,
 };
@@ -30,7 +31,7 @@ pub const PRIVACY_PATH: &str = "/org/quire/Compositor1/privacy";
 pub struct PrivacyModule {
     callers: Arc<dyn CallerCheck>,
     board: PrivacyBoard,
-    edits: SyncSender<PrivacyEdit>,
+    edits: SyncSender<Edit>,
 }
 
 impl PrivacyModule {
@@ -123,7 +124,7 @@ impl LiveModule for PrivacyModule {
                 }
             })?;
         // Settings reads its own change back at once; the model's list replaces this one.
-        self.board.publish(edit.applied(&rows));
+        self.board.publish(applied(&edit, &rows));
         Ok(())
     }
 }

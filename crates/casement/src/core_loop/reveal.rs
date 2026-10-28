@@ -11,9 +11,7 @@ use super::scene::{Hit, hit_test};
 use crate::exec;
 use crate::state::State;
 use casement_core::geometry::{LogicalPoint, LogicalRect};
-use casement_core::reveal::{
-    Cover, Over, Place, Popup, RevealEdge, RevealIn, RevealOut, RevealTiming, Stacking, slid,
-};
+use casement_core::reveal::{Place, RevealEdge, RevealIn, RevealOut, RevealTiming, slid};
 use casement_core::shell::ShellNote;
 use casement_core::space::SpaceContent;
 use casement_core::time::{Due, Mono, TimerKey};
@@ -31,15 +29,12 @@ fn holder(model: &Model, output: &OutputKey, edge: RevealEdge) -> Option<LayerKe
 
 /// Whether `output` shows a full-screen Space and has a surface to reveal, whatever the bar does
 /// in full screen.
-fn full_screen_cover(model: &Model, output: &OutputKey, surface: Option<LayerKey>) -> Cover {
+fn full_screen_cover(model: &Model, output: &OutputKey, surface: Option<LayerKey>) -> bool {
     let full_screen = model
         .spaces()
         .shown_on(output)
         .is_some_and(|space| matches!(space.content, SpaceContent::FullScreen(_)));
-    match (full_screen, surface) {
-        (true, Some(_)) => Cover::Yes,
-        _ => Cover::No,
-    }
+    full_screen && surface.is_some()
 }
 
 /// Whether `edge` of `output` reveals now: the output shows a full-screen Space with a surface
@@ -49,44 +44,29 @@ fn cover_of(
     output: &OutputKey,
     edge: RevealEdge,
     surface: Option<LayerKey>,
-) -> Cover {
+) -> bool {
     edge.covered(
         model.full_screen_bar(),
         full_screen_cover(model, output, surface),
     )
 }
 
-/// Whether the bar of `output` stays up above a full-screen window (the shell's `keep`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Kept {
-    /// It does: the output shows a full-screen Space and the top edge does not reveal.
-    Yes,
-    /// It does not.
-    No,
-}
-
-/// Whether the surface of `edge` of `output` stays up above the full-screen window.
-fn kept_on(model: &Model, output: &OutputKey, edge: RevealEdge, surface: Option<LayerKey>) -> Kept {
+/// Whether the surface of `edge` of `output` stays up above the full-screen window (the shell's
+/// `keep`): the output shows a full-screen Space and the edge does not reveal.
+fn kept_on(model: &Model, output: &OutputKey, edge: RevealEdge, surface: Option<LayerKey>) -> bool {
     let shown = full_screen_cover(model, output, surface);
-    match (shown, cover_of(model, output, edge, surface)) {
-        (Cover::Yes, Cover::No) => Kept::Yes,
-        _ => Kept::No,
-    }
+    shown && !cover_of(model, output, edge, surface)
 }
 
 /// Whether `surface` has a pop-up open.
-fn popup_of(state: &State, surface: Option<LayerKey>) -> Popup {
-    let open = surface
+fn popup_of(state: &State, surface: Option<LayerKey>) -> bool {
+    surface
         .and_then(|layer| state.render.textures.layer(&layer))
         .is_some_and(|entry| {
             PopupManager::popups_for_surface(&entry.root)
                 .next()
                 .is_some()
-        });
-    match open {
-        true => Popup::Open,
-        false => Popup::Closed,
-    }
+        })
 }
 
 /// The machine of `edge` of `output` hears `input`; what it asks for is carried out.
@@ -142,11 +122,9 @@ pub(super) fn moved(state: &mut State, stacked: &[(Hit, Candidate)], at: Logical
     for (output, area) in state.core.model.output_rects() {
         for edge in RevealEdge::ALL {
             let surface = holder(&state.core.model, &output, edge);
-            let over = match (&hit, surface) {
-                (Some(Hit::Layer(hit)), Some(layer)) if *hit == layer => Over::Surface,
-                _ => Over::Elsewhere,
-            };
-            let place = Place::of(edge, area, at, over);
+            let over_surface =
+                matches!((&hit, surface), (Some(Hit::Layer(hit)), Some(layer)) if *hit == layer);
+            let place = Place::of(edge, area, at, over_surface);
             if state.render.reveal.get(&output, edge).place() != place {
                 step(state, &output, edge, RevealIn::Pointer(place));
             }
@@ -190,7 +168,7 @@ fn raised_on(
     let layer = holder(model, output, edge)?;
     let kept = kept_on(model, output, edge, Some(layer));
     let machine = state.render.reveal.get(output, edge);
-    if kept == Kept::No && machine.stacking() == Stacking::Behind {
+    if !kept && !machine.raised() {
         return None;
     }
     let entry = state.render.textures.layer(&layer)?;
@@ -198,7 +176,7 @@ fn raised_on(
         .layers()
         .arrange(output, area)
         .place(&layer, entry.committed)?;
-    if kept == Kept::Yes {
+    if kept {
         return Some(RaisedDraw {
             layer,
             area: rests,

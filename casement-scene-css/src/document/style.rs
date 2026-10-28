@@ -2,7 +2,7 @@
 //! to `scene.css`.
 
 use casement_core::geometry::{LogicalRect, LogicalSize};
-use casement_core::window::{MaxSize, SizeLimits};
+use casement_core::window::SizeLimits;
 
 /// A list of custom properties, written as one `style` attribute.
 #[derive(Debug, Default)]
@@ -43,8 +43,8 @@ impl Props {
     pub(super) fn limits(self, limits: SizeLimits) -> Props {
         let with_min = self.px("min-w", limits.min.w).px("min-h", limits.min.h);
         match limits.max {
-            MaxSize::Unbounded => with_min,
-            MaxSize::Bounded(max) => with_min.px("max-w", max.w).px("max-h", max.h),
+            None => with_min,
+            Some(max) => with_min.px("max-w", max.w).px("max-h", max.h),
         }
     }
 

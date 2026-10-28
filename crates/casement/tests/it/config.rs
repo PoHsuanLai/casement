@@ -2,10 +2,9 @@
 //! settings, and the schema detent reads (`casement --write-schema`). Every document lives in a
 //! scratch directory standing in for `$XDG_CONFIG_HOME`; nothing here reads the real one.
 
-use casement::cli::ConfigHome;
 use casement::config::{
-    ActionWords, BindingsSection, CasementDoc, Stamped, Version, load, schema, stamp_version,
-    to_core, write_schema,
+    ActionWords, BindingsSection, CasementDoc, Version, load, schema, stamp_version, to_core,
+    write_schema,
 };
 use casement_core::input::{
     Argv, Binding, BindingAction, Bindings, Chord, DbusCall, DesktopCommand, SpaceStep,
@@ -15,28 +14,27 @@ use casement_core::settings::{
     AccelProfile, CasementSettings, Enabled, FirstClick, MinimiseEffect, RepeatRate,
     TitleDoubleClick,
 };
-use casement_core::window::SplitSide;
-use casement_protocols::vocab::PlaceTarget;
+use casement_protocols::vocab::{PlaceTarget, SplitSide};
 use ds_core::geometry::scale::Scale;
 use ds_core::vocab::Fraction;
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
 /// A scratch config home holding `text` as `casement/settings.toml`.
-fn home_with(text: &str) -> (tempfile::TempDir, ConfigHome) {
+fn home_with(text: &str) -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().expect("temp dir");
     let casement = dir.path().join("casement");
     std::fs::create_dir_all(&casement).expect("create");
     std::fs::write(casement.join("settings.toml"), text).expect("write");
-    let home = ConfigHome::At(dir.path().to_path_buf());
+    let home = dir.path().to_path_buf();
     (dir, home)
 }
 
 fn settings_of(text: &str) -> CasementSettings {
     let (_dir, home) = home_with(text);
-    to_core(&load(&home).expect("load"))
+    to_core(&load(Some(&home)).expect("load"))
 }
 
 /// Each row: where the settings come from, and that they are the defaults.
@@ -46,7 +44,7 @@ fn the_defaults_come_from() {
     const CASES: &[(&str, Source)] = &[
         ("a missing document", || {
             let home = tempfile::tempdir().expect("temp dir");
-            let doc = load(&ConfigHome::At(home.path().to_path_buf())).expect("load");
+            let doc = load(Some(home.path())).expect("load");
             assert_eq!(
                 doc,
                 CasementDoc::default().migrated(),
@@ -55,8 +53,7 @@ fn the_defaults_come_from() {
             to_core(&doc)
         }),
         ("a directory that does not exist", || {
-            let home = ConfigHome::At(Path::new("/nonexistent/casement-test-home").to_path_buf());
-            to_core(&load(&home).expect("load"))
+            to_core(&load(Some(Path::new("/nonexistent/casement-test-home"))).expect("load"))
         }),
         ("an empty document", || settings_of("")),
         ("the serialised default document", || {
@@ -359,7 +356,7 @@ fn every_kind_of_binding_survives_the_document() {
         ..CasementDoc::default()
     };
     let (_dir, home) = home_with(&toml::to_string(&doc).expect("serialises"));
-    let loaded = load(&home).expect("load");
+    let loaded = load(Some(&home)).expect("load");
     assert_eq!(loaded, doc.migrated());
     let mut got: Vec<BindingAction> = to_core(&loaded)
         .bindings
@@ -513,7 +510,7 @@ fn a_migrated_document_is_written_at_the_current_version() {
     let text = toml::to_string(&doc).expect("serialises");
     assert!(text.starts_with("version = 2\n"), "{text}");
     let (_dir, home) = home_with(&text);
-    assert_eq!(load(&home).expect("load"), doc);
+    assert_eq!(load(Some(&home)).expect("load"), doc);
 }
 
 #[test]
@@ -521,14 +518,14 @@ fn stamping_writes_only_the_version_and_only_once() {
     let old = "# mine\n[pointer]\nnatural_scroll = \"off\"\n";
     let (dir, home) = home_with(old);
     let file = dir.path().join("casement/settings.toml");
-    assert_eq!(stamp_version(&home).expect("stamp"), Stamped::Written);
+    assert!(stamp_version(Some(&home)).expect("stamp"));
     let stamped = std::fs::read_to_string(&file).expect("read");
     assert_eq!(stamped, format!("version = 2\n{old}"));
-    assert_eq!(stamp_version(&home).expect("stamp"), Stamped::Left);
+    assert!(!stamp_version(Some(&home)).expect("stamp"));
     assert_eq!(std::fs::read_to_string(&file).expect("read"), stamped);
     // The choice made after the stamp survives the next read.
     assert_eq!(
-        to_core(&load(&home).expect("load"))
+        to_core(&load(Some(&home)).expect("load"))
             .pointer
             .mouse
             .natural_scroll,
@@ -549,13 +546,13 @@ fn stamping_never_waits_on_a_pipe_and_keeps_a_link_a_link() {
         rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR,
     )
     .expect("a pipe");
-    assert_eq!(stamp_version(&home).expect("stamp"), Stamped::Left);
+    assert!(!stamp_version(Some(&home)).expect("stamp"));
     std::fs::remove_file(&file).expect("the pipe goes");
 
     let target = dir.path().join("dotfiles-settings.toml");
     std::fs::write(&target, "[pointer]\nnatural_scroll = \"off\"\n").expect("a target");
     std::os::unix::fs::symlink(&target, &file).expect("a link");
-    assert_eq!(stamp_version(&home).expect("stamp"), Stamped::Written);
+    assert!(stamp_version(Some(&home)).expect("stamp"));
     assert!(
         std::fs::symlink_metadata(&file)
             .expect("there")
@@ -573,8 +570,7 @@ fn stamping_never_waits_on_a_pipe_and_keeps_a_link_a_link() {
 #[test]
 fn stamping_a_missing_file_writes_nothing() {
     let dir = tempfile::tempdir().expect("temp dir");
-    let home = ConfigHome::At(dir.path().to_path_buf());
-    assert_eq!(stamp_version(&home).expect("stamp"), Stamped::Left);
+    assert!(!stamp_version(Some(dir.path())).expect("stamp"));
     assert!(!dir.path().join("casement").exists());
 }
 
@@ -587,7 +583,7 @@ fn the_file_changes_the_pointer_the_repeat_the_layout_and_the_night_light_and_no
     let current = CasementSettings::defaults();
     let doc = |text: &str| -> CasementDoc {
         let (_dir, home) = home_with(text);
-        load(&home).expect("load")
+        load(Some(&home)).expect("load")
     };
     let same = followed(&current, &doc(""));
     assert_eq!(

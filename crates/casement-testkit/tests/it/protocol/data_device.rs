@@ -1,8 +1,9 @@
 //! `data_device` (P0-H5).
 
 use casement_core::geometry::{LogicalPoint, PhysicalSize};
-use casement_core::input::{ButtonCode, DeviceClass, Edge};
+use casement_core::input::{ButtonCode, DeviceClass};
 use casement_core::policy::ConnectionRole;
+use casement_protocols::vocab::PressEdge;
 use casement_testclient::seat::keyboard::Keyboard;
 use casement_testclient::seat::pointer::Pointer;
 use casement_testclient::selection::data_device::DataDevice;
@@ -114,7 +115,7 @@ fn drop_on_a_zone() -> (Fixture, ClientId) {
     fixture
         .input()
         .pointer_to(mouse, LogicalPoint { x: 960, y: 540 });
-    fixture.input().button(mouse, BTN_LEFT, Edge::Press);
+    fixture.input().button(mouse, BTN_LEFT, PressEdge::Press);
     let serial = pointer
         .press_serial()
         .expect("the press reached the source");
@@ -130,7 +131,7 @@ fn drop_on_a_zone() -> (Fixture, ClientId) {
         .input()
         .pointer_to(mouse, LogicalPoint { x: 100, y: 100 });
     assert!(saw(fixture.client(target), "wl_data_device#", "enter"));
-    fixture.input().button(mouse, BTN_LEFT, Edge::Release);
+    fixture.input().button(mouse, BTN_LEFT, PressEdge::Release);
     assert!(
         saw(fixture.client(target), "wl_data_device#", "drop"),
         "the drop reached the layer surface"

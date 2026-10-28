@@ -9,11 +9,11 @@
 //! `casement_render::pass::write_dmabuf`; shared memory is written directly.
 
 use crate::state::State;
-use casement_backend::{BackendError, BackendKind};
+use casement_backend::BackendError;
 use casement_core::geometry::PhysicalSize;
 use casement_render::pass::{ArgbImage, CapturedFrame, ReadError, ShmWriteError, write_frame};
 use casement_wayland::image_capture::dma_offer;
-use casement_wayland::limits::{CursorBuffer, judge_cursor_buffer};
+use casement_wayland::limits::cursor_buffer_fits;
 use smithay::backend::allocator::{Buffer as AllocBuffer, Format, Fourcc};
 use smithay::reexports::drm::node::DrmNode;
 use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
@@ -30,18 +30,11 @@ pub(in crate::handlers) enum DeliverError {
     /// The renderer could not draw it into the dma-buf.
     #[error("dma-buf: {0}")]
     Dmabuf(#[from] BackendError),
-    /// This backend has no renderer to draw a dma-buf with.
-    #[error("this backend draws no dma-buf captures")]
-    NoRenderer,
 }
 
 /// The formats the backend's renderer draws a capture into.
 fn renderable(state: &State) -> Vec<Format> {
-    match &state.backend {
-        BackendKind::Headless(backend) => backend.capture_formats(),
-        BackendKind::Tty(tty) => tty.capture_formats(),
-        _ => Vec::new(),
-    }
+    state.backend.driver().capture_formats()
 }
 
 /// The dma-buf formats a capture may use now: the renderer's, among those the global accepts.
@@ -75,11 +68,10 @@ pub(in crate::handlers) fn deliver(
         return Ok(write_frame(buffer, frame)?);
     };
     let mut target = held.clone();
-    match &mut state.backend {
-        BackendKind::Headless(backend) => backend.write_dmabuf(&mut target, frame)?,
-        BackendKind::Tty(tty) => tty.write_dmabuf(&mut target, frame)?,
-        _ => return Err(DeliverError::NoRenderer),
-    }
+    state
+        .backend
+        .driver_mut()
+        .write_dmabuf(&mut target, frame)?;
     Ok(())
 }
 
@@ -107,9 +99,6 @@ pub(in crate::handlers) enum CursorReadError {
     /// A dma-buf the renderer could not read back.
     #[error("dma-buf: {0}")]
     Dmabuf(#[from] BackendError),
-    /// This backend has no renderer to read a dma-buf with.
-    #[error("this backend reads no dma-bufs")]
-    NoRenderer,
     /// The buffer has no size to read (it is neither shared memory nor a dma-buf).
     #[error("the buffer has no size to read")]
     Unsized,
@@ -131,7 +120,7 @@ pub(in crate::handlers) fn read_cursor(
     buffer: &WlBuffer,
 ) -> Result<ArgbImage, CursorReadError> {
     let size = buffer_size(buffer).ok_or(CursorReadError::Unsized)?;
-    if judge_cursor_buffer(size) == CursorBuffer::TooLarge {
+    if !cursor_buffer_fits(size) {
         return Err(CursorReadError::TooLarge {
             w: size.w,
             h: size.h,
@@ -141,9 +130,5 @@ pub(in crate::handlers) fn read_cursor(
         return Ok(ArgbImage::from_shm(buffer)?);
     };
     let source = held.clone();
-    match &mut state.backend {
-        BackendKind::Headless(backend) => Ok(backend.read_dmabuf(&source)?),
-        BackendKind::Tty(tty) => Ok(tty.read_dmabuf(&source)?),
-        _ => Err(CursorReadError::NoRenderer),
-    }
+    Ok(state.backend.driver_mut().read_dmabuf(&source)?)
 }

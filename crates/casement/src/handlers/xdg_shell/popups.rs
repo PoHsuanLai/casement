@@ -8,7 +8,7 @@ use casement_core::geometry::{LogicalPoint, LogicalSize};
 use casement_core::policy::ConnectionRole;
 use casement_wayland::ClientState;
 use casement_wayland::convert::{point_of, serial_of};
-use casement_wayland::limits::{self, Limit, Standing};
+use casement_wayland::limits::{self, Limit};
 use casement_wayland::xdg_shell::{
     PopupBounds, on_new_popup, on_popup_acked, on_popup_grab, on_reposition, on_room_changed,
     popups_of,
@@ -95,7 +95,7 @@ pub(crate) fn new_popup(state: &mut State, surface: PopupSurface, positioner: Po
     if let Some(client) = surface.wl_surface().client() {
         let held =
             ClientState::of(&client).map_or(0, |data| state.wl.xdg_shell.popups_held_by(data.key));
-        if limits::admit(&state.display, &client, Limit::Popups, held) == Standing::Over {
+        if !limits::admit(&state.display, &client, Limit::Popups, held) {
             return;
         }
     }

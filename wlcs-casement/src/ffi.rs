@@ -6,8 +6,9 @@
 #![allow(unsafe_code)]
 
 use crate::adapter::{
-    Button, Edge, Fixed, FixedPoint, Position, WlcsClient, WlcsEvent, WlcsSurface, WlcsTouchId,
+    Button, Fixed, FixedPoint, Position, WlcsClient, WlcsEvent, WlcsSurface, WlcsTouchId,
 };
+use casement_protocols::vocab::PressEdge;
 use crate::descriptor::DESCRIPTOR;
 use crate::host::{Host, Request};
 use std::io::{Error, ErrorKind};
@@ -154,7 +155,7 @@ pub struct PointerHandle {
 }
 
 impl PointerHandle {
-    fn button(&self, button: i32, edge: Edge) {
+    fn button(&self, button: i32, edge: PressEdge) {
         let button = Button(u32::try_from(button).unwrap_or_default());
         let _ = call(&self.sender, WlcsEvent::Button { button, edge });
     }
@@ -168,10 +169,10 @@ impl wlcs::Pointer for PointerHandle {
         let _ = call(&self.sender, WlcsEvent::PointerBy(point(dx, dy)));
     }
     fn button_up(&mut self, button: i32) {
-        self.button(button, Edge::Release);
+        self.button(button, PressEdge::Release);
     }
     fn button_down(&mut self, button: i32) {
-        self.button(button, Edge::Press);
+        self.button(button, PressEdge::Press);
     }
 }
 

@@ -19,7 +19,7 @@ pub use sections::{
     OutputsSection, PointerSection, SpacesSection, TouchpadSection, WindowsSection,
     XwaylandSection, XwaylandUse,
 };
-pub use version::{Stamped, Version, stamp_version};
+pub use version::{Version, stamp_version};
 
 /// Why the settings could not be read or the schema written.
 #[derive(Debug, thiserror::Error)]

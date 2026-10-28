@@ -2,9 +2,10 @@
 //! fixture and the test client core (P0-B-headless, P0-T-client) and the core loop's idle
 //! hooks (P0-B-loop, interface asks of this lane) exist.
 
-use casement_core::input::{DeviceClass, Edge, KeyCode};
+use casement_core::input::{DeviceClass, KeyCode};
 use casement_core::policy::ConnectionRole;
 use casement_core::time::Mono;
+use casement_protocols::vocab::PressEdge;
 use casement_testclient::misc::idle::{IdleKind, IdleLine, IdleSignal, IdleWatch};
 use casement_testkit::{Fixture, FixtureSpec, TestOrigin};
 use std::time::Duration;
@@ -66,8 +67,10 @@ fn activity_resumes() {
     fixture.pump();
     step(&mut fixture, &mut watch, Duration::from_secs(30));
     assert_eq!(watch.signals(), vec![IdleSignal::Idled]);
-    fixture.input().key(keyboard, KeyCode(30), Edge::Press);
-    fixture.input().key(keyboard, KeyCode(30), Edge::Release);
+    fixture.input().key(keyboard, KeyCode(30), PressEdge::Press);
+    fixture
+        .input()
+        .key(keyboard, KeyCode(30), PressEdge::Release);
     step(&mut fixture, &mut watch, Duration::ZERO);
     assert_eq!(
         watch.signals(),
@@ -98,7 +101,7 @@ fn input_moves_the_deadline() {
     .expect("the notification");
     fixture.pump();
     step(&mut fixture, &mut watch, Duration::from_secs(10));
-    fixture.input().key(keyboard, KeyCode(30), Edge::Press);
+    fixture.input().key(keyboard, KeyCode(30), PressEdge::Press);
     step(&mut fixture, &mut watch, Duration::from_secs(20));
     assert!(
         watch.lines().is_empty(),

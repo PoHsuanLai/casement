@@ -3,7 +3,8 @@
 //! placement request does at each phase, and what destroying the object forgets.
 
 use crate::convert::rect_of;
-use casement_core::window::{A11yRoot, FirstMouse, FrameHint};
+use casement_core::geometry::LogicalRect;
+use casement_core::window::{A11yRoot, FrameHint};
 use casement_core::{Event, InputSerial, ToplevelRequest, WindowHintChange, WindowId};
 use casement_protocols::vocab::{Edited, FrameMode, PlaceTarget, WindowRole};
 use smithay::wayland::compositor::{RectangleKind, RegionAttributes};
@@ -21,7 +22,7 @@ pub const MAX_FIRST_MOUSE_RECTS: usize = 64;
 /// double-buffered, so the model hears them when the toplevel commits.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PendingHints {
-    first_mouse: Option<FirstMouse>,
+    first_mouse: Option<Vec<LogicalRect>>,
     frame: Option<FrameHint>,
 }
 
@@ -32,7 +33,7 @@ impl PendingHints {
     }
 
     /// With `first_mouse` staged (a later request replaces an earlier one).
-    pub fn with_first_mouse(self, first_mouse: FirstMouse) -> PendingHints {
+    pub fn with_first_mouse(self, first_mouse: Vec<LogicalRect>) -> PendingHints {
         PendingHints {
             first_mouse: Some(first_mouse),
             ..self
@@ -60,8 +61,8 @@ impl PendingHints {
 /// The first-mouse regions a `wl_region` describes: its added rectangles (surface-local). A
 /// subtracted rectangle is not representable as a list of rectangles, so a region with any
 /// subtraction keeps only the added rectangles no subtraction fully covers; an empty region
-/// is `Nowhere`.
-pub fn first_mouse_of(region: &RegionAttributes) -> FirstMouse {
+/// is none.
+pub fn first_mouse_of(region: &RegionAttributes) -> Vec<LogicalRect> {
     let read: Vec<_> = region.rects.iter().take(MAX_FIRST_MOUSE_RECTS).collect();
     let subtracted: Vec<_> = read
         .iter()
@@ -77,11 +78,7 @@ pub fn first_mouse_of(region: &RegionAttributes) -> FirstMouse {
         .map(|(_, rect)| rect_of(*rect))
         .filter(|rect| rect.size.w > 0 && rect.size.h > 0)
         .collect();
-    if kept.is_empty() {
-        FirstMouse::Nowhere
-    } else {
-        FirstMouse::Regions(kept)
-    }
+    kept
 }
 
 /// The frame a `set_frame` asks for.
@@ -107,15 +104,22 @@ pub fn role_request(role: WindowRole) -> Result<WindowRole, BadRole> {
 
 /// The accessibility root a `set_a11y_root` names: an empty name clears it, and one too long to
 /// be a D-Bus name or path is not passed on.
-pub fn a11y_of(bus_name: &str, object_path: &str) -> Option<A11yRoot> {
+pub fn a11y_of(bus_name: &str, object_path: &str) -> Result<Option<A11yRoot>, A11yTooLong> {
     if bus_name.is_empty() {
-        return Some(A11yRoot::Unknown);
+        return Ok(None);
     }
-    (bus_name.len() <= A11Y_MAX_LEN && object_path.len() <= A11Y_MAX_LEN).then(|| A11yRoot::At {
+    if bus_name.len() > A11Y_MAX_LEN || object_path.len() > A11Y_MAX_LEN {
+        return Err(A11yTooLong);
+    }
+    Ok(Some(A11yRoot {
         bus_name: bus_name.to_owned(),
         object_path: object_path.to_owned(),
-    })
+    }))
 }
+
+/// An accessibility root whose name or path is too long to be a D-Bus one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct A11yTooLong;
 
 /// What a proven `request_placement` does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -151,10 +155,10 @@ pub fn placement_events(
 /// saved document, no accessibility root, and the role the window had without the object.
 pub fn forgotten(base_role: WindowRole) -> Vec<WindowHintChange> {
     vec![
-        WindowHintChange::FirstMouse(FirstMouse::Nowhere),
+        WindowHintChange::FirstMouse(Vec::new()),
         WindowHintChange::FrameForgotten,
         WindowHintChange::Role(base_role),
-        WindowHintChange::A11y(A11yRoot::Unknown),
+        WindowHintChange::A11y(None),
         WindowHintChange::Edited(Edited::Saved),
     ]
 }
@@ -188,12 +192,12 @@ mod tests {
         let frame = frame_of(FrameMode::CompositorShadow, 10);
         let pending = PendingHints::none()
             .with_frame(frame_of(FrameMode::Client, 3))
-            .with_first_mouse(FirstMouse::Regions(vec![rect(0, 0, 10, 10)]))
+            .with_first_mouse(vec![rect(0, 0, 10, 10)])
             .with_frame(frame);
         assert_eq!(
             pending.commit(),
             vec![
-                WindowHintChange::FirstMouse(FirstMouse::Regions(vec![rect(0, 0, 10, 10)])),
+                WindowHintChange::FirstMouse(vec![rect(0, 0, 10, 10)]),
                 WindowHintChange::Frame(frame),
             ]
         );
@@ -204,31 +208,31 @@ mod tests {
     fn regions_become_first_mouse_rectangles() {
         use RectangleKind::{Add, Subtract};
         let rows = [
-            ("empty", region(&[]), FirstMouse::Nowhere),
+            ("empty", region(&[]), Vec::new()),
             (
                 "one add",
                 region(&[(Add, (0, 0, 40, 20))]),
-                FirstMouse::Regions(vec![rect(0, 0, 40, 20)]),
+                vec![rect(0, 0, 40, 20)],
             ),
             (
                 "two adds keep their order",
                 region(&[(Add, (0, 0, 40, 20)), (Add, (50, 0, 10, 10))]),
-                FirstMouse::Regions(vec![rect(0, 0, 40, 20), rect(50, 0, 10, 10)]),
+                vec![rect(0, 0, 40, 20), rect(50, 0, 10, 10)],
             ),
             (
                 "an add that a subtraction covers is dropped",
                 region(&[(Add, (5, 5, 10, 10)), (Subtract, (0, 0, 100, 100))]),
-                FirstMouse::Nowhere,
+                Vec::new(),
             ),
             (
                 "an add a subtraction only clips is kept whole",
                 region(&[(Add, (0, 0, 40, 20)), (Subtract, (30, 0, 50, 50))]),
-                FirstMouse::Regions(vec![rect(0, 0, 40, 20)]),
+                vec![rect(0, 0, 40, 20)],
             ),
             (
                 "an empty rectangle is nothing",
                 region(&[(Add, (0, 0, 0, 20))]),
-                FirstMouse::Nowhere,
+                Vec::new(),
             ),
         ];
         for (case, attrs, want) in rows {
@@ -244,14 +248,10 @@ mod tests {
         let many: Vec<_> = (0..200_000_i32)
             .map(|n| (if n % 2 == 0 { Add } else { Subtract }, (n, 0, 10, 10)))
             .collect();
-        let FirstMouse::Regions(kept) = first_mouse_of(&region(&many)) else {
-            panic!("the first rectangles are added ones");
-        };
+        let kept = first_mouse_of(&region(&many));
         assert!(kept.len() <= MAX_FIRST_MOUSE_RECTS, "{} kept", kept.len());
         let adds: Vec<_> = (0..200_000_i32).map(|n| (Add, (n, 0, 10, 10))).collect();
-        let FirstMouse::Regions(kept) = first_mouse_of(&region(&adds)) else {
-            panic!("added rectangles");
-        };
+        let kept = first_mouse_of(&region(&adds));
         assert_eq!(kept.len(), MAX_FIRST_MOUSE_RECTS);
     }
 
@@ -272,17 +272,17 @@ mod tests {
     #[test]
     fn an_accessibility_root_is_cleared_set_or_refused() {
         let long = "x".repeat(A11Y_MAX_LEN + 1);
-        assert_eq!(a11y_of("", ""), Some(A11yRoot::Unknown));
-        assert_eq!(a11y_of("", "/org/a11y/root"), Some(A11yRoot::Unknown));
+        assert_eq!(a11y_of("", ""), Ok(None));
+        assert_eq!(a11y_of("", "/org/a11y/root"), Ok(None));
         assert_eq!(
             a11y_of(":1.42", "/org/a11y/atspi/accessible/root"),
-            Some(A11yRoot::At {
+            Ok(Some(A11yRoot {
                 bus_name: ":1.42".to_owned(),
                 object_path: "/org/a11y/atspi/accessible/root".to_owned()
-            })
+            }))
         );
-        assert_eq!(a11y_of(&long, "/p"), None);
-        assert_eq!(a11y_of(":1.1", &long), None);
+        assert_eq!(a11y_of(&long, "/p"), Err(A11yTooLong));
+        assert_eq!(a11y_of(":1.1", &long), Err(A11yTooLong));
     }
 
     #[test]
@@ -316,6 +316,6 @@ mod tests {
         assert_eq!(hints.len(), 5);
         assert!(hints.contains(&WindowHintChange::Role(WindowRole::Dialog)));
         assert!(hints.contains(&WindowHintChange::Edited(Edited::Saved)));
-        assert!(hints.contains(&WindowHintChange::FirstMouse(FirstMouse::Nowhere)));
+        assert!(hints.contains(&WindowHintChange::FirstMouse(Vec::new())));
     }
 }

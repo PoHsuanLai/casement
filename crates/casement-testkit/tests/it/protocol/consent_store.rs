@@ -108,9 +108,8 @@ fn an_answer_is_written_to_the_book_and_a_restart_remembers_it() {
     assert!(shell.asked().is_empty(), "the program is not asked again");
 
     // Settings turns it off: the book follows, and the next start hides the power.
-    fixture.feed_events(vec![Event::PrivilegeRevoked {
-        subject: program(ASKED_PROGRAM),
-        power: Power::Keys,
+    fixture.feed_events(vec![Event::PrivilegeEdited {
+        edit: casement_core::privilege::Edit::Deny(program(ASKED_PROGRAM), Power::Keys),
         at: UnixSeconds(TODAY + 1),
     }]);
     assert!(text_of(&home.book()).contains("answer = \"deny\""));
@@ -149,9 +148,8 @@ fn the_floor_denies_and_cannot_be_overruled() {
         hidden_from_a_new_client(&mut fixture),
         "refused from the start"
     );
-    fixture.feed_events(vec![Event::PrivilegeGranted {
-        subject: program(ASKED_PROGRAM),
-        power: Power::Keys,
+    fixture.feed_events(vec![Event::PrivilegeEdited {
+        edit: casement_core::privilege::Edit::Allow(program(ASKED_PROGRAM), Power::Keys),
         at: UnixSeconds(TODAY),
     }]);
     assert!(

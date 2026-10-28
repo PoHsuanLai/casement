@@ -243,9 +243,8 @@ fn a_power_taken_back_fails_the_control_and_lights_its_output() {
     settle(&mut fixture, &mut powers);
     assert_eq!(power_of(&fixture, "HEADLESS-1"), OutputPower::Off);
 
-    fixture.feed_events(vec![Event::PrivilegeRevoked {
-        subject: program(ASKED_PROGRAM),
-        power: Power::Displays,
+    fixture.feed_events(vec![Event::PrivilegeEdited {
+        edit: casement_core::privilege::Edit::Deny(program(ASKED_PROGRAM), Power::Displays),
         at: UnixSeconds(2),
     }]);
     settle(&mut fixture, &mut powers);

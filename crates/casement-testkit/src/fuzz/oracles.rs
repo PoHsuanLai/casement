@@ -9,7 +9,7 @@
 use super::failure::{FuzzFailure, PanicSite};
 use super::host::FuzzHost;
 use crate::fixture::ClientId;
-use casement_core::policy::{Advertise, ConnectionRole, GlobalKind, advertised};
+use casement_core::policy::{ConnectionRole, GlobalKind, advertised};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 /// What a bystander looks like when nothing has touched it.
@@ -110,7 +110,7 @@ pub(super) fn privilege<H: FuzzHost>(
             });
         }
         if let Some(kind) = kind_of(interface)
-            && advertised(kind, role) == Advertise::No
+            && !advertised(kind, role)
         {
             return Err(FuzzFailure::GlobalNotForRole {
                 role: role.clone(),

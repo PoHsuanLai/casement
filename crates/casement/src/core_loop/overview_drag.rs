@@ -18,15 +18,6 @@ use casement_motion::retarget;
 use casement_protocols::vocab::{DragOutcome, Shown};
 use casement_render::{CursorDraw, CursorShape};
 
-/// Whether the drag took the pointer move.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Follow {
-    /// A window is being dragged: it followed and the cursor is the closed hand.
-    Taken,
-    /// No drag: the pointer only hovers.
-    Free,
-}
-
 /// A press on `window`'s slot at `at`: it may become a drag, or be a pick.
 pub(super) fn press(state: &mut State, event: &InputEvent, window: WindowId, at: LogicalPoint) {
     let slot = state
@@ -39,10 +30,12 @@ pub(super) fn press(state: &mut State, event: &InputEvent, window: WindowId, at:
     state.render.overview_drag = Drag::press(window, event.origin, at, slot);
 }
 
-/// The pointer moved to `at`: a drag in progress follows it.
-pub(super) fn moved(state: &mut State, at: LogicalPoint) -> Follow {
+/// The pointer moved to `at`: a drag in progress follows it. Whether the drag took the move: a
+/// window is being dragged, it followed and the cursor is the closed hand; `false` with no drag,
+/// the pointer only hovers.
+pub(super) fn moved(state: &mut State, at: LogicalPoint) -> bool {
     if state.render.overview_drag == Drag::Idle {
-        return Follow::Free;
+        return false;
     }
     let drag = std::mem::take(&mut state.render.overview_drag);
     let before = drag.over().cloned();
@@ -60,7 +53,7 @@ pub(super) fn moved(state: &mut State, at: LogicalPoint) -> Follow {
         changed,
     } = step
     else {
-        return Follow::Free;
+        return false;
     };
     follow(state, window, top_left);
     state.render.overview_hover = Some(window);
@@ -74,7 +67,7 @@ pub(super) fn moved(state: &mut State, at: LogicalPoint) -> Follow {
     if let Some(now) = changed {
         tell(state, before.as_ref(), now.as_ref());
     }
-    Follow::Taken
+    true
 }
 
 /// The button went up: the press ends as a pick, a drop on a Space, or a flight back.

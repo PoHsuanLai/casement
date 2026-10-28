@@ -3,6 +3,7 @@
 //! exact on whole pixels and only the corners are anti-aliased; the corners are one quadrant of a
 //! circle each, a pure function of the radius and the scale, so a golden holds.
 
+use super::corner::{CORNERS, corner_sign};
 use super::frame::{Raster, element, to_buffer, whole};
 use super::{CasementElement, Rgba8, solid_rect};
 use crate::compositor::Compositor;
@@ -10,6 +11,7 @@ use crate::scene::OutputView;
 use crate::scene::convert::{on_output, sub_of};
 use casement_core::WindowId;
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize, PhysicalRect, buffer_size};
+use casement_protocols::vocab::Corner;
 use ds_core::geometry::scale::Scale;
 use smithay::backend::renderer::element::Id;
 use smithay::backend::renderer::utils::CommitCounter;
@@ -25,35 +27,6 @@ pub struct TilePreview {
     pub fill: Rgba8,
     /// The plate's corner radius, in logical pixels.
     pub radius: u32,
-}
-
-/// A corner of the plate.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Corner {
-    TopLeft,
-    TopRight,
-    BottomLeft,
-    BottomRight,
-}
-
-impl Corner {
-    const ALL: [Corner; 4] = [
-        Corner::TopLeft,
-        Corner::TopRight,
-        Corner::BottomLeft,
-        Corner::BottomRight,
-    ];
-
-    /// Whether the corner's quadrant is the top-left one mirrored across (right) and down
-    /// (bottom): the signs of its axes.
-    fn signs(self) -> (i32, i32) {
-        match self {
-            Corner::TopLeft => (1, 1),
-            Corner::TopRight => (-1, 1),
-            Corner::BottomLeft => (1, -1),
-            Corner::BottomRight => (-1, -1),
-        }
-    }
 }
 
 /// The plate's elements on `view`, front first. Nothing for a plate off this output or without
@@ -141,7 +114,7 @@ fn corners(rect: LogicalRect, radius: u32) -> [(Corner, LogicalPoint); 4] {
         y: rect.origin.y.saturating_add_unsigned(dy),
     };
     let (right, bottom) = (rect.size.w - radius, rect.size.h - radius);
-    Corner::ALL.map(|corner| {
+    CORNERS.map(|corner| {
         let place = match corner {
             Corner::TopLeft => at(0, 0),
             Corner::TopRight => at(right, 0),
@@ -185,7 +158,7 @@ fn corner_raster(corner: Corner, radius: u32, fill: Rgba8, scale: Scale) -> Rast
     let (w, h) = (side.w.max(1), side.h.max(1));
     let per = scale.numerator() as f32 / Scale::DENOMINATOR as f32;
     let r = radius as f32;
-    let (sx, sy) = corner.signs();
+    let (sx, sy) = corner_sign(corner);
     let argb = (0..h)
         .flat_map(|y| (0..w).map(move |x| (x, y)))
         .flat_map(|(x, y)| {

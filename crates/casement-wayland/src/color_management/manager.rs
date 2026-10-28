@@ -1,6 +1,6 @@
 //! The manager global and the per-output object.
 
-use super::creator::{CreatorData, DescriptionData, IccCreatorData, InfoAllowed, describe, refuse};
+use super::creator::{CreatorData, DescriptionData, IccCreatorData, describe, refuse};
 use super::surface::{Attached, FeedbackData, SurfaceData};
 use super::{ColorHandler, named};
 use crate::states::GlobalFilter;
@@ -169,7 +169,7 @@ where
         match &self.key {
             Some(key) => {
                 let tag = state.color_part().output_tag(key);
-                describe(state, data_init, image_description, tag, InfoAllowed::Yes);
+                describe(state, data_init, image_description, tag, true);
             }
             None => refuse(
                 data_init,

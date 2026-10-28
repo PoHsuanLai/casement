@@ -18,13 +18,9 @@ use smithay::reexports::wayland_server::{DataInit, Resource};
 use smithay::wayland::image_capture_source::{ImageCaptureSource, ImageCaptureSourceData};
 use std::collections::BTreeMap;
 
-/// Why a Space target was refused (a protocol error to the client).
+/// A Space target with no width or no height (`bad_target`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum SpaceTargetRefusal {
-    /// The rectangle has no width or no height (`bad_target`).
-    Empty,
-}
+pub struct EmptyTarget;
 
 /// `space_target_clear`: forget the targets of `output` (an output the compositor does not
 /// have clears nothing).
@@ -47,9 +43,9 @@ pub fn on_space_target_clear(part: &mut QuireShellPart, output: Option<OutputKey
 /// the time the request arrives.
 ///
 /// ```
-/// use casement_wayland::quire::shell_space::{SpaceTargetRefusal, target_rect};
+/// use casement_wayland::quire::shell_space::{EmptyTarget, target_rect};
 /// assert!(target_rect(0, 0, 160, 90).is_ok());
-/// assert_eq!(target_rect(0, 0, 0, 90), Err(SpaceTargetRefusal::Empty));
+/// assert_eq!(target_rect(0, 0, 0, 90), Err(EmptyTarget));
 /// ```
 pub fn on_space_target(
     part: &mut QuireShellPart,
@@ -88,14 +84,9 @@ pub fn new_target_rect(x: i32, y: i32, width: u32, height: u32) -> Option<Logica
 }
 
 /// The rectangle of a `space_target`, or why it is refused.
-pub fn target_rect(
-    x: i32,
-    y: i32,
-    width: u32,
-    height: u32,
-) -> Result<LogicalRect, SpaceTargetRefusal> {
+pub fn target_rect(x: i32, y: i32, width: u32, height: u32) -> Result<LogicalRect, EmptyTarget> {
     match width == 0 || height == 0 {
-        true => Err(SpaceTargetRefusal::Empty),
+        true => Err(EmptyTarget),
         false => Ok(LogicalRect::new(
             LogicalPoint { x, y },
             LogicalSize {
@@ -251,7 +242,7 @@ pub fn on_request<D: QuireShellHandler>(
                 let space = SpaceId::parse(&space_id).ok();
                 on_space_target(state.quire_shell_part(), output, space, rect);
             }
-            Err(SpaceTargetRefusal::Empty) => resource.post_error(
+            Err(EmptyTarget) => resource.post_error(
                 quire_shell_v1::Error::BadTarget,
                 "a Space target needs a width and a height",
             ),

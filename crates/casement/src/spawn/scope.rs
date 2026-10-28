@@ -6,39 +6,13 @@
 //! compositor leaves it alone. `systemd-run --scope` runs the program in place (it becomes the
 //! program), so the pid the compositor holds is the program's.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-/// Where the person's service manager can be asked for a scope.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub enum Scopes {
-    /// Never: a plain child (a run with no user session, a test).
-    #[default]
-    Off,
-    /// When the manager listens under this runtime folder (`$XDG_RUNTIME_DIR`).
-    Under(PathBuf),
-}
-
-impl Scopes {
-    /// Scopes under `runtime`, or none when there is no runtime folder.
-    pub fn under(runtime: Option<PathBuf>) -> Scopes {
-        runtime.map_or(Scopes::Off, Scopes::Under)
-    }
-
-    /// Whether a manager answers now: its private socket is there. Without it `systemd-run`
-    /// fails and the program it wraps is never started.
-    pub(super) fn reachable(&self) -> Reach {
-        match self {
-            Scopes::Under(runtime) if runtime.join("systemd/private").exists() => Reach::Yes,
-            Scopes::Under(_) | Scopes::Off => Reach::No,
-        }
-    }
-}
-
-/// Whether a manager answers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Reach {
-    Yes,
-    No,
+/// Whether the person's service manager answers now, given the runtime folder it listens under
+/// (`$XDG_RUNTIME_DIR`; none for a plain child: a run with no user session, a test): its private
+/// socket is there. Without it `systemd-run` fails and the program it wraps is never started.
+pub(super) fn manager_answers(runtime: Option<&Path>) -> bool {
+    runtime.is_some_and(|runtime| runtime.join("systemd/private").exists())
 }
 
 /// The longest part of a program's name kept in its unit name.
@@ -96,13 +70,11 @@ mod tests {
     #[test]
     fn scopes_need_a_manager_socket() {
         let dir = tempfile::tempdir().expect("a scratch folder");
-        assert_eq!(Scopes::Off.reachable(), Reach::No);
-        assert_eq!(Scopes::under(None).reachable(), Reach::No);
-        let under = Scopes::under(Some(dir.path().to_owned()));
-        assert_eq!(under.reachable(), Reach::No);
+        assert!(!manager_answers(None));
+        assert!(!manager_answers(Some(dir.path())));
         std::fs::create_dir(dir.path().join("systemd")).expect("folder");
         std::fs::write(dir.path().join("systemd/private"), b"").expect("socket stand-in");
-        assert_eq!(under.reachable(), Reach::Yes);
+        assert!(manager_answers(Some(dir.path())));
     }
 
     #[test]

@@ -18,10 +18,11 @@ use crate::remote::{Fit, Held, RemoteFor, RemoteHandle, RemoteSlot, releases, ta
 use casement_core::DeviceId;
 use casement_core::geometry::{LogicalPoint, LogicalRect, SubPoint, SubPx};
 use casement_core::input::{
-    AxisFrame, AxisSource, AxisStop, ButtonCode, DeviceClass, Edge, InputEvent, InputKind, KeyCode,
-    Origin, TouchStep,
+    AxisFrame, AxisSource, ButtonCode, DeviceClass, InputEvent, InputKind, KeyCode, Origin,
+    TouchStep,
 };
 use casement_core::time::Mono;
+use casement_protocols::vocab::PressEdge;
 use peephole_core::{RoleName, roles};
 use reis::calloop::{EisRequestSource, EisRequestSourceEvent};
 use reis::eis;
@@ -558,17 +559,17 @@ fn placed(extent: LogicalRect, x: f32, y: f32) -> LogicalPoint {
     }
 }
 
-fn key_edge(state: eis::keyboard::KeyState) -> Edge {
+fn key_edge(state: eis::keyboard::KeyState) -> PressEdge {
     match state {
-        eis::keyboard::KeyState::Press => Edge::Press,
-        _ => Edge::Release,
+        eis::keyboard::KeyState::Press => PressEdge::Press,
+        _ => PressEdge::Release,
     }
 }
 
-fn button_edge(state: eis::button::ButtonState) -> Edge {
+fn button_edge(state: eis::button::ButtonState) -> PressEdge {
     match state {
-        eis::button::ButtonState::Press => Edge::Press,
-        _ => Edge::Release,
+        eis::button::ButtonState::Press => PressEdge::Press,
+        _ => PressEdge::Release,
     }
 }
 
@@ -603,7 +604,7 @@ fn scroll_kind(dx: f32, dy: f32) -> InputKind {
         source: AxisSource::Continuous,
         v120: (0, 0),
         px: sub_point(dx, dy),
-        stop: AxisStop::Running,
+        stopped: false,
     })
 }
 
@@ -613,7 +614,7 @@ fn discrete_kind(dx: i32, dy: i32) -> InputKind {
         source: AxisSource::Wheel,
         v120: (dx, dy),
         px: sub_point(0.0, 0.0),
-        stop: AxisStop::Running,
+        stopped: false,
     })
 }
 
@@ -622,7 +623,7 @@ fn scroll_stop_kind() -> InputKind {
         source: AxisSource::Continuous,
         v120: (0, 0),
         px: sub_point(0.0, 0.0),
-        stop: AxisStop::Stopped,
+        stopped: true,
     })
 }
 
@@ -709,14 +710,14 @@ mod tests {
             key_kind(30, eis::keyboard::KeyState::Press),
             InputKind::Key {
                 code: KeyCode(30),
-                edge: Edge::Press
+                edge: PressEdge::Press
             }
         );
         assert_eq!(
             button_kind(0x110, eis::button::ButtonState::Released),
             InputKind::Button {
                 button: ButtonCode(0x110),
-                edge: Edge::Release
+                edge: PressEdge::Release
             }
         );
     }
@@ -764,7 +765,7 @@ mod tests {
         let InputKind::Axis(stop) = scroll_stop_kind() else {
             panic!("an axis");
         };
-        assert_eq!(stop.stop, AxisStop::Stopped);
+        assert!(stop.stopped);
     }
 
     #[test]
@@ -824,10 +825,10 @@ mod tests {
             extent(),
             keymap(),
         );
-        link.held.key(30, Edge::Press);
-        link.held.key(31, Edge::Press);
-        link.held.key(31, Edge::Release);
-        link.held.button(0x110, Edge::Press);
+        link.held.key(30, PressEdge::Press);
+        link.held.key(31, PressEdge::Press);
+        link.held.key(31, PressEdge::Release);
+        link.held.button(0x110, PressEdge::Press);
         let events = link.end();
         let kinds: Vec<_> = events
             .iter()
@@ -841,11 +842,11 @@ mod tests {
             vec![
                 Some(InputKind::Key {
                     code: KeyCode(30),
-                    edge: Edge::Release
+                    edge: PressEdge::Release
                 }),
                 Some(InputKind::Button {
                     button: ButtonCode(0x110),
-                    edge: Edge::Release
+                    edge: PressEdge::Release
                 }),
                 None,
             ]
@@ -868,7 +869,7 @@ mod tests {
         let RemoteGrant {
             mut source, handle, ..
         } = grant;
-        source.link.held.key(30, Edge::Press);
+        source.link.held.key(30, PressEdge::Press);
         assert_eq!(
             handle.release().len(),
             1,

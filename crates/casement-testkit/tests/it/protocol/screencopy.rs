@@ -497,9 +497,11 @@ fn a_power_taken_back_fails_the_queued_copy() {
     // The client has had the frame there is; this one waits for a newer.
     ask_and_copy(&mut fixture, &mut copy, CopyKind::WithDamage);
     assert!(copy.take().is_none(), "queued for a newer frame");
-    fixture.feed_events(vec![Event::PrivilegeRevoked {
-        subject: super::consent::program(ASKED_PROGRAM),
-        power: Power::Screen,
+    fixture.feed_events(vec![Event::PrivilegeEdited {
+        edit: casement_core::privilege::Edit::Deny(
+            super::consent::program(ASKED_PROGRAM),
+            Power::Screen,
+        ),
         at: UnixSeconds(2),
     }]);
     settle(&mut fixture, &mut copy);

@@ -9,7 +9,7 @@
 //! pending state), and [`send_initial_configure`] then sends that one configure.
 
 use super::XdgShellPart;
-use super::commit::{Buffer, Configured, Declared, Phase, mapped_events};
+use super::commit::{Declared, Phase, mapped_events};
 use crate::client::ClientState;
 use casement_core::Event;
 use casement_core::focus::TokenCheck;
@@ -25,11 +25,9 @@ pub fn map_keyed_on_first_buffer(
 ) -> Option<Vec<Event>> {
     let window = part.window_of_surface(surface)?;
     let declared = Declared::read(part.toplevels.get(&window)?);
-    let Buffer::Present(size) = declared.buffer else {
-        return None;
-    };
+    let size = declared.buffer?;
     let record = part.records.get_mut(&window)?;
-    if declared.configured != Configured::No || record.phase != Phase::Unmapped {
+    if declared.configured || record.phase != Phase::Unmapped {
         return None;
     }
     record.staged = TokenCheck::Valid;

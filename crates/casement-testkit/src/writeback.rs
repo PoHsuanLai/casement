@@ -7,7 +7,7 @@
 //! both and the comparison. `dev/vkms/accept.sh` reaches it through the `writeback-compare`
 //! binary.
 
-use casement_render::golden::{Bless, Golden, GoldenOutcome, GoldenTier, compare};
+use casement_render::golden::{Golden, GoldenOutcome, GoldenTier, compare};
 use image::{Rgba, RgbaImage};
 use std::path::Path;
 
@@ -157,5 +157,5 @@ pub fn compare_raw(
         scene: scene.to_owned(),
         tier,
     };
-    Ok(compare(&golden, &image, out_dir, Bless::No))
+    Ok(compare(&golden, &image, out_dir, false))
 }

@@ -5,8 +5,7 @@
 use crate::core_loop;
 use crate::state::State;
 use casement_core::Event;
-use casement_core::privilege::Book;
-use casement_ipc::privacy::PrivacyEdit;
+use casement_core::privilege::{Book, Edit};
 use casement_privacy::{load_book, load_floor, save_book};
 
 /// Reads the book and the floor and tells the model. Called once, before any client connects.
@@ -40,9 +39,9 @@ pub fn keep(state: &mut State, book: &Book) {
 }
 
 /// A change Settings made to the list, as the model hears it, stamped with the date.
-pub fn edited(state: &mut State, edit: PrivacyEdit) {
+pub fn edited(state: &mut State, edit: Edit) {
     let at = state.seams.wall.now();
-    core_loop::feed(state, vec![edit.into_event(at)]);
+    core_loop::feed(state, vec![Event::PrivilegeEdited { edit, at }]);
     // The list Settings was shown after its own change was a guess; the model's replaces it,
     // also when the model changed nothing (a program whose answers are never kept).
     publish(state);

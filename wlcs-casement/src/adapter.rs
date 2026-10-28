@@ -4,6 +4,7 @@
 //! pixel) all the way here, because wlcs' tests use fractions a 1/120 sub-pixel would round; the
 //! implementation of the seam converts at its own edge.
 
+use casement_protocols::vocab::PressEdge;
 use std::os::fd::OwnedFd;
 use std::sync::mpsc::Sender;
 
@@ -60,15 +61,6 @@ pub struct WlcsTouchId(pub u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Button(pub u32);
 
-/// A button changing state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Edge {
-    /// Pressed.
-    Press,
-    /// Released.
-    Release,
-}
-
 /// One request from wlcs' thread to the compositor thread.
 #[derive(Debug)]
 pub enum WlcsEvent {
@@ -98,7 +90,7 @@ pub enum WlcsEvent {
         /// The evdev button.
         button: Button,
         /// Down or up.
-        edge: Edge,
+        edge: PressEdge,
     },
     /// A finger touched down.
     TouchDown {

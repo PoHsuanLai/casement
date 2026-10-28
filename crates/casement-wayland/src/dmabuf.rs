@@ -218,41 +218,27 @@ impl DmabufOffer {
 /// casement targets sample, so a buffer past it could only fail on every frame it is drawn.
 pub const MAX_DMABUF_SIDE: u32 = 16384;
 
-/// Whether an imported buffer was accepted.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Import {
-    /// The renderer can sample it.
-    Accepted,
-    /// It cannot.
-    Refused,
-}
-
-/// A client imported `dmabuf`: accepted when something is advertised and the buffer's format
+/// A client imported `dmabuf`: true (the renderer can sample it) when something is advertised and the buffer's format
 /// and modifier are among the formats of any offered tranche. The handler tags an accepted
 /// buffer with [`DmabufPart::source_device`]'s node (A5).
 ///
 /// A buffer is refused too when a side is past [`MAX_DMABUF_SIDE`], or when it is linear and a
 /// plane reaches past the end of its file (CASW-17): the protocol would say "created" for a
 /// buffer the GPU can then only fail to import, on every frame, or read past with attacker data.
-pub fn on_import(part: &mut DmabufPart, dmabuf: &mut Dmabuf) -> Import {
+pub fn on_import(part: &mut DmabufPart, dmabuf: &mut Dmabuf) -> bool {
     if dmabuf.width() > MAX_DMABUF_SIDE || dmabuf.height() > MAX_DMABUF_SIDE {
-        return Import::Refused;
+        return false;
     }
     if dmabuf.format().modifier == Modifier::Linear && !linear_planes_fit(dmabuf) {
-        return Import::Refused;
+        return false;
     }
     let format = dmabuf.format();
-    let offered = part.offered.as_ref().is_some_and(|offer| {
+    part.offered.as_ref().is_some_and(|offer| {
         offer
             .tranche_list()
             .iter()
             .any(|tranche| tranche.formats.contains(&format))
-    });
-    if offered {
-        Import::Accepted
-    } else {
-        Import::Refused
-    }
+    })
 }
 
 /// Whether every plane of the linear `dmabuf` (its rows at its stride, from its offset) lies
@@ -516,11 +502,7 @@ mod tests {
         let mut part = part_with(Some(two_gpu_offer()));
         for code in [Fourcc::Argb8888, Fourcc::Xrgb8888] {
             let mut buffer = buffer_of(code, Modifier::Linear);
-            assert_eq!(
-                on_import(&mut part, &mut buffer),
-                Import::Accepted,
-                "{code:?}"
-            );
+            assert!(on_import(&mut part, &mut buffer), "{code:?}");
         }
     }
 
@@ -528,7 +510,7 @@ mod tests {
     fn nothing_offered_refuses_every_import() {
         let mut part = part_with(None);
         let mut buffer = buffer_of(Fourcc::Argb8888, Modifier::Linear);
-        assert_eq!(on_import(&mut part, &mut buffer), Import::Refused);
+        assert!(!on_import(&mut part, &mut buffer));
         assert_eq!(part.main_device(), None);
     }
 
@@ -537,10 +519,10 @@ mod tests {
         let mut part = part_with(Some(DmabufOffer::soft()));
         assert_eq!(part.main_device(), Some(SOFT_MAIN_DEVICE));
         for (code, modifier, want) in [
-            (Fourcc::Argb8888, Modifier::Linear, Import::Accepted),
-            (Fourcc::Xrgb8888, Modifier::Linear, Import::Accepted),
-            (Fourcc::Abgr8888, Modifier::Linear, Import::Refused),
-            (Fourcc::Argb8888, Modifier::Invalid, Import::Refused),
+            (Fourcc::Argb8888, Modifier::Linear, true),
+            (Fourcc::Xrgb8888, Modifier::Linear, true),
+            (Fourcc::Abgr8888, Modifier::Linear, false),
+            (Fourcc::Argb8888, Modifier::Invalid, false),
         ] {
             let mut buffer = buffer_of(code, modifier);
             assert_eq!(
@@ -570,20 +552,12 @@ mod tests {
             builder.build().expect("a dmabuf with a plane")
         };
         let cases = [
-            (
-                "exactly the file",
-                build((64, 64), 256 * 64, 256),
-                Import::Accepted,
-            ),
-            (
-                "one row too many",
-                build((64, 65), 256 * 64, 256),
-                Import::Refused,
-            ),
+            ("exactly the file", build((64, 64), 256 * 64, 256), true),
+            ("one row too many", build((64, 65), 256 * 64, 256), false),
             (
                 "a stride past the file",
                 build((64, 64), 256 * 64, u32::MAX),
-                Import::Refused,
+                false,
             ),
             (
                 "a side past the limit",
@@ -592,7 +566,7 @@ mod tests {
                     1 << 20,
                     1 << 20,
                 ),
-                Import::Refused,
+                false,
             ),
         ];
         for (name, mut buffer, want) in cases {

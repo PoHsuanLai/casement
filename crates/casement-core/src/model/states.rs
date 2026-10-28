@@ -1,7 +1,7 @@
 //! The `xdg_toplevel` states a window's record and focus imply.
 
 use super::Model;
-use crate::effect::{Held, TiledEdges, ToplevelStates};
+use crate::effect::{TiledEdges, ToplevelStates};
 use crate::focus::Focus;
 use crate::ids::WindowId;
 use crate::window::{Window, WindowState};
@@ -20,37 +20,26 @@ impl Model {
 /// tiled on the edges its zone touches, never resizing (a grab sets that).
 pub(super) fn toplevel_states(window: &Window, focus: &Focus) -> ToplevelStates {
     ToplevelStates {
-        activated: if focus.key == Some(window.id) {
-            Held::Yes
-        } else {
-            Held::No
-        },
-        maximised: if matches!(window.state, WindowState::Filled { .. }) {
-            Held::Yes
-        } else {
-            Held::No
-        },
-        full_screen: if matches!(window.state, WindowState::FullScreen { .. }) {
-            Held::Yes
-        } else {
-            Held::No
-        },
+        activated: focus.key == Some(window.id),
+        maximised: matches!(window.state, WindowState::Filled { .. }),
+        full_screen: matches!(window.state, WindowState::FullScreen { .. }),
         tiled: match &window.state {
             WindowState::Tiled { zone, .. } => tiled_edges(*zone),
             _ => TiledEdges {
-                top: Held::No,
-                bottom: Held::No,
-                left: Held::No,
-                right: Held::No,
+                top: false,
+                bottom: false,
+                left: false,
+                right: false,
             },
         },
-        resizing: Held::No,
+        resizing: false,
     }
 }
 
 /// The edges of the usable area a tile zone touches.
 fn tiled_edges(zone: TileZone) -> TiledEdges {
-    use Held::{No as N, Yes as Y};
+    const Y: bool = true;
+    const N: bool = false;
     let [top, bottom, left, right] = match zone {
         TileZone::Left => [Y, Y, Y, N],
         TileZone::Right => [Y, Y, N, Y],

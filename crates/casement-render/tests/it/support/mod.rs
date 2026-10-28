@@ -1,7 +1,7 @@
 //! Shared helpers for the renderer-only tests: offscreen targets on pixman and on llvmpipe
 //! GLES, one render through `render_output`, the read-back, and the golden environment.
 
-use casement_render::golden::{Bless, Golden, GoldenOutcome, GoldenTier, compare};
+use casement_render::golden::{Golden, GoldenOutcome, GoldenTier, compare};
 use casement_render::{CasementElement, Compositor, Rendered, render_output, surfaceless_gles};
 use image::RgbaImage;
 use smithay::backend::allocator::Fourcc;
@@ -130,11 +130,8 @@ pub fn beside(images: &[RgbaImage]) -> RgbaImage {
 
 /// Whether goldens are blessed: `CASEMENT_BLESS=1` only, the rule of the test kit's `Env`
 /// (this crate cannot depend on the test kit, which depends on it).
-pub fn bless() -> Bless {
-    match std::env::var("CASEMENT_BLESS").ok().as_deref() {
-        Some("1") => Bless::Yes,
-        _ => Bless::No,
-    }
+pub fn bless() -> bool {
+    std::env::var("CASEMENT_BLESS").ok().as_deref() == Some("1")
 }
 
 /// Where differing frames go.

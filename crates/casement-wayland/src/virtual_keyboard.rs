@@ -21,16 +21,17 @@ mod gate;
 
 use crate::client_file;
 use crate::consent::{self, Admission, ConsentHandler, Held, Mortal, Pushed};
-use crate::limits::{self, Limit, Standing};
+use crate::limits::{self, Limit};
 use crate::states::GlobalFilter;
 use casement_core::ClientKey;
 use casement_core::input::DeviceClass;
-use casement_core::input::{Edge, InputEvent, InputKind, KeyCode, Origin};
+use casement_core::input::{InputEvent, InputKind, KeyCode, Origin};
 use casement_core::policy::GlobalKind;
 use casement_core::privilege::PowerOutcome;
 use casement_core::time::Mono;
 use casement_core::{DeviceId, Event};
 use casement_protocols::vocab::Power;
+use casement_protocols::vocab::PressEdge;
 use gate::{Gate, Routed, Start};
 use smithay::input::keyboard::xkb;
 use smithay::reexports::wayland_protocols_misc::zwp_virtual_keyboard_v1::server::{
@@ -134,21 +135,14 @@ pub struct VirtualKeyboardGlobal {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct VirtualKeyboardManagerData;
 
-/// Whether a keyboard has sent a keymap that compiled.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum KeymapState {
-    /// None yet (or the last one did not compile): `key` is a protocol error.
-    Missing,
-    /// One compiled.
-    Loaded,
-}
-
 /// One virtual keyboard's data.
 #[derive(Debug)]
 pub struct VirtualKeyboardData {
     device: DeviceId,
     gate: Gate,
-    keymap: Mutex<KeymapState>,
+    /// Whether the keyboard has sent a keymap that compiled (none yet, or the last one did not
+    /// compile: `key` is a protocol error).
+    keymap: Mutex<bool>,
     keymaps_sent: Mutex<usize>,
     pressed: Mutex<BTreeSet<KeyCode>>,
 }
@@ -158,7 +152,7 @@ impl VirtualKeyboardData {
         VirtualKeyboardData {
             device,
             gate: Gate::new(start),
-            keymap: Mutex::new(KeymapState::Missing),
+            keymap: Mutex::new(false),
             keymaps_sent: Mutex::new(0),
             pressed: Mutex::new(BTreeSet::new()),
         }
@@ -172,36 +166,27 @@ fn successor(device: DeviceId) -> DeviceId {
 
 /// A virtual keyboard sent a key: an `Event::Input` with `Origin::Virtual(Keyboard)`, from
 /// that keyboard's own `device`.
-pub fn on_vk_key(device: DeviceId, code: KeyCode, edge: Edge, at: Mono) -> Vec<Event> {
+pub fn on_vk_key(device: DeviceId, code: KeyCode, edge: PressEdge, at: Mono) -> Vec<Event> {
     vec![key_event(device, code, edge, at)]
 }
 
 /// Records `code`'s new `edge` in `pressed`. False when the key is not taken: a press past
 /// [`MAX_PRESSED`] keys held, which is dropped.
-fn track(pressed: &mut BTreeSet<KeyCode>, code: KeyCode, edge: Edge) -> Taken {
+fn track(pressed: &mut BTreeSet<KeyCode>, code: KeyCode, edge: PressEdge) -> bool {
     match edge {
-        Edge::Press if pressed.len() >= MAX_PRESSED && !pressed.contains(&code) => Taken::No,
-        Edge::Press => {
+        PressEdge::Press if pressed.len() >= MAX_PRESSED && !pressed.contains(&code) => false,
+        PressEdge::Press => {
             pressed.insert(code);
-            Taken::Yes
+            true
         }
-        Edge::Release => {
+        PressEdge::Release => {
             pressed.remove(&code);
-            Taken::Yes
+            true
         }
     }
 }
 
-/// Whether a key was taken or dropped.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Taken {
-    /// It was.
-    Yes,
-    /// It was dropped.
-    No,
-}
-
-fn key_event(device: DeviceId, code: KeyCode, edge: Edge, at: Mono) -> Event {
+fn key_event(device: DeviceId, code: KeyCode, edge: PressEdge, at: Mono) -> Event {
     Event::Input(InputEvent {
         origin: Origin::Virtual(DeviceClass::Keyboard),
         device,
@@ -211,10 +196,10 @@ fn key_event(device: DeviceId, code: KeyCode, edge: Edge, at: Mono) -> Event {
 }
 
 /// The wire's key state as an edge (`0` released, `1` pressed; anything else is not a state).
-fn edge_of(state: u32) -> Option<Edge> {
+fn edge_of(state: u32) -> Option<PressEdge> {
     match state {
-        0 => Some(Edge::Release),
-        1 => Some(Edge::Press),
+        0 => Some(PressEdge::Release),
+        1 => Some(PressEdge::Press),
         _ => None,
     }
 }
@@ -223,7 +208,7 @@ fn edge_of(state: u32) -> Option<Edge> {
 fn releases(pressed: &BTreeSet<KeyCode>, device: DeviceId, at: Mono) -> Vec<Event> {
     pressed
         .iter()
-        .map(|code| key_event(device, *code, Edge::Release, at))
+        .map(|code| key_event(device, *code, PressEdge::Release, at))
         .collect()
 }
 
@@ -246,7 +231,7 @@ fn keymap_text(fd: OwnedFd, size: usize) -> Option<String> {
 }
 
 /// Whether `text` is an XKB keymap libxkbcommon accepts.
-fn compiles(text: String) -> KeymapState {
+fn compiles(text: String) -> bool {
     let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
     xkb::Keymap::new_from_string(
         &context,
@@ -254,7 +239,7 @@ fn compiles(text: String) -> KeymapState {
         xkb::KEYMAP_FORMAT_TEXT_V1,
         xkb::KEYMAP_COMPILE_NO_FLAGS,
     )
-    .map_or(KeymapState::Missing, |_| KeymapState::Loaded)
+    .is_some()
 }
 
 impl<D> GlobalDispatch2<ZwpVirtualKeyboardManagerV1, D> for VirtualKeyboardGlobal
@@ -316,17 +301,18 @@ where
 }
 
 impl VirtualKeyboardData {
-    /// Counts one more keymap request; a keyboard past [`Limit::Keymaps`] cuts its client.
-    fn keymap_over_the_cap(&self, client: &Client, handle: &DisplayHandle) -> Standing {
+    /// Counts one more keymap request, and says whether it is within [`Limit::Keymaps`]; a
+    /// keyboard past it cuts its client.
+    fn keymap_admitted(&self, client: &Client, handle: &DisplayHandle) -> bool {
         let mut sent = locked(&self.keymaps_sent);
-        let standing = limits::admit(handle, client, Limit::Keymaps, *sent);
+        let admitted = limits::admit(handle, client, Limit::Keymaps, *sent);
         *sent = sent.saturating_add(1);
-        standing
+        admitted
     }
 
     /// Records `code`'s new edge and feeds the key to the model.
-    fn key<D: VirtualKeyboardHandler>(&self, state: &mut D, code: KeyCode, edge: Edge) {
-        if track(&mut locked(&self.pressed), code, edge) == Taken::No {
+    fn key<D: VirtualKeyboardHandler>(&self, state: &mut D, code: KeyCode, edge: PressEdge) {
+        if !track(&mut locked(&self.pressed), code, edge) {
             return;
         }
         let at = state.virtual_keyboard_now();
@@ -348,18 +334,18 @@ impl VirtualKeyboardData {
         let keymap = *locked(&self.keymap);
         match request {
             zwp_virtual_keyboard_v1::Request::Keymap { format, fd, size } => {
-                if self.keymap_over_the_cap(client, handle) == Standing::Over {
+                if !self.keymap_admitted(client, handle) {
                     return;
                 }
                 let loaded = (format == KeymapFormat::XkbV1 as u32)
                     .then(|| keymap_text(fd, size as usize))
                     .flatten()
-                    .map_or(KeymapState::Missing, compiles);
+                    .is_some_and(compiles);
                 *locked(&self.keymap) = loaded;
             }
             zwp_virtual_keyboard_v1::Request::Key { .. }
             | zwp_virtual_keyboard_v1::Request::Modifiers { .. }
-                if keymap == KeymapState::Missing =>
+                if !keymap =>
             {
                 resource.post_error(
                     zwp_virtual_keyboard_v1::Error::NoKeymap,
@@ -460,7 +446,7 @@ mod tests {
 
     #[test]
     fn a_virtual_key_is_an_input_event_from_a_virtual_keyboard() {
-        let event = key_event(VIRTUAL_KEYBOARD_DEVICE, KeyCode(30), Edge::Press, AT);
+        let event = key_event(VIRTUAL_KEYBOARD_DEVICE, KeyCode(30), PressEdge::Press, AT);
         let Event::Input(input) = event else {
             panic!("not an input event");
         };
@@ -472,7 +458,7 @@ mod tests {
             input.kind,
             InputKind::Key {
                 code: KeyCode(30),
-                edge: Edge::Press
+                edge: PressEdge::Press
             }
         );
     }
@@ -490,20 +476,20 @@ mod tests {
     fn a_keyboard_holds_at_most_a_bounded_set_of_keys() {
         let mut held = BTreeSet::new();
         for code in 0..u32::try_from(MAX_PRESSED).expect("a small cap") {
-            assert_eq!(track(&mut held, KeyCode(code), Edge::Press), Taken::Yes);
+            assert!(track(&mut held, KeyCode(code), PressEdge::Press));
         }
-        assert_eq!(track(&mut held, KeyCode(1000), Edge::Press), Taken::No);
+        assert!(!track(&mut held, KeyCode(1000), PressEdge::Press));
         assert_eq!(held.len(), MAX_PRESSED);
         // A key already down is no new key, and a release always frees room.
-        assert_eq!(track(&mut held, KeyCode(0), Edge::Press), Taken::Yes);
-        assert_eq!(track(&mut held, KeyCode(0), Edge::Release), Taken::Yes);
-        assert_eq!(track(&mut held, KeyCode(1000), Edge::Press), Taken::Yes);
+        assert!(track(&mut held, KeyCode(0), PressEdge::Press));
+        assert!(track(&mut held, KeyCode(0), PressEdge::Release));
+        assert!(track(&mut held, KeyCode(1000), PressEdge::Press));
     }
 
     #[test]
     fn only_zero_and_one_are_key_states() {
-        assert_eq!(edge_of(0), Some(Edge::Release));
-        assert_eq!(edge_of(1), Some(Edge::Press));
+        assert_eq!(edge_of(0), Some(PressEdge::Release));
+        assert_eq!(edge_of(1), Some(PressEdge::Press));
         assert_eq!(edge_of(2), None);
     }
 
@@ -514,8 +500,8 @@ mod tests {
         assert_eq!(
             events,
             vec![
-                key_event(VIRTUAL_KEYBOARD_DEVICE, KeyCode(30), Edge::Release, AT),
-                key_event(VIRTUAL_KEYBOARD_DEVICE, KeyCode(42), Edge::Release, AT),
+                key_event(VIRTUAL_KEYBOARD_DEVICE, KeyCode(30), PressEdge::Release, AT),
+                key_event(VIRTUAL_KEYBOARD_DEVICE, KeyCode(42), PressEdge::Release, AT),
             ]
         );
     }
@@ -523,7 +509,7 @@ mod tests {
     #[test]
     fn only_a_keymap_that_compiles_counts() {
         let plain = "xkb_keymap {\n xkb_keycodes { <A> = 38; };\n xkb_types {};\n xkb_compat {};\n xkb_symbols { key <A> { [ a ] }; };\n};\n";
-        assert_eq!(compiles(plain.to_owned()), KeymapState::Loaded);
-        assert_eq!(compiles("not a keymap".to_owned()), KeymapState::Missing);
+        assert!(compiles(plain.to_owned()));
+        assert!(!compiles("not a keymap".to_owned()));
     }
 }

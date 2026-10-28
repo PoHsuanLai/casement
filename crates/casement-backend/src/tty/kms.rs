@@ -232,26 +232,6 @@ impl KmsResources {
     }
 }
 
-/// Whether a variable-refresh property is set on an output.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum VrrState {
-    /// Fixed refresh.
-    Off,
-    /// Variable refresh.
-    On,
-}
-
-/// Whether a commit may change modes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum ModesetPolicy {
-    /// A full modeset is fine (start-up, a hotplug).
-    Allow,
-    /// Only a page flip (a frame): a commit that needs a modeset is `NeedsModeset`.
-    Forbid,
-}
-
 /// One output's part of a commit.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -262,13 +242,13 @@ pub struct OutputCommit {
     pub crtc: CrtcId,
     /// Its mode.
     pub mode: Mode,
-    /// Variable refresh on or off.
-    pub vrr: VrrState,
+    /// Whether the variable-refresh property is set (`false`: fixed refresh).
+    pub vrr: bool,
 }
 
 impl OutputCommit {
     /// An output's commit.
-    pub fn new(connector: ConnectorId, crtc: CrtcId, mode: Mode, vrr: VrrState) -> OutputCommit {
+    pub fn new(connector: ConnectorId, crtc: CrtcId, mode: Mode, vrr: bool) -> OutputCommit {
         OutputCommit {
             connector,
             crtc,
@@ -284,14 +264,18 @@ impl OutputCommit {
 pub struct KmsCommit {
     /// The outputs.
     pub outputs: Vec<OutputCommit>,
-    /// Whether a modeset is allowed.
-    pub modeset: ModesetPolicy,
+    /// Whether a full modeset is fine (start-up, a hotplug); `false` for only a page flip (a
+    /// frame): a commit that needs a modeset is `NeedsModeset`.
+    pub modeset_allowed: bool,
 }
 
 impl KmsCommit {
     /// A commit.
-    pub fn new(outputs: Vec<OutputCommit>, modeset: ModesetPolicy) -> KmsCommit {
-        KmsCommit { outputs, modeset }
+    pub fn new(outputs: Vec<OutputCommit>, modeset_allowed: bool) -> KmsCommit {
+        KmsCommit {
+            outputs,
+            modeset_allowed,
+        }
     }
 }
 

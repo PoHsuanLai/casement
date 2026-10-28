@@ -59,15 +59,6 @@ struct Shown {
     from: Rectangle<i32, Physical>,
 }
 
-/// What [`finish`] did.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Finished {
-    /// The blurred copy was drawn.
-    Drawn,
-    /// Nothing was captured yet: the caller draws the stand-in.
-    Missing,
-}
-
 /// The saturation, tint and grain of a pass: the neutral ones for the passes in between.
 #[derive(Debug, Clone, Copy)]
 struct Finish {
@@ -144,22 +135,23 @@ pub(crate) fn capture(
 }
 
 /// Draws the blurred copy over the output at `dst` where `damage` (relative to `dst`, already cut
-/// to the region) asks, at `alpha`.
+/// to the region) asks, at `alpha`. True when the blurred copy was drawn; false when nothing was
+/// captured yet and the caller draws the stand-in.
 pub(crate) fn finish(
     frame: &mut GlesFrame<'_, '_>,
     plan: &KawasePlan,
     alpha: f32,
     (dst, damage): (Rectangle<i32, Physical>, &[Rectangle<i32, Physical>]),
     cache: Option<&UserDataMap>,
-) -> Result<Finished, GlesError> {
+) -> Result<bool, GlesError> {
     let shown = cache
         .and_then(|cache| cache.get::<RefCell<Chain>>())
         .and_then(|cell| cell.borrow().shown.clone());
     let Some(Shown { levels, from }) = shown else {
-        return Ok(Finished::Missing);
+        return Ok(false);
     };
     let Some(first) = levels.first() else {
-        return Ok(Finished::Missing);
+        return Ok(false);
     };
     let program = programs(frame)?.up;
     // The damage, moved from the element's origin to the copy's.
@@ -172,7 +164,7 @@ pub(crate) fn finish(
         })
         .collect();
     if local.is_empty() {
-        return Ok(Finished::Drawn);
+        return Ok(true);
     }
     let size = first.size();
     frame.render_texture_from_to(
@@ -186,7 +178,7 @@ pub(crate) fn finish(
         Some(&program),
         &up_uniforms(size, plan.offset, Finish::of(plan)),
     )?;
-    Ok(Finished::Drawn)
+    Ok(true)
 }
 
 /// Copies `from` (output pixels) of the frame into the first level, linearly filtered.

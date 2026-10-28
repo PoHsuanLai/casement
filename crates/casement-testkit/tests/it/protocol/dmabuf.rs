@@ -1,6 +1,5 @@
 //! `dmabuf` (P0-H6).
 
-use casement_backend::DmabufMode;
 use casement_core::geometry::PhysicalSize;
 use casement_core::policy::ConnectionRole;
 use casement_testclient::Pattern;
@@ -13,8 +12,7 @@ use smithay::reexports::drm::node::NodeType;
 /// With --dmabuf soft the default feedback names the fake main device (version 6, A3).
 #[test]
 fn dmabuf_soft_advertises_the_fake_main_device() {
-    let mut fixture =
-        Fixture::start(FixtureSpec::desktop().with_dmabuf(DmabufMode::Soft)).expect("fixture");
+    let mut fixture = Fixture::start(FixtureSpec::desktop().with_dmabuf(true)).expect("fixture");
     let client = fixture.connect(ConnectionRole::Public);
     fixture.pump();
     assert_eq!(
@@ -48,8 +46,7 @@ fn dmabuf_soft_advertises_the_fake_main_device() {
 /// A client dma-buf is tagged with its tranche's node (A5).
 #[test]
 fn imported_buffers_are_tagged_with_their_node() {
-    let mut fixture =
-        Fixture::start(FixtureSpec::desktop().with_dmabuf(DmabufMode::Soft)).expect("fixture");
+    let mut fixture = Fixture::start(FixtureSpec::desktop().with_dmabuf(true)).expect("fixture");
     let client = fixture.connect(ConnectionRole::Public);
     fixture.pump();
     // A 64x64 linear ARGB8888 buffer: its stride (256) is what /dev/udmabuf accepts.

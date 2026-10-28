@@ -10,13 +10,10 @@ use porter_core::SpaceId;
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum DesktopNote {
-    /// An app appeared or changed (identity, life, visibility, attention, recency).
-    App(AppKey),
-    /// A window appeared or changed (role, state, place, output, geometry, parent, emphasis,
-    /// placement mark, responsiveness).
-    Window(WindowId),
-    /// A Space appeared or changed (kind, position, output, activity).
-    Space(SpaceId),
+    /// An object appeared or changed. An app: identity, life, visibility, attention, recency.
+    /// A window: role, state, place, output, geometry, parent, emphasis, placement mark,
+    /// responsiveness. A Space: kind, position, output, activity.
+    Changed(DesktopRef),
     /// The active app or the key window changed.
     Active,
     /// An object is gone.

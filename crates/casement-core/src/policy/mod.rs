@@ -4,5 +4,5 @@
 mod globals;
 mod power;
 
-pub use globals::{Advertise, ConnectionRole, GlobalKind, advertised, advertised_to};
+pub use globals::{ConnectionRole, GlobalKind, advertised, advertised_to};
 pub use power::{Power, PowerSet, power_of, trusted_powers};

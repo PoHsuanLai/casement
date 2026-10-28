@@ -31,11 +31,11 @@ mod winit;
 mod winit_held;
 mod winit_spec;
 
-pub use backend::{BackendChoice, BackendError, BackendKind};
+pub use backend::{Backend, BackendChoice, BackendError, BackendKind};
 pub use headless::{
-    ConnectorEvent, DmabufMode, EdidSource, FixtureName, FramePixels, GpuId, HeadlessBackend,
-    HeadlessConfig, OutputChange, PresentedFrame, RenderCostModel, RgbaFrame, SoftRenderer,
-    SpecError, VblankSource, VirtualOutputSpec,
+    ConnectorEvent, EdidSource, FixtureName, FramePixels, GpuId, HeadlessBackend, HeadlessConfig,
+    OutputChange, PresentedFrame, RenderCostModel, RgbaFrame, SoftRenderer, SpecError,
+    VblankSource, VirtualOutputSpec,
 };
 pub use input::{DeviceName, DeviceSpec, VirtualDevice, VirtualInput};
 pub use session::SessionFault;

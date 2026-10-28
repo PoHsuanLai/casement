@@ -34,9 +34,9 @@ pub mod golden;
 pub use compositor::{Compositor, EffectSupport};
 pub use damage::{RenderError, RenderSync, Rendered, Routed, render_output, routed};
 pub use element::{
-    BlurFinish, BlurV0Element, CasementElement, ClientRound, ClientShadow, ClipAsk, ClipShape,
-    ClipStripElement, ClosingBody, ClosingFrame, CursorFace, FlightDraw, FrameDraw, GenieParts,
-    GenieWindow, LockCoverElement, MAX_CLIENT_CURSOR, Margins, Part, Pixels, PopupRide, Rgba8,
+    BlurFinish, BlurV0Element, CasementElement, ClientRound, ClipAsk, ClipShape, ClipStripElement,
+    ClosingBody, ClosingFrame, CursorFace, FlightDraw, FrameDraw, GenieParts, GenieWindow,
+    LockCoverElement, MAX_CLIENT_CURSOR, Margins, Part, Pixels, PopupRide, Rgba8,
     RoundedClipElement, Rounding, SharedElement, SoftParts, StripElement, StripPlan, Weight,
     at_rest, choose, client_shadow_elements, closing_content, closing_elements, cursor_elements,
     cursor_face, cursor_pixels, drawn_content, frame_elements, genie_elements, genie_window,

@@ -20,7 +20,9 @@ use crate::foreign_toplevel_list::window_of_identifier;
 use crate::handler::EventSink;
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::app::AppKey;
-use casement_core::desktop::{AppAsk, DesktopNote, DesktopRequest, SpaceAsk, WindowAsk};
+use casement_core::desktop::{
+    AppAsk, DesktopNote, DesktopRef, DesktopRequest, SpaceAsk, WindowAsk,
+};
 use casement_core::geometry::LogicalRect;
 use casement_core::policy::{ConnectionRole, GlobalKind};
 use casement_core::space::SpaceIndex;
@@ -55,19 +57,19 @@ const OBJECT_VERSION: u32 = 1;
 
 /// What a connection may do through the desktop manager.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Standing {
+pub enum DesktopAccess {
     /// The shell: read the model and manage it.
     Manager,
     /// The agent tier: read only; every management request is `not_permitted`.
     ReadOnly,
 }
 
-impl Standing {
+impl DesktopAccess {
     /// The standing a connection of `role` has: the shell manages, everything else reads.
-    pub fn of(role: &ConnectionRole) -> Standing {
+    pub fn of(role: &ConnectionRole) -> DesktopAccess {
         match role {
-            ConnectionRole::Shell => Standing::Manager,
-            _ => Standing::ReadOnly,
+            ConnectionRole::Shell => DesktopAccess::Manager,
+            _ => DesktopAccess::ReadOnly,
         }
     }
 }
@@ -78,7 +80,7 @@ pub struct Bound {
     /// The manager.
     pub manager: QuireDesktopManagerV1,
     /// What its connection may do.
-    pub standing: Standing,
+    pub standing: DesktopAccess,
     /// Its app objects.
     pub apps: BTreeMap<AppKey, QuireDesktopAppV1>,
     /// Its window objects.
@@ -86,20 +88,11 @@ pub struct Bound {
     /// Its Space objects.
     pub spaces: BTreeMap<SpaceId, QuireDesktopSpaceV1>,
     /// Whether the client sent `stop` (no more `app`, `window` or `space` events).
-    pub stopped: Stopped,
+    pub stopped: bool,
     /// The window objects the client made with `get_window_for`, beside the one the bind gave.
     pub asked: Vec<Asked>,
     /// What each object was last told.
     pub told: Told,
-}
-
-/// Whether a manager was stopped.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Stopped {
-    /// It still gets new objects.
-    No,
-    /// It asked for no more and was sent `finished`.
-    Yes,
 }
 
 /// `quire_desktop_manager_v1` and everything bound on it.
@@ -264,7 +257,7 @@ pub struct DesktopGlobal {
 #[derive(Debug, Clone, Copy)]
 pub struct ManagerData {
     /// What its connection may do.
-    pub standing: Standing,
+    pub standing: DesktopAccess,
 }
 
 /// An app object's data.
@@ -273,7 +266,7 @@ pub struct AppData {
     /// The app.
     pub app: AppKey,
     /// What the connection may do.
-    pub standing: Standing,
+    pub standing: DesktopAccess,
     /// The manager it came from, which a refused request is raised on.
     pub manager: QuireDesktopManagerV1,
 }
@@ -284,7 +277,7 @@ pub struct WindowData {
     /// The window, when the toplevel handle named a live one.
     pub window: Option<WindowId>,
     /// What the connection may do.
-    pub standing: Standing,
+    pub standing: DesktopAccess,
     /// The manager it came from, which a refused request is raised on.
     pub manager: QuireDesktopManagerV1,
 }
@@ -295,7 +288,7 @@ pub struct SpaceData {
     /// The Space.
     pub space: SpaceId,
     /// What the connection may do.
-    pub standing: Standing,
+    pub standing: DesktopAccess,
     /// The manager it came from, which a refused request is raised on.
     pub manager: QuireDesktopManagerV1,
 }
@@ -313,7 +306,7 @@ where
         data_init: &mut DataInit<'_, D>,
     ) {
         let role = ClientState::of(client).map_or(ConnectionRole::Public, |data| data.role.clone());
-        let standing = Standing::of(&role);
+        let standing = DesktopAccess::of(&role);
         let manager = data_init.init(resource, ManagerData { standing });
         let DesktopParts { part, view } = state.quire_desktop_parts();
         if let Err(fault) = on_bind(part, &view, manager, standing) {
@@ -329,10 +322,10 @@ where
 /// Posts the manager's `not_permitted` (an agent connection made a management request) and
 /// says whether the request was refused. The error is the manager's, so it goes on the
 /// manager, whichever of its objects asked.
-fn refused(standing: Standing, manager: &QuireDesktopManagerV1) -> bool {
+fn refused(standing: DesktopAccess, manager: &QuireDesktopManagerV1) -> bool {
     match standing {
-        Standing::Manager => false,
-        Standing::ReadOnly => {
+        DesktopAccess::Manager => false,
+        DesktopAccess::ReadOnly => {
             manager.post_error(
                 quire_desktop_manager_v1::Error::NotPermitted,
                 "management requests are not permitted on this connection",
@@ -524,7 +517,7 @@ pub fn on_bind(
     part: &mut QuireDesktopPart,
     view: &DesktopView<'_>,
     manager: QuireDesktopManagerV1,
-    standing: Standing,
+    standing: DesktopAccess,
 ) -> Result<(), WaylandFault> {
     let QuireDesktopPart { bound, makers, .. } = part;
     let mut fresh = Bound::new(manager, standing);
@@ -580,8 +573,8 @@ pub fn on_stop(part: &mut QuireDesktopPart, manager: &QuireDesktopManagerV1) {
     let Some(held) = part.bound.iter_mut().find(|held| held.manager == *manager) else {
         return;
     };
-    if held.stopped == Stopped::No {
-        held.stopped = Stopped::Yes;
+    if !held.stopped {
+        held.stopped = true;
         manager.finished();
     }
 }
@@ -625,9 +618,9 @@ pub fn apply_note(
     for held in bound.iter_mut() {
         held.prune();
         let outcome = match note {
-            DesktopNote::App(key) => held.app(makers, view, key),
-            DesktopNote::Window(id) => held.window(makers, view, *id),
-            DesktopNote::Space(id) => held.space(makers, view, id),
+            DesktopNote::Changed(DesktopRef::App(key)) => held.app(makers, view, key),
+            DesktopNote::Changed(DesktopRef::Window(id)) => held.window(makers, view, *id),
+            DesktopNote::Changed(DesktopRef::Space(id)) => held.space(makers, view, id),
             DesktopNote::Active => held.active(view),
             DesktopNote::Removed(gone) => held.removed(gone),
             _ => Outcome::Same,

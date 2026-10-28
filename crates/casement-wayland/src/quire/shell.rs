@@ -21,10 +21,9 @@ use casement_core::policy::GlobalKind;
 use casement_core::privilege::UnixSeconds;
 use casement_core::shell::{ShellNote, ShellRequest};
 use casement_core::time::Mono;
-use casement_core::window::MenuEntry;
 use casement_core::{Event, LayerKey, OutputKey, WindowId};
 use casement_protocols::server::quire_shell_v1::quire_shell_v1::{self, QuireShellV1};
-use casement_protocols::vocab::{MacMods, ShellRole, WireCode};
+use casement_protocols::vocab::{MacMods, ShellRole, WindowEntry, WireCode};
 use porter_core::SpaceId;
 use smithay::reexports::wayland_server::backend::{ClientId, GlobalId};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -246,7 +245,7 @@ where
             }
             quire_shell_v1::Request::WindowMenuPick { toplevel, entry } => {
                 let window = window_of_identifier(&toplevel).filter(|id| state.window_known(*id));
-                let entry = code_of(entry).and_then(MenuEntry::from_code);
+                let entry = code_of(entry).and_then(|code| WindowEntry::from_code(code).ok());
                 state.feed(on_window_menu_pick(window, entry));
             }
             quire_shell_v1::Request::SplitPick { toplevel } => {
@@ -387,13 +386,13 @@ pub fn on_clear_minimise_target(
 ///
 /// ```
 /// use casement_core::WindowId;
-/// use casement_core::window::MenuEntry;
+/// use casement_protocols::vocab::WindowEntry;
 /// use casement_wayland::quire::shell::on_window_menu_pick;
-/// assert_eq!(on_window_menu_pick(Some(WindowId(1)), Some(MenuEntry::Left)).len(), 1);
-/// assert!(on_window_menu_pick(None, Some(MenuEntry::Left)).is_empty());
+/// assert_eq!(on_window_menu_pick(Some(WindowId(1)), Some(WindowEntry::Left)).len(), 1);
+/// assert!(on_window_menu_pick(None, Some(WindowEntry::Left)).is_empty());
 /// assert!(on_window_menu_pick(Some(WindowId(1)), None).is_empty());
 /// ```
-pub fn on_window_menu_pick(window: Option<WindowId>, entry: Option<MenuEntry>) -> Vec<Event> {
+pub fn on_window_menu_pick(window: Option<WindowId>, entry: Option<WindowEntry>) -> Vec<Event> {
     window
         .zip(entry)
         .map(|(window, entry)| Event::Shell(ShellRequest::WindowMenuPick { window, entry }))

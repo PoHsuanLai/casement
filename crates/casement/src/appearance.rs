@@ -11,11 +11,10 @@
 //! the portal's changes are followed after that (`casement_ipc::system_scheme`, a thread with its
 //! own runtime; the answers come back over a calloop channel like the file's). Until the portal
 //! has answered, and on a desktop without one, `system` paints Light. Where the portal is
-//! reached is the [`ConfigHome`] seam: the real config tree uses the session bus, a stand-in
+//! reached is the config home seam: the real config tree uses the session bus, a stand-in
 //! directory (a test, a jail) uses a fixed answer and never touches a bus.
 
 use crate::State;
-use crate::cli::ConfigHome;
 use casement_ipc::system_scheme::{DesktopScheme, SchemeWatch};
 use casement_layout::{Scheme, Theme, Transparency, reduced_stand_in, scheme_of};
 use casement_render::{BlurFinish, Rgba8};
@@ -24,6 +23,7 @@ use ds_settings::{AppName, AppearanceFile, ConfigRoot, Store, SystemPrefsSource}
 use smithay::reexports::calloop::channel::{self, Event as ChannelEvent};
 use std::future::Future;
 use std::ops::ControlFlow;
+use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Wake, Waker};
@@ -31,11 +31,10 @@ use std::thread::Thread;
 
 /// The appearance store of `home`: the real config tree, or a stand-in directory (a test or a
 /// jail never reaches the machine's own file).
-fn store_for(home: &ConfigHome) -> Store {
-    let root = match home {
-        ConfigHome::Xdg => ConfigRoot::Xdg,
-        ConfigHome::At(dir) => ConfigRoot::Scratch(dir.clone()),
-    };
+fn store_for(home: Option<&Path>) -> Store {
+    let root = home.map_or(ConfigRoot::Xdg, |dir| {
+        ConfigRoot::Scratch(dir.to_path_buf())
+    });
     Store::new(root, AppName::QUIRE)
 }
 
@@ -44,13 +43,13 @@ fn store_for(home: &ConfigHome) -> Store {
 ///
 /// ```
 /// use casement::appearance::scheme_in;
-/// use casement::cli::ConfigHome;
 /// use casement_layout::Scheme;
+/// use std::path::Path;
 ///
-/// let nowhere = ConfigHome::At("/nonexistent/casement-doc-home".into());
-/// assert_eq!(scheme_in(&nowhere), Scheme::Light);
+/// let nowhere = Path::new("/nonexistent/casement-doc-home");
+/// assert_eq!(scheme_in(Some(nowhere)), Scheme::Light);
 /// ```
-pub fn scheme_in(home: &ConfigHome) -> Scheme {
+pub fn scheme_in(home: Option<&Path>) -> Scheme {
     scheme_of(stored_in(home).theme)
 }
 
@@ -62,7 +61,7 @@ struct Stored {
     transparency: Transparency,
 }
 
-fn stored_in(home: &ConfigHome) -> Stored {
+fn stored_in(home: Option<&Path>) -> Stored {
     let loaded = store_for(home).load::<AppearanceFile>();
     for key in &loaded.invalid {
         tracing::warn!("appearance.toml: {key}");
@@ -99,15 +98,14 @@ pub fn blur_finish(transparency: Transparency, scheme: Scheme) -> BlurFinish {
 ///
 /// ```
 /// use casement::appearance::system_source;
-/// use casement::cli::ConfigHome;
 /// use ds_settings::SystemPrefsSource;
 ///
-/// assert_eq!(system_source(&ConfigHome::Xdg), SystemPrefsSource::Portal);
+/// assert_eq!(system_source(None), SystemPrefsSource::Portal);
 /// ```
-pub fn system_source(home: &ConfigHome) -> SystemPrefsSource {
+pub fn system_source(home: Option<&Path>) -> SystemPrefsSource {
     match home {
-        ConfigHome::Xdg => SystemPrefsSource::Portal,
-        ConfigHome::At(_) => SystemPrefsSource::Fixed(Default::default()),
+        None => SystemPrefsSource::Portal,
+        Some(_) => SystemPrefsSource::Fixed(Default::default()),
     }
 }
 
@@ -200,7 +198,7 @@ fn follow_desktop(
 
 /// Reads the scheme and the transparency into `state` now, and again whenever the file (or, for
 /// `theme = "system"`, the desktop) changes. A file that cannot be watched is logged and the scheme read once is kept.
-pub(crate) fn attach(state: &mut State, home: &ConfigHome) -> Result<(), crate::StartError> {
+pub(crate) fn attach(state: &mut State, home: Option<&Path>) -> Result<(), crate::StartError> {
     let stored = stored_in(home);
     let theme = stored.theme;
     let mut heard = Heard::start(stored);
@@ -284,10 +282,7 @@ mod tests {
     #[test]
     fn a_home_with_no_file_paints_light() {
         let home = tempfile::tempdir().expect("a scratch directory");
-        assert_eq!(
-            scheme_in(&ConfigHome::At(home.path().into())),
-            Scheme::Light
-        );
+        assert_eq!(scheme_in(Some(home.path())), Scheme::Light);
     }
 
     #[test]
@@ -311,11 +306,7 @@ mod tests {
             let dir = home.path().join("quire");
             std::fs::create_dir_all(&dir).expect("a directory");
             std::fs::write(dir.join("appearance.toml"), text).expect("a file");
-            assert_eq!(
-                scheme_in(&ConfigHome::At(home.path().into())),
-                *want,
-                "{name}"
-            );
+            assert_eq!(scheme_in(Some(home.path())), *want, "{name}");
         }
     }
 
@@ -397,7 +388,7 @@ mod tests {
             let dir = home.path().join("quire");
             std::fs::create_dir_all(&dir).expect("a directory");
             std::fs::write(dir.join("appearance.toml"), text).expect("a file");
-            let stored = stored_in(&ConfigHome::At(home.path().into()));
+            let stored = stored_in(Some(home.path()));
             assert_eq!(stored.transparency, *want, "{name}");
         }
     }
@@ -432,12 +423,12 @@ mod tests {
 
     #[test]
     fn a_stand_in_home_never_reaches_a_bus() {
-        let jail = ConfigHome::At("/nonexistent/casement-jail".into());
+        let jail = Path::new("/nonexistent/casement-jail");
         assert_eq!(
-            system_source(&jail),
+            system_source(Some(jail)),
             SystemPrefsSource::Fixed(Default::default())
         );
-        assert_eq!(system_source(&ConfigHome::Xdg), SystemPrefsSource::Portal);
+        assert_eq!(system_source(None), SystemPrefsSource::Portal);
     }
 
     #[test]

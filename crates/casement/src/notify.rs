@@ -5,7 +5,7 @@
 //! [`Notify`] is the seam. [`SocketNotify`] writes one datagram per [`Notice`] to the socket
 //! systemd names in `$NOTIFY_SOCKET` (the binary reads it and passes an [`Endpoint`]; the
 //! library reads no environment); with no socket nothing is sent. `casement-testkit` exports
-//! `FakeNotify`. The watchdog period is read once by the binary ([`Watchdog::from_env`]).
+//! `FakeNotify`. The watchdog period is read once by the binary ([`watchdog_period`]).
 //!
 //! ```
 //! use casement::endpoint::Endpoint;
@@ -107,39 +107,26 @@ impl Notify for SocketNotify {
     }
 }
 
-/// How often systemd wants a ping: off, or every `Duration` (half of `WatchdogSec`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum Watchdog {
-    /// No watchdog is set for this process.
-    #[default]
-    Off,
-    /// Ping this often.
-    Every(Duration),
-}
-
-impl Watchdog {
-    /// The watchdog `$WATCHDOG_USEC` and `$WATCHDOG_PID` describe for the process `own_pid`:
-    /// off when the period is missing, zero or not a number, or when the variable names another
-    /// process.
-    ///
-    /// ```
-    /// use casement::notify::Watchdog;
-    /// use std::time::Duration;
-    ///
-    /// assert_eq!(Watchdog::from_env(Some("20000000"), None, 7), Watchdog::Every(Duration::from_secs(10)));
-    /// assert_eq!(Watchdog::from_env(Some("20000000"), Some("8"), 7), Watchdog::Off);
-    /// assert_eq!(Watchdog::from_env(None, None, 7), Watchdog::Off);
-    /// ```
-    pub fn from_env(usec: Option<&str>, pid: Option<&str>, own_pid: u32) -> Watchdog {
-        let addressed_here = pid.is_none_or(|text| text.trim().parse::<u32>() == Ok(own_pid));
-        let period = usec.and_then(|text| text.trim().parse::<u64>().ok());
-        match (period, addressed_here) {
-            (Some(micros), true) if micros > 1 => {
-                Watchdog::Every(Duration::from_micros(micros / 2))
-            }
-            _ => Watchdog::Off,
-        }
-    }
+/// How often systemd wants a ping (half of `WatchdogSec`), from `$WATCHDOG_USEC` and
+/// `$WATCHDOG_PID` for the process `own_pid`: none when the period is missing, zero or not a
+/// number, or when the variable names another process.
+///
+/// ```
+/// use casement::notify::watchdog_period;
+/// use std::time::Duration;
+///
+/// assert_eq!(watchdog_period(Some("20000000"), None, 7), Some(Duration::from_secs(10)));
+/// assert_eq!(watchdog_period(Some("20000000"), Some("8"), 7), None);
+/// assert_eq!(watchdog_period(None, None, 7), None);
+/// ```
+pub fn watchdog_period(usec: Option<&str>, pid: Option<&str>, own_pid: u32) -> Option<Duration> {
+    let addressed_here = pid.is_none_or(|text| text.trim().parse::<u32>() == Ok(own_pid));
+    let micros = usec
+        .and_then(|text| text.trim().parse::<u64>().ok())
+        .filter(|micros| *micros > 1);
+    micros
+        .filter(|_| addressed_here)
+        .map(|micros| Duration::from_micros(micros / 2))
 }
 
 #[cfg(test)]
@@ -198,23 +185,15 @@ mod tests {
     #[test]
     fn the_watchdog_pings_at_half_the_period_for_this_process_only() {
         let cases = [
-            (
-                Some("20000000"),
-                None,
-                Watchdog::Every(Duration::from_secs(10)),
-            ),
-            (
-                Some("20000000"),
-                Some("7"),
-                Watchdog::Every(Duration::from_secs(10)),
-            ),
-            (Some("20000000"), Some("8"), Watchdog::Off),
-            (Some("0"), None, Watchdog::Off),
-            (Some("soon"), None, Watchdog::Off),
-            (None, Some("7"), Watchdog::Off),
+            (Some("20000000"), None, Some(Duration::from_secs(10))),
+            (Some("20000000"), Some("7"), Some(Duration::from_secs(10))),
+            (Some("20000000"), Some("8"), None),
+            (Some("0"), None, None),
+            (Some("soon"), None, None),
+            (None, Some("7"), None),
         ];
         for (usec, pid, want) in cases {
-            assert_eq!(Watchdog::from_env(usec, pid, 7), want, "{usec:?} {pid:?}");
+            assert_eq!(watchdog_period(usec, pid, 7), want, "{usec:?} {pid:?}");
         }
     }
 }

@@ -13,10 +13,10 @@
 //! reaps them and says which ended ([`Spawner::exited`]), so the X11 bridge learns of its exit.
 //!
 //! ```no_run
-//! use casement::spawn::{ProcessSpawner, Scopes, SpawnSpec, Spawner};
+//! use casement::spawn::{ProcessSpawner, SpawnSpec, Spawner};
 //! use casement_core::input::Argv;
 //!
-//! let mut spawner = ProcessSpawner::new(Scopes::Off);
+//! let mut spawner = ProcessSpawner::new(None);
 //! let spec = SpawnSpec::new(Argv(vec!["foot".to_owned()]));
 //! let started = spawner.spawn(spec).expect("started");
 //! let _ = started.pid;
@@ -26,7 +26,7 @@ mod process;
 mod scope;
 
 pub use process::ProcessSpawner;
-pub use scope::{Scopes, scope_argv, unit_for};
+pub use scope::{scope_argv, unit_for};
 
 use casement_core::Pid;
 use casement_core::input::Argv;

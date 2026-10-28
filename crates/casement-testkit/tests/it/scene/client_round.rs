@@ -6,7 +6,8 @@
 
 use crate::scene::desk::{Desk, Dpi};
 use casement_backend::SoftRenderer;
-use casement_core::input::{ButtonCode, Edge};
+use casement_core::input::ButtonCode;
+use casement_protocols::vocab::PressEdge;
 use casement_testclient::Pattern;
 use casement_testclient::quire::window::{FrameMode, WindowManager};
 use casement_testkit::{Fixture, FixtureSpec};
@@ -205,7 +206,7 @@ fn shoot(renderer: SoftRenderer, say: Say, buffer: Buffer, placed: Placed) -> Sh
         );
         let inside = casement_core::geometry::LogicalPoint { x: 300, y: 250 };
         desk.fixture.input().pointer_to(device, inside);
-        for edge in [Edge::Press, Edge::Release] {
+        for edge in [PressEdge::Press, PressEdge::Release] {
             desk.fixture.input().button(device, ButtonCode(0x110), edge);
         }
         desk.fixture.pump();

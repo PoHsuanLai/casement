@@ -21,7 +21,8 @@ use super::{KeyDelivery, edge};
 use crate::convert::serial_to;
 use crate::virtual_keyboard::VIRTUAL_KEYBOARD_DEVICE;
 use casement_core::DeviceId;
-use casement_core::input::{DeviceClass, Edge, KeyCode, Origin};
+use casement_core::input::{DeviceClass, KeyCode, Origin};
+use casement_protocols::vocab::PressEdge;
 use smithay::input::keyboard::KeyboardHandle;
 use smithay::input::{Seat, SeatHandler};
 use smithay::reexports::wayland_server::Resource;
@@ -39,47 +40,23 @@ pub enum KeyRoute {
     PastGrab,
 }
 
-/// Whether the input method holds the keyboard.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MethodGrab {
-    /// It does: keys go to it.
-    Held,
-    /// It does not (no input method, or no field it works on).
-    Free,
-}
-
-/// Whether the seat holds a key down already.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SeatHolds {
-    /// It does: a press of it now is a copy.
-    Down,
-    /// It does not.
-    Up,
-}
-
 /// What the seat says about one key now: the grab, and whether the key is down.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RouteFacts {
-    /// The input method's grab.
-    pub grab: MethodGrab,
-    /// The key on the seat.
-    pub holds: SeatHolds,
+    /// Whether the input method holds the keyboard (no input method, or no field it works on:
+    /// it does not): keys go to it.
+    pub grabbed: bool,
+    /// Whether the seat holds the key down already: a press of it now is a copy.
+    pub down: bool,
 }
 
 /// What the seat says about `code` now.
 pub fn route_facts<D: SeatHandler + 'static>(seat: &Seat<D>, code: KeyCode) -> RouteFacts {
-    let grab = match seat.input_method().keyboard_grabbed() {
-        true => MethodGrab::Held,
-        false => MethodGrab::Free,
-    };
+    let grabbed = seat.input_method().keyboard_grabbed();
     let down = seat
         .get_keyboard()
         .is_some_and(|keyboard| keyboard.pressed_keys().contains(&edge::keycode_of(code)));
-    let holds = match down {
-        true => SeatHolds::Down,
-        false => SeatHolds::Up,
-    };
-    RouteFacts { grab, holds }
+    RouteFacts { grabbed, down }
 }
 
 /// The keys whose press went past the grab, by device: their releases go past too.
@@ -91,9 +68,9 @@ impl PastKeys {
     pub fn route(mut self, key: &KeyDelivery, facts: RouteFacts) -> (PastKeys, KeyRoute) {
         let held = (key.device, key.code);
         let route = match key.edge {
-            Edge::Release if self.0.remove(&held) => KeyRoute::PastGrab,
-            Edge::Release => KeyRoute::ThroughGrab,
-            Edge::Press => match press_route(&key.origin, key.device, facts) {
+            PressEdge::Release if self.0.remove(&held) => KeyRoute::PastGrab,
+            PressEdge::Release => KeyRoute::ThroughGrab,
+            PressEdge::Press => match press_route(&key.origin, key.device, facts) {
                 KeyRoute::PastGrab => {
                     self.0.insert(held);
                     KeyRoute::PastGrab
@@ -117,10 +94,8 @@ impl PastKeys {
 /// kernel keyboard, keycap's among them, goes through as before.
 fn press_route(origin: &Origin, device: DeviceId, facts: RouteFacts) -> KeyRoute {
     let protocol = device.0 >= VIRTUAL_KEYBOARD_DEVICE.0;
-    match (origin, facts.grab, facts.holds) {
-        (Origin::Virtual(DeviceClass::Keyboard), MethodGrab::Held, SeatHolds::Down) if protocol => {
-            KeyRoute::PastGrab
-        }
+    match (origin, facts.grabbed, facts.down) {
+        (Origin::Virtual(DeviceClass::Keyboard), true, true) if protocol => KeyRoute::PastGrab,
         _ => KeyRoute::ThroughGrab,
     }
 }
@@ -153,8 +128,8 @@ where
     let serial = u32::from(serial_to(delivery.serial));
     let time = edge::time_of(delivery.time).millis();
     let state = match delivery.edge {
-        Edge::Press => KeyState::Pressed,
-        Edge::Release => KeyState::Released,
+        PressEdge::Press => KeyState::Pressed,
+        PressEdge::Release => KeyState::Released,
     };
     for wire in keyboard.client_keyboards(&client) {
         wire.modifiers(
@@ -181,11 +156,11 @@ mod tests {
     const VIRTUAL: Origin = Origin::Virtual(DeviceClass::Keyboard);
     const HAND: Origin = Origin::Physical(DeviceClass::Keyboard);
     const COPY: RouteFacts = RouteFacts {
-        grab: MethodGrab::Held,
-        holds: SeatHolds::Down,
+        grabbed: true,
+        down: true,
     };
 
-    fn key(origin: Origin, device: DeviceId, edge: Edge) -> KeyDelivery {
+    fn key(origin: Origin, device: DeviceId, edge: PressEdge) -> KeyDelivery {
         KeyDelivery {
             code: KeyCode(30),
             edge,
@@ -198,19 +173,19 @@ mod tests {
 
     fn press(origin: Origin, device: DeviceId, facts: RouteFacts) -> KeyRoute {
         PastKeys::default()
-            .route(&key(origin, device, Edge::Press), facts)
+            .route(&key(origin, device, PressEdge::Press), facts)
             .1
     }
 
     #[test]
     fn only_a_protocol_keyboards_copy_of_a_held_key_goes_past_a_held_grab() {
         let free = RouteFacts {
-            grab: MethodGrab::Free,
-            holds: SeatHolds::Down,
+            grabbed: false,
+            down: true,
         };
         let own_key = RouteFacts {
-            grab: MethodGrab::Held,
-            holds: SeatHolds::Up,
+            grabbed: true,
+            down: false,
         };
         let cases = [
             (VIRTUAL, PROTOCOL, COPY, KeyRoute::PastGrab),
@@ -243,26 +218,27 @@ mod tests {
     #[test]
     fn a_release_goes_the_way_its_press_went_whatever_the_grab_does() {
         let free = RouteFacts {
-            grab: MethodGrab::Free,
-            holds: SeatHolds::Up,
+            grabbed: false,
+            down: false,
         };
         // Past at the press, the grab ends: the release still goes past.
-        let (past, route) = PastKeys::default().route(&key(VIRTUAL, PROTOCOL, Edge::Press), COPY);
+        let (past, route) =
+            PastKeys::default().route(&key(VIRTUAL, PROTOCOL, PressEdge::Press), COPY);
         assert_eq!(route, KeyRoute::PastGrab);
-        let (past, route) = past.route(&key(VIRTUAL, PROTOCOL, Edge::Release), free);
+        let (past, route) = past.route(&key(VIRTUAL, PROTOCOL, PressEdge::Release), free);
         assert_eq!(route, KeyRoute::PastGrab);
         assert_eq!(past, PastKeys::default(), "nothing is left held");
         // Through at the press, the grab starts: the release goes through.
-        let (past, route) = past.route(&key(VIRTUAL, PROTOCOL, Edge::Press), free);
+        let (past, route) = past.route(&key(VIRTUAL, PROTOCOL, PressEdge::Press), free);
         assert_eq!(route, KeyRoute::ThroughGrab);
-        let (past, route) = past.route(&key(VIRTUAL, PROTOCOL, Edge::Release), COPY);
+        let (past, route) = past.route(&key(VIRTUAL, PROTOCOL, PressEdge::Release), COPY);
         assert_eq!(route, KeyRoute::ThroughGrab);
         // Another device's release of the same key is its own.
-        let (past, _) = past.route(&key(VIRTUAL, PROTOCOL, Edge::Press), COPY);
+        let (past, _) = past.route(&key(VIRTUAL, PROTOCOL, PressEdge::Press), COPY);
         let other = DeviceId(PROTOCOL.0 + 1);
-        let (past, route) = past.route(&key(VIRTUAL, other, Edge::Release), COPY);
+        let (past, route) = past.route(&key(VIRTUAL, other, PressEdge::Release), COPY);
         assert_eq!(route, KeyRoute::ThroughGrab);
-        let (past, route) = past.route(&key(VIRTUAL, PROTOCOL, Edge::Release), free);
+        let (past, route) = past.route(&key(VIRTUAL, PROTOCOL, PressEdge::Release), free);
         assert_eq!(route, KeyRoute::PastGrab);
         assert_eq!(past, PastKeys::default(), "nothing is left held");
     }
@@ -270,14 +246,14 @@ mod tests {
     #[test]
     fn a_refused_release_leaves_no_record_to_send_a_later_release_past() {
         let free = RouteFacts {
-            grab: MethodGrab::Free,
-            holds: SeatHolds::Up,
+            grabbed: false,
+            down: false,
         };
-        let (past, _) = PastKeys::default().route(&key(VIRTUAL, PROTOCOL, Edge::Press), COPY);
+        let (past, _) = PastKeys::default().route(&key(VIRTUAL, PROTOCOL, PressEdge::Press), COPY);
         let past = past.refused_release(PROTOCOL, KeyCode(30));
-        let (past, route) = past.route(&key(VIRTUAL, PROTOCOL, Edge::Press), free);
+        let (past, route) = past.route(&key(VIRTUAL, PROTOCOL, PressEdge::Press), free);
         assert_eq!(route, KeyRoute::ThroughGrab);
-        let (past, route) = past.route(&key(VIRTUAL, PROTOCOL, Edge::Release), free);
+        let (past, route) = past.route(&key(VIRTUAL, PROTOCOL, PressEdge::Release), free);
         assert_eq!(
             route,
             KeyRoute::ThroughGrab,

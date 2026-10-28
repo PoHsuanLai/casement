@@ -17,7 +17,7 @@ use smithay::wayland::text_input::{TextInputManagerState, TextInputSeat, TextInp
 
 mod gate;
 
-pub use gate::{FieldFacts, GrabFacts, HOLD_LIMIT, ImeFacts, KeyGate, MethodFacts};
+pub use gate::{HOLD_LIMIT, ImeFacts, KeyGate};
 
 /// `zwp_text_input_manager_v3`.
 #[derive(Debug)]
@@ -64,21 +64,13 @@ pub fn on_commit_state(part: &mut TextInputPart, surface: &WlSurface) -> Vec<Eve
 /// What the seat's input method and text field say right now (the gate's facts).
 pub fn facts_of<D: SeatHandler + 'static>(seat: &Seat<D>) -> ImeFacts {
     let method = seat.input_method();
-    let mut field = FieldFacts::Inactive;
+    let mut field_active = false;
     seat.text_input()
-        .with_active_text_input(|_, _| field = FieldFacts::Active);
+        .with_active_text_input(|_, _| field_active = true);
     ImeFacts {
-        method: if method.has_instance() {
-            MethodFacts::Bound
-        } else {
-            MethodFacts::Absent
-        },
-        field,
-        grab: if method.keyboard_grabbed() {
-            GrabFacts::Grabbed
-        } else {
-            GrabFacts::Free
-        },
+        method_bound: method.has_instance(),
+        field_active,
+        grabbed: method.keyboard_grabbed(),
     }
 }
 

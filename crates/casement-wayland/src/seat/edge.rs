@@ -3,8 +3,9 @@
 //! addendum 8: stored values stay integers).
 
 use casement_core::geometry::{LogicalPoint, SubPoint, SubPx};
-use casement_core::input::{AxisFrame, AxisSource, AxisStop, ButtonCode, Edge, KeyCode};
+use casement_core::input::{AxisFrame, AxisSource, ButtonCode, KeyCode};
 use casement_core::time::Mono;
+use casement_protocols::vocab::PressEdge;
 use smithay::backend::input::{Axis, AxisSource as WireSource, ButtonState, InputTime, KeyState};
 use smithay::input::keyboard::Keycode;
 use smithay::input::pointer::AxisFrame as WireAxisFrame;
@@ -39,18 +40,18 @@ pub fn keycode_of(code: KeyCode) -> Keycode {
 }
 
 /// Down or up as smithay's key state.
-pub fn key_state_of(edge: Edge) -> KeyState {
+pub fn key_state_of(edge: PressEdge) -> KeyState {
     match edge {
-        Edge::Press => KeyState::Pressed,
-        Edge::Release => KeyState::Released,
+        PressEdge::Press => KeyState::Pressed,
+        PressEdge::Release => KeyState::Released,
     }
 }
 
 /// Down or up as smithay's button state.
-pub fn button_state_of(edge: Edge) -> ButtonState {
+pub fn button_state_of(edge: PressEdge) -> ButtonState {
     match edge {
-        Edge::Press => ButtonState::Pressed,
-        Edge::Release => ButtonState::Released,
+        PressEdge::Press => ButtonState::Pressed,
+        PressEdge::Release => ButtonState::Released,
     }
 }
 
@@ -84,9 +85,9 @@ pub fn axis_frame_of(frame: AxisFrame, time: Mono) -> WireAxisFrame {
         .source(source_of(frame.source))
         .value(Axis::Horizontal, px_of(frame.px.x))
         .value(Axis::Vertical, px_of(frame.px.y));
-    match frame.stop {
-        AxisStop::Running => moved,
-        AxisStop::Stopped => moved.stop(Axis::Horizontal).stop(Axis::Vertical),
+    match frame.stopped {
+        false => moved,
+        true => moved.stop(Axis::Horizontal).stop(Axis::Vertical),
     }
 }
 
@@ -95,7 +96,7 @@ mod tests {
     use super::*;
     use std::time::Duration;
 
-    fn frame(source: AxisSource, v120: (i32, i32), px: (i32, i32), stop: AxisStop) -> AxisFrame {
+    fn frame(source: AxisSource, v120: (i32, i32), px: (i32, i32), stopped: bool) -> AxisFrame {
         AxisFrame {
             source,
             v120,
@@ -103,17 +104,14 @@ mod tests {
                 x: SubPx(px.0),
                 y: SubPx(px.1),
             },
-            stop,
+            stopped,
         }
     }
 
     #[test]
     fn a_wheel_detent_carries_its_source_value120_and_distance() {
         let at = Mono(Duration::from_millis(40));
-        let wire = axis_frame_of(
-            frame(AxisSource::Wheel, (0, 120), (0, 1800), AxisStop::Running),
-            at,
-        );
+        let wire = axis_frame_of(frame(AxisSource::Wheel, (0, 120), (0, 1800), false), at);
         assert!(matches!(wire.source, Some(WireSource::Wheel)));
         assert_eq!(wire.v120, Some((0, 120)));
         assert_eq!(wire.axis, (0.0, 15.0));
@@ -124,17 +122,11 @@ mod tests {
     #[test]
     fn a_finger_scroll_has_no_detents_and_ends_with_a_stop() {
         let at = Mono(Duration::from_millis(7));
-        let moving = axis_frame_of(
-            frame(AxisSource::Finger, (0, 0), (60, -120), AxisStop::Running),
-            at,
-        );
+        let moving = axis_frame_of(frame(AxisSource::Finger, (0, 0), (60, -120), false), at);
         assert!(matches!(moving.source, Some(WireSource::Finger)));
         assert_eq!(moving.v120, None);
         assert_eq!(moving.axis, (0.5, -1.0));
-        let ended = axis_frame_of(
-            frame(AxisSource::Finger, (0, 0), (0, 0), AxisStop::Stopped),
-            at,
-        );
+        let ended = axis_frame_of(frame(AxisSource::Finger, (0, 0), (0, 0), true), at);
         assert_eq!(ended.stop, (true, true));
     }
 
@@ -145,7 +137,7 @@ mod tests {
         assert_eq!(time_of(Mono(Duration::from_micros(1500))).micros(), 1500);
         assert_eq!(keycode_of(KeyCode(30)).raw(), 38);
         assert_eq!(button_of(ButtonCode(0x110)), 0x110);
-        assert_eq!(key_state_of(Edge::Press), KeyState::Pressed);
-        assert_eq!(button_state_of(Edge::Release), ButtonState::Released);
+        assert_eq!(key_state_of(PressEdge::Press), KeyState::Pressed);
+        assert_eq!(button_state_of(PressEdge::Release), ButtonState::Released);
     }
 }

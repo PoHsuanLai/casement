@@ -8,36 +8,22 @@
 use super::color_matrix::{ColorMatrix, srgb_to_panel};
 use casement_core::output::{Gamut, TransferCurve};
 
-/// How a surface's values map to light.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum Transfer {
-    /// The sRGB piecewise curve (untagged surfaces, `srgb`).
-    #[default]
-    Srgb,
-    /// A pure power of 2.2.
-    Gamma22,
-    /// Already linear light (`ext_linear`).
-    Linear,
+/// The shader's selector for a transfer curve.
+pub(super) fn selector(curve: TransferCurve) -> f32 {
+    match curve {
+        TransferCurve::Srgb => 0.0,
+        TransferCurve::Gamma22 => 1.0,
+        TransferCurve::Linear => 2.0,
+    }
 }
 
-impl Transfer {
-    /// The shader's selector for this curve.
-    pub fn selector(self) -> f32 {
-        match self {
-            Transfer::Srgb => 0.0,
-            Transfer::Gamma22 => 1.0,
-            Transfer::Linear => 2.0,
-        }
-    }
-
-    /// Light from a value in 0..=1.
-    pub fn decode(self, value: f64) -> f64 {
-        match self {
-            Transfer::Srgb if value <= 0.04045 => value / 12.92,
-            Transfer::Srgb => ((value + 0.055) / 1.055).powf(2.4),
-            Transfer::Gamma22 => value.max(0.0).powf(2.2),
-            Transfer::Linear => value,
-        }
+/// Light from a value in 0..=1 encoded with `curve`.
+fn decode(curve: TransferCurve, value: f64) -> f64 {
+    match curve {
+        TransferCurve::Srgb if value <= 0.04045 => value / 12.92,
+        TransferCurve::Srgb => ((value + 0.055) / 1.055).powf(2.4),
+        TransferCurve::Gamma22 => value.max(0.0).powf(2.2),
+        TransferCurve::Linear => value,
     }
 }
 
@@ -50,23 +36,13 @@ fn encode(light: f64) -> f64 {
     }
 }
 
-impl From<TransferCurve> for Transfer {
-    fn from(curve: TransferCurve) -> Transfer {
-        match curve {
-            TransferCurve::Srgb => Transfer::Srgb,
-            TransferCurve::Gamma22 => Transfer::Gamma22,
-            TransferCurve::Linear => Transfer::Linear,
-        }
-    }
-}
-
 /// A conversion of a surface's colours to an output's.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ColorTransform {
     /// Linear source RGB to linear panel RGB.
     pub matrix: ColorMatrix,
     /// The surface's transfer function.
-    pub source: Transfer,
+    pub source: TransferCurve,
 }
 
 impl ColorTransform {
@@ -84,20 +60,20 @@ impl ColorTransform {
             Gamut::Srgb => None,
             wide => Some(ColorTransform {
                 matrix: srgb_to_panel(wide),
-                source: Transfer::Srgb,
+                source: TransferCurve::Srgb,
             }),
         }
     }
 
     /// The same conversion for a surface tagged with another transfer function.
-    pub fn with_source(self, source: Transfer) -> ColorTransform {
+    pub fn with_source(self, source: TransferCurve) -> ColorTransform {
         ColorTransform { source, ..self }
     }
 
     /// One colour (straight, not premultiplied; 0..=1 per channel) converted.
     pub fn apply(&self, rgb: [f64; 3]) -> [f64; 3] {
         self.matrix
-            .apply(rgb.map(|c| self.source.decode(c)))
+            .apply(rgb.map(|c| decode(self.source, c)))
             .map(encode)
     }
 
@@ -152,14 +128,14 @@ mod tests {
     #[test]
     fn transfer_curves_decode_known_points() {
         let rows = [
-            (Transfer::Srgb, 0.5, 0.2140),
-            (Transfer::Gamma22, 0.5, 0.2176),
-            (Transfer::Linear, 0.5, 0.5),
-            (Transfer::Srgb, 1.0, 1.0),
+            (TransferCurve::Srgb, 0.5, 0.2140),
+            (TransferCurve::Gamma22, 0.5, 0.2176),
+            (TransferCurve::Linear, 0.5, 0.5),
+            (TransferCurve::Srgb, 1.0, 1.0),
         ];
         for (transfer, value, want) in rows {
             assert!(
-                (transfer.decode(value) - want).abs() < 1e-3,
+                (decode(transfer, value) - want).abs() < 1e-3,
                 "{transfer:?} {value}"
             );
         }
@@ -168,7 +144,7 @@ mod tests {
     #[test]
     fn linear_sources_are_brighter_than_srgb_ones() {
         let srgb = p3().apply([0.2; 3]);
-        let linear = p3().with_source(Transfer::Linear).apply([0.2; 3]);
+        let linear = p3().with_source(TransferCurve::Linear).apply([0.2; 3]);
         assert!(linear[0] > srgb[0]);
     }
 

@@ -7,8 +7,8 @@ use crate::support::{headless, proven, rect};
 use casement_core::focus::TokenCheck;
 use casement_core::geometry::{LogicalPoint, LogicalSize};
 use casement_core::layer::{
-    Anchor, Anchors, BlurStrength, ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerSpec,
-    Margins, ShellRoleTag,
+    Anchors, BlurStrength, ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerSpec, Margins,
+    ShellRoleTag,
 };
 use casement_core::reveal::{FullScreenBar, Reduced};
 use casement_core::shell::{ShellNote, ShellRequest};
@@ -25,10 +25,10 @@ fn layer_on(output: &str, layer_key: u64, spec_role: ShellRoleTag) -> Op {
         output: headless(output).key,
         level: LayerLevel::Top,
         anchor: Anchors {
-            top: Anchor::Free,
-            bottom: Anchor::Held,
-            left: Anchor::Free,
-            right: Anchor::Free,
+            top: false,
+            bottom: true,
+            left: false,
+            right: false,
         },
         exclusive: ExclusiveZone::Ignore,
         margin: Margins {

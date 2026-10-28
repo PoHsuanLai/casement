@@ -13,13 +13,13 @@
 
 use crate::State;
 use crate::appearance::ThreadSpawner;
-use crate::cli::ConfigHome;
 use crate::config::{self, CasementDoc};
 use casement_core::Event;
 use casement_core::settings::{CasementSettings, KeyboardSettings, XkbNames};
-use casement_wayland::seat_keymap::{self, KeymapStep, Report};
+use casement_wayland::seat_keymap::{self, KeymapStep};
 use ds_core::spawner::Spawner;
 use smithay::reexports::calloop::channel::{self, Event as ChannelEvent};
+use std::path::Path;
 
 /// `current` with the parts that follow the file taken from `doc`: the pointer's settings, the
 /// key repeat, the keyboard layout and the night light. Everything else, the keymap's bindings
@@ -50,7 +50,7 @@ pub fn followed(current: &CasementSettings, doc: &CasementDoc) -> CasementSettin
 
 /// Stamps the file's version (a file written before the file had one, once), then follows the
 /// file. A file that cannot be watched is logged and the settings read at start are kept.
-pub fn attach(state: &mut State, home: &ConfigHome) -> Result<(), crate::StartError> {
+pub fn attach(state: &mut State, home: Option<&Path>) -> Result<(), crate::StartError> {
     if let Err(error) = config::stamp_version(home) {
         tracing::warn!(%error, "the settings file could not be marked with its version");
     }
@@ -87,7 +87,7 @@ fn switch_keymap(state: &mut State, wanted: &XkbNames) -> XkbNames {
         match seat_keymap::switch_layout(&keyboard, state, wanted) {
             Ok(()) => state.wl.seat.keymap.switched(wanted.clone()),
             Err(fault) => {
-                if state.wl.seat.keymap.refuse(wanted.clone()) == Report::Say {
+                if state.wl.seat.keymap.refuse(wanted.clone()) {
                     tracing::warn!(%fault, "the keyboard layout in the settings did not compile; the old one stays");
                 }
             }

@@ -2,7 +2,7 @@
 //! must outlive it. The rules are pure functions over [`IconParts`]; the dispatch around them
 //! turns a refusal into the protocol error and returns.
 
-use crate::limits::{self, Limit, Standing};
+use crate::limits::{self, Limit};
 use smithay::reexports::wayland_protocols::xdg::toplevel_icon::v1::server::xdg_toplevel_icon_v1::{
     self, XdgToplevelIconV1,
 };
@@ -211,7 +211,7 @@ where
                 // A client past its cap is cut (CASW-06): the table these sit in is scanned by
                 // every buffer destroy of every client.
                 let held = self.registry.held_by(&client.id());
-                if limits::admit(display, client, Limit::IconBuffers, held) == Standing::Over {
+                if !limits::admit(display, client, Limit::IconBuffers, held) {
                     return;
                 }
                 match edge_of(&buffer) {

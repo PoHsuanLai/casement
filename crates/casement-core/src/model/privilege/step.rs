@@ -2,9 +2,9 @@
 //! next machine and the effects it asks for, out.
 
 use super::book::{Book, UnixSeconds};
+use super::edit::Edit;
 use super::floor::Floor;
 use super::standing::ClientStanding;
-use super::subject::Subject;
 use super::{Class, Client, Privilege, ShellPresence};
 use crate::effect::Effect;
 use crate::ids::ClientKey;
@@ -24,20 +24,13 @@ pub enum PowerOutcome {
     Revoked,
 }
 
-/// Whether the screen is covered by the lock, when nobody can be asked.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Screen {
-    /// The person can see a question.
-    Open,
-    /// The lock is up or coming up: no question is shown, new uses are refused.
-    Covered,
-}
-
 /// What the machine is told besides the event: the instant, and the lock.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Ctx {
     pub(crate) now: Mono,
-    pub(crate) screen: Screen,
+    /// The lock is up or coming up: no question is shown, new uses are refused. Otherwise the
+    /// person can see a question.
+    pub(crate) covered: bool,
 }
 
 /// What can happen to the machine.
@@ -60,20 +53,8 @@ pub(crate) enum Input {
         answer: Answer,
         at: UnixSeconds,
     },
-    /// Settings switched a program's power on.
-    Granted {
-        subject: Subject,
-        power: Power,
-        at: UnixSeconds,
-    },
-    /// Settings switched a program's power off.
-    Revoked {
-        subject: Subject,
-        power: Power,
-        at: UnixSeconds,
-    },
-    /// Settings forgot a program's answer: it is asked again.
-    Forgotten { subject: Subject, power: Power },
+    /// Settings changed a program's answer.
+    Edited { edit: Edit, at: UnixSeconds },
     /// The shell can be asked.
     ShellReady,
     /// The shell cannot be asked any more.
@@ -108,15 +89,7 @@ impl Privilege {
             Input::Gone { client } => next.gone(client),
             Input::Use { client, power } => next.use_power(&mut out, client, power, ctx),
             Input::Answered { ask, answer, at } => next.answered(&mut out, ask, answer, at, ctx),
-            Input::Granted { subject, power, at } => {
-                next.edit(&mut out, super::settle::Edit::Allow(subject, power, at));
-            }
-            Input::Revoked { subject, power, at } => {
-                next.edit(&mut out, super::settle::Edit::Deny(subject, power, at));
-            }
-            Input::Forgotten { subject, power } => {
-                next.edit(&mut out, super::settle::Edit::Forget(subject, power));
-            }
+            Input::Edited { edit, at } => next.edit(&mut out, edit, at),
             Input::ShellReady => next.shell = ShellPresence::Present,
             Input::ShellGone => next.shell_gone(ctx),
             Input::BookLoaded(book) => {

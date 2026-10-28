@@ -200,9 +200,8 @@ fn a_power_taken_back_releases_the_held_keys_and_ends_the_keyboard() {
     fixture.pump();
     assert_eq!(keys_heard(&mut fixture, &shell), 1);
 
-    fixture.feed_events(vec![Event::PrivilegeRevoked {
-        subject: program(ASKED_PROGRAM),
-        power: Power::Keys,
+    fixture.feed_events(vec![Event::PrivilegeEdited {
+        edit: casement_core::privilege::Edit::Deny(program(ASKED_PROGRAM), Power::Keys),
         at: UnixSeconds(2),
     }]);
     assert_eq!(keys_heard(&mut fixture, &shell), 2, "the key is let go");

@@ -10,15 +10,6 @@ use smithay::wayland::compositor::with_states;
 use std::marker::PhantomData;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// Whether a surface already carried the mark.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Marked {
-    /// It was marked before.
-    Already,
-    /// It is marked now, and was not.
-    Now,
-}
-
 /// The mark of kind `K` in a surface's user data.
 struct Mark<K> {
     set: AtomicBool,
@@ -35,13 +26,10 @@ impl<K> Default for Mark<K> {
 }
 
 /// Marks `surface` with `K`; whether it was marked already.
-pub(crate) fn set<K: 'static>(surface: &WlSurface) -> Marked {
+pub(crate) fn set<K: 'static>(surface: &WlSurface) -> bool {
     with_states(surface, |states| {
         let mark = states.data_map.get_or_insert_threadsafe(Mark::<K>::default);
-        match mark.set.swap(true, Ordering::AcqRel) {
-            true => Marked::Already,
-            false => Marked::Now,
-        }
+        mark.set.swap(true, Ordering::AcqRel)
     })
 }
 

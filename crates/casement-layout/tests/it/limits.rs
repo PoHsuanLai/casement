@@ -6,7 +6,7 @@ use crate::support;
 
 use casement_core::WindowId;
 use casement_core::geometry::{LogicalRect, LogicalSize};
-use casement_core::window::{MaxSize, SizeLimits};
+use casement_core::window::SizeLimits;
 use casement_layout::{
     Arrangement, ConfigureNeed, LayoutReport, OutputSpec, RustScene, SceneLayout, SceneMode,
     SceneSpec, SpaceArrangement, SpaceSpec, WindowPlacement, WindowSpec, WindowTarget,
@@ -29,9 +29,7 @@ fn limits() -> impl Strategy<Value = SizeLimits> {
     )
         .prop_map(|(min_w, min_h, max)| SizeLimits {
             min: size(min_w, min_h),
-            max: max.map_or(MaxSize::Unbounded, |(w, h)| {
-                MaxSize::Bounded(size(w.max(min_w), h.max(min_h)))
-            }),
+            max: max.map(|(w, h)| size(w.max(min_w), h.max(min_h))),
         })
 }
 
@@ -154,7 +152,7 @@ proptest! {
             } else {
                 prop_assert_eq!(reported(&got, window), Some((min, t.rect.size)), "reported with what it got");
             }
-            if let MaxSize::Bounded(max) = d.limits.max
+            if let Some(max) = d.limits.max
                 && fits
             {
                 prop_assert!(t.rect.size.w <= max.w && t.rect.size.h <= max.h, "maximum honoured");

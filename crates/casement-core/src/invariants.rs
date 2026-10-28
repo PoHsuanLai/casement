@@ -5,7 +5,7 @@ use crate::ids::{LayerKey, OutputKey, WindowId};
 use crate::lock::{LockState, LockSurfaces};
 use crate::model::Model;
 use crate::space::{Space, SpaceContent};
-use crate::window::{Parent, SpacePlace, Window, WindowState};
+use crate::window::{SpacePlace, Window, WindowState};
 use casement_protocols::vocab::Emphasis;
 use porter_core::SpaceId;
 use std::collections::BTreeSet;
@@ -191,14 +191,12 @@ fn apps_hold_their_windows(model: &Model) -> Option<InvariantBreak> {
 }
 
 fn parents_exist(model: &Model) -> Option<InvariantBreak> {
-    model
-        .windows()
-        .values()
-        .find_map(|window| match window.parent {
-            Parent::Window(parent) => (!model.windows().contains_key(&parent))
-                .then_some(InvariantBreak::ParentMissing(window.id)),
-            Parent::None => None,
-        })
+    model.windows().values().find_map(|window| {
+        window
+            .parent
+            .filter(|parent| !model.windows().contains_key(parent))
+            .map(|_| InvariantBreak::ParentMissing(window.id))
+    })
 }
 
 fn stacking_is_total(model: &Model) -> Option<InvariantBreak> {

@@ -26,7 +26,7 @@ impl BareLayer {
     /// A layer for `spec`'s mode, scale and transform; none when the renderer could not make
     /// a canvas (the output then has no cursor-less frames).
     pub(super) fn start(
-        renderer: &mut HeadlessRenderer,
+        renderer: &mut dyn HeadlessRenderer,
         spec: &VirtualOutputSpec,
     ) -> Option<BareLayer> {
         match renderer.canvas(spec.mode.size) {
@@ -49,7 +49,7 @@ impl BareLayer {
     /// Draws `source` without its cursor; the bytes read back when something changed.
     pub(super) fn draw(
         &mut self,
-        renderer: &mut HeadlessRenderer,
+        renderer: &mut dyn HeadlessRenderer,
         source: &dyn FrameSource,
     ) -> Result<Drawn, BackendError> {
         let age = self.canvas.age();

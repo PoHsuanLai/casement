@@ -2,9 +2,10 @@
 
 use casement_core::DeviceId;
 use casement_core::input::{
-    Argv, Binding, BindingAction, Bindings, Chord, DbusCall, DeviceClass, Edge, KeyCode,
+    Argv, Binding, BindingAction, Bindings, Chord, DbusCall, DeviceClass, KeyCode,
 };
 use casement_core::policy::ConnectionRole;
+use casement_protocols::vocab::PressEdge;
 use casement_testclient::seat::keyboard::Keyboard;
 use casement_testclient::surface::layer::{
     Anchor, KeyboardInteractivity, Layer, LayerAsk, LayerSurface,
@@ -37,10 +38,10 @@ fn bound_to(action: BindingAction) -> Fixture {
 /// Presses and releases cmd+space on `device`.
 fn press_cmd_space(fixture: &mut Fixture, device: DeviceId) {
     let mut input = fixture.input();
-    input.key(device, KEY_LEFTMETA, Edge::Press);
-    input.key(device, KEY_SPACE, Edge::Press);
-    input.key(device, KEY_SPACE, Edge::Release);
-    input.key(device, KEY_LEFTMETA, Edge::Release);
+    input.key(device, KEY_LEFTMETA, PressEdge::Press);
+    input.key(device, KEY_SPACE, PressEdge::Press);
+    input.key(device, KEY_SPACE, PressEdge::Release);
+    input.key(device, KEY_LEFTMETA, PressEdge::Release);
 }
 
 /// A chord bound to a D-Bus call makes that call through `ShellCalls` within the frame the key

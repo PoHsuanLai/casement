@@ -22,7 +22,7 @@ use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::output::{EdidFacts, EdidSerial};
 use casement_core::settings::CasementSettings;
 use casement_core::space::SplitPair;
-use casement_core::window::{MaxSize, SizeLimits};
+use casement_core::window::SizeLimits;
 use casement_core::{OutputKey, OutputName, WindowId};
 use casement_layout::{
     Arrangement, LayoutKnobs, LayoutReport, OutputSpec, OverviewKind, RustScene, SceneLayout,
@@ -122,12 +122,12 @@ fn limits(rng: &mut Rng) -> SizeLimits {
         },
     };
     let max = match rng.below(3) {
-        0 => MaxSize::Unbounded,
-        1 => MaxSize::Bounded(LogicalSize {
+        0 => None,
+        1 => Some(LogicalSize {
             w: rng.between(0, 2600),
             h: rng.between(0, 1600),
         }),
-        _ => MaxSize::Bounded(LogicalSize {
+        _ => Some(LogicalSize {
             w: rng.between(300, 1200),
             h: rng.between(200, 900),
         }),

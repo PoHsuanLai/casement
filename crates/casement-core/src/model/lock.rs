@@ -21,9 +21,9 @@ impl Model {
         let before = self.marker();
         let moved = self.lock_moved(event);
         match (before, moved.model.marker()) {
-            (Marker::Absent, Marker::Present) => moved.with(Effect::Lock(LockReply::Remember)),
-            (Marker::Present, Marker::Absent) => moved.with(Effect::Lock(LockReply::Forget)),
-            (Marker::Absent, Marker::Absent) | (Marker::Present, Marker::Present) => moved,
+            (false, true) => moved.with(Effect::Lock(LockReply::Remember)),
+            (true, false) => moved.with(Effect::Lock(LockReply::Forget)),
+            (false, false) | (true, true) => moved,
         }
     }
 
@@ -31,17 +31,16 @@ impl Model {
     /// it is held with no locker). A lock another client holds is not remembered: after a
     /// restart only the shell can take a held lock over, so a marker for any other locker could
     /// leave the person with a cover nobody comes to lift.
-    fn marker(&self) -> Marker {
-        match &self.lock {
+    fn marker(&self) -> bool {
+        matches!(
+            &self.lock,
             LockState::Locked {
                 holder: LockHolder::Shell(_),
                 ..
-            }
-            | LockState::LockedWithoutSurface {
+            } | LockState::LockedWithoutSurface {
                 holder: LockHolder::Shell(_),
-            } => Marker::Present,
-            _ => Marker::Absent,
-        }
+            }
+        )
     }
 
     fn lock_moved(self, event: LockEvent) -> Moved {
@@ -307,15 +306,6 @@ impl Model {
             _ => Some(show_cover(output.clone())),
         }
     }
-}
-
-/// Whether the lock marker should exist.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Marker {
-    /// The shell's lock is held.
-    Present,
-    /// It is not.
-    Absent,
 }
 
 fn show_cover(output: OutputKey) -> Effect {

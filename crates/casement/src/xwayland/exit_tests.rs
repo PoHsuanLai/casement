@@ -1,7 +1,7 @@
 //! Satellite's exit: seen through the spawner that started it, never by waiting on its pid.
 
 use super::*;
-use crate::spawn::{ProcessSpawner, Scopes};
+use crate::spawn::ProcessSpawner;
 use std::time::Duration;
 
 /// A spawner that "starts" every program as this pid.
@@ -43,7 +43,7 @@ fn only_the_exit_of_the_satellite_itself_returns_the_sockets_to_listening() {
 fn a_real_satellite_that_exits_is_noticed_and_can_be_started_again() {
     let dir = tempfile::tempdir().expect("a scratch folder");
     // `true` stands in for a satellite that exits at once, whatever it is given.
-    let mut spawner = ProcessSpawner::new(Scopes::Off);
+    let mut spawner = ProcessSpawner::new(None);
     let mut state = running_with(&mut spawner, "true", dir.path());
     let back = (0..400).any(|turn| {
         std::thread::sleep(Duration::from_millis(10));

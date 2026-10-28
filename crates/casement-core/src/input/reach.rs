@@ -47,15 +47,6 @@ pub struct ReachFacts<'a> {
     pub leases: &'a Leases,
 }
 
-/// Whether an event may reach its target.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Reach {
-    /// It may.
-    Allowed,
-    /// It may not, for this reason.
-    Refused(Refusal),
-}
-
 /// Why an event was refused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Refusal {
@@ -73,7 +64,8 @@ pub enum Refusal {
     Locked,
 }
 
-/// Whether an event from `origin` may reach `target` for `use_`.
+/// Whether an event from `origin` may reach `target` for `use_`: `Ok` when it may, else the
+/// reason it may not.
 ///
 /// The checks run in this order, the first that refuses wins:
 ///
@@ -89,7 +81,12 @@ pub enum Refusal {
 ///
 /// Everything else is allowed: a remote session or a virtual keyboard types into windows like
 /// the person would.
-pub fn reach(origin: &Origin, target: &InputTarget, use_: InputUse, facts: &ReachFacts) -> Reach {
+pub fn reach(
+    origin: &Origin,
+    target: &InputTarget,
+    use_: InputUse,
+    facts: &ReachFacts,
+) -> Result<(), Refusal> {
     [
         refuse_by_lock(origin, target, *facts),
         refuse_agent(origin, target, facts.leases),
@@ -99,7 +96,7 @@ pub fn reach(origin: &Origin, target: &InputTarget, use_: InputUse, facts: &Reac
     .into_iter()
     .flatten()
     .next()
-    .map_or(Reach::Allowed, Reach::Refused)
+    .map_or(Ok(()), Err)
 }
 
 fn refuse_by_lock(origin: &Origin, target: &InputTarget, facts: ReachFacts) -> Option<Refusal> {

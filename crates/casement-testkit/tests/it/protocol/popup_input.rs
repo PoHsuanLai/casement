@@ -6,8 +6,9 @@
 use super::xdg_shell::{boot, click, map_toplevel, pointer, rect_of, settle, windows};
 use casement_core::DeviceId;
 use casement_core::geometry::{LogicalPoint, PhysicalSize};
-use casement_core::input::{ButtonCode, DeviceClass, Edge, KeyCode};
+use casement_core::input::{ButtonCode, DeviceClass, KeyCode};
 use casement_core::policy::ConnectionRole;
+use casement_protocols::vocab::PressEdge;
 use casement_testclient::seat::keyboard::Keyboard;
 use casement_testclient::surface::layer::{
     Anchor, KeyboardInteractivity, Layer, LayerAsk, LayerSurface,
@@ -167,8 +168,8 @@ impl Desk {
         let bar = map_layer(&mut fixture, shell, &ask);
         // The app holds the keyboard before the menu opens.
         let typed = keys_of(fixture.client(app));
-        fixture.input().key(keys, KEY_A, Edge::Press);
-        fixture.input().key(keys, KEY_A, Edge::Release);
+        fixture.input().key(keys, KEY_A, PressEdge::Press);
+        fixture.input().key(keys, KEY_A, PressEdge::Release);
         fixture.pump();
         assert!(
             keys_of(fixture.client(app)) > typed,
@@ -180,8 +181,8 @@ impl Desk {
                 fixture
                     .input()
                     .pointer_to(mouse, LogicalPoint { x: 110, y: 10 });
-                fixture.input().button(mouse, LEFT, Edge::Press);
-                fixture.input().button(mouse, LEFT, Edge::Release);
+                fixture.input().button(mouse, LEFT, PressEdge::Press);
+                fixture.input().button(mouse, LEFT, PressEdge::Release);
                 fixture.pump();
                 presses.last_press().expect("the bar's press reached it")
             }
@@ -226,8 +227,10 @@ impl Desk {
 
     /// A key, pressed and released.
     fn tap(&mut self, code: KeyCode) {
-        self.fixture.input().key(self.keys, code, Edge::Press);
-        self.fixture.input().key(self.keys, code, Edge::Release);
+        self.fixture.input().key(self.keys, code, PressEdge::Press);
+        self.fixture
+            .input()
+            .key(self.keys, code, PressEdge::Release);
         self.fixture.pump();
     }
 
@@ -258,8 +261,12 @@ fn a_click_inside_a_bar_popup_reaches_the_popup() {
         y: MENU_BOX.1 + MENU_BOX.3 / 2,
     };
     desk.fixture.input().pointer_to(desk.mouse, inside);
-    desk.fixture.input().button(desk.mouse, LEFT, Edge::Press);
-    desk.fixture.input().button(desk.mouse, LEFT, Edge::Release);
+    desk.fixture
+        .input()
+        .button(desk.mouse, LEFT, PressEdge::Press);
+    desk.fixture
+        .input()
+        .button(desk.mouse, LEFT, PressEdge::Release);
     desk.fixture.pump();
     assert_eq!(
         desk.popup.log.with(|seen| seen.done),
@@ -282,8 +289,12 @@ fn a_press_on_the_bar_beside_the_popup_dismisses_it_and_goes_nowhere() {
     desk.fixture
         .input()
         .pointer_to(desk.mouse, LogicalPoint { x: 40, y: 10 });
-    desk.fixture.input().button(desk.mouse, LEFT, Edge::Press);
-    desk.fixture.input().button(desk.mouse, LEFT, Edge::Release);
+    desk.fixture
+        .input()
+        .button(desk.mouse, LEFT, PressEdge::Press);
+    desk.fixture
+        .input()
+        .button(desk.mouse, LEFT, PressEdge::Release);
     desk.fixture.pump();
     assert_eq!(
         desk.popup.log.with(|seen| seen.done),
@@ -295,8 +306,12 @@ fn a_press_on_the_bar_beside_the_popup_dismisses_it_and_goes_nowhere() {
         before,
         "the bar was given neither the press nor its release"
     );
-    desk.fixture.input().button(desk.mouse, LEFT, Edge::Press);
-    desk.fixture.input().button(desk.mouse, LEFT, Edge::Release);
+    desk.fixture
+        .input()
+        .button(desk.mouse, LEFT, PressEdge::Press);
+    desk.fixture
+        .input()
+        .button(desk.mouse, LEFT, PressEdge::Release);
     desk.fixture.pump();
     assert_eq!(
         desk.presses.log.with(|seen| seen.buttons.len()),
@@ -351,8 +366,8 @@ fn a_click_inside_a_toplevel_popup_reaches_the_popup() {
         y: origin.y + 30,
     };
     fixture.input().pointer_to(mouse, inside);
-    fixture.input().button(mouse, LEFT, Edge::Press);
-    fixture.input().button(mouse, LEFT, Edge::Release);
+    fixture.input().button(mouse, LEFT, PressEdge::Press);
+    fixture.input().button(mouse, LEFT, PressEdge::Release);
     fixture.pump();
     assert_eq!(popup.log.with(|seen| seen.done), 0, "the popup stays open");
     assert!(
@@ -461,8 +476,12 @@ fn closing_a_submenu_leaves_the_keyboard_with_its_menu() {
         y: MENU_BOX.1 + 10,
     };
     desk.fixture.input().pointer_to(desk.mouse, inside);
-    desk.fixture.input().button(desk.mouse, LEFT, Edge::Press);
-    desk.fixture.input().button(desk.mouse, LEFT, Edge::Release);
+    desk.fixture
+        .input()
+        .button(desk.mouse, LEFT, PressEdge::Press);
+    desk.fixture
+        .input()
+        .button(desk.mouse, LEFT, PressEdge::Release);
     desk.fixture.pump();
     let serial = desk.presses.last_press().expect("the menu's press");
     let surface = desk

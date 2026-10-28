@@ -12,9 +12,8 @@ use casement_core::output::{
     EdidFacts, EdidSerial, ModePreference, OutputConfig, OutputPower, SavedOutputs, ScalePolicy,
 };
 use casement_core::space::{Space, SpaceContent, SpaceIndex, SplitPair, TaskToken};
-use casement_core::window::SplitSide;
 use casement_core::{LeaseId, WindowId};
-use casement_protocols::vocab::{MacMods, PlaceTarget};
+use casement_protocols::vocab::{MacMods, PlaceTarget, SplitSide};
 use ds_core::geometry::scale::Scale;
 use ds_core::vocab::Fraction;
 use serde::Serialize;

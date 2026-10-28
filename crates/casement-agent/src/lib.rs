@@ -18,4 +18,4 @@ pub use remote::{
 };
 
 pub use peephole_core::{AppKey, RoleName};
-pub use socket::{HandOut, Handed, RefuseWhy, connection_role, hand_out};
+pub use socket::{Handed, RefuseWhy, connection_role, hand_out};

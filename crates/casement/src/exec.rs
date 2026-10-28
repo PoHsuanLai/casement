@@ -17,14 +17,13 @@ mod shell;
 mod spawn;
 
 use crate::core_loop;
-use crate::lock_marker::Marked;
 use crate::state::State;
 use casement_backend::tty::Lighting;
 use casement_core::output::OutputConfig;
 use casement_core::shell::ShellNote;
 use casement_core::{Cause, CoreNote, Effect, Event, KeyboardTarget, LayerKey, OutputKey};
 use casement_core::{InputSerial, geometry::LogicalSize, lock::LockReply};
-use casement_wayland::foreign_toplevel_list::Disclosure;
+use casement_wayland::foreign_toplevel_list::disclosed;
 use casement_wayland::output::OutputWire;
 use casement_wayland::{
     WaylandFault, foreign_toplevel_list, image_capture, layer_shell, output, pointer_constraints,
@@ -79,12 +78,12 @@ fn apply(state: &mut State, effect: Effect) {
             ));
         }
         Effect::ListWindow(window) => {
-            let disclosure = Disclosure::of(state.core.model.lock());
+            let disclosed = disclosed(state.core.model.lock());
             if let Some(held) = state.core.model.windows().get(&window) {
                 log(foreign_toplevel_list::apply_toplevel(
                     &mut state.wl.foreign_toplevel_list,
                     held,
-                    disclosure,
+                    disclosed,
                 ));
             }
         }
@@ -212,8 +211,8 @@ fn note_of(note: &CoreNote) {
         CoreNote::RefusedOutput(refusal) => {
             tracing::debug!(%refusal, "an output change was refused");
         }
-        CoreNote::Deferred(ask) => {
-            tracing::debug!(?ask, "a desktop request waits for its machine");
+        CoreNote::ReopenDeferred => {
+            tracing::debug!("a reopen request waits for its machine");
         }
     }
 }
@@ -309,14 +308,14 @@ fn lock(state: &mut State, reply: LockReply) {
         LockReply::ShowCover(_) => {}
         LockReply::HideCover(output) => covers.retain(|covered| *covered != output),
         LockReply::Finished => session_lock::apply_finished(&mut state.wl.session_lock),
-        LockReply::Remember => keep_lock_marker(state, Marked::Yes),
-        LockReply::Forget => keep_lock_marker(state, Marked::No),
+        LockReply::Remember => keep_lock_marker(state, true),
+        LockReply::Forget => keep_lock_marker(state, false),
     }
 }
 
 /// Writes or removes the lock marker (a failure is logged and degrades: the session is locked
 /// either way, a restart just does not know it).
-fn keep_lock_marker(state: &mut State, marked: Marked) {
+fn keep_lock_marker(state: &mut State, marked: bool) {
     if let Err(error) = state.seams.lock_marker.set(marked) {
         tracing::warn!(%error, "the lock marker could not be kept");
     }

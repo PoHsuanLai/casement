@@ -15,24 +15,25 @@ use super::grab;
 use super::overview;
 use super::scene::{Hit, hit_test, stack};
 use crate::exec;
-use crate::state::{PointerStart, State};
+use crate::state::State;
 use casement_core::focus::{HitPart, Press};
 use casement_core::geometry::{LogicalPoint, SubPoint, SubPx};
 use casement_core::input::{
-    AxisFrame, BindingAction, Chord, DesktopCommand, Edge, InputEvent, InputKind, InputTarget,
-    InputUse, KeyCode, Keysym, Origin, Reach, Resolved, TouchStep, resolve,
+    AxisFrame, BindingAction, Chord, DesktopCommand, InputEvent, InputKind, InputTarget, InputUse,
+    KeyCode, Keysym, Origin, TouchStep, resolve,
 };
 use casement_core::lock::LockState;
 use casement_core::shell::ShellNote;
 use casement_core::time::{Due, Mono, TimerKey};
 use casement_core::{Effect, InputSerial, KeyboardTarget, Model, SwipeOwner};
 use casement_protocols::vocab::MacMods;
+use casement_protocols::vocab::PressEdge;
 use casement_wayland::seat::{
     self, GestureDelivery, KeyDelivery, KeyForward, KeyRoute, PointerDelivery, PressFate, Pressed,
     SurfaceAt,
 };
 use casement_wayland::serial::{PressKind, PressRecord};
-use casement_wayland::shortcuts_inhibit::{self, Bindings};
+use casement_wayland::shortcuts_inhibit;
 use casement_wayland::{ClientState, text_input};
 use smithay::input::keyboard::{FilterResult, ModifiersState};
 use smithay::input::{Seat, pointer::PointerHandle};
@@ -143,8 +144,8 @@ fn refused(
     at: Option<LogicalPoint>,
 ) -> bool {
     match state.core.model.reach(&event.origin, target, use_) {
-        Reach::Allowed => false,
-        Reach::Refused(why) => {
+        Ok(()) => false,
+        Err(why) => {
             if let Origin::Agent(lease) = event.origin {
                 // At info, with what was hit at `at` (none for a key) and what the lease holds: a refused agent
                 // click is otherwise silent, and the two keys are what tell why. `cursor` is
@@ -177,8 +178,8 @@ fn take_button(state: &mut State, event: &InputEvent, button: casement_core::inp
 /// the reach table: the gate let it through only because its press was delivered
 /// (`agent_gate::note`), and a release held back would leave the key or button down in the
 /// client and the seat after the lease ended or its window closed.
-fn ends_agent_press(event: &InputEvent, edge: Edge) -> bool {
-    edge == Edge::Release && matches!(event.origin, Origin::Agent(_))
+fn ends_agent_press(event: &InputEvent, edge: PressEdge) -> bool {
+    edge == PressEdge::Release && matches!(event.origin, Origin::Agent(_))
 }
 
 /// What a hit lands on, as the reach table names it.
@@ -260,7 +261,7 @@ fn keyboard_target(model: &Model) -> InputTarget {
 /// A key waits at the text-input gate while an input method is about to take the keyboard
 /// (the first key after a field is enabled must reach the method, not the document); the keys
 /// the gate lets go are then delivered ([`deliver_keys`]).
-fn key(state: &mut State, seat: &Seat<State>, event: &InputEvent, code: KeyCode, edge: Edge) {
+fn key(state: &mut State, seat: &Seat<State>, event: &InputEvent, code: KeyCode, edge: PressEdge) {
     if !ends_agent_press(event, edge)
         && refused(
             state,
@@ -271,11 +272,11 @@ fn key(state: &mut State, seat: &Seat<State>, event: &InputEvent, code: KeyCode,
         )
     {
         match edge {
-            Edge::Press if agent_gate::held_back(state, event.origin, Pressed::Key(code)) => {}
-            Edge::Press => {
+            PressEdge::Press if agent_gate::held_back(state, event.origin, Pressed::Key(code)) => {}
+            PressEdge::Press => {
                 state.wl.seat.taken = std::mem::take(&mut state.wl.seat.taken).take_key(code);
             }
-            Edge::Release => {
+            PressEdge::Release => {
                 state.wl.seat.past =
                     std::mem::take(&mut state.wl.seat.past).refused_release(event.device, code);
             }
@@ -326,7 +327,7 @@ fn deliver_key(state: &mut State, seat: &Seat<State>, key: KeyDelivery) {
     state.wl.seat.past = past;
     if route == KeyRoute::PastGrab {
         seat::deliver_past_grab(seat, &key);
-        if key.edge == Edge::Press {
+        if key.edge == PressEdge::Press {
             remember_key_press(state, seat, &key);
         }
         return;
@@ -341,8 +342,8 @@ fn deliver_key(state: &mut State, seat: &Seat<State>, key: KeyDelivery) {
         }
     };
     let live = matches!(state.core.model.lock(), LockState::Unlocked)
-        && shortcuts_inhibit::bindings(seat) == Bindings::Active
-        && key.edge == Edge::Press;
+        && !shortcuts_inhibit::bindings_suspended(seat)
+        && key.edge == PressEdge::Press;
     let bindings = state.core.model.settings().bindings.clone();
     let origin = key.origin;
     let forward = match state.core.model.keyboard_target() {
@@ -350,7 +351,7 @@ fn deliver_key(state: &mut State, seat: &Seat<State>, key: KeyDelivery) {
         _ => KeyForward::Grab,
     };
     let answer = seat::apply_key(seat, state, key, forward, |state, mods, handle| {
-        if key.edge == Edge::Release && fate == PressFate::Taken {
+        if key.edge == PressEdge::Release && fate == PressFate::Taken {
             return FilterResult::Intercept(None);
         }
         // A VT chord is the seat's, not a binding's: it works under a lock and a shortcut
@@ -367,7 +368,7 @@ fn deliver_key(state: &mut State, seat: &Seat<State>, key: KeyDelivery) {
             false => None,
         };
         if vt.is_some() {
-            if key.edge == Edge::Press {
+            if key.edge == PressEdge::Press {
                 state.wl.seat.taken = std::mem::take(&mut state.wl.seat.taken).take_key(key.code);
             }
             return FilterResult::Intercept(None);
@@ -386,8 +387,8 @@ fn deliver_key(state: &mut State, seat: &Seat<State>, key: KeyDelivery) {
             mods: chord_mods(mods),
             key: Keysym(sym.raw()),
         });
-        match chord.map(|chord| resolve(&bindings, &chord, &origin)) {
-            Some(Resolved::Action(action)) if live => FilterResult::Intercept(Some(action)),
+        match chord.and_then(|chord| resolve(&bindings, &chord, &origin)) {
+            Some(action) if live => FilterResult::Intercept(Some(action)),
             _ => FilterResult::Forward,
         }
     });
@@ -397,7 +398,7 @@ fn deliver_key(state: &mut State, seat: &Seat<State>, key: KeyDelivery) {
             carry_out(state, &action);
         }
         Ok(Some(None)) => {}
-        Ok(None) if key.edge == Edge::Press => remember_key_press(state, seat, &key),
+        Ok(None) if key.edge == PressEdge::Press => remember_key_press(state, seat, &key),
         Ok(None) => {}
         Err(fault) => tracing::warn!(%fault, "a key delivery failed"),
     }
@@ -523,7 +524,7 @@ fn motion(
     let Some(at) = clamp(state, at) else {
         return;
     };
-    if grab::follow(state, logical(at)) == grab::Follow::Taken {
+    if grab::follow(state, logical(at)) {
         // A move or resize: the pointer still moves, or the next relative motion would start
         // from the press again and the window would stay pinned near it (the trial login of
         // 2026-10-19).
@@ -536,7 +537,7 @@ fn motion(
     }
     let stacked = stack(state);
     super::reveal::moved(state, &stacked, logical(at));
-    if divider::moved(state, &stacked, logical(at)) == grab::Follow::Taken {
+    if divider::moved(state, &stacked, logical(at)) {
         // The strip between Split View halves (or a drag of it).
         move_unheard(state, seat, event, at, delta);
         return;
@@ -601,9 +602,9 @@ fn pressed(
     seat: &Seat<State>,
     event: &InputEvent,
     button: casement_core::input::ButtonCode,
-    edge: Edge,
+    edge: PressEdge,
 ) {
-    let ends_grab = edge == Edge::Release
+    let ends_grab = edge == PressEdge::Release
         && !ends_agent_press(event, edge)
         && (grab::ends_with(state, button) || divider::ends_with(state, button));
     press_edge(state, seat, event, button, edge);
@@ -639,16 +640,16 @@ fn press_edge(
     seat: &Seat<State>,
     event: &InputEvent,
     button: casement_core::input::ButtonCode,
-    edge: Edge,
+    edge: PressEdge,
 ) {
-    if edge == Edge::Release && !ends_agent_press(event, edge) {
+    if edge == PressEdge::Release && !ends_agent_press(event, edge) {
         // An agent lease never starts the compositor's own interactions (`agent_gate`), so its
         // release ends none of the person's.
         overview::released(state);
         grab::end(state, button);
         divider::end(state, button);
     }
-    if edge == Edge::Release && !ends_agent_press(event, edge) {
+    if edge == PressEdge::Release && !ends_agent_press(event, edge) {
         // A lease's release is never the end of a press the person's frame took.
         let (taken, fate) = std::mem::take(&mut state.wl.seat.taken).release_button(button);
         state.wl.seat.taken = taken;
@@ -664,7 +665,7 @@ fn press_edge(
         x: here.0,
         y: here.1,
     };
-    if edge == Edge::Press && overview::takes_input(state) {
+    if edge == PressEdge::Press && overview::takes_input(state) {
         // Mission Control takes the press (a pick or a leave); no client sees it or its release.
         take_button(state, event, button);
         if !refused(
@@ -678,11 +679,11 @@ fn press_edge(
         }
         return;
     }
-    if edge == Edge::Press && press_on_divider(state, event, at, button) {
+    if edge == PressEdge::Press && press_on_divider(state, event, at, button) {
         return;
     }
     let (over, under) = frames::pick(state, at);
-    if let (Some(over), Edge::Press) = (over, edge) {
+    if let (Some(over), PressEdge::Press) = (over, edge) {
         // A frame's press never reaches a client; its release is swallowed with it.
         take_button(state, event, button);
         let target = InputTarget::Window(over.window);
@@ -696,10 +697,10 @@ fn press_edge(
     let delivered = (ends_agent_press(event, edge)
         || !refused(state, event, &target, InputUse::Press, Some(at)))
         && match (&under, edge) {
-            (Some((Hit::Window(window), _)), Edge::Press) => {
+            (Some((Hit::Window(window), _)), PressEdge::Press) => {
                 deliver_press(state, seat, event, *window)
             }
-            (Some((Hit::Layer(layer), _)), Edge::Press) => {
+            (Some((Hit::Layer(layer), _)), PressEdge::Press) => {
                 let effects = run_model(state, |model, now| model.press_layer(*layer, now));
                 exec::exec(state, effects);
                 true
@@ -707,7 +708,7 @@ fn press_edge(
             _ => true,
         };
     if !delivered {
-        if edge == Edge::Press
+        if edge == PressEdge::Press
             && !agent_gate::held_back(state, event.origin, Pressed::Button(button))
         {
             take_button(state, event, button);
@@ -715,7 +716,7 @@ fn press_edge(
         return;
     }
     let serial = next_serial();
-    if edge == Edge::Press && dismisses_popup_grab(state) {
+    if edge == PressEdge::Press && dismisses_popup_grab(state) {
         // Smithay ends the grab at this press and would hand the keyboard to the popup's root
         // (a bar that never asked for it, even for a moment): the model says where it goes.
         exec::end_popup_keyboard(state);
@@ -731,8 +732,8 @@ fn press_edge(
         },
     ));
     let (kind, held_by) = match edge {
-        Edge::Press => (PressKind::Button, surface),
-        Edge::Release => (
+        PressEdge::Press => (PressKind::Button, surface),
+        PressEdge::Release => (
             PressKind::Release,
             seat.get_pointer()
                 .and_then(|pointer| pointer.current_focus())
@@ -884,13 +885,13 @@ fn log(result: Result<(), casement_wayland::WaylandFault>) {
 
 /// The pointer's first position: the centre of the primary output, the first time there is one.
 pub(super) fn start_pointer(state: &mut State) {
-    if state.render.pointer == PointerStart::Placed {
+    if state.render.pointer_placed {
         return;
     }
     let Some(centre) = state.core.model.pointer_start() else {
         return;
     };
-    state.render.pointer = PointerStart::Placed;
+    state.render.pointer_placed = true;
     let at = (f64::from(centre.x), f64::from(centre.y));
     state.render.chrome.cursor_at = logical(at);
     let seat = state.wl.seat.seat.clone();

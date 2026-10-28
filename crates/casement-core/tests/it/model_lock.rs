@@ -5,10 +5,10 @@ use crate::support;
 
 use casement_core::desktop::{DesktopRequest, WindowAsk};
 use casement_core::focus::TokenCheck;
-use casement_core::input::{InputTarget, InputUse, Origin, Reach, Refusal};
+use casement_core::input::{InputTarget, InputUse, Origin, Refusal};
 use casement_core::layer::{
-    Anchor, Anchors, ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerOwner, LayerSpec,
-    Margins, ShellRoleTag,
+    Anchors, ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerOwner, LayerSpec, Margins,
+    ShellRoleTag,
 };
 use casement_core::lock::{LockEvent, LockHolder, LockReply, LockState, LockSurfaces};
 use casement_core::policy::ConnectionRole;
@@ -33,10 +33,10 @@ fn bar(output: &str, zone: ExclusiveZone) -> LayerSpec {
         output: key(output),
         level: LayerLevel::Top,
         anchor: Anchors {
-            top: Anchor::Held,
-            bottom: Anchor::Free,
-            left: Anchor::Held,
-            right: Anchor::Held,
+            top: true,
+            bottom: false,
+            left: true,
+            right: true,
         },
         exclusive: zone,
         margin: Margins {
@@ -770,28 +770,28 @@ fn reach_asks_the_input_table_with_the_models_lock() {
             &open.model,
             virtual_keyboard,
             window,
-            Reach::Allowed,
+            Ok(()),
         ),
         (
             "locked, a window",
             &locked.model,
             physical,
             window,
-            Reach::Refused(Refusal::Locked),
+            Err(Refusal::Locked),
         ),
         (
             "locked, the lock surface",
             &locked.model,
             physical,
             InputTarget::LockSurface,
-            Reach::Allowed,
+            Ok(()),
         ),
         (
             "locked, a virtual keyboard at the lock surface",
             &locked.model,
             virtual_keyboard,
             InputTarget::LockSurface,
-            Reach::Refused(Refusal::Locked),
+            Err(Refusal::Locked),
         ),
     ];
     for (name, model, origin, target, want) in cases {
@@ -808,7 +808,7 @@ fn input_events_change_nothing() {
         at: support::ms(5),
         kind: casement_core::input::InputKind::Key {
             code: casement_core::input::KeyCode(30),
-            edge: casement_core::input::Edge::Press,
+            edge: casement_protocols::vocab::PressEdge::Press,
         },
     });
     let run = run_from(base.model.clone(), vec![Op::Event(key_press)]);

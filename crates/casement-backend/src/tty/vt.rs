@@ -29,41 +29,32 @@ const FIRST_SWITCH_SYM: u32 = 0x1008_fe01;
 /// `XF86Switch_VT_12`.
 const LAST_SWITCH_SYM: u32 = 0x1008_fe0c;
 
-/// Which of the chord's modifiers are held, as far as a VT switch cares.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum VtHeld {
-    /// Control and Alt are both held.
-    CtrlAlt,
-    /// Anything else.
-    Other,
-}
-
 /// The VT a key press asks for, from the symbols the keymap gives it with the modifiers
-/// applied (`modified`) and without (`raw`).
+/// applied (`modified`) and without (`raw`). `ctrl_alt` is whether Control and Alt are both held,
+/// the only modifiers a VT switch cares about.
 ///
 /// The keymap's own `XF86Switch_VT_n` wins. Where the keymap has none (a layout without the
 /// server-control group, or a keyboard whose F-row sends media keys until Fn is held), plain
 /// `Ctrl+Alt+Fn` still asks for VT n, read from the F1 to F12 symbols.
 ///
 /// ```
-/// use casement_backend::tty::{VtHeld, VtNumber, vt_of_chord};
+/// use casement_backend::tty::{VtNumber, vt_of_chord};
 /// use casement_core::input::Keysym;
 ///
 /// let f2 = [Keysym(0xffbf)];
-/// assert_eq!(vt_of_chord(VtHeld::CtrlAlt, &[], &f2), Some(VtNumber(2)));
-/// assert_eq!(vt_of_chord(VtHeld::Other, &f2, &f2), None);
+/// assert_eq!(vt_of_chord(true, &[], &f2), Some(VtNumber(2)));
+/// assert_eq!(vt_of_chord(false, &f2, &f2), None);
 /// ```
-pub fn vt_of_chord(held: VtHeld, modified: &[Keysym], raw: &[Keysym]) -> Option<VtNumber> {
+pub fn vt_of_chord(ctrl_alt: bool, modified: &[Keysym], raw: &[Keysym]) -> Option<VtNumber> {
     let named = modified.iter().find_map(|sym| vt_of_keysym(*sym));
-    match held {
-        VtHeld::CtrlAlt => named.or_else(|| {
+    match ctrl_alt {
+        true => named.or_else(|| {
             modified
                 .iter()
                 .chain(raw)
                 .find_map(|sym| vt_of_function_key(*sym))
         }),
-        VtHeld::Other => named,
+        false => named,
     }
 }
 

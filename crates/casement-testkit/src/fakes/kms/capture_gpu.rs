@@ -7,7 +7,7 @@ use casement_backend::tty::{CaptureGpu, Picture, SceneSupport};
 use casement_core::OutputName;
 use casement_core::geometry::PhysicalRect;
 use casement_render::RenderError;
-use casement_render::pass::{CapturedFrame, CursorInclusion};
+use casement_render::pass::CapturedFrame;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::{Buffer as _, Format};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -126,7 +126,7 @@ impl CaptureGpu for FakeCaptureGpu {
     fn blit_scene(
         &mut self,
         output: &OutputName,
-        cursor: CursorInclusion,
+        cursor: bool,
         from: PhysicalRect,
         target: &mut Dmabuf,
     ) -> Result<(), BackendError> {

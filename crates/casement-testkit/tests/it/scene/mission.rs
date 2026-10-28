@@ -31,7 +31,7 @@ fn open(output: &str, dpi: Dpi, motion: Option<Motion>) -> image::RgbaImage {
     // Icons are looked for in an empty folder of desktop entries, so none of these apps has
     // one and each window's slot shows its app's plate: the same picture on every machine.
     let entries = tempfile::tempdir().expect("a scratch folder");
-    let icons = IconSearch::Dirs {
+    let icons = IconSearch {
         applications: vec![entries.path().join("applications")],
         config: Some(entries.path().join("config")),
     };

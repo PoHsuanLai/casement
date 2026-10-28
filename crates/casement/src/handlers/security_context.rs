@@ -2,7 +2,7 @@
 //! event loop; every client it accepts is inserted as `ConnectionRole::Sandboxed` with the
 //! context's facts, through the one door (`clients::insert_client`).
 
-use crate::clients::{self, Room, Standing, accept, insert_client};
+use crate::clients::{self, Room, Vetting, accept, insert_client};
 use crate::core_loop;
 use crate::state::State;
 use casement_core::policy::ConnectionRole;
@@ -48,7 +48,7 @@ impl SecurityContextHandler for State {
                     return;
                 }
                 if let Err(error) =
-                    insert_client(state, stream, role.clone(), peer, Standing::Unjudged)
+                    insert_client(state, stream, role.clone(), peer, Vetting::Unjudged)
                 {
                     tracing::warn!(%error, "a security-context client could not be inserted");
                 }

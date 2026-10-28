@@ -50,7 +50,7 @@ fn check(name: &str, client: &TestClient, skip: &[&str]) {
     if golden == actual {
         return;
     }
-    if Env::of_process().bless == casement_render::golden::Bless::Yes {
+    if Env::of_process().bless {
         std::fs::write(&path, &actual).expect("write the blessed golden");
         return;
     }

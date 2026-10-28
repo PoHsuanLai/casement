@@ -14,7 +14,7 @@ mod windows;
 pub use gestures::{GestureSettings, SwipeFingers};
 pub use gpu::GpuSettings;
 pub use keyboard::{KeyboardSettings, RepeatRate, XkbNames};
-pub use night_light::{NightLightSettings, OutputWarming};
+pub use night_light::NightLightSettings;
 pub use outputs::OutputSettings;
 pub use pointer::{AccelProfile, PointerProfile, PointerSettings};
 pub use spaces::SpaceSettings;

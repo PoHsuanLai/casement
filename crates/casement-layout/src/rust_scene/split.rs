@@ -8,7 +8,6 @@ use crate::{
 };
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::space::SplitPair;
-use casement_core::window::MaxSize;
 use ds_core::vocab::Fraction;
 
 /// The width of the strip between the halves, in logical pixels.
@@ -61,8 +60,8 @@ pub(super) fn arrange_split(
 /// The rectangle a window takes in `half`: the half itself, or when its maximum size is
 /// smaller on a side, that size centred in the half (as the Mac centres it on a backdrop).
 /// A zero side of the maximum means none.
-pub(super) fn within_max(half: LogicalRect, max: MaxSize) -> LogicalRect {
-    let MaxSize::Bounded(max) = max else {
+pub(super) fn within_max(half: LogicalRect, max: Option<LogicalSize>) -> LogicalRect {
+    let Some(max) = max else {
         return half;
     };
     let fit = |room: u32, most: u32| match most {

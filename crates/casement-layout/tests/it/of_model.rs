@@ -4,8 +4,7 @@ use casement_core::app::AppKey;
 use casement_core::focus::TokenCheck;
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize, PhysicalSize};
 use casement_core::layer::{
-    Anchor, Anchors, ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerSpec, Margins,
-    ShellRoleTag,
+    Anchors, ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerSpec, Margins, ShellRoleTag,
 };
 use casement_core::output::{
     EdidFacts, EdidSerial, Mode, ModePreference, OutputFacts, PhysicalMm, VrrCapability,
@@ -13,7 +12,7 @@ use casement_core::output::{
 use casement_core::settings::CasementSettings;
 use casement_core::space::SpaceSeed;
 use casement_core::time::{Millihertz, Mono};
-use casement_core::window::{MaxSize, Parent, SizeLimits, WindowOrigin};
+use casement_core::window::{SizeLimits, WindowOrigin};
 use casement_core::{ClientKey, Event, MappedToplevel, Model, OutputKey, OutputName, WindowId};
 use casement_core::{LayerKey, ToplevelRequest};
 use casement_layout::{
@@ -65,10 +64,10 @@ fn one_output_one_space_one_window() {
             claimed_id: claimed,
             role: WindowRole::Document,
             modality: Modality::None,
-            parent: Parent::None,
+            parent: None,
             limits: SizeLimits {
                 min: LogicalSize { w: 0, h: 0 },
-                max: MaxSize::Unbounded,
+                max: None,
             },
             first_size: LogicalSize { w: 800, h: 600 },
             activation: TokenCheck::Valid,
@@ -120,10 +119,10 @@ fn mapped(n: u64, app: &AppKey, token: TokenCheck) -> Event {
         claimed_id: ClaimedId::parse("foot").expect("claimed"),
         role: WindowRole::Document,
         modality: Modality::None,
-        parent: Parent::None,
+        parent: None,
         limits: SizeLimits {
             min: LogicalSize { w: 0, h: 0 },
-            max: MaxSize::Unbounded,
+            max: None,
         },
         first_size: LogicalSize { w: 800, h: 600 },
         activation: token,
@@ -156,10 +155,10 @@ fn bar(output: &OutputKey, zone: ExclusiveZone) -> LayerSpec {
         output: output.clone(),
         level: LayerLevel::Top,
         anchor: Anchors {
-            top: Anchor::Held,
-            bottom: Anchor::Free,
-            left: Anchor::Held,
-            right: Anchor::Held,
+            top: true,
+            bottom: false,
+            left: true,
+            right: true,
         },
         exclusive: zone,
         margin: Margins {

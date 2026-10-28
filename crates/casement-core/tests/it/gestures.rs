@@ -6,7 +6,7 @@ use crate::support;
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_core::geometry::{SubPoint, SubPx};
 use casement_core::input::gesture_route::{Axis, Drive, Fate, Route, route};
-use casement_core::input::lift::{Intent, Lift, LiftIn, LiftOut, Verdict};
+use casement_core::input::lift::{Intent, Lift, LiftEnd, LiftIn, LiftOut};
 use casement_core::input::{
     BUS_VIRTUAL, DesktopCommand, DeviceClass, GestureEnd, GestureStep, InputEvent, InputKind,
     KernelIds, Maker, Origin,
@@ -157,7 +157,7 @@ fn a_cancelled_swipe_is_cancelled() {
 }
 
 /// The vertical machine over `(ms, dy)` moves, then a lift at `lift_at`.
-fn lifted(intent: Intent, moves: &[(u64, i32)], lift_at: u64) -> (Vec<LiftOut>, Verdict) {
+fn lifted(intent: Intent, moves: &[(u64, i32)], lift_at: u64) -> (Vec<LiftOut>, LiftEnd) {
     let (lift, _) = Lift::Idle.step(LiftIn::Began(intent), Stamp(0));
     let (lift, outs) = moves
         .iter()
@@ -183,49 +183,49 @@ fn the_lift_commits_by_distance_and_speed() {
             Intent::Open,
             vec![(200, -120), (400, -120)],
             1000,
-            Verdict::Open,
+            LiftEnd::Open,
         ),
         (
             "under half, slow, stays",
             Intent::Open,
             vec![(200, -60), (400, -60)],
             1000,
-            Verdict::Stay,
+            LiftEnd::Stay,
         ),
         (
             "under half, flicked, opens",
             Intent::Open,
             vec![(10, -30), (20, -30), (30, -30)],
             40,
-            Verdict::Open,
+            LiftEnd::Open,
         ),
         (
             "past half, flicked back, stays",
             Intent::Open,
             vec![(500, -300), (550, 20), (600, 30)],
             620,
-            Verdict::Stay,
+            LiftEnd::Stay,
         ),
         (
             "downward never opens",
             Intent::Open,
             vec![(100, 200)],
             1000,
-            Verdict::Stay,
+            LiftEnd::Stay,
         ),
         (
             "past half down closes",
             Intent::Close,
             vec![(200, 120), (400, 120)],
             1000,
-            Verdict::Close,
+            LiftEnd::Close,
         ),
         (
             "a little down stays open",
             Intent::Close,
             vec![(300, 40)],
             1000,
-            Verdict::Stay,
+            LiftEnd::Stay,
         ),
     ];
     for (name, intent, moves, at, want) in cases {

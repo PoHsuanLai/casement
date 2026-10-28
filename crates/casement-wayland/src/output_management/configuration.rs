@@ -40,14 +40,6 @@ impl Mortal for HeldConclusion {
     }
 }
 
-/// Whether `apply` or `test` has been sent: a configuration is used once.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-enum Concluded {
-    #[default]
-    Not,
-    Yes,
-}
-
 /// One head in the draft and what the client set on it.
 #[derive(Debug, Clone)]
 struct DraftHead {
@@ -59,7 +51,8 @@ struct DraftHead {
 #[derive(Debug, Default)]
 struct Draft {
     heads: Vec<DraftHead>,
-    concluded: Concluded,
+    /// Whether `apply` or `test` has been sent: a configuration is used once.
+    concluded: bool,
 }
 
 /// A configuration's data: the serial it was built at and the draft.
@@ -131,7 +124,7 @@ impl ConfigData {
             return;
         };
         let mut draft = locked(&self.draft);
-        if draft.concluded == Concluded::Yes {
+        if draft.concluded {
             resource.post_error(
                 zwlr_output_configuration_v1::Error::AlreadyUsed,
                 "the configuration was already applied or tested",
@@ -162,14 +155,14 @@ impl ConfigData {
     ) {
         let heads = {
             let mut draft = locked(&self.draft);
-            if draft.concluded == Concluded::Yes {
+            if draft.concluded {
                 resource.post_error(
                     zwlr_output_configuration_v1::Error::AlreadyUsed,
                     "the configuration was already applied or tested",
                 );
                 return;
             }
-            draft.concluded = Concluded::Yes;
+            draft.concluded = true;
             draft.heads.clone()
         };
         let book = state.output_management_outputs().clone();

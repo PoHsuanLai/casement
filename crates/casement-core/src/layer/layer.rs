@@ -66,26 +66,17 @@ pub enum LayerLevel {
     Overlay,
 }
 
-/// Which edges a layer surface is held to.
+/// Which edges a layer surface is held to (`true`: held).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Anchors {
     /// The top edge.
-    pub top: Anchor,
+    pub top: bool,
     /// The bottom edge.
-    pub bottom: Anchor,
+    pub bottom: bool,
     /// The left edge.
-    pub left: Anchor,
+    pub left: bool,
     /// The right edge.
-    pub right: Anchor,
-}
-
-/// Whether a layer surface is held to an edge.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Anchor {
-    /// Not held.
-    Free,
-    /// Held.
-    Held,
+    pub right: bool,
 }
 
 /// How a layer surface treats the space beside its anchored edge.

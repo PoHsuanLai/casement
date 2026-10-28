@@ -7,8 +7,8 @@ use crate::time::ClockSource;
 use crate::xwayland::XwaylandState;
 use casement_backend::tty::{RenderMode, TtySeams};
 use casement_backend::{
-    BackendChoice, BackendError, BackendKind, DmabufMode, HeadlessBackend, HeadlessConfig,
-    TtyBackend, WinitBackend,
+    BackendChoice, BackendError, BackendKind, HeadlessBackend, HeadlessConfig, TtyBackend,
+    WinitBackend,
 };
 use casement_core::frame::RepeatGate;
 use casement_core::geometry::LogicalPoint;
@@ -106,8 +106,9 @@ pub struct RenderState {
     pub trackers: BTreeMap<OutputKey, OutputDamageTracker>,
     /// The cursor and lock covers.
     pub chrome: ChromeLayer,
-    /// Whether the pointer has had its first position.
-    pub pointer: PointerStart,
+    /// Whether the pointer has been put where it starts: the centre of the primary output, once
+    /// an output is plugged. Until then it is nowhere.
+    pub pointer_placed: bool,
     /// The surfaces told which outputs they are on.
     pub presence: crate::core_loop::Presence,
     /// Frame failures, so one that repeats every vblank is logged once per window.
@@ -146,16 +147,6 @@ pub struct RenderState {
     pub labels: Option<casement_chrome::TitleRaster>,
     /// The app icons under the windows in Mission Control, found when it opens.
     pub icons: crate::icons::IconBook,
-}
-
-/// Whether the pointer has been put where it starts: the centre of the primary output, once an
-/// output is plugged.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PointerStart {
-    /// No output has been plugged yet: the pointer is nowhere.
-    Unplaced,
-    /// It has been placed; from here only input moves it.
-    Placed,
 }
 
 /// The agent edge's state (P2-Z: who was handed a privileged connection; P4-Z adds the seat,
@@ -218,7 +209,7 @@ impl State {
         display: &mut Display<State>,
         event_loop: &LoopHandle<'static, State>,
     ) -> Result<State, StartError> {
-        let seams = Seams::real(&config.state_home, &config.system_dir);
+        let seams = Seams::real(config.state_home.as_ref(), &config.system_dir);
         State::with_seams(config, seams, display, event_loop)
     }
 
@@ -234,7 +225,7 @@ impl State {
         // depend on what a person or another program wrote there.
         let doc = match config.mode {
             StartMode::Safe => CasementDoc::default(),
-            StartMode::Normal => config::load(&config.config_home)?,
+            StartMode::Normal => config::load(config.config_home.as_deref())?,
         };
         let settings = safe_settings(config.mode, config::to_core(&doc));
         let filter = GlobalFilter::policy();
@@ -306,7 +297,7 @@ impl State {
             quire_desktop: quire::desktop::QuireDesktopPart::new::<State>(&dh, filter),
             quire_shell: quire::shell::QuireShellPart::new::<State>(&dh, filter),
         };
-        if config.dmabuf == DmabufMode::Soft {
+        if config.dmabuf {
             dmabuf::apply_offer::<State>(&mut wl.dmabuf, &dh, &dmabuf::DmabufOffer::soft())?;
         }
         let backend = match config.backend {
@@ -366,7 +357,7 @@ impl State {
                 cursor_at: LogicalPoint { x: 0, y: 0 },
                 covers: Vec::new(),
             },
-            pointer: PointerStart::Unplaced,
+            pointer_placed: false,
             presence: crate::core_loop::Presence::default(),
             frame_faults: RepeatGate::new(FAULT_LOG_EVERY),
             frame_over: None,
@@ -485,10 +476,7 @@ fn direct_tty_seams(
     direct: &DirectTty,
     drawing: RenderMode,
 ) -> Result<TtySeams, StartError> {
-    let writeback = match direct.writeback_raw {
-        Some(_) => casement_backend::tty::WritebackMode::Enabled,
-        None => casement_backend::tty::WritebackMode::Disabled,
-    };
+    let writeback = direct.writeback_raw.is_some();
     Ok(casement_backend::tty::direct_seams(
         &direct.node,
         writeback,

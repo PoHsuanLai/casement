@@ -92,15 +92,15 @@ pub fn claimed(state: &State, events: Vec<Event>) -> Vec<Event> {
             Event::WindowHint {
                 window,
                 hint:
-                    WindowHintChange::A11y(A11yRoot::At {
+                    WindowHintChange::A11y(Some(A11yRoot {
                         bus_name,
                         object_path,
-                    }),
+                    })),
             } => {
                 queue(state, window, bus_name, object_path);
                 Event::WindowHint {
                     window,
-                    hint: WindowHintChange::A11y(A11yRoot::Unknown),
+                    hint: WindowHintChange::A11y(None),
                 }
             }
             other => other,

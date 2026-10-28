@@ -1,17 +1,28 @@
 //! `shot [--output NAME | --window ID | --region X,Y,W,H] [--masked] OUT.png`.
 
 use super::plan::Call;
-use super::{CommandError, Masked, ShotTarget};
+use super::{CommandError, ShotTarget};
 use std::path::{Path, PathBuf};
 
 fn bad(message: impl Into<String>) -> CommandError {
     CommandError::BadArgument(message.into())
 }
 
+/// What `shot` was asked to take.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShotArgs {
+    /// What to capture.
+    pub target: ShotTarget,
+    /// Whether sensitive regions are masked (`--masked`).
+    pub masked: bool,
+    /// Where the PNG goes.
+    pub out: PathBuf,
+}
+
 /// The target, masking and output path `args` (after `shot`) name.
-pub fn parse_shot(args: &[String]) -> Result<(ShotTarget, Masked, PathBuf), CommandError> {
+pub fn parse_shot(args: &[String]) -> Result<ShotArgs, CommandError> {
     let mut target = None;
-    let mut masked = Masked::No;
+    let mut masked = false;
     let mut out = None;
     let mut rest = args.iter();
     while let Some(word) = rest.next() {
@@ -21,7 +32,7 @@ pub fn parse_shot(args: &[String]) -> Result<(ShotTarget, Masked, PathBuf), Comm
         };
         let named = match word.as_str() {
             "--masked" => {
-                masked = Masked::Yes;
+                masked = true;
                 continue;
             }
             "--output" => ShotTarget::Output(value("--output")?.clone()),
@@ -40,7 +51,11 @@ pub fn parse_shot(args: &[String]) -> Result<(ShotTarget, Masked, PathBuf), Comm
         }
     }
     let out = out.ok_or_else(|| bad("shot needs an output path"))?;
-    Ok((target.unwrap_or(ShotTarget::Default), masked, out))
+    Ok(ShotArgs {
+        target: target.unwrap_or(ShotTarget::Default),
+        masked,
+        out,
+    })
 }
 
 /// Why a shot cannot be taken yet (exit 2: could not run), or the Debug1 call that takes it.
@@ -50,16 +65,16 @@ pub fn parse_shot(args: &[String]) -> Result<(ShotTarget, Masked, PathBuf), Comm
 /// pass.
 pub fn call(
     target: &ShotTarget,
-    masked: Masked,
+    masked: bool,
     out: &Path,
     cwd: &Path,
 ) -> Result<Call, &'static str> {
     let area = match (masked, target) {
-        (Masked::Yes, _) => return Err("shot --masked needs the mask pass (P4)"),
-        (Masked::No, ShotTarget::Window(id)) => format!("window:{id}"),
-        (Masked::No, ShotTarget::Default) => "output".to_owned(),
-        (Masked::No, ShotTarget::Output(name)) => format!("output:{name}"),
-        (Masked::No, ShotTarget::Region { x, y, w, h }) => format!("region:{x},{y},{w},{h}"),
+        (true, _) => return Err("shot --masked needs the mask pass (P4)"),
+        (false, ShotTarget::Window(id)) => format!("window:{id}"),
+        (false, ShotTarget::Default) => "output".to_owned(),
+        (false, ShotTarget::Output(name)) => format!("output:{name}"),
+        (false, ShotTarget::Region { x, y, w, h }) => format!("region:{x},{y},{w},{h}"),
     };
     Ok(Call::Shot {
         area,
@@ -94,18 +109,14 @@ mod tests {
         let cwd = Path::new("/run/work");
         let planned = |target, masked, out: &str| call(&target, masked, Path::new(out), cwd);
         assert_eq!(
-            planned(ShotTarget::Default, Masked::No, "a.png"),
+            planned(ShotTarget::Default, false, "a.png"),
             Ok(Call::Shot {
                 area: "output".to_owned(),
                 path: "/run/work/a.png".to_owned()
             })
         );
         assert_eq!(
-            planned(
-                ShotTarget::Output("HEADLESS-2".into()),
-                Masked::No,
-                "/x/b.png"
-            ),
+            planned(ShotTarget::Output("HEADLESS-2".into()), false, "/x/b.png"),
             Ok(Call::Shot {
                 area: "output:HEADLESS-2".to_owned(),
                 path: "/x/b.png".to_owned()
@@ -119,7 +130,7 @@ mod tests {
                     w: 3,
                     h: 4
                 },
-                Masked::No,
+                false,
                 "c.png"
             ),
             Ok(Call::Shot {
@@ -128,16 +139,16 @@ mod tests {
             })
         );
         assert_eq!(
-            planned(ShotTarget::Window(7), Masked::No, "d.png"),
+            planned(ShotTarget::Window(7), false, "d.png"),
             Ok(Call::Shot {
                 area: "window:7".to_owned(),
                 path: "/run/work/d.png".to_owned()
             })
         );
-        assert!(planned(ShotTarget::Default, Masked::Yes, "e.png").is_err());
+        assert!(planned(ShotTarget::Default, true, "e.png").is_err());
     }
 
-    fn shot(text: &str) -> Result<(ShotTarget, Masked, PathBuf), CommandError> {
+    fn shot(text: &str) -> Result<ShotArgs, CommandError> {
         parse_shot(
             &text
                 .split_whitespace()
@@ -150,22 +161,26 @@ mod tests {
     fn a_shot_names_its_target_masking_and_path_in_any_order() {
         assert_eq!(
             shot("out.png").expect("default"),
-            (ShotTarget::Default, Masked::No, PathBuf::from("out.png"))
+            ShotArgs {
+                target: ShotTarget::Default,
+                masked: false,
+                out: PathBuf::from("out.png")
+            }
         );
         assert_eq!(
             shot("--masked a/b.png --output HEADLESS-2").expect("output"),
-            (
-                ShotTarget::Output("HEADLESS-2".to_owned()),
-                Masked::Yes,
-                PathBuf::from("a/b.png")
-            )
+            ShotArgs {
+                target: ShotTarget::Output("HEADLESS-2".to_owned()),
+                masked: true,
+                out: PathBuf::from("a/b.png")
+            }
         );
         assert_eq!(
-            shot("--window 17 w.png").expect("window").0,
+            shot("--window 17 w.png").expect("window").target,
             ShotTarget::Window(17)
         );
         assert_eq!(
-            shot("--region -5,10,640,480 r.png").expect("region").0,
+            shot("--region -5,10,640,480 r.png").expect("region").target,
             ShotTarget::Region {
                 x: -5,
                 y: 10,

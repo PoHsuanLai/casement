@@ -67,31 +67,24 @@ pub(crate) fn serve_captures(state: &mut State, output: &OutputKey) {
     image_capture::release_waiting(state);
 }
 
-/// Whether a copy is over or waits for a later frame.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Outcome {
-    Done,
-    Wait,
-}
-
 /// Answers each queued copy that can be; the rest stay queued.
 fn serve(state: &mut State) {
     for copy in state.wl.screencopy.take_pending() {
-        match answer(state, &copy) {
-            Outcome::Done => {}
-            Outcome::Wait => state.wl.screencopy.keep(copy),
+        if answer(state, &copy) {
+            state.wl.screencopy.keep(copy);
         }
     }
 }
 
-/// Writes the frame into `copy`'s buffer and tells the client, or says why not.
-fn answer(state: &mut State, copy: &PendingCopy) -> Outcome {
+/// Writes the frame into `copy`'s buffer and tells the client, or says why not. Whether the copy
+/// waits for a later frame (`false`: it is over).
+fn answer(state: &mut State, copy: &PendingCopy) -> bool {
     if !copy.frame.is_alive() {
-        return Outcome::Done;
+        return false;
     }
     let shown = match image_capture::last_shown(state, &copy.target.output) {
         Ok(Some(found)) => found,
-        Ok(None) => return Outcome::Wait,
+        Ok(None) => return true,
         Err(why) => return failed(copy, why),
     };
     // `copy_with_damage` answers once something changed in what it copies since the client's
@@ -109,7 +102,7 @@ fn answer(state: &mut State, copy: &PendingCopy) -> Outcome {
         _ => Vec::new(),
     };
     if copy.damage == Damage::Fresh && damage.is_empty() {
-        return Outcome::Wait;
+        return true;
     }
     // The part of the frame that `copy` names, drawn into its buffer by the GPU or read back.
     let written = image_capture::write_output(
@@ -122,15 +115,15 @@ fn answer(state: &mut State, copy: &PendingCopy) -> Outcome {
     match written {
         Ok(()) => {
             screencopy::apply_ready(&mut state.wl.screencopy, copy, shown.at, &damage);
-            Outcome::Done
+            false
         }
         Err(why) => failed(copy, why),
     }
 }
 
 /// Tells the client `failed`; the copy is over.
-fn failed(copy: &PendingCopy, why: CaptureFailure) -> Outcome {
+fn failed(copy: &PendingCopy, why: CaptureFailure) -> bool {
     tracing::debug!(?why, "a screencopy frame failed");
     screencopy::apply_failed(copy);
-    Outcome::Done
+    false
 }

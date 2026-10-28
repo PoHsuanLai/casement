@@ -24,6 +24,7 @@ wayland-sys = { version = "0.31.1", features = ["client", "server"] }
 # clock). `testing` carries A37, the ack-before-attach relaxation, off until `Host::start` asks.
 casement = { path = "../crates/casement", default-features = false, features = ["testing"] }
 casement-core = { path = "../crates/casement-core" }
+casement-protocols = { path = "../../casement-protocols" }
 casement-testkit = { path = "../crates/casement-testkit" }
 
 [lints.rust]

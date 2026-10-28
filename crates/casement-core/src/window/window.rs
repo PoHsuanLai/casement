@@ -31,7 +31,7 @@ pub struct Window {
     /// Floating, tiled, filled, full screen or minimised.
     pub state: WindowState,
     /// The window it belongs to, if any (a sheet's document, a dialog's owner).
-    pub parent: Parent,
+    pub parent: Option<WindowId>,
     /// Key, main or inactive.
     pub emphasis: Emphasis,
     /// What capture and the agent may see of it.
@@ -44,15 +44,6 @@ pub struct Window {
     pub claimed_id: ClaimedId,
     /// What its client asked of the compositor (`quire_window_v1`).
     pub hints: WindowHints,
-}
-
-/// The window a window belongs to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Parent {
-    /// None: a top-level document or panel.
-    None,
-    /// This window.
-    Window(WindowId),
 }
 
 /// Which Space a window is on.

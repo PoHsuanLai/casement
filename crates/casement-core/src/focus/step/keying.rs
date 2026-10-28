@@ -2,7 +2,7 @@
 
 use super::super::{Focus, FocusView};
 use crate::app::AppKey;
-use crate::window::{Parent, Window};
+use crate::window::Window;
 use casement_protocols::vocab::{Modality, WindowRole};
 
 /// Whether a window, when key, is also the document the person is working on: a document or
@@ -16,7 +16,7 @@ fn takes_main(window: &Window) -> bool {
 /// takes the key by mapping (03 §1.2, Mapped row).
 pub(super) fn is_modeless_utility(window: &Window) -> bool {
     let child_that_blocks_nothing =
-        window.parent != Parent::None && window.modality != Modality::WindowModal;
+        window.parent.is_some() && window.modality != Modality::WindowModal;
     window.role == WindowRole::Utility || child_that_blocks_nothing
 }
 
@@ -78,10 +78,7 @@ impl Focus {
         if takes_main(key) {
             return Some(key.id);
         }
-        let parent = match key.parent {
-            Parent::Window(id) => view.window(id).map(|w| w.id),
-            Parent::None => None,
-        };
+        let parent = key.parent.and_then(|id| view.window(id).map(|w| w.id));
         let kept = self
             .main
             .and_then(|id| view.window(id))

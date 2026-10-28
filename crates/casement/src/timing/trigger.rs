@@ -2,8 +2,9 @@
 
 use super::key_window::KeyCause;
 use super::stamp::Stamp;
-use casement_core::input::{Edge, InputEvent, InputKind};
+use casement_core::input::{InputEvent, InputKind};
 use casement_core::{Event, ToplevelRequest};
+use casement_protocols::vocab::PressEdge;
 use std::time::Duration;
 
 /// How soon after a press the compositor's own reaction to it still counts as caused by it. The
@@ -88,13 +89,15 @@ pub fn press_in(events: &[Event], stamp_of: impl Fn(&InputEvent) -> Stamp) -> Op
         .filter_map(|event| match event {
             Event::Input(input) => match input.kind {
                 InputKind::Key {
-                    edge: Edge::Press, ..
+                    edge: PressEdge::Press,
+                    ..
                 } => Some(Press {
                     kind: PressKind::Key,
                     at: stamp_of(input),
                 }),
                 InputKind::Button {
-                    edge: Edge::Press, ..
+                    edge: PressEdge::Press,
+                    ..
                 } => Some(Press {
                     kind: PressKind::Button,
                     at: stamp_of(input),

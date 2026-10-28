@@ -2,7 +2,7 @@
 //! into gets it rendered straight in; any other buffer is filled from a read-back through the
 //! backend's software renderer (the headless backend's own, or the tty seat's pixman shadow).
 
-use crate::handlers::image_capture::{Drawn, draw_window_direct};
+use crate::handlers::image_capture::draw_window_direct;
 use crate::state::State;
 use casement_backend::BackendKind;
 use casement_backend::headless::{FrameSource, RgbaFrame};
@@ -83,11 +83,10 @@ pub(crate) fn window_rgba(
     window: WindowId,
 ) -> Result<RgbaFrame, CaptureFailure> {
     let (source, size) = window_source(state, window)?;
-    let drawn = match &mut state.backend {
-        BackendKind::Headless(backend) => backend.render_offscreen(size, source.scale, &source),
-        BackendKind::Tty(tty) => tty.render_offscreen(size, source.scale, &source),
-        _ => return Err(CaptureFailure::Renderer),
-    };
+    let drawn = state
+        .backend
+        .driver_mut()
+        .render_offscreen(size, source.scale, &source);
     drawn.map_err(|error| {
         tracing::warn!(%error, "a window was not drawn for capture");
         CaptureFailure::Renderer
@@ -138,7 +137,7 @@ pub(super) fn draw_window(
     }
     // A dma-buf the GPU can draw into gets the window rendered straight into it; anything else,
     // or a draw that failed, goes through the read-back.
-    if draw_window_direct(state, buffer, &source, size, source.scale) == Drawn::Direct {
+    if draw_window_direct(state, buffer, &source, size, source.scale) {
         return Ok(state.clock.now());
     }
     let drawn = window_rgba(state, request.window)?;

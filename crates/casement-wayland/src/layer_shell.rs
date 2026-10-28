@@ -48,28 +48,11 @@ pub struct LayerRecord {
     pub namespace: LayerNamespace,
     /// Whose connection it came through.
     pub owner: LayerOwner,
-    /// What the model knows of it.
-    pub known: Known,
+    /// What the model knows of it: nothing before its first commit or after it unmapped, else
+    /// what it was mapped, or last changed, to.
+    pub known: Option<LayerSpec>,
     /// Whether its last commit carried a buffer.
-    pub content: Content,
-}
-
-/// What the model has been told about a layer surface.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Known {
-    /// Nothing: it has not committed yet, or it unmapped.
-    Nothing,
-    /// It was mapped, or last changed, to this.
-    As(LayerSpec),
-}
-
-/// Whether a layer surface shows a buffer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Content {
-    /// Its last commit removed or never attached one.
-    Empty,
-    /// It has a buffer.
-    Shown,
+    pub has_buffer: bool,
 }
 
 impl LayerShellPart {
@@ -135,8 +118,8 @@ pub fn on_new_layer(
             output,
             namespace,
             owner,
-            known: Known::Nothing,
-            content: Content::Empty,
+            known: None,
+            has_buffer: false,
         },
     );
     Vec::new()
@@ -153,20 +136,15 @@ pub fn on_layer_commit(part: &mut LayerShellPart, surface: &WlSurface) -> Vec<Ev
     else {
         return Vec::new();
     };
-    let (cached, content) = handle.with_cached_state(|cached| {
-        let content = match cached.last_acked {
-            Some(_) => Content::Shown,
-            None => Content::Empty,
-        };
-        (*cached, content)
-    });
-    let was = std::mem::replace(&mut record.content, content);
+    let (cached, has_buffer) =
+        handle.with_cached_state(|cached| (*cached, cached.last_acked.is_some()));
+    let had_buffer = std::mem::replace(&mut record.has_buffer, has_buffer);
     let Some(output) = record.output.clone() else {
         return Vec::new();
     };
     let spec = spec_of(&output, &cached, &record.namespace.0, record.owner);
-    let known = std::mem::replace(&mut record.known, Known::Nothing);
-    let (known, events) = after_commit(known, was, content, spec, layer);
+    let known = record.known.take();
+    let (known, events) = after_commit(known, had_buffer, has_buffer, spec, layer);
     record.known = known;
     events
 }
@@ -175,25 +153,20 @@ pub fn on_layer_commit(part: &mut LayerShellPart, surface: &WlSurface) -> Vec<Ev
 /// maps now (the model answers with its configure); a buffer going away unmaps it; otherwise a
 /// spec that differs from what the model knows is a change.
 fn after_commit(
-    known: Known,
-    was: Content,
-    now: Content,
+    known: Option<LayerSpec>,
+    had_buffer: bool,
+    has_buffer: bool,
     spec: LayerSpec,
     layer: LayerKey,
-) -> (Known, Vec<Event>) {
-    match (known, was, now) {
-        (Known::As(_), Content::Shown, Content::Empty) => {
-            (Known::Nothing, vec![Event::LayerUnmapped { layer }])
-        }
-        (Known::Nothing, _, _) => (
-            Known::As(spec.clone()),
-            vec![Event::LayerMapped { layer, spec }],
-        ),
-        (Known::As(held), _, _) if held != spec => (
-            Known::As(spec.clone()),
+) -> (Option<LayerSpec>, Vec<Event>) {
+    match (known, had_buffer, has_buffer) {
+        (Some(_), true, false) => (None, vec![Event::LayerUnmapped { layer }]),
+        (None, _, _) => (Some(spec.clone()), vec![Event::LayerMapped { layer, spec }]),
+        (Some(held), _, _) if held != spec => (
+            Some(spec.clone()),
             vec![Event::LayerChanged { layer, spec }],
         ),
-        (held @ Known::As(_), _, _) => (held, Vec::new()),
+        (held @ Some(_), _, _) => (held, Vec::new()),
     }
 }
 
@@ -203,9 +176,9 @@ pub fn on_layer_destroyed(part: &mut LayerShellPart, surface: &LayerSurface) -> 
         return Vec::new();
     };
     part.layers.remove(&layer);
-    match part.records.remove(&layer).map(|record| record.known) {
-        Some(Known::As(_)) => vec![Event::LayerUnmapped { layer }],
-        Some(Known::Nothing) | None => Vec::new(),
+    match part.records.remove(&layer).and_then(|record| record.known) {
+        Some(_) => vec![Event::LayerUnmapped { layer }],
+        None => Vec::new(),
     }
 }
 
@@ -246,7 +219,7 @@ mod tests {
     use super::*;
     use casement_core::OutputName;
     use casement_core::layer::{
-        Anchor, Anchors, ExclusiveZone, KeyboardInteractivity, Margins, ShellRoleTag,
+        Anchors, ExclusiveZone, KeyboardInteractivity, Margins, ShellRoleTag,
     };
     use casement_core::output::{EdidFacts, EdidSerial};
 
@@ -260,10 +233,10 @@ mod tests {
             output: OutputKey::of(&edid, &OutputName::parse("HEADLESS-1").expect("name")),
             level: LayerLevel::Top,
             anchor: Anchors {
-                top: Anchor::Held,
-                bottom: Anchor::Free,
-                left: Anchor::Held,
-                right: Anchor::Held,
+                top: true,
+                bottom: false,
+                left: true,
+                right: true,
             },
             size: casement_core::geometry::LogicalSize::ZERO,
             exclusive: ExclusiveZone::Reserve(30),
@@ -284,13 +257,7 @@ mod tests {
 
     #[test]
     fn the_first_commit_maps_a_layer_and_a_buffer_changes_nothing() {
-        let (known, events) = after_commit(
-            Known::Nothing,
-            Content::Empty,
-            Content::Empty,
-            spec(0),
-            LAYER,
-        );
+        let (known, events) = after_commit(None, false, false, spec(0), LAYER);
         assert_eq!(
             events,
             vec![Event::LayerMapped {
@@ -298,22 +265,16 @@ mod tests {
                 spec: spec(0)
             }]
         );
-        assert_eq!(known, Known::As(spec(0)));
+        assert_eq!(known, Some(spec(0)));
         // The commit that attaches the first buffer asks for the same thing.
-        let (known, events) = after_commit(known, Content::Empty, Content::Shown, spec(0), LAYER);
+        let (known, events) = after_commit(known, false, true, spec(0), LAYER);
         assert_eq!(events, Vec::new());
-        assert_eq!(known, Known::As(spec(0)));
+        assert_eq!(known, Some(spec(0)));
     }
 
     #[test]
     fn a_changed_ask_is_a_change_and_an_unchanged_one_is_silent() {
-        let (known, events) = after_commit(
-            Known::As(spec(0)),
-            Content::Shown,
-            Content::Shown,
-            spec(8),
-            LAYER,
-        );
+        let (known, events) = after_commit(Some(spec(0)), true, true, spec(8), LAYER);
         assert_eq!(
             events,
             vec![Event::LayerChanged {
@@ -321,23 +282,17 @@ mod tests {
                 spec: spec(8)
             }]
         );
-        assert_eq!(known, Known::As(spec(8)));
-        let (_, events) = after_commit(known, Content::Shown, Content::Shown, spec(8), LAYER);
+        assert_eq!(known, Some(spec(8)));
+        let (_, events) = after_commit(known, true, true, spec(8), LAYER);
         assert_eq!(events, Vec::new());
     }
 
     #[test]
     fn removing_the_buffer_unmaps_and_the_next_commit_maps_again() {
-        let (known, events) = after_commit(
-            Known::As(spec(0)),
-            Content::Shown,
-            Content::Empty,
-            spec(0),
-            LAYER,
-        );
+        let (known, events) = after_commit(Some(spec(0)), true, false, spec(0), LAYER);
         assert_eq!(events, vec![Event::LayerUnmapped { layer: LAYER }]);
-        assert_eq!(known, Known::Nothing);
-        let (_, events) = after_commit(known, Content::Empty, Content::Empty, spec(0), LAYER);
+        assert_eq!(known, None);
+        let (_, events) = after_commit(known, false, false, spec(0), LAYER);
         assert!(matches!(events.as_slice(), [Event::LayerMapped { .. }]));
     }
 }

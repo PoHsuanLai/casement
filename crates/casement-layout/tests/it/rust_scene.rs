@@ -5,7 +5,7 @@ use crate::support;
 
 use casement_core::WindowId;
 use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
-use casement_core::window::{MaxSize, SizeLimits};
+use casement_core::window::SizeLimits;
 use casement_layout::{
     Arrangement, ConfigureNeed, LayoutReport, RustScene, SceneLayout, SpaceTarget, WindowPlacement,
     WindowTarget,
@@ -126,7 +126,7 @@ fn a_filled_window_takes_the_usable_area_within_its_limits() {
     let usable = rect(0, 24, 1920, 1056);
     let max = SizeLimits {
         min: LogicalSize { w: 0, h: 0 },
-        max: MaxSize::Bounded(size(1000, 700)),
+        max: Some(size(1000, 700)),
     };
     let cases = [
         ("no limits: the whole area", ANY_SIZE, size(1920, 1056)),
@@ -153,7 +153,7 @@ fn a_full_screen_window_covers_the_whole_output_whatever_its_limits() {
     let usable = rect(0, 24, 1920, 1056);
     let max = SizeLimits {
         min: LogicalSize { w: 0, h: 0 },
-        max: MaxSize::Bounded(size(1000, 700)),
+        max: Some(size(1000, 700)),
     };
     for (name, limits) in [("no limits", ANY_SIZE), ("a maximum", max)] {
         let mut spec = one_desktop(usable, vec![window(1, WindowPlacement::FullScreen, limits)]);
@@ -174,7 +174,7 @@ fn floating_windows_stay_or_come_back_within_reach() {
     let usable = rect(0, 24, 1920, 1056);
     let min = |w, h| SizeLimits {
         min: LogicalSize { w, h },
-        max: MaxSize::Unbounded,
+        max: None,
     };
     let cases: Vec<FloatingCase> = vec![
         (
@@ -444,7 +444,7 @@ fn a_tiled_window_takes_its_zone_below_its_frame_within_its_limits() {
     let usable = rect(0, 24, 1920, 1056);
     let wide = SizeLimits {
         min: LogicalSize { w: 1000, h: 0 },
-        max: MaxSize::Unbounded,
+        max: None,
     };
     // name, limits, reserve, the rectangle, the report
     let cases = [

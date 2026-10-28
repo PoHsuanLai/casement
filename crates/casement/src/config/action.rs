@@ -15,8 +15,7 @@
 
 use casement_core::CoreError;
 use casement_core::input::{Argv, BindingAction, DbusCall, DesktopCommand, SpaceStep};
-use casement_core::window::SplitSide;
-use casement_protocols::vocab::PlaceTarget;
+use casement_protocols::vocab::{PlaceTarget, SplitSide};
 use serde::{Deserialize, Serialize};
 
 /// The words of one action.

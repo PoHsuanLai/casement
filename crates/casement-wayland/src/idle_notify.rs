@@ -14,10 +14,10 @@
 
 mod machine;
 
-pub use machine::{Honours, IdleBook, Inhibited, Moved, Signal};
+pub use machine::{IdleBook, Moved, Signal};
 
 use crate::client::ClientState;
-use crate::limits::{self, Limit, Standing};
+use crate::limits::{self, Limit};
 use crate::states::{GlobalFilter, WaylandFault};
 use casement_core::policy::ConnectionRole;
 use casement_core::time::{IdleNotifierId, Mono};
@@ -121,16 +121,17 @@ pub struct Watched {
     pub effects: Vec<Effect>,
 }
 
-/// `client` asked to be told after `timeout` of idleness at `now` (`honours`: whether idle
-/// inhibitors hold it off).
+/// `client` asked to be told after `timeout` of idleness at `now` (`honours_inhibitors`:
+/// whether idle inhibitors hold it off).
 pub fn on_notification(
     part: &mut IdleNotifyPart,
     client: ClientKey,
     timeout: Duration,
-    honours: Honours,
+    honours_inhibitors: bool,
     now: Mono,
 ) -> Watched {
-    let (book, id, moved) = std::mem::take(&mut part.book).watch(client, timeout, honours, now);
+    let (book, id, moved) =
+        std::mem::take(&mut part.book).watch(client, timeout, honours_inhibitors, now);
     part.book = book;
     Watched {
         id,
@@ -163,8 +164,8 @@ pub fn on_timer(
     settle(part, moved)
 }
 
-/// Idle inhibition changed at `now` (idle-inhibit's [`Inhibited`]).
-pub fn on_inhibit(part: &mut IdleNotifyPart, inhibited: Inhibited, now: Mono) -> Vec<Effect> {
+/// Idle inhibition changed at `now` (`inhibited`: whether a visible surface holds idleness off).
+pub fn on_inhibit(part: &mut IdleNotifyPart, inhibited: bool, now: Mono) -> Vec<Effect> {
     let (book, moved) = std::mem::take(&mut part.book).inhibit(inhibited, now);
     part.book = book;
     settle(part, moved)
@@ -235,12 +236,12 @@ where
         handle: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
-        let (new, timeout, honours) = match request {
+        let (new, timeout, honours_inhibitors) = match request {
             ext_idle_notifier_v1::Request::GetIdleNotification { id, timeout, .. } => {
-                (id, timeout, Honours::Inhibitors)
+                (id, timeout, true)
             }
             ext_idle_notifier_v1::Request::GetInputIdleNotification { id, timeout, .. } => {
-                (id, timeout, Honours::InputOnly)
+                (id, timeout, false)
             }
             _ => return,
         };
@@ -251,7 +252,7 @@ where
         // A client past its cap is cut after this request (CASW-07's watch cap, NEW-CAS-2); the
         // object it asked for is made inert, with an id no watch ever has.
         let held = state.idle_notify_part().book.held_by(key);
-        if limits::admit(handle, client, Limit::IdleWatches, held) == Standing::Over {
+        if !limits::admit(handle, client, Limit::IdleWatches, held) {
             data_init.init(new, IdleNotificationData { id: UNWATCHED });
             return;
         }
@@ -260,7 +261,7 @@ where
             state.idle_notify_part(),
             key,
             Duration::from_millis(u64::from(timeout)).max(floor),
-            honours,
+            honours_inhibitors,
             now,
         );
         let object = data_init.init(new, IdleNotificationData { id: watched.id });

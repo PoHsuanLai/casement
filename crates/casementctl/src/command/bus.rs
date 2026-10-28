@@ -75,9 +75,7 @@ async fn send(proxy: &Proxy<'_>, call: Call) -> Result<Answer, BusError> {
             Answer::Waited { outcome, scene }
         }
         Call::Clock(verb, amount) => {
-            proxy
-                .call::<_, _, ()>("Clock", &(verb.word(), amount))
-                .await?;
+            proxy.call::<_, _, ()>("Clock", &(verb, amount)).await?;
             Answer::Text(String::new())
         }
         Call::Output(verb, args) => Answer::Text(proxy.call("Output", &(verb, args)).await?),
@@ -85,9 +83,7 @@ async fn send(proxy: &Proxy<'_>, call: Call) -> Result<Answer, BusError> {
         Call::Scene => Answer::Text(proxy.call("Scene", &()).await?),
         Call::Shot { area, path } => Answer::Text(proxy.call("Shot", &(area, path)).await?),
         Call::Fault(verb, amount) => {
-            proxy
-                .call::<_, _, ()>("Fault", &(verb.word(), amount))
-                .await?;
+            proxy.call::<_, _, ()>("Fault", &(verb, amount)).await?;
             Answer::Text(String::new())
         }
     })

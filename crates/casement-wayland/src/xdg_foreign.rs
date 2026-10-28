@@ -12,7 +12,7 @@ mod book;
 
 pub use book::Handle;
 
-use crate::limits::{self, Limit, Standing};
+use crate::limits::{self, Limit};
 use crate::states::GlobalFilter;
 use book::Shared;
 use smithay::reexports::wayland_protocols::xdg::foreign::zv2::server::zxdg_exported_v2::ZxdgExportedV2;
@@ -184,7 +184,7 @@ where
         }
         // A client past its cap is cut (CASW-06); the new object still gets data, as above.
         let held = self.book.lock().held_by(&client.id());
-        if limits::admit(display, client, Limit::Exports, held) == Standing::Over {
+        if !limits::admit(display, client, Limit::Exports, held) {
             data_init.init(
                 id,
                 Exported {

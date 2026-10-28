@@ -7,7 +7,6 @@
 //! write_dmabuf`, a real-run check); these tests read the offer from the client's side.
 
 use crate::protocol::image_capture::{name, opened, small};
-use casement_backend::DmabufMode;
 use casement_core::policy::ConnectionRole;
 use casement_testclient::Pumped;
 use casement_testclient::capture::{CopyArea, CursorMode, ScreenCopy};
@@ -43,7 +42,7 @@ fn settle_copy(fixture: &mut Fixture, copy: &mut ScreenCopy) {
 /// device (226:128), once the jail has a node to type it by.
 #[test]
 fn a_session_offers_dma_buf_where_the_renderer_draws_into_it() {
-    let (_fixture, _client, capture) = opened(small().with_dmabuf(DmabufMode::Soft), "HEADLESS-1");
+    let (_fixture, _client, capture) = opened(small().with_dmabuf(true), "HEADLESS-1");
     let formats = capture.dmabuf_formats();
     match fabricated_gpus() {
         0 => {
@@ -82,7 +81,7 @@ fn a_session_without_a_dma_buf_global_offers_shared_memory_only() {
 /// `zwlr_screencopy_frame_v1.linux_dmabuf` names the same formats at the frame's size.
 #[test]
 fn a_wlr_frame_announces_linux_dmabuf() {
-    let mut fixture = Fixture::start(small().with_dmabuf(DmabufMode::Soft)).expect("fixture");
+    let mut fixture = Fixture::start(small().with_dmabuf(true)).expect("fixture");
     let client = fixture.connect(ConnectionRole::Public);
     fixture.frames(&name("HEADLESS-1"), FrameCount(2));
     let mut copy = ScreenCopy::start(fixture.client(client).globals()).expect("the manager");

@@ -6,24 +6,15 @@ use super::{feed, tile};
 use crate::state::State;
 use casement_core::geometry::LogicalPoint;
 use casement_core::input::ButtonCode;
-use casement_core::window::{MaxSize, SizeLimits};
+use casement_core::window::SizeLimits;
 use casement_core::{Event, GrabSpec, InputSerial};
 use casement_wayland::seat::{self, Drag};
 use smithay::utils::SERIAL_COUNTER;
 
-/// Whether the grab took the pointer motion.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Follow {
-    /// A grab moved its window: the motion goes no further.
-    Taken,
-    /// No grab: the motion goes to the clients.
-    Free,
-}
-
 /// What a window the model no longer holds is limited to: nothing.
 const NO_LIMITS: SizeLimits = SizeLimits {
     min: casement_core::geometry::LogicalSize { w: 0, h: 0 },
-    max: MaxSize::Unbounded,
+    max: None,
 };
 
 /// A grab of `spec` begins with the pointer where it is.
@@ -59,10 +50,11 @@ pub(crate) fn start(state: &mut State, spec: GrabSpec) {
     }
 }
 
-/// The pointer is at `at`: the grabbed window follows.
-pub(super) fn follow(state: &mut State, at: LogicalPoint) -> Follow {
+/// The pointer is at `at`: the grabbed window follows. Whether a grab took the motion (it goes no
+/// further); `false` with no grab: the motion goes to the clients.
+pub(super) fn follow(state: &mut State, at: LogicalPoint) -> bool {
     let Some(drag) = state.wl.seat.grab else {
-        return Follow::Free;
+        return false;
     };
     let window = drag.window();
     let origin = drag.origin.or_else(|| {
@@ -78,7 +70,7 @@ pub(super) fn follow(state: &mut State, at: LogicalPoint) -> Follow {
         // The window is gone: the grab ends.
         state.wl.seat.grab = None;
         tile::cancel(state);
-        return Follow::Free;
+        return false;
     };
     state.wl.seat.grab = Some(drag.from_rect(origin));
     let limits = state
@@ -90,7 +82,7 @@ pub(super) fn follow(state: &mut State, at: LogicalPoint) -> Follow {
     let rect = drag.rect_at(origin, at, limits);
     feed(state, vec![Event::WindowDragged { window, rect }]);
     tile::moved(state, at);
-    Follow::Taken
+    true
 }
 
 /// `released` was let go: the grab ends when it is the button the grab began with.

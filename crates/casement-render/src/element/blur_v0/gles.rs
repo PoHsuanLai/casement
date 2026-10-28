@@ -4,7 +4,7 @@
 
 use super::BlurV0Element;
 use crate::element::BlurFinish;
-use crate::pass::{Finished, capture_blur, finish_blur};
+use crate::pass::{capture_blur, finish_blur};
 use smithay::backend::renderer::gles::{GlesError, GlesFrame};
 use smithay::utils::user_data::UserDataMap;
 use smithay::utils::{Physical, Rectangle};
@@ -38,8 +38,9 @@ pub(super) fn draw(
     if clipped.is_empty() {
         return Ok(());
     }
-    match finish_blur(frame, blur.plan(), blur.alpha_of(), (dst, &clipped), cache)? {
-        Finished::Drawn => Ok(()),
-        Finished::Missing => blur.draw_stand_in(frame, dst, damage),
+    if finish_blur(frame, blur.plan(), blur.alpha_of(), (dst, &clipped), cache)? {
+        Ok(())
+    } else {
+        blur.draw_stand_in(frame, dst, damage)
     }
 }

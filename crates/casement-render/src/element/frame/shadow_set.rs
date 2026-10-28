@@ -6,6 +6,7 @@ use super::raster::Raster;
 use super::shadow::Tiles;
 use super::slices::Piece;
 use super::to_buffer;
+use crate::element::corner::corner_index;
 use casement_core::window::{FrameLook, ShadowLayer};
 use ds_core::geometry::scale::Scale;
 use smithay::backend::renderer::element::memory::MemoryRenderBuffer;
@@ -46,7 +47,10 @@ impl ShadowSet {
     /// The buffer of `piece` and its raster.
     pub(crate) fn of(&self, piece: Piece) -> (&MemoryRenderBuffer, &Raster) {
         match piece {
-            Piece::Corner(c) => (&self.corners[c.index()], &self.tiles.corners[c.index()]),
+            Piece::Corner(c) => (
+                &self.corners[corner_index(c)],
+                &self.tiles.corners[corner_index(c)],
+            ),
             Piece::Edge(s) => (&self.edges[s.index()], &self.tiles.edges[s.index()]),
         }
     }

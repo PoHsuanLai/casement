@@ -4,9 +4,7 @@ use super::XdgShellPart;
 use crate::convert::size_to;
 use crate::states::WaylandFault;
 use casement_core::geometry::LogicalSize;
-use casement_core::{
-    ClientKey, ConfigureSize, ConfigureSpec, Held, PopupKey, ToplevelStates, WindowId,
-};
+use casement_core::{ClientKey, ConfigureSize, ConfigureSpec, PopupKey, ToplevelStates, WindowId};
 use smithay::desktop::{PopupKind, PopupManager, find_popup_root_surface};
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::State;
 use smithay::utils::SERIAL_COUNTER;
@@ -15,7 +13,7 @@ use smithay::wayland::shell::xdg::ToplevelState;
 
 /// Every `xdg_toplevel` state a configure decides, with whether it holds. P0 floats: the model
 /// never asks for tiled edges of a floating or zoomed window, and none is invented here.
-pub(super) fn wire_states(states: ToplevelStates) -> [(State, Held); 8] {
+pub(super) fn wire_states(states: ToplevelStates) -> [(State, bool); 8] {
     [
         (State::Activated, states.activated),
         (State::Maximized, states.maximised),
@@ -37,13 +35,10 @@ pub(super) fn apply_spec(state: &mut ToplevelState, spec: &ConfigureSpec) {
     };
     state.bounds = (spec.bounds != LogicalSize { w: 0, h: 0 }).then(|| size_to(spec.bounds));
     for (wire, held) in wire_states(spec.states) {
-        match held {
-            Held::Yes => {
-                state.states.set(wire);
-            }
-            Held::No => {
-                state.states.unset(wire);
-            }
+        if held {
+            state.states.set(wire);
+        } else {
+            state.states.unset(wire);
         }
     }
 }
@@ -121,10 +116,10 @@ mod tests {
     use casement_core::TiledEdges;
 
     const NO: TiledEdges = TiledEdges {
-        top: Held::No,
-        bottom: Held::No,
-        left: Held::No,
-        right: Held::No,
+        top: false,
+        bottom: false,
+        left: false,
+        right: false,
     };
 
     fn spec(size: ConfigureSize, states: ToplevelStates) -> ConfigureSpec {
@@ -135,20 +130,20 @@ mod tests {
         }
     }
 
-    fn floating(activated: Held) -> ToplevelStates {
+    fn floating(activated: bool) -> ToplevelStates {
         ToplevelStates {
             activated,
-            maximised: Held::No,
-            full_screen: Held::No,
+            maximised: false,
+            full_screen: false,
             tiled: NO,
-            resizing: Held::No,
+            resizing: false,
         }
     }
 
     #[test]
     fn a_floating_configure_sets_activated_and_nothing_tiled() {
         let mut state = ToplevelState::default();
-        apply_spec(&mut state, &spec(ConfigureSize::Keep, floating(Held::Yes)));
+        apply_spec(&mut state, &spec(ConfigureSize::Keep, floating(true)));
         assert!(state.states.contains(State::Activated));
         for tiled in [
             State::TiledTop,
@@ -166,9 +161,9 @@ mod tests {
     fn states_are_set_and_cleared_by_each_configure() {
         let mut state = ToplevelState::default();
         let zoomed = ToplevelStates {
-            maximised: Held::Yes,
-            resizing: Held::Yes,
-            ..floating(Held::Yes)
+            maximised: true,
+            resizing: true,
+            ..floating(true)
         };
         apply_spec(
             &mut state,
@@ -177,7 +172,7 @@ mod tests {
         assert!(state.states.contains(State::Maximized));
         assert!(state.states.contains(State::Resizing));
         assert_eq!(state.size, Some((800, 600).into()));
-        apply_spec(&mut state, &spec(ConfigureSize::Keep, floating(Held::No)));
+        apply_spec(&mut state, &spec(ConfigureSize::Keep, floating(false)));
         assert!(!state.states.contains(State::Maximized));
         assert!(!state.states.contains(State::Resizing));
         assert!(!state.states.contains(State::Activated));
@@ -189,12 +184,12 @@ mod tests {
         let mut state = ToplevelState::default();
         let left = ToplevelStates {
             tiled: TiledEdges {
-                top: Held::Yes,
-                bottom: Held::Yes,
-                left: Held::Yes,
-                right: Held::No,
+                top: true,
+                bottom: true,
+                left: true,
+                right: false,
             },
-            ..floating(Held::No)
+            ..floating(false)
         };
         apply_spec(&mut state, &spec(ConfigureSize::Keep, left));
         assert!(state.states.contains(State::TiledLeft));
@@ -204,7 +199,7 @@ mod tests {
     #[test]
     fn zero_bounds_are_none() {
         let mut state = ToplevelState::default();
-        let mut zero = spec(ConfigureSize::Keep, floating(Held::No));
+        let mut zero = spec(ConfigureSize::Keep, floating(false));
         zero.bounds = LogicalSize { w: 0, h: 0 };
         apply_spec(&mut state, &zero);
         assert_eq!(state.bounds, None);

@@ -4,8 +4,6 @@
 //! `exec::gamma`.
 
 use crate::state::State;
-use casement_backend::BackendKind;
-use casement_backend::headless::GAMMA_SIZE;
 use casement_core::OutputKey;
 use casement_wayland::gamma::{GammaHandler, GammaPart, GammaSize};
 
@@ -18,10 +16,6 @@ impl GammaHandler for State {
     /// (`GAMMA_LUT_SIZE`; none for a CRTC with no table); the winit window has no gamma to drive.
     fn gamma_table_size(&self, output: &OutputKey) -> Option<GammaSize> {
         let name = &self.core.model.outputs().0.get(output)?.facts.name;
-        match &self.backend {
-            BackendKind::Headless(_) => u32::try_from(GAMMA_SIZE).ok().map(GammaSize),
-            BackendKind::Tty(tty) => tty.gamma_size(name).filter(|size| *size > 0).map(GammaSize),
-            _ => None,
-        }
+        self.backend.driver().gamma_steps(name).map(GammaSize)
     }
 }

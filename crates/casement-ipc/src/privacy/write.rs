@@ -1,9 +1,8 @@
 //! What a `Set` on a key of the Privacy module may do, and the edit it becomes.
 
-use super::edit::PrivacyEdit;
 use super::keys::{OFF, ON};
 use casement_core::policy::Power;
-use casement_core::privilege::Subject;
+use casement_core::privilege::{Edit, Subject};
 
 /// What one key lets a caller do with `Set`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,31 +25,16 @@ pub enum Why {
 }
 
 /// The edit a `Set` of `value` on a key with `write` asks for, or why it is not one.
-pub fn edit_of(write: &Write, value: &toml::Value) -> Result<PrivacyEdit, EditFault> {
+pub fn edit_of(write: &Write, value: &toml::Value) -> Result<Edit, EditFault> {
     match write {
         Write::Refused(Why::Administrator) => Err(EditFault::Administrator),
         Write::Refused(Why::ReadOut) => Err(EditFault::ReadOut),
-        Write::Forget(subject, power) => Ok(PrivacyEdit::Forget {
-            subject: subject.clone(),
-            power: *power,
-        }),
+        Write::Forget(subject, power) => Ok(Edit::Forget(subject.clone(), *power)),
         Write::Choose(subject, power) => match value {
-            toml::Value::String(word) if word == ON => Ok(PrivacyEdit::Allow {
-                subject: subject.clone(),
-                power: *power,
-            }),
-            toml::Value::String(word) if word == OFF => Ok(PrivacyEdit::Deny {
-                subject: subject.clone(),
-                power: *power,
-            }),
-            toml::Value::Boolean(true) => Ok(PrivacyEdit::Allow {
-                subject: subject.clone(),
-                power: *power,
-            }),
-            toml::Value::Boolean(false) => Ok(PrivacyEdit::Deny {
-                subject: subject.clone(),
-                power: *power,
-            }),
+            toml::Value::String(word) if word == ON => Ok(Edit::Allow(subject.clone(), *power)),
+            toml::Value::String(word) if word == OFF => Ok(Edit::Deny(subject.clone(), *power)),
+            toml::Value::Boolean(true) => Ok(Edit::Allow(subject.clone(), *power)),
+            toml::Value::Boolean(false) => Ok(Edit::Deny(subject.clone(), *power)),
             _ => Err(EditFault::BadValue),
         },
     }
@@ -82,17 +66,11 @@ mod tests {
         let choose = Write::Choose(grim.clone(), Power::Screen);
         let on = toml::Value::String(ON.to_owned());
         let off = toml::Value::String(OFF.to_owned());
-        assert!(matches!(
-            edit_of(&choose, &on),
-            Ok(PrivacyEdit::Allow { .. })
-        ));
-        assert!(matches!(
-            edit_of(&choose, &off),
-            Ok(PrivacyEdit::Deny { .. })
-        ));
+        assert!(matches!(edit_of(&choose, &on), Ok(Edit::Allow(..))));
+        assert!(matches!(edit_of(&choose, &off), Ok(Edit::Deny(..))));
         assert!(matches!(
             edit_of(&choose, &toml::Value::Boolean(false)),
-            Ok(PrivacyEdit::Deny { .. })
+            Ok(Edit::Deny(..))
         ));
         assert_eq!(
             edit_of(&choose, &toml::Value::Integer(1)),
@@ -103,7 +81,7 @@ mod tests {
                 &Write::Forget(grim, Power::Screen),
                 &toml::Value::Boolean(true)
             ),
-            Ok(PrivacyEdit::Forget { .. })
+            Ok(Edit::Forget(..))
         ));
         assert_eq!(
             edit_of(&Write::Refused(Why::Administrator), &on),

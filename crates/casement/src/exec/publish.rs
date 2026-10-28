@@ -6,7 +6,7 @@ use crate::space_store::save_spaces;
 use crate::state::State;
 use casement_core::window::{SpacePlace, Window};
 use casement_core::{Model, OutputKey, WindowId};
-use casement_wayland::foreign_toplevel_list::Disclosure;
+use casement_wayland::foreign_toplevel_list::disclosed;
 use casement_wayland::{capture_source, quire_window, wlr_toplevel, workspace};
 use smithay::output::Output;
 
@@ -44,7 +44,7 @@ pub(super) fn publish_toplevel(state: &mut State, window: WindowId) {
         &mut state.wl.wlr_toplevel,
         held,
         &on,
-        Disclosure::of(state.core.model.lock()),
+        disclosed(state.core.model.lock()),
     ));
     // The same trigger tells an extended window where it now sits (a no-op when the mark did
     // not change).

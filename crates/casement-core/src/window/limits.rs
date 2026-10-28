@@ -9,14 +9,5 @@ pub struct SizeLimits {
     /// The smallest size (zero on a side means none).
     pub min: LogicalSize,
     /// The largest size.
-    pub max: MaxSize,
-}
-
-/// A window's largest size.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MaxSize {
-    /// No limit.
-    Unbounded,
-    /// At most this.
-    Bounded(LogicalSize),
+    pub max: Option<LogicalSize>,
 }

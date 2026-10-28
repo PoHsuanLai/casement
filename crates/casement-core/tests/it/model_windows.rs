@@ -141,10 +141,7 @@ fn a_sheet_on_another_apps_window_is_not_a_sheet() {
         map(1, &mail, TokenCheck::Valid),
         map_sheet(2, &web, 1),
     ]);
-    assert_eq!(
-        run.model.windows()[&WindowId(2)].parent,
-        casement_core::window::Parent::None
-    );
+    assert_eq!(run.model.windows()[&WindowId(2)].parent, None);
     assert_eq!(run.model.focus().key, Some(WindowId(1)));
 }
 
@@ -341,7 +338,7 @@ fn hint(n: u64, hint: casement_core::WindowHintChange) -> Op {
 fn a_window_menu_is_recorded_and_the_shell_is_told_through_its_app() {
     use casement_core::WindowHintChange::Menu;
     use casement_core::app::MenuSource;
-    use casement_core::desktop::DesktopNote;
+    use casement_core::desktop::{DesktopNote, DesktopRef};
     let qt = proven("org.example.Qt");
     let source = MenuSource::DbusMenu {
         bus: "org.example.Qt".into(),
@@ -367,8 +364,16 @@ fn a_window_menu_is_recorded_and_the_shell_is_told_through_its_app() {
         source,
         "the app's other window answers"
     );
-    assert!(last(&declared).contains(&Effect::Desktop(DesktopNote::App(qt.clone()))));
-    assert!(last(&declared).contains(&Effect::Desktop(DesktopNote::Window(WindowId(other)))));
+    assert!(
+        last(&declared).contains(&Effect::Desktop(DesktopNote::Changed(DesktopRef::App(
+            qt.clone()
+        ))))
+    );
+    assert!(
+        last(&declared).contains(&Effect::Desktop(DesktopNote::Changed(DesktopRef::Window(
+            WindowId(other)
+        ))))
+    );
 
     let own = MenuSource::GtkMenus {
         bus: ":1.9".into(),
@@ -661,42 +666,36 @@ fn a_window_that_never_called_set_frame_is_silent_and_one_that_did_is_not() {
 
 #[test]
 fn a_client_framed_window_is_rounded_by_what_it_said_and_what_it_drew() {
-    use casement_core::window::{Cast, FrameChoice, Margin, Round, round_of};
+    use casement_core::window::{Cast, FrameChoice, Round, round_of};
     // name, what the client said, whether its buffer holds a margin, the desktop radius, the round
     let cases = [
         (
             "shadow asked for",
             FrameChoice::Shadowed { radius: 12 },
-            Margin::None,
+            false,
             10,
             Some((12, Cast::Casement)),
         ),
         (
             "shadow asked for, margin drawn",
             FrameChoice::Shadowed { radius: 12 },
-            Margin::Drawn,
+            true,
             10,
             Some((12, Cast::Casement)),
         ),
-        ("own frame", FrameChoice::Own, Margin::None, 10, None),
-        (
-            "own frame, margin",
-            FrameChoice::Own,
-            Margin::Drawn,
-            10,
-            None,
-        ),
+        ("own frame", FrameChoice::Own, false, 10, None),
+        ("own frame, margin", FrameChoice::Own, true, 10, None),
         (
             "silent, geometry is the buffer",
             FrameChoice::Silent,
-            Margin::None,
+            false,
             10,
             Some((10, Cast::Casement)),
         ),
         (
             "silent, shadow in a margin",
             FrameChoice::Silent,
-            Margin::Drawn,
+            true,
             10,
             Some((10, Cast::Client)),
         ),

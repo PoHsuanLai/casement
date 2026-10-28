@@ -11,6 +11,7 @@ publish.workspace = true
 [dependencies]
 casement-core = { workspace = true }
 casement-motion = { workspace = true }
+casement-protocols = { workspace = true }
 ds-core = { workspace = true }
 smithay = { workspace = true, features = ["wayland_frontend", "desktop", "renderer_gl", "renderer_pixman", "backend_egl"] }
 thiserror = { workspace = true }

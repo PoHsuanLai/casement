@@ -1,7 +1,6 @@
 //! The two edges that reveal, the strip that triggers them and where the pointer is relative to
 //! one.
 
-use super::Cover;
 use crate::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use casement_protocols::vocab::{FullScreenBar, ScreenEdge, ShellRole};
 
@@ -43,17 +42,17 @@ impl RevealEdge {
     /// top edge never covers; the dock's edge is not affected.
     ///
     /// ```
-    /// use casement_core::reveal::{Cover, RevealEdge};
+    /// use casement_core::reveal::RevealEdge;
     /// use casement_protocols::vocab::FullScreenBar;
     ///
     /// let top = RevealEdge::Top;
-    /// assert_eq!(top.covered(FullScreenBar::Keep, Cover::Yes), Cover::No);
-    /// assert_eq!(top.covered(FullScreenBar::Reveal, Cover::Yes), Cover::Yes);
-    /// assert_eq!(RevealEdge::Bottom.covered(FullScreenBar::Keep, Cover::Yes), Cover::Yes);
+    /// assert!(!top.covered(FullScreenBar::Keep, true));
+    /// assert!(top.covered(FullScreenBar::Reveal, true));
+    /// assert!(RevealEdge::Bottom.covered(FullScreenBar::Keep, true));
     /// ```
-    pub fn covered(self, mode: FullScreenBar, shown: Cover) -> Cover {
+    pub fn covered(self, mode: FullScreenBar, shown: bool) -> bool {
         match (self, mode) {
-            (RevealEdge::Top, FullScreenBar::Keep) => Cover::No,
+            (RevealEdge::Top, FullScreenBar::Keep) => false,
             _ => shown,
         }
     }
@@ -101,38 +100,33 @@ pub enum Place {
     OnSurface,
 }
 
-/// Whether the pointer is over the edge's surface.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Over {
-    /// It is.
-    Surface,
-    /// It is not.
-    Elsewhere,
-}
-
 impl Place {
-    /// The place of `pointer` for `edge` of `output`, given what the pointer is over. The strip
+    /// The place of `pointer` for `edge` of `output`, given whether it is over the surface (`over_surface`). The strip
     /// wins: a pointer that is still at the edge has not left.
     ///
     /// ```
     /// use casement_core::geometry::{LogicalPoint, LogicalRect, LogicalSize};
     /// use casement_core::reveal::{Place, RevealEdge};
-    /// use casement_core::reveal::Over;
     ///
     /// let output = LogicalRect::new(LogicalPoint { x: 0, y: 0 }, LogicalSize { w: 100, h: 50 });
     /// let at = |y| LogicalPoint { x: 10, y };
-    /// assert_eq!(Place::of(RevealEdge::Top, output, at(1), Over::Elsewhere), Place::InStrip);
-    /// assert_eq!(Place::of(RevealEdge::Top, output, at(20), Over::Surface), Place::OnSurface);
-    /// assert_eq!(Place::of(RevealEdge::Top, output, at(20), Over::Elsewhere), Place::Away);
+    /// assert_eq!(Place::of(RevealEdge::Top, output, at(1), false), Place::InStrip);
+    /// assert_eq!(Place::of(RevealEdge::Top, output, at(20), true), Place::OnSurface);
+    /// assert_eq!(Place::of(RevealEdge::Top, output, at(20), false), Place::Away);
     /// ```
-    pub fn of(edge: RevealEdge, output: LogicalRect, pointer: LogicalPoint, over: Over) -> Place {
+    pub fn of(
+        edge: RevealEdge,
+        output: LogicalRect,
+        pointer: LogicalPoint,
+        over_surface: bool,
+    ) -> Place {
         match (
             edge.strip(output).contains(pointer),
             output.contains(pointer),
-            over,
+            over_surface,
         ) {
             (true, _, _) => Place::InStrip,
-            (false, true, Over::Surface) => Place::OnSurface,
+            (false, true, true) => Place::OnSurface,
             _ => Place::Away,
         }
     }

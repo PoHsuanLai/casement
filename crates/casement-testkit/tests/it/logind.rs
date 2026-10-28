@@ -2,7 +2,7 @@
 //! `PrepareForSleep` held by inhibitors, the session and seat calls recorded. Everything runs
 //! on a private dbus-daemon; the client side is a second connection to it.
 
-use casement_ipc::sleep::{SleepBus, SleepHandler, SleepWatch};
+use casement_ipc::sleep::{SleepHandler, SleepWatch};
 use casement_testkit::fakes::{
     FakeLogind, IdleHint, LogindCall, LogindError, PauseKind, PrivateBus, SleepPhase,
 };
@@ -281,11 +281,8 @@ fn a_prepare_for_sleep_from_anyone_but_logind_is_not_acted_on() {
     let bus = PrivateBus::start().expect("bus");
     let logind = FakeLogind::serve(bus.address()).expect("serve");
     let told = Arc::new(Mutex::new(Vec::new()));
-    let _watch = SleepWatch::start(
-        SleepBus::At(bus.address().to_owned()),
-        Record(Arc::clone(&told)),
-    )
-    .expect("the watcher subscribes");
+    let _watch = SleepWatch::start(Some(bus.address().to_owned()), Record(Arc::clone(&told)))
+        .expect("the watcher subscribes");
     let rt = runtime();
     // Connections and streams drop at the end of the test, and dropping one spawns on the runtime.
     let _in_runtime = rt.enter();

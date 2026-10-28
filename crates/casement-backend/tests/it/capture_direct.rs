@@ -3,17 +3,15 @@
 //! the caller reads the frame back. Both fill the buffer with the pixels a shared-memory capture
 //! holds. They need `/dev/udmabuf` (bound into the jail); a host without it skips.
 
-use casement_backend::capture_path::{Import, RendererClass};
 use casement_backend::gpu::FixedUdmabuf;
 use casement_backend::headless::FrameElements;
 use casement_backend::{
-    DmabufMode, FramePixels, HeadlessBackend, HeadlessConfig, RenderCostModel, SoftRenderer,
-    VirtualOutputSpec,
+    FramePixels, HeadlessBackend, HeadlessConfig, RenderCostModel, SoftRenderer, VirtualOutputSpec,
 };
 use casement_core::OutputName;
 use casement_core::geometry::{PhysicalRect, PhysicalSize};
 use casement_core::time::{Mono, VblankSeq};
-use casement_render::pass::{ArgbImage, CapturedFrame, CursorInclusion};
+use casement_render::pass::{ArgbImage, CapturedFrame};
 use casement_render::{CasementElement, Compositor, Rgba8, solid_rect};
 use ds_core::geometry::scale::Scale;
 use smithay::backend::allocator::dmabuf::Dmabuf;
@@ -74,7 +72,7 @@ fn rig(renderer: SoftRenderer) -> Option<(HeadlessBackend, OutputName, Dmabuf)> 
     let mut backend = HeadlessBackend::start(HeadlessConfig {
         outputs: vec![spec],
         renderer,
-        dmabuf: DmabufMode::None,
+        dmabuf: false,
         cost: RenderCostModel::Fixed(Duration::ZERO),
     })
     .ok()?;
@@ -104,12 +102,12 @@ fn a_gl_renderer_that_binds_the_buffer_blits_the_frame_with_the_pixels_shm_holds
         eprintln!("skipped: no GL renderer or no /dev/udmabuf here");
         return;
     };
-    if backend.capture_class(linear_argb()) != RendererClass::Gpu(Import::Accepted) {
+    if !backend.binds_format(linear_argb()) {
         eprintln!("skipped: this GL renderer binds no linear dma-buf");
         return;
     }
     backend
-        .blit_output_dmabuf(&name, CursorInclusion::Include, whole(), &mut buffer)
+        .blit_output_dmabuf(&name, true, whole(), &mut buffer)
         .expect("the frame is blitted");
     let drawn = backend.read_dmabuf(&buffer).expect("read the buffer back");
     assert_eq!(drawn.argb, shm_image(&backend, &name).argb);
@@ -121,14 +119,13 @@ fn a_software_renderer_refuses_the_direct_draw_and_the_read_back_fills_the_same_
         eprintln!("skipped: no /dev/udmabuf here");
         return;
     };
-    assert_eq!(
-        backend.capture_class(linear_argb()),
-        RendererClass::Software,
+    assert!(
+        !backend.binds_format(linear_argb()),
         "pixman keeps its frames on the CPU"
     );
     assert!(
         backend
-            .blit_output_dmabuf(&name, CursorInclusion::Include, whole(), &mut buffer)
+            .blit_output_dmabuf(&name, true, whole(), &mut buffer)
             .is_err(),
         "a CPU frame is not blitted"
     );
@@ -164,7 +161,7 @@ fn an_output_that_has_presented_nothing_has_no_frame_to_blit() {
     };
     let other = OutputName::parse("HEADLESS-9").expect("a name");
     let error = backend
-        .blit_output_dmabuf(&other, CursorInclusion::Include, whole(), &mut buffer)
+        .blit_output_dmabuf(&other, true, whole(), &mut buffer)
         .expect_err("nothing to blit");
     assert!(matches!(error, casement_backend::BackendError::NoFrame));
 }

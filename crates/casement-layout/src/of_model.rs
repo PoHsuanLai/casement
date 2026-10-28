@@ -74,11 +74,8 @@ fn output_spec(
     let spaces = row
         .into_iter()
         .map(|space| {
-            let visibility = match space.id == shown {
-                true => Visibility::Shown,
-                false => Visibility::Hidden,
-            };
-            space_spec(model, space, key, visibility, frames)
+            let is_shown = space.id == shown;
+            space_spec(model, space, key, is_shown, frames)
         })
         .collect();
     Some(OutputSpec {
@@ -104,22 +101,13 @@ fn mode_of(overview: Overview, shown: SpaceId) -> SceneMode {
     }
 }
 
-/// Whether a Space is the one its output shows.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Visibility {
-    /// The output shows it.
-    Shown,
-    /// Another Space is shown.
-    Hidden,
-}
-
 /// One Space's part: its arrangement and its windows, bottom of the stack first. When
-/// `Shown`, the windows that sit on every Space of `output` are among them.
+/// `shown`, the windows that sit on every Space of `output` are among them.
 fn space_spec(
     model: &Model,
     space: &Space,
     output: &OutputKey,
-    shown: Visibility,
+    shown: bool,
     frames: &BTreeMap<WindowId, u32>,
 ) -> SpaceSpec {
     let mut held = model
@@ -127,9 +115,7 @@ fn space_spec(
         .values()
         .filter(|window| match &window.place {
             SpacePlace::On(id) => *id == space.id,
-            SpacePlace::AllSpaces => {
-                shown == Visibility::Shown && window.home.as_ref() == Some(output)
-            }
+            SpacePlace::AllSpaces => shown && window.home.as_ref() == Some(output),
         })
         .collect::<Vec<&Window>>();
     // Picture in picture floats above the rest, whatever the stack ranks say.

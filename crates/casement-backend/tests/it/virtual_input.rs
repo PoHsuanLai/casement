@@ -7,11 +7,12 @@ use casement_backend::{DeviceName, DeviceSpec, VirtualInput};
 use casement_core::DeviceId;
 use casement_core::geometry::{LogicalPoint, SubPoint, SubPx};
 use casement_core::input::{
-    AxisFrame, AxisSource as Source, AxisStop, ButtonCode, DeviceClass, Edge, GestureEnd,
-    GestureStep, InputKind, KeyCode, LidState, Origin, PinchDelta, SwitchStep, TouchStep,
+    AxisFrame, AxisSource as Source, ButtonCode, DeviceClass, GestureEnd, GestureStep, InputKind,
+    KeyCode, Origin, PinchDelta, SwitchStep, TouchStep,
 };
 use casement_core::settings::XkbNames;
 use casement_core::time::Mono;
+use casement_protocols::vocab::PressEdge;
 use ds_core::vocab::Fraction;
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisRelativeDirection, AxisSource, ButtonState, Device,
@@ -112,9 +113,9 @@ fn events_come_out_in_the_order_pushed_with_their_origin_and_instant() {
     input.drain();
     for (n, code) in [30, 48, 46].into_iter().enumerate() {
         let edge = if n % 2 == 0 {
-            Edge::Press
+            PressEdge::Press
         } else {
-            Edge::Release
+            PressEdge::Release
         };
         input.push(
             id,
@@ -145,11 +146,11 @@ fn a_key_is_an_xkb_keycode_and_the_count_is_the_keys_held_on_every_device() {
     input.drain();
     let press = |code| InputKind::Key {
         code: KeyCode(code),
-        edge: Edge::Press,
+        edge: PressEdge::Press,
     };
     let release = |code| InputKind::Key {
         code: KeyCode(code),
-        edge: Edge::Release,
+        edge: PressEdge::Release,
     };
     input.push(a, press(30), at(1));
     input.push(b, press(48), at(2));
@@ -181,7 +182,7 @@ fn input_from_an_unplugged_device_is_dropped_and_its_held_keys_let_go() {
         id,
         InputKind::Key {
             code: KeyCode(30),
-            edge: Edge::Press,
+            edge: PressEdge::Press,
         },
         at(1),
     );
@@ -190,7 +191,7 @@ fn input_from_an_unplugged_device_is_dropped_and_its_held_keys_let_go() {
         id,
         InputKind::Key {
             code: KeyCode(30),
-            edge: Edge::Release,
+            edge: PressEdge::Release,
         },
         at(2),
     );
@@ -208,7 +209,7 @@ fn input_from_an_unplugged_device_is_dropped_and_its_held_keys_let_go() {
         other,
         InputKind::Key {
             code: KeyCode(31),
-            edge: Edge::Press,
+            edge: PressEdge::Press,
         },
         at(3),
     );
@@ -243,7 +244,7 @@ fn pointer_motion_and_buttons_are_in_logical_pixels() {
         id,
         InputKind::Button {
             button: ButtonCode(0x110),
-            edge: Edge::Press,
+            edge: PressEdge::Press,
         },
         at(3),
     );
@@ -281,7 +282,7 @@ fn a_wheel_detent_carries_value120_and_the_source() {
             x: px(0),
             y: px(-15),
         },
-        stop: AxisStop::Running,
+        stopped: false,
     };
     input.push(id, InputKind::Axis(frame), at(1));
     let events = input.drain();
@@ -306,13 +307,13 @@ fn finger_scrolling_ends_with_a_zero_amount_and_has_no_detents() {
         source: Source::Finger,
         v120: (0, 0),
         px: SubPoint { x: px(2), y: px(3) },
-        stop: AxisStop::Running,
+        stopped: false,
     };
     input.push(id, InputKind::Axis(moving), at(1));
     input.push(
         id,
         InputKind::Axis(AxisFrame {
-            stop: AxisStop::Stopped,
+            stopped: true,
             ..moving
         }),
         at(2),
@@ -434,12 +435,12 @@ fn a_lid_closing_is_a_switch_turning_on() {
     let (mut input, id) = plugged(DeviceClass::Switch);
     input.push(
         id,
-        InputKind::Switch(SwitchStep::Lid(LidState::Closed)),
+        InputKind::Switch(SwitchStep::Lid { closed: true }),
         at(1),
     );
     input.push(
         id,
-        InputKind::Switch(SwitchStep::Lid(LidState::Open)),
+        InputKind::Switch(SwitchStep::Lid { closed: false }),
         at(2),
     );
     let events = input.drain();

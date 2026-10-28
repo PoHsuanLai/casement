@@ -8,26 +8,6 @@ use ds_core::vocab::Fraction;
 use ds_style::tokens::easing::EasingToken;
 use std::time::Duration;
 
-/// Whether the output shows a full-screen Space (with a surface to reveal).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Cover {
-    /// It does not: nothing reveals.
-    #[default]
-    No,
-    /// It does.
-    Yes,
-}
-
-/// Whether the surface has a pop-up open (an open bar menu keeps the bar up).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Popup {
-    /// None open.
-    #[default]
-    Closed,
-    /// One is open.
-    Open,
-}
-
 /// Where the reveal is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum Phase {
@@ -50,11 +30,11 @@ enum Phase {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RevealIn {
     /// The output now shows (or no longer shows) a full-screen Space with a surface to reveal.
-    Cover(Cover),
+    Cover(bool),
     /// The pointer is now here, relative to the edge.
     Pointer(Place),
     /// A pop-up of the surface opened or closed.
-    Popup(Popup),
+    Popup(bool),
     /// The timer the machine asked for fired.
     Tick,
 }
@@ -70,22 +50,13 @@ pub enum RevealOut {
     Tell(Shown),
 }
 
-/// Whether the surface is drawn and hit above the full-screen window.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Stacking {
-    /// Behind it, where a bar or a dock normally is in full screen.
-    Behind,
-    /// Above it: sliding in, shown, or sliding away.
-    Above,
-}
-
 /// One output's reveal of one edge.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Reveal {
     phase: Phase,
-    cover: Cover,
+    cover: bool,
     place: Place,
-    popup: Popup,
+    popup: bool,
 }
 
 impl Reveal {
@@ -95,7 +66,7 @@ impl Reveal {
     }
 
     /// Whether the full-screen Space has been told to this machine.
-    pub fn cover(&self) -> Cover {
+    pub fn cover(&self) -> bool {
         self.cover
     }
 
@@ -105,15 +76,16 @@ impl Reveal {
     }
 
     /// Whether a pop-up has been told to this machine.
-    pub fn popup(&self) -> Popup {
+    pub fn popup(&self) -> bool {
         self.popup
     }
 
-    /// Whether the surface is above the full-screen window now.
-    pub fn stacking(&self) -> Stacking {
+    /// Whether the surface is drawn and hit above the full-screen window now (sliding in, shown, or
+    /// sliding away); behind it, where a bar or a dock normally is in full screen, otherwise.
+    pub fn raised(&self) -> bool {
         match self.phase {
-            Phase::Hidden | Phase::Pending { .. } => Stacking::Behind,
-            Phase::Showing { .. } | Phase::Shown | Phase::Hiding { .. } => Stacking::Above,
+            Phase::Hidden | Phase::Pending { .. } => false,
+            Phase::Showing { .. } | Phase::Shown | Phase::Hiding { .. } => true,
         }
     }
 
@@ -157,7 +129,7 @@ impl Reveal {
 
     /// Whether the pointer or a pop-up keeps the surface up.
     fn held(&self) -> bool {
-        self.place != Place::Away || self.popup == Popup::Open
+        self.place != Place::Away || self.popup
     }
 
     /// The machine moved to `phase`.
@@ -168,26 +140,26 @@ impl Reveal {
     /// Where the told facts put the machine at `now`.
     fn settled(self, timing: RevealTiming, now: Mono) -> (Reveal, Vec<RevealOut>) {
         match (self.cover, self.phase) {
-            (Cover::No, Phase::Hidden) => (self, Vec::new()),
-            (Cover::No, Phase::Pending { .. }) => (self.at(Phase::Hidden), vec![RevealOut::Cancel]),
-            (Cover::No, Phase::Showing { .. } | Phase::Shown | Phase::Hiding { .. }) => (
+            (false, Phase::Hidden) => (self, Vec::new()),
+            (false, Phase::Pending { .. }) => (self.at(Phase::Hidden), vec![RevealOut::Cancel]),
+            (false, Phase::Showing { .. } | Phase::Shown | Phase::Hiding { .. }) => (
                 self.at(Phase::Hidden),
                 vec![RevealOut::Cancel, RevealOut::Tell(Shown::Hidden)],
             ),
-            (Cover::Yes, Phase::Hidden) => match self.place {
+            (true, Phase::Hidden) => match self.place {
                 Place::InStrip => (
                     self.at(Phase::Pending { since: now }),
                     vec![RevealOut::Arm(now.after(timing.dwell))],
                 ),
                 Place::Away | Place::OnSurface => (self, Vec::new()),
             },
-            (Cover::Yes, Phase::Pending { since }) => self.waiting(timing, since, now),
-            (Cover::Yes, Phase::Showing { since, .. }) => match now.since(since) >= timing.travel {
+            (true, Phase::Pending { since }) => self.waiting(timing, since, now),
+            (true, Phase::Showing { since, .. }) => match now.since(since) >= timing.travel {
                 true => self.at(Phase::Shown).settled(timing, now),
                 false => self.leaving(timing, now),
             },
-            (Cover::Yes, Phase::Shown) => self.leaving(timing, now),
-            (Cover::Yes, Phase::Hiding { since, .. }) => self.returning(timing, since, now),
+            (true, Phase::Shown) => self.leaving(timing, now),
+            (true, Phase::Hiding { since, .. }) => self.returning(timing, since, now),
         }
     }
 

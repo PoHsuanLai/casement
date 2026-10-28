@@ -35,7 +35,7 @@ pub use standing::{client_standing, maker_of, peer_of};
 /// How well the program behind a connection is known when it arrives.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
-pub enum Standing {
+pub enum Vetting {
     /// Not judged: a connection handed out to the shell, the agent tier or the portal (trusted
     /// by how it was obtained), a sandbox's, or one nobody looked at.
     Unjudged,
@@ -58,7 +58,7 @@ pub fn insert_client(
     stream: UnixStream,
     role: ConnectionRole,
     peer: PeerIdentity,
-    standing: Standing,
+    standing: Vetting,
 ) -> std::io::Result<Client> {
     let holder = Holder::of_stream(&peer, &stream);
     let (clients, key) = state.wl.clients.clone().next();
@@ -73,8 +73,8 @@ pub fn insert_client(
         .with_origin(state.processes.origin_of(key))
         .with_gone(state.wl.clients.gone_queue());
     let (data, judged) = match standing {
-        Standing::Unjudged => (data, None),
-        Standing::Judged {
+        Vetting::Unjudged => (data, None),
+        Vetting::Judged {
             standing,
             watch,
             maker,

@@ -75,9 +75,9 @@ impl Model {
     /// left its place when the grab began.
     pub(super) fn dragged(self, id: WindowId, rect: LogicalRect) -> Moved {
         let mut model = self;
-        let reach = Reach::of(model.hand_placed.remove(&id));
+        let rule_changed = model.hand_placed.remove(&id);
         let rect = model.pip_fitted(id, rect);
-        model.window_moved_to(id, rect, reach)
+        model.window_moved_to(id, rect, rule_changed)
     }
 
     /// A window was put at `rect` by hand (a test's placement, never the person's): layout keeps
@@ -85,8 +85,8 @@ impl Model {
     /// window. The person-facing rule (a drag keeps a window within reach) is unchanged.
     pub(super) fn placed_by_hand(self, id: WindowId, rect: LogicalRect) -> Moved {
         let mut model = self;
-        let reach = Reach::of(model.windows.contains_key(&id) && model.hand_placed.insert(id));
-        model.window_moved_to(id, rect, reach)
+        let rule_changed = model.windows.contains_key(&id) && model.hand_placed.insert(id);
+        model.window_moved_to(id, rect, rule_changed)
     }
 
     /// Whether window `id` was put by hand and layout keeps its rectangle as given.
@@ -94,14 +94,14 @@ impl Model {
         self.hand_placed.contains(&id)
     }
 
-    /// Window `id` is now at `rect`; a changed `reach` means layout's rule for it changed with
+    /// Window `id` is now at `rect`; `rule_changed` means layout's rule for it changed with
     /// the move, so it is laid out again even where the rectangle is the same.
-    fn window_moved_to(self, id: WindowId, rect: LogicalRect, reach: Reach) -> Moved {
+    fn window_moved_to(self, id: WindowId, rect: LogicalRect, rule_changed: bool) -> Moved {
         let Some(window) = self.windows.get(&id) else {
             return Moved::of(self).with(Effect::Note(CoreNote::UnknownWindow(id)));
         };
         match &window.state {
-            WindowState::Floating(held) if *held == rect && reach == Reach::Same => Moved::of(self),
+            WindowState::Floating(held) if *held == rect && !rule_changed => Moved::of(self),
             WindowState::Floating(_) | WindowState::New(_) => self
                 .with_state(id, WindowState::Floating(rect))
                 .then(|model| model.relaid_out(id, Cause::Drag)),
@@ -376,18 +376,5 @@ fn dock_tile(output: &OutputKey, full: LogicalRect) -> MinimiseTarget {
             },
             LogicalSize { w: 0, h: 0 },
         ),
-    }
-}
-
-/// Whether a move changed the rule layout keeps a window by (placed by hand, or kept inside).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Reach {
-    Same,
-    Changed,
-}
-
-impl Reach {
-    fn of(changed: bool) -> Reach {
-        if changed { Reach::Changed } else { Reach::Same }
     }
 }

@@ -435,9 +435,7 @@ mod tests {
                 &Chord::parse("cmd+space").expect("a chord"),
                 &casement_core::input::Origin::Test,
             ),
-            casement_core::input::Resolved::Action(BindingAction::Desktop(
-                DesktopCommand::HideActive
-            ))
+            Some(BindingAction::Desktop(DesktopCommand::HideActive))
         );
         assert!(merged.0.len() > own.0.len());
     }

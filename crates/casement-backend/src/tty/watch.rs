@@ -22,24 +22,6 @@ pub const STARVED_AFTER: Duration = Duration::from_secs(10);
 /// How many frames in a row may fail before the output is set up again.
 pub const FAILURES_ALLOWED: u32 = 3;
 
-/// Whether a queued flip has taken too long.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Flip {
-    /// Nothing is queued, or it is still within its deadline.
-    OnTime,
-    /// It was queued longer ago than [`FLIP_DEADLINE`].
-    Lost,
-}
-
-/// Whether an output has shown anything for too long.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Starved {
-    /// It showed a frame lately, or none is wanted.
-    No,
-    /// Frames were asked for for [`STARVED_AFTER`] and none landed.
-    Yes,
-}
-
 /// One output's flips, by the instants they were queued at.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct FlipWatch {
@@ -92,20 +74,17 @@ impl FlipWatch {
         FlipWatch::default()
     }
 
-    /// Whether the queued flip is overdue at `now`.
-    pub fn flip(self, now: Mono) -> Flip {
-        match self.queued {
-            Some(at) if now.since(at) > FLIP_DEADLINE => Flip::Lost,
-            _ => Flip::OnTime,
-        }
+    /// Whether the queued flip was queued longer ago than [`FLIP_DEADLINE`] at `now`. Nothing
+    /// queued is never overdue.
+    pub fn flip_lost(self, now: Mono) -> bool {
+        self.queued.is_some_and(|at| now.since(at) > FLIP_DEADLINE)
     }
 
-    /// Whether the output has shown nothing for too long at `now`.
-    pub fn starved(self, now: Mono) -> Starved {
-        match self.unanswered_since {
-            Some(at) if now.since(at) > STARVED_AFTER => Starved::Yes,
-            _ => Starved::No,
-        }
+    /// Whether the output has shown nothing for too long at `now`: frames were asked for for
+    /// [`STARVED_AFTER`] and none landed.
+    pub fn starved(self, now: Mono) -> bool {
+        self.unanswered_since
+            .is_some_and(|at| now.since(at) > STARVED_AFTER)
     }
 }
 
@@ -195,27 +174,23 @@ mod tests {
     #[test]
     fn a_flip_is_lost_only_after_its_deadline_and_a_landing_clears_it() {
         let watch = FlipWatch::default();
-        assert_eq!(watch.flip(at(10_000)), Flip::OnTime, "nothing queued");
+        assert!(!watch.flip_lost(at(10_000)), "nothing queued");
         let watch = watch.queued(at(1_000));
-        assert_eq!(
-            watch.flip(at(1_500)),
-            Flip::OnTime,
-            "exactly at the deadline"
-        );
-        assert_eq!(watch.flip(at(1_501)), Flip::Lost);
-        assert_eq!(watch.landed().flip(at(9_000)), Flip::OnTime);
+        assert!(!watch.flip_lost(at(1_500)), "exactly at the deadline");
+        assert!(watch.flip_lost(at(1_501)));
+        assert!(!watch.landed().flip_lost(at(9_000)));
     }
 
     #[test]
     fn starvation_survives_giving_a_flip_up_but_not_a_landing() {
         let watch = FlipWatch::default().queued(at(0));
-        assert_eq!(watch.starved(at(10_000)), Starved::No);
-        assert_eq!(watch.starved(at(10_001)), Starved::Yes);
+        assert!(!watch.starved(at(10_000)));
+        assert!(watch.starved(at(10_001)));
         // A recovery drops the flip in flight, not the time nothing has landed.
         let given_up = watch.given_up().queued(at(9_000));
-        assert_eq!(given_up.starved(at(10_001)), Starved::Yes);
-        assert_eq!(watch.landed().starved(at(60_000)), Starved::No);
-        assert_eq!(watch.idle().starved(at(60_000)), Starved::No);
+        assert!(given_up.starved(at(10_001)));
+        assert!(!watch.landed().starved(at(60_000)));
+        assert!(!watch.idle().starved(at(60_000)));
     }
 
     /// CASB-05: frames that fail to queue count as asked for. One failure starts the clock; it
@@ -223,16 +198,12 @@ mod tests {
     #[test]
     fn a_surface_whose_every_frame_fails_to_queue_is_starved_like_one_that_never_flips() {
         let watch = FlipWatch::default().asked(at(1_000));
-        assert_eq!(watch.flip(at(60_000)), Flip::OnTime, "no flip is in flight");
-        assert_eq!(watch.starved(at(11_000)), Starved::No);
-        assert_eq!(watch.starved(at(11_001)), Starved::Yes);
+        assert!(!watch.flip_lost(at(60_000)), "no flip is in flight");
+        assert!(!watch.starved(at(11_000)));
+        assert!(watch.starved(at(11_001)));
         let again = watch.asked(at(9_000));
-        assert_eq!(
-            again.starved(at(11_001)),
-            Starved::Yes,
-            "the clock keeps its start"
-        );
-        assert_eq!(again.landed().starved(at(60_000)), Starved::No);
+        assert!(again.starved(at(11_001)), "the clock keeps its start");
+        assert!(!again.landed().starved(at(60_000)));
     }
 
     #[test]
