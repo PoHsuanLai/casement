@@ -1,8 +1,7 @@
 //! The numbers are the timing table's and the dock's own.
 
 use super::{
-    BAR_DWELL, BAR_SLIDE, DOCK_DWELL, DOCK_SLIDE, Look, REDUCED_FADE, Reduced, RevealEdge,
-    RevealTiming,
+    BAR_DWELL, BAR_SLIDE, DOCK_DWELL, DOCK_SLIDE, Look, REDUCED_FADE, RevealEdge, RevealTiming,
 };
 use ds_style::appearance::motion::MotionLevel;
 use ds_style::tokens::timing::DurationToken;
@@ -30,28 +29,28 @@ fn each_edge_has_its_numbers_and_reduced_only_changes_the_travel() {
         (
             "bar",
             RevealEdge::Top,
-            Reduced::No,
+            false,
             (ms(450), ms(200)),
             Look::Slide,
         ),
         (
             "dock",
             RevealEdge::Bottom,
-            Reduced::No,
+            false,
             (ms(200), ms(500)),
             Look::Slide,
         ),
         (
             "bar reduced",
             RevealEdge::Top,
-            Reduced::Yes,
+            true,
             (ms(450), ms(120)),
             Look::CrossFade,
         ),
         (
             "dock reduced",
             RevealEdge::Bottom,
-            Reduced::Yes,
+            true,
             (ms(200), ms(120)),
             Look::CrossFade,
         ),

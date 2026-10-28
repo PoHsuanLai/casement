@@ -8,7 +8,7 @@ use crate::effect::Effect;
 use crate::geometry::{LogicalPoint, LogicalRect, LogicalSize};
 use crate::ids::{LayerKey, OutputKey, WindowId};
 use crate::layer::ShellRoleTag;
-use crate::reveal::{FullScreenBar, Reduced};
+use crate::reveal::FullScreenBar;
 use crate::shell::{ShellNote, ShellRequest};
 use casement_protocols::vocab::{Motion, ShellRole};
 
@@ -33,10 +33,7 @@ impl Model {
             ShellRequest::Overview { mode, toggle } => self.overview_asked(mode, toggle),
             ShellRequest::FullScreenBar(mode) => self.with_full_screen_bar(mode),
             ShellRequest::Motion(motion) => Moved::of(Model {
-                motion: match motion {
-                    Motion::Reduced => Reduced::Yes,
-                    _ => Reduced::No,
-                },
+                reduced_motion: matches!(motion, Motion::Reduced),
                 ..self
             }),
         }

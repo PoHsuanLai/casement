@@ -1,8 +1,6 @@
 //! The reveal machine, step by step on a script of (instant, input) pairs.
 
-use super::{
-    FullScreenBar, Look, Place, Reduced, Reveal, RevealEdge, RevealIn, RevealOut, RevealTiming,
-};
+use super::{FullScreenBar, Look, Place, Reveal, RevealEdge, RevealIn, RevealOut, RevealTiming};
 use crate::time::Mono;
 use casement_protocols::vocab::Shown;
 use std::time::Duration;
@@ -14,7 +12,7 @@ fn at(ms: u64) -> Mono {
 /// The machine after the script, and the outputs it gave at each step (instant, output).
 fn run(
     edge: RevealEdge,
-    reduced: Reduced,
+    reduced: bool,
     script: &[(u64, RevealIn)],
 ) -> (Reveal, Vec<(u64, RevealOut)>) {
     let timing = RevealTiming::of(edge, reduced);
@@ -81,7 +79,7 @@ fn the_dwell_fires_at_the_bar_delay_and_not_before() {
         ),
     ];
     for (name, script, stacking, outputs) in cases {
-        let (machine, seen) = run(RevealEdge::Top, Reduced::No, &script);
+        let (machine, seen) = run(RevealEdge::Top, false, &script);
         assert_eq!(machine.raised(), stacking, "{name}");
         assert_eq!(seen, outputs, "{name}");
     }
@@ -95,7 +93,7 @@ fn leaving_the_strip_cancels_the_wait() {
         (1200, AWAY),
         (1450, RevealIn::Tick),
     ];
-    let (machine, seen) = run(RevealEdge::Top, Reduced::No, &script);
+    let (machine, seen) = run(RevealEdge::Top, false, &script);
     assert!(!machine.raised());
     assert_eq!(seen, [(1000, arm(1450)), (1200, RevealOut::Cancel)]);
 }
@@ -103,7 +101,7 @@ fn leaving_the_strip_cancels_the_wait() {
 #[test]
 fn outside_full_screen_nothing_is_ever_asked() {
     let script = [(1000, AT_EDGE), (1450, RevealIn::Tick), (2000, AWAY)];
-    let (machine, seen) = run(RevealEdge::Top, Reduced::No, &script);
+    let (machine, seen) = run(RevealEdge::Top, false, &script);
     assert!(!machine.raised());
     assert!(seen.is_empty(), "{seen:?}");
 }
@@ -111,7 +109,7 @@ fn outside_full_screen_nothing_is_ever_asked() {
 #[test]
 fn a_pointer_already_at_the_edge_when_full_screen_begins_rests_from_then() {
     let script = [(1000, AT_EDGE), (5000, COVERED), (5450, RevealIn::Tick)];
-    let (machine, seen) = run(RevealEdge::Top, Reduced::No, &script);
+    let (machine, seen) = run(RevealEdge::Top, false, &script);
     assert!(machine.raised());
     assert_eq!(seen, [(5000, arm(5450)), (5450, SHOWN), (5450, arm(5650))]);
 }
@@ -131,7 +129,7 @@ fn shown_bar() -> Vec<(u64, RevealIn)> {
 fn it_goes_when_the_pointer_leaves_and_drops_behind_the_window_after_the_slide() {
     let mut script = shown_bar();
     script.push((3000, AWAY));
-    let (machine, seen) = run(RevealEdge::Top, Reduced::No, &script);
+    let (machine, seen) = run(RevealEdge::Top, false, &script);
     assert!(machine.raised(), "sliding away");
     assert_eq!(
         seen.last(),
@@ -140,11 +138,11 @@ fn it_goes_when_the_pointer_leaves_and_drops_behind_the_window_after_the_slide()
     );
 
     script.push((3100, RevealIn::Tick));
-    let (machine, _) = run(RevealEdge::Top, Reduced::No, &script);
+    let (machine, _) = run(RevealEdge::Top, false, &script);
     assert!(machine.raised(), "still on its way");
 
     script.push((3200, RevealIn::Tick));
-    let (machine, seen) = run(RevealEdge::Top, Reduced::No, &script);
+    let (machine, seen) = run(RevealEdge::Top, false, &script);
     assert!(!machine.raised(), "below the window");
     assert_eq!(seen.last(), Some(&(3200, HIDDEN)), "told when it is gone");
 }
@@ -157,26 +155,26 @@ fn an_open_popup_keeps_it_up_until_it_closes() {
         (3000, AWAY),
         (4000, RevealIn::Tick),
     ]);
-    let (machine, seen) = run(RevealEdge::Top, Reduced::No, &script);
+    let (machine, seen) = run(RevealEdge::Top, false, &script);
     assert!(machine.raised());
     assert!(!seen.iter().any(|(_, out)| *out == HIDDEN), "{seen:?}");
 
     script.push((5000, RevealIn::Popup(false)));
-    let (machine, seen) = run(RevealEdge::Top, Reduced::No, &script);
+    let (machine, seen) = run(RevealEdge::Top, false, &script);
     assert!(machine.raised(), "sliding away");
     assert_eq!(seen.last(), Some(&(5000, arm(5200))), "the slide timed");
 
     script.push((5200, RevealIn::Tick));
-    let (_, seen) = run(RevealEdge::Top, Reduced::No, &script);
+    let (_, seen) = run(RevealEdge::Top, false, &script);
     assert_eq!(seen.last(), Some(&(5200, HIDDEN)), "told when it is gone");
 }
 
 #[test]
 fn the_pointer_coming_back_while_it_goes_turns_it_round_from_where_it_is() {
-    let timing = RevealTiming::of(RevealEdge::Top, Reduced::No);
+    let timing = RevealTiming::of(RevealEdge::Top, false);
     let mut script = shown_bar();
     script.extend([(3000, AWAY), (3100, ON_SURFACE)]);
-    let (machine, seen) = run(RevealEdge::Top, Reduced::No, &script);
+    let (machine, seen) = run(RevealEdge::Top, false, &script);
     assert!(machine.raised());
     assert_eq!(
         seen[seen.len() - 2..],
@@ -192,17 +190,17 @@ fn the_pointer_coming_back_while_it_goes_turns_it_round_from_where_it_is() {
 
 #[test]
 fn the_dock_keeps_its_own_numbers() {
-    let timing = RevealTiming::of(RevealEdge::Bottom, Reduced::No);
+    let timing = RevealTiming::of(RevealEdge::Bottom, false);
     assert_eq!(
         (timing.dwell, timing.travel),
         (Duration::from_millis(200), Duration::from_millis(500))
     );
     let script = [(0, COVERED), (1000, AT_EDGE), (1199, RevealIn::Tick)];
-    let (machine, _) = run(RevealEdge::Bottom, Reduced::No, &script);
+    let (machine, _) = run(RevealEdge::Bottom, false, &script);
     assert!(!machine.raised(), "199 ms is not a rest");
 
     let script = [(0, COVERED), (1000, AT_EDGE), (1200, RevealIn::Tick)];
-    let (machine, seen) = run(RevealEdge::Bottom, Reduced::No, &script);
+    let (machine, seen) = run(RevealEdge::Bottom, false, &script);
     assert!(machine.raised());
     assert_eq!(
         seen,
@@ -214,15 +212,15 @@ fn the_dock_keeps_its_own_numbers() {
 #[test]
 fn reduced_motion_keeps_the_dwell_and_fades_for_the_quick_duration() {
     let script = [(0, COVERED), (1000, AT_EDGE), (1450, RevealIn::Tick)];
-    let (_, seen) = run(RevealEdge::Top, Reduced::Yes, &script);
+    let (_, seen) = run(RevealEdge::Top, true, &script);
     assert_eq!(seen, [(1000, arm(1450)), (1450, SHOWN), (1450, arm(1570))]);
 }
 
 #[test]
 fn it_comes_in_along_the_out_curve_and_is_whole_when_the_slide_ends() {
-    let timing = RevealTiming::of(RevealEdge::Top, Reduced::No);
+    let timing = RevealTiming::of(RevealEdge::Top, false);
     let script = [(0, COVERED), (1000, AT_EDGE), (1450, RevealIn::Tick)];
-    let (machine, _) = run(RevealEdge::Top, Reduced::No, &script);
+    let (machine, _) = run(RevealEdge::Top, false, &script);
     let seen: Vec<u16> = [1450, 1500, 1550, 1600, 1650, 1900]
         .into_iter()
         .map(|ms| machine.visible(timing, at(ms)).0)
@@ -262,9 +260,9 @@ fn leaving_full_screen_puts_it_away_at_once() {
             "waiting" => vec![(0, COVERED), (1000, AT_EDGE)],
             _ => shown_bar(),
         };
-        let before = run(RevealEdge::Top, Reduced::No, &script).1.len();
+        let before = run(RevealEdge::Top, false, &script).1.len();
         script.extend(tail);
-        let (machine, seen) = run(RevealEdge::Top, Reduced::No, &script);
+        let (machine, seen) = run(RevealEdge::Top, false, &script);
         let after: Vec<RevealOut> = seen
             .iter()
             .skip(before)
@@ -297,7 +295,7 @@ fn with_the_bar_kept_the_top_edge_never_reveals_and_the_dock_still_does() {
             (1200, RevealIn::Tick),
             (3000, RevealIn::Tick),
         ];
-        let (machine, seen) = run(edge, Reduced::No, &script);
+        let (machine, seen) = run(edge, false, &script);
         assert_eq!(machine.raised(), stacking, "{name}");
         assert_eq!(seen, outputs, "{name}");
     }
@@ -314,7 +312,7 @@ fn switching_to_keep_puts_a_shown_bar_away_at_once_and_back_to_reveal_starts_the
         (1500, keep),
         (2000, COVERED),
     ];
-    let (machine, seen) = run(top, Reduced::No, &script);
+    let (machine, seen) = run(top, false, &script);
     assert_eq!(
         seen,
         [
@@ -331,7 +329,7 @@ fn switching_to_keep_puts_a_shown_bar_away_at_once_and_back_to_reveal_starts_the
 
 #[test]
 fn reduced_motion_fades_in_place_for_the_quick_duration_and_keeps_the_rest() {
-    let timing = RevealTiming::of(RevealEdge::Top, Reduced::Yes);
+    let timing = RevealTiming::of(RevealEdge::Top, true);
     assert_eq!(timing.look, Look::CrossFade);
     let script = [
         (0, COVERED),
@@ -339,7 +337,7 @@ fn reduced_motion_fades_in_place_for_the_quick_duration_and_keeps_the_rest() {
         (1449, RevealIn::Tick),
         (1450, RevealIn::Tick),
     ];
-    let (machine, seen) = run(RevealEdge::Top, Reduced::Yes, &script);
+    let (machine, seen) = run(RevealEdge::Top, true, &script);
     assert_eq!(
         seen,
         [(1000, arm(1450)), (1450, SHOWN), (1450, arm(1570))],

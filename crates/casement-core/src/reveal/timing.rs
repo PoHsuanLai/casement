@@ -1,6 +1,6 @@
 //! The numbers an edge reveal runs on, as data.
 
-use super::{Reduced, RevealEdge};
+use super::RevealEdge;
 use std::time::Duration;
 
 /// How long the pointer rests at the top edge before the bar comes (hover intent, design/27
@@ -33,7 +33,7 @@ pub enum Look {
 /// One edge's dwell and travel.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RevealTiming {
-    /// How long the pointer must rest in the strip. Intent, not motion: Reduced does not
+    /// How long the pointer must rest in the strip. Intent, not motion: bool does not
     /// shorten it.
     pub dwell: Duration,
     /// How long it takes to come or to go.
@@ -46,27 +46,28 @@ impl RevealTiming {
     /// The timing of `edge` at the motion level `reduced` says.
     ///
     /// ```
-    /// use casement_core::reveal::{BAR_DWELL, Look, Reduced, RevealEdge, RevealTiming};
+    /// use casement_core::reveal::{BAR_DWELL, Look, RevealEdge, RevealTiming};
     ///
-    /// let timing = RevealTiming::of(RevealEdge::Top, Reduced::No);
+    /// let timing = RevealTiming::of(RevealEdge::Top, false);
     /// assert_eq!((timing.dwell, timing.look), (BAR_DWELL, Look::Slide));
     /// ```
-    pub fn of(edge: RevealEdge, reduced: Reduced) -> RevealTiming {
+    pub fn of(edge: RevealEdge, reduced: bool) -> RevealTiming {
         let (dwell, slide) = match edge {
             RevealEdge::Top => (BAR_DWELL, BAR_SLIDE),
             RevealEdge::Bottom => (DOCK_DWELL, DOCK_SLIDE),
         };
-        match reduced {
-            Reduced::No => RevealTiming {
-                dwell,
-                travel: slide,
-                look: Look::Slide,
-            },
-            Reduced::Yes => RevealTiming {
+        if reduced {
+            RevealTiming {
                 dwell,
                 travel: REDUCED_FADE,
                 look: Look::CrossFade,
-            },
+            }
+        } else {
+            RevealTiming {
+                dwell,
+                travel: slide,
+                look: Look::Slide,
+            }
         }
     }
 }

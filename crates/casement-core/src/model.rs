@@ -62,7 +62,7 @@ use crate::layer::LayerBook;
 use crate::lock::LockState;
 use crate::output::{OutputConfig, OutputFacts};
 use crate::overview::Overview;
-use crate::reveal::{FullScreenBar, Reduced};
+use crate::reveal::FullScreenBar;
 use crate::settings::CasementSettings;
 use crate::space::{SpaceBook, SpaceFile, SpaceSeed};
 use crate::time::{Mono, TimerBook, TimerKey};
@@ -129,8 +129,8 @@ pub struct Model {
     /// What the bar does in full screen (`quire_shell_v1.set_full_screen_bar`); the last request
     /// wins. Layout reads it for the rectangle a full-screen window covers.
     full_screen_bar: FullScreenBar,
-    /// How much motion the shell says the person allows (`set_motion`); the last request wins.
-    motion: Reduced,
+    /// Whether the shell says the person wants reduced motion; the last request wins.
+    reduced_motion: bool,
     seed: SpaceSeed,
     now: Mono,
 }
@@ -177,7 +177,7 @@ impl Model {
             night: night_light::NightDrive::default(),
             privilege: Privilege::new(epoch),
             full_screen_bar: FullScreenBar::Reveal,
-            motion: Reduced::No,
+            reduced_motion: false,
             seed,
             now: epoch,
         }
@@ -189,9 +189,9 @@ impl Model {
         self.full_screen_bar
     }
 
-    /// How much motion the shell says the person allows (full until it says otherwise).
-    pub fn motion(&self) -> Reduced {
-        self.motion
+    /// Whether the shell says the person wants reduced motion (full until it says otherwise).
+    pub fn reduced_motion(&self) -> bool {
+        self.reduced_motion
     }
 
     /// The model after `event` at `now`, and the effects it asks for. Routes the event to the

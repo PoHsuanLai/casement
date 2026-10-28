@@ -72,7 +72,7 @@ fn popup_of(state: &State, surface: Option<LayerKey>) -> bool {
 /// The machine of `edge` of `output` hears `input`; what it asks for is carried out.
 fn step(state: &mut State, output: &OutputKey, edge: RevealEdge, input: RevealIn) {
     let now = state.clock.now();
-    let timing = RevealTiming::of(edge, state.core.model.motion());
+    let timing = RevealTiming::of(edge, state.core.model.reduced_motion());
     let book = std::mem::take(&mut state.render.reveal);
     let (book, outs) = book.step(output, edge, timing, input, now);
     state.render.reveal = book;
@@ -183,7 +183,7 @@ fn raised_on(
             opacity: Fraction(1000),
         });
     }
-    let timing = RevealTiming::of(edge, model.motion());
+    let timing = RevealTiming::of(edge, model.reduced_motion());
     let drawn = slid(edge, timing.look, area, rests, machine.visible(timing, now));
     Some(RaisedDraw {
         layer,

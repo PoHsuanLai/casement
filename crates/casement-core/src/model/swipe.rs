@@ -24,7 +24,7 @@ use crate::lock::LockState;
 use crate::overview::Overview;
 use crate::time::{Due, Mono, TimerKey};
 use ds_behaviour::space_swipe::{
-    PageMilli, Reduced, Swipe, SwipeIn, SwipeOut, SwipeParams, SwipeSource, finish_duration,
+    PageMilli, Swipe, SwipeIn, SwipeOut, SwipeParams, SwipeSource, finish_duration,
 };
 use ds_core::machine::Machine;
 use std::time::Duration;
@@ -213,7 +213,7 @@ impl Model {
         }
         let params = SwipeParams {
             spaces: self.row_len(&output),
-            reduced: Reduced::No,
+            reduced: false,
         };
         let (machine, outs) = self
             .swipe

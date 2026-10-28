@@ -10,7 +10,7 @@ use casement_core::layer::{
     Anchors, BlurStrength, ExclusiveZone, KeyboardInteractivity, LayerLevel, LayerSpec, Margins,
     ShellRoleTag,
 };
-use casement_core::reveal::{FullScreenBar, Reduced};
+use casement_core::reveal::FullScreenBar;
 use casement_core::shell::{ShellNote, ShellRequest};
 use casement_core::window::WlrToplevelRequest;
 use casement_core::{Cause, Effect, Event, LayerKey, WindowId};
@@ -147,21 +147,17 @@ fn the_shell_chooses_the_bar_in_full_screen_and_the_motion_the_last_one_wins() {
     assert_eq!(back.model.full_screen_bar(), FullScreenBar::Reveal);
     assert!(last(&back).contains(&Effect::Relayout(Cause::Configure)));
 
-    assert_eq!(
-        back.model.motion(),
-        Reduced::No,
-        "full until told otherwise"
-    );
+    assert!(!back.model.reduced_motion(), "full until told otherwise");
     let reduced = run_from(
         back.model,
         vec![shell(ShellRequest::Motion(Motion::Reduced))],
     );
-    assert_eq!(reduced.model.motion(), Reduced::Yes);
+    assert!(reduced.model.reduced_motion());
     let full = run_from(
         reduced.model,
         vec![shell(ShellRequest::Motion(Motion::Full))],
     );
-    assert_eq!(full.model.motion(), Reduced::No);
+    assert!(!full.model.reduced_motion());
 }
 
 #[test]
