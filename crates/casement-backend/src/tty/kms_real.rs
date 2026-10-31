@@ -403,6 +403,13 @@ impl Kms for RealKms {
     fn resume(&mut self) -> Result<(), KmsError> {
         self.device.activate(false).map_err(io_error)
     }
+
+    fn take_master(&mut self) -> Result<(), KmsError> {
+        // The device was opened without master when another process held it (the opener only
+        // warns), and `activate` then never asks: the kernel is asked here. Asking again while
+        // already master is answered with success.
+        self.fd.acquire_master_lock().map_err(io_error)
+    }
 }
 
 /// The three channels of `ramp` at `size` steps: the identity is a straight line, a table is

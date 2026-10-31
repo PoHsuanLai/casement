@@ -377,6 +377,14 @@ pub trait Kms: std::fmt::Debug {
     /// The seat is back: take master again. The caller then commits every output again.
     fn resume(&mut self) -> Result<(), KmsError>;
 
+    /// Asks the kernel for master on the device, and says whether this session has it. A device
+    /// opened while another process still held master (the login screen's compositor, a moment
+    /// after the seat was handed over) is opened without it and nothing in
+    /// [`resume`](Kms::resume) asks again; this does. A device without the notion has it.
+    fn take_master(&mut self) -> Result<(), KmsError> {
+        Ok(())
+    }
+
     /// The device's renderer lent to draw captures into a client's dma-buf (GPU formats and
     /// modifiers); none by default and while the device has lit no output yet.
     fn capture_gpu(&self) -> Option<Box<dyn CaptureGpu>> {
