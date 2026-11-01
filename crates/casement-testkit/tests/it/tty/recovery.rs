@@ -71,7 +71,6 @@ struct Picky {
     inner: FakeKms,
     refuse: Vec<Mode>,
     resume_fails: Rc<Cell<u32>>,
-    master_fails: Rc<Cell<u32>>,
 }
 
 impl Kms for Picky {
@@ -136,16 +135,6 @@ impl Kms for Picky {
             }
         }
     }
-
-    fn take_master(&mut self) -> Result<(), KmsError> {
-        match self.master_fails.get() {
-            0 => Ok(()),
-            left => {
-                self.master_fails.set(left - 1);
-                Err(KmsError::DeviceGone(card0().0))
-            }
-        }
-    }
 }
 
 /// Hands out the one device once.
@@ -173,12 +162,6 @@ struct Rig {
 /// A backend over a laptop panel whose device refuses the modes of `refuse` (by index in the
 /// panel's list: 2880x1800 at 120 Hz preferred, 2880x1800 at 60 Hz, 1920x1200 at 60 Hz).
 fn rig(refuse: &[usize]) -> Rig {
-    rig_asking_master(refuse, 0)
-}
-
-/// The same, over a device that refuses master the first `master_fails` times it is asked (the
-/// first of them when the backend starts).
-fn rig_asking_master(refuse: &[usize], master_fails: u32) -> Rig {
     let kms = FakeKms::synthetic(SyntheticTopology::LaptopPanel);
     let panel = SyntheticTopology::LaptopPanel.resources().connectors[0].clone();
     let resume_fails = Rc::new(Cell::new(0));
@@ -186,7 +169,6 @@ fn rig_asking_master(refuse: &[usize], master_fails: u32) -> Rig {
         inner: kms.clone(),
         refuse: refuse.iter().map(|at| panel.modes[*at]).collect(),
         resume_fails: Rc::clone(&resume_fails),
-        master_fails: Rc::new(Cell::new(master_fails)),
     };
     let session = Script::default();
     let seams = TtySeams::new(
@@ -544,42 +526,4 @@ fn an_enabled_output_without_a_scanout_is_not_alive() {
         Health::Alive,
         "one live output keeps the display alive"
     );
-}
-
-#[test]
-fn a_device_opened_without_master_is_asked_again_with_nothing_lit_and_the_outputs_are_applied() {
-    // The login screen's compositor still holds master when the session starts: the device
-    // refuses at start and at the first retry, and gives it at the second.
-    let mut rig = rig_asking_master(&[], 2);
-    let lit = rig.modes[1];
-    assert!(
-        rig.backend.regain_master(at(0)).is_empty(),
-        "refused again at the first retry"
-    );
-    assert!(
-        rig.backend.regain_master(at(500)).is_empty(),
-        "not asked before its time"
-    );
-    assert_eq!(
-        session_notes(&rig.backend.regain_master(at(1_000))),
-        [SessionNote::Activated],
-        "the loop is told to apply every output"
-    );
-    assert!(
-        rig.backend.regain_master(at(2_000)).is_empty(),
-        "asked no more once it has master"
-    );
-    assert_eq!(
-        rig.backend
-            .apply(&rig.name, &config(lit), at(2_000))
-            .expect("lit"),
-        Lighting::Lit
-    );
-}
-
-#[test]
-fn a_device_that_has_master_from_the_start_is_never_asked_again() {
-    let mut rig = rig(&[]);
-    assert!(rig.backend.regain_master(at(0)).is_empty());
-    assert!(rig.backend.regain_master(at(1_000)).is_empty());
 }

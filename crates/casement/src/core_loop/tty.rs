@@ -35,8 +35,7 @@ pub(super) fn drain(state: &mut State) -> usize {
     let BackendKind::Tty(tty) = &mut state.backend else {
         return 0;
     };
-    let mut notes = tty.dispatch();
-    notes.extend(tty.regain_master(state.clock.now()));
+    let notes = tty.dispatch();
     let count = notes.len();
     for note in notes {
         match note {
