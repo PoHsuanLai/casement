@@ -325,16 +325,6 @@ impl TtyBackend {
                 tracing::warn!(path = %path.as_path().display(), %error, "a display device did not open");
             }
         }
-        // A device opened while another process still held master (the login screen's compositor
-        // lets go a few seconds after the session starts) cannot light anything; it is asked
-        // again as time passes, like one that lost master after a seat returned.
-        let mut master = MasterWatch::default();
-        for (path, device) in &mut devices.devices {
-            if let Err(error) = device.kms.take_master() {
-                tracing::warn!(path = %path.as_path().display(), %error, "a device did not give master; it is asked again");
-                master.lose(path.clone());
-            }
-        }
         Ok(TtyBackend {
             seams,
             devices,
@@ -349,7 +339,7 @@ impl TtyBackend {
             kinds,
             present: PresentDevices::default(),
             causes: SeatCauses::default(),
-            master,
+            master: MasterWatch::default(),
             revived: false,
             reinit: Vec::new(),
             carried: BTreeMap::new(),
@@ -476,17 +466,6 @@ impl TtyBackend {
         }
     }
 
-    /// Asks the devices that could not take master again, when their time has come, with no frame
-    /// to present (an output that could not be lit never presents one). The notes say what the
-    /// loop must do: a device that took master makes it apply every output again.
-    pub fn regain_master(&mut self, now: Mono) -> Vec<TtyNote> {
-        if self.seat != SeatState::Held {
-            return Vec::new();
-        }
-        self.retry_master(now);
-        self.set_up_again()
-    }
-
     /// Asks the devices that could not take master again, when their time has come. One that
     /// can now makes the loop apply every output again.
     fn retry_master(&mut self, now: Mono) {
@@ -495,7 +474,7 @@ impl TtyBackend {
                 self.master.regain(&path);
                 continue;
             };
-            match device.kms.take_master().and_then(|()| device.kms.resume()) {
+            match device.kms.resume() {
                 Ok(()) => {
                     tracing::info!(path = %path.as_path().display(), "a device took master back");
                     self.master.regain(&path);
