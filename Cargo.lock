@@ -2490,7 +2490,6 @@ dependencies = [
  "porter-core",
  "porter-dbus-macros",
  "porter-ids",
- "porter-match",
  "porter-tailscale",
  "porter-wire",
  "serde",
